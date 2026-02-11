@@ -22,7 +22,8 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 	}
 
 	options := applyOptions(opts)
-	messages := mapContents(req.Contents)
+	input := mapContents(req.Contents)
+	output := make([]sigil.Message, 0, len(summary.Responses))
 	stopReason := ""
 	usage := sigil.TokenUsage{}
 
@@ -32,7 +33,7 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 		}
 
 		candidateMessages, candidateStop := mapCandidates(response.Candidates)
-		messages = append(messages, candidateMessages...)
+		output = append(output, candidateMessages...)
 		if candidateStop != "" {
 			stopReason = candidateStop
 		}
@@ -68,12 +69,11 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 		ThreadID:     options.threadID,
 		Model:        sigil.ModelRef{Provider: options.providerName, Name: req.Model},
 		SystemPrompt: extractSystemPrompt(req.Config),
-		Messages:     messages,
+		Input:        input,
+		Output:       output,
 		Tools:        mapTools(req.Config),
 		Usage:        usage,
 		StopReason:   stopReason,
-		StartedAt:    options.startedAt,
-		CompletedAt:  options.completedAt,
 		Tags:         cloneStringMap(options.tags),
 		Metadata:     cloneAnyMap(options.metadata),
 		Artifacts:    artifacts,

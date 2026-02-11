@@ -108,7 +108,7 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 
 	hasToolRole := false
-	for _, message := range generation.Messages {
+	for _, message := range generation.Input {
 		if message.Role == sigil.RoleTool {
 			hasToolRole = true
 		}

@@ -1,9 +1,5 @@
 package anthropic
 
-import (
-	"time"
-)
-
 type Option func(*mapperOptions)
 
 type mapperOptions struct {
@@ -11,8 +7,6 @@ type mapperOptions struct {
 	threadID     string
 	tags         map[string]string
 	metadata     map[string]any
-	startedAt    time.Time
-	completedAt  time.Time
 
 	includeRequestArtifact  bool
 	includeResponseArtifact bool
@@ -84,13 +78,6 @@ func WithMetadata(metadata map[string]any) Option {
 		for key, value := range metadata {
 			options.metadata[key] = value
 		}
-	}
-}
-
-func WithTimestampRange(startedAt, completedAt time.Time) Option {
-	return func(options *mapperOptions) {
-		options.startedAt = startedAt
-		options.completedAt = completedAt
 	}
 }
 

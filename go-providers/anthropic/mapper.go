@@ -16,8 +16,8 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 
 	options := applyOptions(opts)
 
-	messages := mapRequestMessages(req.Messages)
-	messages = append(messages, mapResponseMessages(resp.Content)...)
+	input := mapRequestMessages(req.Messages)
+	output := mapResponseMessages(resp.Content)
 
 	artifacts := make([]sigil.Artifact, 0, 3)
 	if options.includeRequestArtifact {
@@ -51,12 +51,11 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 		ThreadID:     options.threadID,
 		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
 		SystemPrompt: mapSystemPrompt(req.System),
-		Messages:     messages,
+		Input:        input,
+		Output:       output,
 		Tools:        mapTools(req.Tools),
 		Usage:        mapUsage(resp.Usage),
 		StopReason:   string(resp.StopReason),
-		StartedAt:    options.startedAt,
-		CompletedAt:  options.completedAt,
 		Tags:         cloneStringMap(options.tags),
 		Metadata:     cloneAnyMap(options.metadata),
 		Artifacts:    artifacts,

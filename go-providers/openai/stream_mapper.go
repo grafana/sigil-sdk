@@ -34,7 +34,8 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 	}
 
 	options := applyOptions(opts)
-	messages, systemPrompt := mapRequestMessages(req.Messages)
+	input, systemPrompt := mapRequestMessages(req.Messages)
+	output := make([]sigil.Message, 0, 1)
 
 	modelName := string(req.Model)
 	usage := sigil.TokenUsage{}
@@ -101,7 +102,7 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 		assistantParts = append(assistantParts, part)
 	}
 	if len(assistantParts) > 0 {
-		messages = append(messages, sigil.Message{
+		output = append(output, sigil.Message{
 			Role:  sigil.RoleAssistant,
 			Parts: assistantParts,
 		})
@@ -134,12 +135,11 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 		ThreadID:     options.threadID,
 		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
 		SystemPrompt: systemPrompt,
-		Messages:     messages,
+		Input:        input,
+		Output:       output,
 		Tools:        mapTools(req.Tools),
 		Usage:        usage,
 		StopReason:   stopReason,
-		StartedAt:    options.startedAt,
-		CompletedAt:  options.completedAt,
 		Tags:         cloneStringMap(options.tags),
 		Metadata:     cloneAnyMap(options.metadata),
 		Artifacts:    artifacts,

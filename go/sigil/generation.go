@@ -5,11 +5,15 @@ import (
 	"time"
 )
 
+const defaultOperationName = "chat"
+
+// ModelRef identifies the LLM provider and model used for a generation.
 type ModelRef struct {
 	Provider string `json:"provider"`
 	Name     string `json:"name"`
 }
 
+// ToolDefinition describes a callable tool visible to the model.
 type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
@@ -17,14 +21,21 @@ type ToolDefinition struct {
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
 }
 
+// Generation is the normalized, provider-agnostic generation payload.
+// It can represent both request/response and streaming outcomes.
 type Generation struct {
-	ID           string            `json:"id,omitempty"`
-	ThreadID     string            `json:"thread_id,omitempty"`
+	// ID is the Sigil generation identifier. If empty, End assigns one.
+	ID       string `json:"id,omitempty"`
+	ThreadID string `json:"thread_id,omitempty"`
+	// OperationName maps to gen_ai.operation.name. Defaults to "chat".
+	OperationName string `json:"operation_name,omitempty"`
+	// TraceID and SpanID identify the OTel span created by StartGeneration.
 	TraceID      string            `json:"trace_id,omitempty"`
 	SpanID       string            `json:"span_id,omitempty"`
 	Model        ModelRef          `json:"model"`
 	SystemPrompt string            `json:"system_prompt,omitempty"`
-	Messages     []Message         `json:"messages,omitempty"`
+	Input        []Message         `json:"input,omitempty"`
+	Output       []Message         `json:"output,omitempty"`
 	Tools        []ToolDefinition  `json:"tools,omitempty"`
 	Usage        TokenUsage        `json:"usage,omitempty"`
 	StopReason   string            `json:"stop_reason,omitempty"`
@@ -33,68 +44,62 @@ type Generation struct {
 	Tags         map[string]string `json:"tags,omitempty"`
 	Metadata     map[string]any    `json:"metadata,omitempty"`
 	Artifacts    []Artifact        `json:"artifacts,omitempty"`
-	CallError    string            `json:"call_error,omitempty"`
+	// CallError captures upstream call failure text when End receives callErr.
+	CallError string `json:"call_error,omitempty"`
 }
 
+// GenerationStart seeds generation fields before the provider call executes.
+// Any zero-valued fields can be filled later by End.
 type GenerationStart struct {
-	ID           string
-	ThreadID     string
-	TraceID      string
-	SpanID       string
-	Model        ModelRef
-	SystemPrompt string
-	Messages     []Message
-	Tools        []ToolDefinition
-	StartedAt    time.Time
-	Tags         map[string]string
-	Metadata     map[string]any
-}
-
-type GenerationRef struct {
-	GenerationID string        `json:"generation_id"`
-	TraceID      string        `json:"trace_id,omitempty"`
-	SpanID       string        `json:"span_id,omitempty"`
-	ArtifactRefs []ArtifactRef `json:"artifact_refs,omitempty"`
+	ID            string
+	ThreadID      string
+	OperationName string
+	Model         ModelRef
+	SystemPrompt  string
+	Tools         []ToolDefinition
+	Tags          map[string]string
+	Metadata      map[string]any
+	StartedAt     time.Time
 }
 
 func (g Generation) Validate() error {
 	return ValidateGeneration(g)
 }
 
-func (s GenerationStart) toGeneration() Generation {
+func cloneGeneration(in Generation) Generation {
 	return Generation{
-		ID:           s.ID,
-		ThreadID:     s.ThreadID,
-		TraceID:      s.TraceID,
-		SpanID:       s.SpanID,
-		Model:        s.Model,
-		SystemPrompt: s.SystemPrompt,
-		Messages:     cloneMessages(s.Messages),
-		Tools:        cloneTools(s.Tools),
-		StartedAt:    s.StartedAt,
-		Tags:         cloneTags(s.Tags),
-		Metadata:     cloneMetadata(s.Metadata),
+		ID:            in.ID,
+		ThreadID:      in.ThreadID,
+		OperationName: in.OperationName,
+		TraceID:       in.TraceID,
+		SpanID:        in.SpanID,
+		Model:         in.Model,
+		SystemPrompt:  in.SystemPrompt,
+		Input:         cloneMessages(in.Input),
+		Output:        cloneMessages(in.Output),
+		Tools:         cloneTools(in.Tools),
+		Usage:         in.Usage,
+		StopReason:    in.StopReason,
+		StartedAt:     in.StartedAt,
+		CompletedAt:   in.CompletedAt,
+		Tags:          cloneTags(in.Tags),
+		Metadata:      cloneMetadata(in.Metadata),
+		Artifacts:     cloneArtifacts(in.Artifacts),
+		CallError:     in.CallError,
 	}
 }
 
-func cloneGeneration(in Generation) Generation {
-	return Generation{
-		ID:           in.ID,
-		ThreadID:     in.ThreadID,
-		TraceID:      in.TraceID,
-		SpanID:       in.SpanID,
-		Model:        in.Model,
-		SystemPrompt: in.SystemPrompt,
-		Messages:     cloneMessages(in.Messages),
-		Tools:        cloneTools(in.Tools),
-		Usage:        in.Usage,
-		StopReason:   in.StopReason,
-		StartedAt:    in.StartedAt,
-		CompletedAt:  in.CompletedAt,
-		Tags:         cloneTags(in.Tags),
-		Metadata:     cloneMetadata(in.Metadata),
-		Artifacts:    cloneArtifacts(in.Artifacts),
-		CallError:    in.CallError,
+func cloneGenerationStart(in GenerationStart) GenerationStart {
+	return GenerationStart{
+		ID:            in.ID,
+		ThreadID:      in.ThreadID,
+		OperationName: in.OperationName,
+		Model:         in.Model,
+		SystemPrompt:  in.SystemPrompt,
+		Tools:         cloneTools(in.Tools),
+		Tags:          cloneTags(in.Tags),
+		Metadata:      cloneMetadata(in.Metadata),
+		StartedAt:     in.StartedAt,
 	}
 }
 

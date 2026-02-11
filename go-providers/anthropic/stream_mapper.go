@@ -64,15 +64,16 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 		}
 	}
 
-	messages := mapRequestMessages(req.Messages)
+	input := mapRequestMessages(req.Messages)
+	output := make([]sigil.Message, 0, 2)
 	if len(assistantParts) > 0 {
-		messages = append(messages, sigil.Message{
+		output = append(output, sigil.Message{
 			Role:  sigil.RoleAssistant,
 			Parts: assistantParts,
 		})
 	}
 	if len(toolParts) > 0 {
-		messages = append(messages, sigil.Message{
+		output = append(output, sigil.Message{
 			Role:  sigil.RoleTool,
 			Parts: toolParts,
 		})
@@ -105,12 +106,11 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 		ThreadID:     options.threadID,
 		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
 		SystemPrompt: mapSystemPrompt(req.System),
-		Messages:     messages,
+		Input:        input,
+		Output:       output,
 		Tools:        mapTools(req.Tools),
 		Usage:        usage,
 		StopReason:   stopReason,
-		StartedAt:    options.startedAt,
-		CompletedAt:  options.completedAt,
 		Tags:         cloneStringMap(options.tags),
 		Metadata:     cloneAnyMap(options.metadata),
 		Artifacts:    artifacts,

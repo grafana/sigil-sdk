@@ -25,9 +25,8 @@ func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContent
 	}
 
 	options := applyOptions(opts)
-	requestMessages := mapContents(req.Contents)
-	responseMessages, stopReason := mapCandidates(resp.Candidates)
-	messages := append(requestMessages, responseMessages...)
+	input := mapContents(req.Contents)
+	output, stopReason := mapCandidates(resp.Candidates)
 
 	artifacts := make([]sigil.Artifact, 0, 3)
 	if options.includeRequestArtifact {
@@ -64,12 +63,11 @@ func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContent
 		ThreadID:     options.threadID,
 		Model:        sigil.ModelRef{Provider: options.providerName, Name: req.Model},
 		SystemPrompt: extractSystemPrompt(req.Config),
-		Messages:     messages,
+		Input:        input,
+		Output:       output,
 		Tools:        mapTools(req.Config),
 		Usage:        mapUsage(resp.UsageMetadata),
 		StopReason:   stopReason,
-		StartedAt:    options.startedAt,
-		CompletedAt:  options.completedAt,
 		Tags:         cloneStringMap(options.tags),
 		Metadata:     metadata,
 		Artifacts:    artifacts,

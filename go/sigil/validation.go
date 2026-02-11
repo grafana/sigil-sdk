@@ -15,8 +15,14 @@ func ValidateGeneration(g Generation) error {
 		return errors.New("generation.model.name is required")
 	}
 
-	for i := range g.Messages {
-		if err := validateMessage(i, g.Messages[i]); err != nil {
+	for i := range g.Input {
+		if err := validateMessage("generation.input", i, g.Input[i]); err != nil {
+			return err
+		}
+	}
+
+	for i := range g.Output {
+		if err := validateMessage("generation.output", i, g.Output[i]); err != nil {
 			return err
 		}
 	}
@@ -36,19 +42,19 @@ func ValidateGeneration(g Generation) error {
 	return nil
 }
 
-func validateMessage(index int, message Message) error {
+func validateMessage(path string, index int, message Message) error {
 	switch message.Role {
 	case RoleUser, RoleAssistant, RoleTool:
 	default:
-		return fmt.Errorf("generation.messages[%d].role must be one of user|assistant|tool", index)
+		return fmt.Errorf("%s[%d].role must be one of user|assistant|tool", path, index)
 	}
 
 	if len(message.Parts) == 0 {
-		return fmt.Errorf("generation.messages[%d].parts must not be empty", index)
+		return fmt.Errorf("%s[%d].parts must not be empty", path, index)
 	}
 
 	for i := range message.Parts {
-		if err := validatePart(index, i, message.Role, message.Parts[i]); err != nil {
+		if err := validatePart(path, index, i, message.Role, message.Parts[i]); err != nil {
 			return err
 		}
 	}
@@ -56,11 +62,11 @@ func validateMessage(index int, message Message) error {
 	return nil
 }
 
-func validatePart(messageIndex, partIndex int, role Role, part Part) error {
+func validatePart(path string, messageIndex, partIndex int, role Role, part Part) error {
 	switch part.Kind {
 	case PartKindText, PartKindThinking, PartKindToolCall, PartKindToolResult:
 	default:
-		return fmt.Errorf("generation.messages[%d].parts[%d].kind is invalid", messageIndex, partIndex)
+		return fmt.Errorf("%s[%d].parts[%d].kind is invalid", path, messageIndex, partIndex)
 	}
 
 	fieldCount := 0
@@ -78,34 +84,34 @@ func validatePart(messageIndex, partIndex int, role Role, part Part) error {
 	}
 
 	if fieldCount != 1 {
-		return fmt.Errorf("generation.messages[%d].parts[%d] must set exactly one payload field", messageIndex, partIndex)
+		return fmt.Errorf("%s[%d].parts[%d] must set exactly one payload field", path, messageIndex, partIndex)
 	}
 
 	switch part.Kind {
 	case PartKindText:
 		if strings.TrimSpace(part.Text) == "" {
-			return fmt.Errorf("generation.messages[%d].parts[%d].text is required", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].text is required", path, messageIndex, partIndex)
 		}
 	case PartKindThinking:
 		if role != RoleAssistant {
-			return fmt.Errorf("generation.messages[%d].parts[%d].thinking only allowed for assistant role", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].thinking only allowed for assistant role", path, messageIndex, partIndex)
 		}
 		if strings.TrimSpace(part.Thinking) == "" {
-			return fmt.Errorf("generation.messages[%d].parts[%d].thinking is required", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].thinking is required", path, messageIndex, partIndex)
 		}
 	case PartKindToolCall:
 		if role != RoleAssistant {
-			return fmt.Errorf("generation.messages[%d].parts[%d].tool_call only allowed for assistant role", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].tool_call only allowed for assistant role", path, messageIndex, partIndex)
 		}
 		if part.ToolCall == nil || strings.TrimSpace(part.ToolCall.Name) == "" {
-			return fmt.Errorf("generation.messages[%d].parts[%d].tool_call.name is required", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].tool_call.name is required", path, messageIndex, partIndex)
 		}
 	case PartKindToolResult:
 		if role != RoleTool {
-			return fmt.Errorf("generation.messages[%d].parts[%d].tool_result only allowed for tool role", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].tool_result only allowed for tool role", path, messageIndex, partIndex)
 		}
 		if part.ToolResult == nil {
-			return fmt.Errorf("generation.messages[%d].parts[%d].tool_result is required", messageIndex, partIndex)
+			return fmt.Errorf("%s[%d].parts[%d].tool_result is required", path, messageIndex, partIndex)
 		}
 	}
 

@@ -17,8 +17,8 @@ func FromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatComple
 	}
 
 	options := applyOptions(opts)
-	messages, systemPrompt := mapRequestMessages(req.Messages)
-	messages = append(messages, mapResponseMessages(resp.Choices)...)
+	input, systemPrompt := mapRequestMessages(req.Messages)
+	output := mapResponseMessages(resp.Choices)
 
 	artifacts := make([]sigil.Artifact, 0, 3)
 	if options.includeRequestArtifact {
@@ -52,12 +52,11 @@ func FromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatComple
 		ThreadID:     options.threadID,
 		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
 		SystemPrompt: systemPrompt,
-		Messages:     messages,
+		Input:        input,
+		Output:       output,
 		Tools:        mapTools(req.Tools),
 		Usage:        mapUsage(resp.Usage),
 		StopReason:   firstFinishReason(resp.Choices),
-		StartedAt:    options.startedAt,
-		CompletedAt:  options.completedAt,
 		Tags:         cloneStringMap(options.tags),
 		Metadata:     cloneAnyMap(options.metadata),
 		Artifacts:    artifacts,
