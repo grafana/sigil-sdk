@@ -4,6 +4,9 @@ This module maps OpenAI Chat Completions SDK request/response payloads into the
 typed Sigil `Generation` model.
 
 ## Scope
+- One-liner wrappers:
+  - `ChatCompletion(ctx, sigilClient, provider, req, opts...)`
+  - `ChatCompletionStream(ctx, sigilClient, provider, req, opts...)`
 - Request/response mapper:
   - `FromRequestResponse(req, resp, opts...)`
 - Stream mapper:
@@ -17,47 +20,63 @@ typed Sigil `Generation` model.
 ## SDK
 - Official SDK: `github.com/openai/openai-go`
 
-## Request/Response Recording
+## Wrapper (one-liner)
 ```go
-callCtx, rec, err := client.StartGeneration(ctx, sigil.GenerationStart{
-	ConversationID: "conv-9b2f",
-	Model:    sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
-})
+resp, err := openai.ChatCompletion(ctx, sigilClient, providerClient, req,
+	openai.WithConversationID("conv-1"),
+)
 if err != nil {
 	return err
 }
-
-resp, callErr := openaiClient.Chat.Completions.New(callCtx, req)
-if callErr != nil {
-	return rec.End(sigil.Generation{}, callErr)
-}
-
-gen, mapErr := openai.FromRequestResponse(req, resp)
-if err := rec.End(gen, mapErr); err != nil {
-	return err
-}
+_ = resp.Choices[0].Message.Content
 ```
 
-## Streaming Recording
+## Defer Pattern (full control)
 ```go
-callCtx, rec, err := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-	ConversationID: "conv-stream",
-	Model:    sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
+ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+	ConversationID: "conv-9b2f",
+	Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 })
+defer rec.End()
+
+resp, err := openaiClient.Chat.Completions.New(ctx, req)
 if err != nil {
+	rec.SetCallError(err)
 	return err
 }
 
-stream, callErr := openaiClient.Chat.Completions.NewStreaming(callCtx, req)
-if callErr != nil {
-	return rec.End(sigil.Generation{}, callErr)
+rec.SetResult(openai.FromRequestResponse(req, resp))
+```
+
+## Streaming Defer Pattern
+```go
+ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+	Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
+})
+defer rec.End()
+
+stream := openaiClient.Chat.Completions.NewStreaming(ctx, req)
+defer stream.Close()
+
+summary := openai.StreamSummary{}
+for stream.Next() {
+	chunk := stream.Current()
+	summary.Chunks = append(summary.Chunks, chunk)
+	// process chunk here
 }
-
-summary := collectOpenAIStream(stream) // user code: gather final response + chunks
-
-gen, mapErr := openai.FromStream(req, summary)
-// gen.Input and gen.Output are both populated by the mapper.
-if err := rec.End(gen, mapErr); err != nil {
+if err := stream.Err(); err != nil {
+	rec.SetCallError(err)
 	return err
 }
+
+rec.SetResult(openai.FromStream(req, summary))
+```
+
+## Live SDK examples
+Real end-to-end examples using the actual OpenAI SDK (no fake provider calls) are in:
+- `sdk_example_test.go`
+
+Run them with:
+```bash
+SIGIL_RUN_LIVE_EXAMPLES=1 OPENAI_API_KEY=... go test -run Example_withSigil -v
 ```

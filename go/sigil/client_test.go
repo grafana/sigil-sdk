@@ -37,7 +37,7 @@ func TestStartGenerationExternalizesArtifacts(t *testing.T) {
 		t.Fatalf("new response artifact: %v", err)
 	}
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ID:             "gen_test_externalize",
 		ConversationID: "conv-1",
 		Model: ModelRef{
@@ -45,11 +45,8 @@ func TestStartGenerationExternalizesArtifacts(t *testing.T) {
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	err = generationRecorder.End(Generation{
+	generationRecorder.SetResult(Generation{
 		Input: []Message{
 			{Role: RoleUser, Parts: []Part{TextPart("hello")}},
 		},
@@ -58,7 +55,9 @@ func TestStartGenerationExternalizesArtifacts(t *testing.T) {
 		},
 		Artifacts: []Artifact{requestArtifact, responseArtifact},
 	}, nil)
-	if err != nil {
+	generationRecorder.End()
+
+	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
 
@@ -97,18 +96,16 @@ func TestStartGenerationUsesLifecycleTimingWhenMissingOnGeneration(t *testing.T)
 		},
 	})
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-2",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	if err := generationRecorder.End(Generation{}, nil); err != nil {
+	generationRecorder.End()
+	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
 
@@ -133,22 +130,21 @@ func TestStartGenerationCreatesChildSpanAndLinksGenerationToSpan(t *testing.T) {
 	parentCtx, parent := tp.Tracer("parent").Start(context.Background(), "parent")
 	parentSC := parent.SpanContext()
 
-	callCtx, generationRecorder, err := client.StartGeneration(parentCtx, GenerationStart{
+	callCtx, generationRecorder := client.StartGeneration(parentCtx, GenerationStart{
 		ConversationID: "conv-3",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
+
 	callSC := trace.SpanContextFromContext(callCtx)
 	if !callSC.IsValid() {
 		t.Fatalf("expected call span context to be valid")
 	}
 
-	if err := generationRecorder.End(Generation{}, nil); err != nil {
+	generationRecorder.End()
+	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
 	parent.End()
@@ -174,10 +170,10 @@ func TestStartGenerationCreatesChildSpanAndLinksGenerationToSpan(t *testing.T) {
 	}
 }
 
-func TestStartGenerationAndStreamingUseSameOperationSpanName(t *testing.T) {
+func TestStartGenerationSpanNameIncludesModelAndOperation(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, syncRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, syncRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-sync",
 		OperationName:  "text_completion",
 		Model: ModelRef{
@@ -185,17 +181,16 @@ func TestStartGenerationAndStreamingUseSameOperationSpanName(t *testing.T) {
 			Name:     "gpt-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
-	if err := syncRecorder.End(Generation{
+	syncRecorder.SetResult(Generation{
 		Input:  []Message{{Role: RoleUser, Parts: []Part{TextPart("hello")}}},
 		Output: []Message{{Role: RoleAssistant, Parts: []Part{TextPart("hi")}}},
-	}, nil); err != nil {
+	}, nil)
+	syncRecorder.End()
+	if err := syncRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
 
-	_, streamRecorder, err := client.StartStreamingGeneration(context.Background(), GenerationStart{
+	_, streamRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-stream",
 		OperationName:  "text_completion",
 		Model: ModelRef{
@@ -203,13 +198,12 @@ func TestStartGenerationAndStreamingUseSameOperationSpanName(t *testing.T) {
 			Name:     "gpt-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start streaming generation: %v", err)
-	}
-	if err := streamRecorder.End(Generation{
+	streamRecorder.SetResult(Generation{
 		Input:  []Message{{Role: RoleUser, Parts: []Part{TextPart("hello")}}},
 		Output: []Message{{Role: RoleAssistant, Parts: []Part{TextPart("hi")}}},
-	}, nil); err != nil {
+	}, nil)
+	streamRecorder.End()
+	if err := streamRecorder.Err(); err != nil {
 		t.Fatalf("end streaming generation: %v", err)
 	}
 
@@ -234,59 +228,21 @@ func TestStartGenerationAndStreamingUseSameOperationSpanName(t *testing.T) {
 	}
 }
 
-func TestStartStreamingGenerationCreatesChildSpan(t *testing.T) {
-	client, recorder, tp := newTestClient(t, Config{})
-	parentCtx, parent := tp.Tracer("parent").Start(context.Background(), "parent")
-	parentSC := parent.SpanContext()
-
-	callCtx, generationRecorder, err := client.StartStreamingGeneration(parentCtx, GenerationStart{
-		ConversationID: "conv-stream-child",
-		Model: ModelRef{
-			Provider: "openai",
-			Name:     "gpt-5",
-		},
-	})
-	if err != nil {
-		t.Fatalf("start streaming generation: %v", err)
-	}
-
-	callSC := trace.SpanContextFromContext(callCtx)
-	if !callSC.IsValid() {
-		t.Fatalf("expected call span context to be valid")
-	}
-	if callSC.TraceID() != parentSC.TraceID() {
-		t.Fatalf("expected call trace id %q, got %q", parentSC.TraceID().String(), callSC.TraceID().String())
-	}
-
-	if err := generationRecorder.End(Generation{
-		Input:  []Message{{Role: RoleUser, Parts: []Part{TextPart("hello")}}},
-		Output: []Message{{Role: RoleAssistant, Parts: []Part{TextPart("hi")}}},
-	}, nil); err != nil {
-		t.Fatalf("end streaming generation: %v", err)
-	}
-	parent.End()
-
-	span := onlyGenerationSpan(t, recorder.Ended())
-	if span.Parent().SpanID() != parentSC.SpanID() {
-		t.Fatalf("expected parent span id %q, got %q", parentSC.SpanID().String(), span.Parent().SpanID().String())
-	}
-}
-
-func TestGenerationRecorderEndReturnsCallErrorAndMarksSpanError(t *testing.T) {
+func TestGenerationRecorderSetCallErrorMarksSpanError(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-4",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	err = generationRecorder.End(Generation{}, errors.New("provider unavailable"))
+	generationRecorder.SetCallError(errors.New("provider unavailable"))
+	generationRecorder.End()
+
+	err := generationRecorder.Err()
 	if err == nil {
 		t.Fatalf("expected call error")
 	}
@@ -310,6 +266,42 @@ func TestGenerationRecorderEndReturnsCallErrorAndMarksSpanError(t *testing.T) {
 	}
 }
 
+func TestGenerationRecorderSetResultMappingErrorMarksSpanError(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
+		ConversationID: "conv-mapping",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+
+	generationRecorder.SetResult(Generation{}, errors.New("mapping failed"))
+	generationRecorder.End()
+
+	err := generationRecorder.Err()
+	if err == nil {
+		t.Fatalf("expected mapping error")
+	}
+	if !strings.Contains(err.Error(), "mapping failed") {
+		t.Fatalf("expected mapping error, got %v", err)
+	}
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	if got := span.Status().Code; got != codes.Error {
+		t.Fatalf("expected error span status, got %v", got)
+	}
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrErrorType].AsString() != "mapping_error" {
+		t.Fatalf("expected error.type=mapping_error, got %q", attrs[spanAttrErrorType].AsString())
+	}
+	// mapping error should NOT set call_error on generation
+	if generationRecorder.lastGeneration.CallError != "" {
+		t.Fatalf("expected no call_error on generation for mapping error, got %q", generationRecorder.lastGeneration.CallError)
+	}
+}
+
 func TestGenerationRecorderEndReturnsRecordErrorAndMarksSpanError(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{
 		RecordStore: &failingRecordStore{err: errors.New("store unavailable")},
@@ -320,25 +312,25 @@ func TestGenerationRecorderEndReturnsRecordErrorAndMarksSpanError(t *testing.T) 
 		t.Fatalf("new artifact: %v", err)
 	}
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-5",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	err = generationRecorder.End(Generation{
+	generationRecorder.SetResult(Generation{
 		Artifacts: []Artifact{artifact},
 	}, nil)
-	if err == nil {
+	generationRecorder.End()
+
+	recordErr := generationRecorder.Err()
+	if recordErr == nil {
 		t.Fatalf("expected record error")
 	}
-	if !strings.Contains(err.Error(), "store artifact") {
-		t.Fatalf("expected store artifact error, got %v", err)
+	if !strings.Contains(recordErr.Error(), "store artifact") {
+		t.Fatalf("expected store artifact error, got %v", recordErr)
 	}
 
 	span := onlyGenerationSpan(t, recorder.Ended())
@@ -354,18 +346,15 @@ func TestGenerationRecorderEndReturnsRecordErrorAndMarksSpanError(t *testing.T) 
 func TestGenerationRecorderEndReturnsValidationErrorAndMarksSpanError(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-validation",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	err = generationRecorder.End(Generation{
+	generationRecorder.SetResult(Generation{
 		Input: []Message{
 			{Role: RoleUser},
 		},
@@ -373,7 +362,10 @@ func TestGenerationRecorderEndReturnsValidationErrorAndMarksSpanError(t *testing
 			{Role: RoleAssistant, Parts: []Part{TextPart("ok")}},
 		},
 	}, nil)
-	if err == nil {
+	generationRecorder.End()
+
+	validationErr := generationRecorder.Err()
+	if validationErr == nil {
 		t.Fatalf("expected validation error")
 	}
 
@@ -390,16 +382,13 @@ func TestGenerationRecorderEndReturnsValidationErrorAndMarksSpanError(t *testing
 func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, generationRecorder, err := client.StartStreamingGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-6",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
 	chunks := []string{"Hel", "lo", " ", "world"}
 	var b strings.Builder
@@ -407,7 +396,7 @@ func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 		b.WriteString(chunk)
 	}
 
-	err = generationRecorder.End(Generation{
+	generationRecorder.SetResult(Generation{
 		Input: []Message{
 			{Role: RoleUser, Parts: []Part{TextPart("Say hello")}},
 		},
@@ -415,7 +404,9 @@ func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 			{Role: RoleAssistant, Parts: []Part{TextPart(b.String())}},
 		},
 	}, nil)
-	if err != nil {
+	generationRecorder.End()
+
+	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
 
@@ -439,18 +430,15 @@ func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-7",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	err = generationRecorder.End(Generation{
+	generationRecorder.SetResult(Generation{
 		OperationName:  "text_completion",
 		ConversationID: "conv-7",
 		ResponseID:     "resp-7",
@@ -469,7 +457,9 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 			{Role: RoleAssistant, Parts: []Part{TextPart("answer")}},
 		},
 	}, nil)
-	if err != nil {
+	generationRecorder.End()
+
+	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
 
@@ -527,62 +517,89 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 	}
 }
 
-func TestGenerationRecorderEndIsSingleUse(t *testing.T) {
+func TestGenerationRecorderEndIsIdempotent(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, generationRecorder, err := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-8",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
 	})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
 
-	if err := generationRecorder.End(Generation{}, nil); err != nil {
+	generationRecorder.End()
+	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("first end generation: %v", err)
 	}
 
-	err = generationRecorder.End(Generation{}, nil)
-	if err == nil {
-		t.Fatalf("expected second End to fail")
-	}
-	if err.Error() != "generation recorder already ended" {
-		t.Fatalf("expected deterministic error, got %q", err.Error())
-	}
+	// Second End is a no-op.
+	generationRecorder.End()
 
 	if got := countGenerationSpans(recorder.Ended()); got != 1 {
 		t.Fatalf("expected 1 generation span, got %d", got)
 	}
 }
 
-func TestStartToolExecutionRequiresToolName(t *testing.T) {
-	client := NewClient(DefaultConfig())
-	_, _, err := client.StartToolExecution(context.Background(), ToolExecutionStart{})
-	if err == nil {
-		t.Fatalf("expected tool name error")
+func TestNilClientReturnsNoOpRecorder(t *testing.T) {
+	var client *Client
+	ctx, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model: ModelRef{Provider: "test", Name: "test"},
+	})
+	if ctx == nil {
+		t.Fatalf("expected non-nil context")
+	}
+	// All methods should be safe to call.
+	rec.SetCallError(errors.New("test"))
+	rec.SetResult(Generation{}, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("expected nil error from no-op recorder, got %v", err)
 	}
 }
 
-func TestToolExecutionRecorderEndSetsExecuteToolAttributes(t *testing.T) {
+func TestNilClientReturnsNoOpToolRecorder(t *testing.T) {
+	var client *Client
+	ctx, rec := client.StartToolExecution(context.Background(), ToolExecutionStart{
+		ToolName: "test",
+	})
+	if ctx == nil {
+		t.Fatalf("expected non-nil context")
+	}
+	rec.SetExecError(errors.New("test"))
+	rec.SetResult(ToolExecutionEnd{})
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("expected nil error from no-op recorder, got %v", err)
+	}
+}
+
+func TestEmptyToolNameReturnsNoOpRecorder(t *testing.T) {
+	client := NewClient(DefaultConfig())
+	_, rec := client.StartToolExecution(context.Background(), ToolExecutionStart{})
+	// Should not panic.
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("expected nil error from no-op recorder, got %v", err)
+	}
+}
+
+func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
-	callCtx, toolRecorder, err := client.StartToolExecution(context.Background(), ToolExecutionStart{
+	callCtx, toolRecorder := client.StartToolExecution(context.Background(), ToolExecutionStart{
 		ToolName:        "weather",
 		ToolCallID:      "call_weather",
 		ToolType:        "function",
 		ToolDescription: "Get weather",
 		ConversationID:  "conv-tool",
 	})
-	if err != nil {
-		t.Fatalf("start tool execution: %v", err)
-	}
+
 	if !trace.SpanContextFromContext(callCtx).IsValid() {
 		t.Fatalf("expected valid span context in callCtx")
 	}
 
-	if err := toolRecorder.End(ToolExecutionEnd{}, nil); err != nil {
+	toolRecorder.End()
+	if err := toolRecorder.Err(); err != nil {
 		t.Fatalf("end tool execution: %v", err)
 	}
 
@@ -617,30 +634,28 @@ func TestToolExecutionRecorderEndSetsExecuteToolAttributes(t *testing.T) {
 func TestToolExecutionRecorderContentCapture(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, withContent, err := client.StartToolExecution(context.Background(), ToolExecutionStart{
+	_, withContent := client.StartToolExecution(context.Background(), ToolExecutionStart{
 		ToolName:       "weather",
 		IncludeContent: true,
 	})
-	if err != nil {
-		t.Fatalf("start tool execution with content: %v", err)
-	}
-	if err := withContent.End(ToolExecutionEnd{
+	withContent.SetResult(ToolExecutionEnd{
 		Arguments: map[string]any{"city": "Paris"},
 		Result:    map[string]any{"temp_c": 18},
-	}, nil); err != nil {
+	})
+	withContent.End()
+	if err := withContent.Err(); err != nil {
 		t.Fatalf("end tool execution with content: %v", err)
 	}
 
-	_, withoutContent, err := client.StartToolExecution(context.Background(), ToolExecutionStart{
+	_, withoutContent := client.StartToolExecution(context.Background(), ToolExecutionStart{
 		ToolName: "weather",
 	})
-	if err != nil {
-		t.Fatalf("start tool execution without content: %v", err)
-	}
-	if err := withoutContent.End(ToolExecutionEnd{
+	withoutContent.SetResult(ToolExecutionEnd{
 		Arguments: map[string]any{"city": "Paris"},
 		Result:    map[string]any{"temp_c": 18},
-	}, nil); err != nil {
+	})
+	withoutContent.End()
+	if err := withoutContent.Err(); err != nil {
 		t.Fatalf("end tool execution without content: %v", err)
 	}
 
@@ -674,15 +689,14 @@ func TestToolExecutionRecorderContentCapture(t *testing.T) {
 
 func TestToolExecutionRecorderErrorSetsStatusAndType(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
-	_, toolRecorder, err := client.StartToolExecution(context.Background(), ToolExecutionStart{
+	_, toolRecorder := client.StartToolExecution(context.Background(), ToolExecutionStart{
 		ToolName: "weather",
 	})
-	if err != nil {
-		t.Fatalf("start tool execution: %v", err)
-	}
 
-	execErr := errors.New("tool failed")
-	if err := toolRecorder.End(ToolExecutionEnd{}, execErr); err == nil {
+	toolRecorder.SetExecError(errors.New("tool failed"))
+	toolRecorder.End()
+
+	if err := toolRecorder.Err(); err == nil {
 		t.Fatalf("expected tool error")
 	}
 
@@ -696,30 +710,104 @@ func TestToolExecutionRecorderErrorSetsStatusAndType(t *testing.T) {
 	}
 }
 
-func TestToolExecutionRecorderEndIsSingleUse(t *testing.T) {
+func TestToolExecutionRecorderEndIsIdempotent(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
-	_, toolRecorder, err := client.StartToolExecution(context.Background(), ToolExecutionStart{
+	_, toolRecorder := client.StartToolExecution(context.Background(), ToolExecutionStart{
 		ToolName: "weather",
 	})
-	if err != nil {
-		t.Fatalf("start tool execution: %v", err)
-	}
 
-	if err := toolRecorder.End(ToolExecutionEnd{}, nil); err != nil {
+	toolRecorder.End()
+	if err := toolRecorder.Err(); err != nil {
 		t.Fatalf("first end: %v", err)
 	}
-	err = toolRecorder.End(ToolExecutionEnd{}, nil)
-	if err == nil {
-		t.Fatalf("expected second End to fail")
-	}
-	if err.Error() != "tool execution recorder already ended" {
-		t.Fatalf("expected deterministic error, got %q", err.Error())
-	}
+
+	// Second End is a no-op.
+	toolRecorder.End()
 
 	if got := countToolSpans(recorder.Ended()); got != 1 {
 		t.Fatalf("expected 1 tool span, got %d", got)
 	}
 }
+
+func TestConversationIDFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationID(context.Background(), "conv-from-ctx")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationID].AsString() != "conv-from-ctx" {
+		t.Fatalf("expected gen_ai.conversation.id=conv-from-ctx, got %q", attrs[spanAttrConversationID].AsString())
+	}
+}
+
+func TestExplicitConversationIDOverridesContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationID(context.Background(), "ctx-id")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		ConversationID: "explicit-id",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationID].AsString() != "explicit-id" {
+		t.Fatalf("expected gen_ai.conversation.id=explicit-id, got %q", attrs[spanAttrConversationID].AsString())
+	}
+}
+
+func TestToolExecutionConversationIDFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationID(context.Background(), "conv-tool-ctx")
+	_, toolRecorder := client.StartToolExecution(ctx, ToolExecutionStart{
+		ToolName: "weather",
+	})
+	toolRecorder.End()
+
+	span := onlyToolSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationID].AsString() != "conv-tool-ctx" {
+		t.Fatalf("expected gen_ai.conversation.id=conv-tool-ctx, got %q", attrs[spanAttrConversationID].AsString())
+	}
+}
+
+func TestSentinelErrorsAreMatchable(t *testing.T) {
+	client, _, _ := newTestClient(t, Config{
+		RecordStore: &failingRecordStore{err: errors.New("store unavailable")},
+	})
+
+	artifact, err := NewJSONArtifact(ArtifactKindRequest, "request", map[string]any{"ok": true})
+	if err != nil {
+		t.Fatalf("new artifact: %v", err)
+	}
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model: ModelRef{Provider: "test", Name: "test"},
+	})
+	rec.SetResult(Generation{Artifacts: []Artifact{artifact}}, nil)
+	rec.End()
+
+	if !errors.Is(rec.Err(), ErrStoreFailed) {
+		t.Fatalf("expected errors.Is(err, ErrStoreFailed), got %v", rec.Err())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
 
 type failingRecordStore struct {
 	err error

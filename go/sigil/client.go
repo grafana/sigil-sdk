@@ -54,9 +54,10 @@ const (
 	spanAttrToolCallResult    = "gen_ai.tool.call.result"
 )
 
+// Keep unexported aliases for backward-compatible fmt.Errorf wrapping.
 var (
-	errGenerationValidation = errors.New("generation validation failed")
-	errGenerationStore      = errors.New("generation store failed")
+	errGenerationValidation = ErrValidationFailed
+	errGenerationStore      = ErrStoreFailed
 )
 
 // DefaultConfig returns a production-ready baseline configuration.
@@ -77,7 +78,16 @@ type Client struct {
 }
 
 // GenerationRecorder records and closes one in-flight generation span.
-// A recorder is single-use; calling End more than once returns an error.
+//
+// The typical usage pattern is:
+//
+//	ctx, rec := client.StartGeneration(ctx, start)
+//	defer rec.End()
+//	resp, err := provider.Call(ctx, req)
+//	if err != nil { rec.SetCallError(err); return err }
+//	rec.SetResult(mapper.FromRequestResponse(req, resp))
+//
+// All methods are safe to call on a nil or no-op recorder.
 type GenerationRecorder struct {
 	client    *Client
 	ctx       context.Context
@@ -87,11 +97,17 @@ type GenerationRecorder struct {
 
 	mu             sync.Mutex
 	ended          bool
+	callErr        error
+	mapErr         error
+	generation     Generation
+	hasResult      bool
 	lastGeneration Generation
+	finalErr       error
 }
 
 // ToolExecutionRecorder records and closes one in-flight execute_tool span.
-// A recorder is single-use; calling End more than once returns an error.
+//
+// All methods are safe to call on a nil or no-op recorder.
 type ToolExecutionRecorder struct {
 	client         *Client
 	ctx            context.Context
@@ -100,8 +116,12 @@ type ToolExecutionRecorder struct {
 	startedAt      time.Time
 	includeContent bool
 
-	mu    sync.Mutex
-	ended bool
+	mu        sync.Mutex
+	ended     bool
+	execErr   error
+	result    ToolExecutionEnd
+	hasResult bool
+	finalErr  error
 }
 
 // NewClient creates a Client, applying defaults for empty config values.
@@ -130,30 +150,28 @@ func NewClient(config Config) *Client {
 	}
 }
 
-// StartGeneration starts a GenAI span and returns a context to use for the provider call.
+// StartGeneration starts a GenAI span and returns a context for the provider call.
 //
-// Start fields are seeds: End can fill any zero-valued generation fields from start.
+// Start fields are seeds: End fills zero-valued generation fields from start.
+// If the client is nil a no-op recorder is returned (instrumentation never crashes business logic).
 //
 // Linking is two-way after End:
 //   - Generation.TraceID and Generation.SpanID are set from the created span context.
 //   - The span includes sigil.generation.id as an attribute.
-func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder, error) {
-	return c.startGeneration(ctx, start)
-}
-
-// StartStreamingGeneration starts a GenAI span for streaming provider calls.
-func (c *Client) StartStreamingGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder, error) {
-	return c.startGeneration(ctx, start)
-}
-
-func (c *Client) startGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder, error) {
+func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder) {
 	if c == nil {
-		return nil, nil, errors.New("sigil client is nil")
+		return ctx, &GenerationRecorder{}
 	}
 
 	seed := cloneGenerationStart(start)
 	if seed.OperationName == "" {
 		seed.OperationName = defaultOperationName
+	}
+	// Read conversation ID from context when explicit field is empty.
+	if seed.ConversationID == "" {
+		if id, ok := ConversationIDFromContext(ctx); ok {
+			seed.ConversationID = id
+		}
 	}
 
 	startedAt := seed.StartedAt
@@ -183,19 +201,27 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart) (co
 		span:      span,
 		seed:      seed,
 		startedAt: startedAt,
-	}, nil
+	}
 }
 
 // StartToolExecution starts an execute_tool span and returns a context for the tool call.
-func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStart) (context.Context, *ToolExecutionRecorder, error) {
+// If the client is nil or tool name is empty a no-op recorder is returned.
+func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStart) (context.Context, *ToolExecutionRecorder) {
 	if c == nil {
-		return nil, nil, errors.New("sigil client is nil")
+		return ctx, &ToolExecutionRecorder{}
 	}
 
 	seed := start
 	seed.ToolName = strings.TrimSpace(seed.ToolName)
 	if seed.ToolName == "" {
-		return nil, nil, errors.New("tool name is required")
+		return ctx, &ToolExecutionRecorder{}
+	}
+
+	// Read conversation ID from context when explicit field is empty.
+	if seed.ConversationID == "" {
+		if id, ok := ConversationIDFromContext(ctx); ok {
+			seed.ConversationID = id
+		}
 	}
 
 	startedAt := seed.StartedAt
@@ -217,79 +243,175 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 		seed:           seed,
 		startedAt:      startedAt,
 		includeContent: seed.IncludeContent,
-	}, nil
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GenerationRecorder builder methods
+// ---------------------------------------------------------------------------
+
+// SetCallError records a provider/network call error.
+// It is safe to call on a nil recorder.
+func (r *GenerationRecorder) SetCallError(err error) {
+	if r == nil || err == nil {
+		return
+	}
+	r.mu.Lock()
+	r.callErr = err
+	r.mu.Unlock()
+}
+
+// SetResult stores the mapped generation and/or a mapping error.
+// It directly accepts the (Generation, error) return of provider mappers,
+// so calls like rec.SetResult(openai.FromRequestResponse(req, resp)) chain naturally.
+// It is safe to call on a nil recorder.
+func (r *GenerationRecorder) SetResult(g Generation, err error) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.generation = g
+	r.mapErr = err
+	r.hasResult = true
+	r.mu.Unlock()
 }
 
 // End finalizes generation recording, sets span status, and closes the span.
 //
-// End is single-use. A second call returns an error and does nothing.
-func (r *GenerationRecorder) End(g Generation, callErr error) error {
+// End takes no arguments and returns nothing, so it is safe for use with defer:
+//
+//	ctx, rec := client.StartGeneration(ctx, start)
+//	defer rec.End()
+//
+// End is idempotent; subsequent calls are no-ops.
+// It is safe to call on a nil or no-op recorder.
+func (r *GenerationRecorder) End() {
 	if r == nil {
-		return errors.New("generation recorder is nil")
+		return
 	}
 
 	r.mu.Lock()
 	if r.ended {
 		r.mu.Unlock()
-		return errors.New("generation recorder already ended")
+		return
 	}
 	r.ended = true
+	callErr := r.callErr
+	mapErr := r.mapErr
+	generation := r.generation
 	r.mu.Unlock()
+
+	// No-op recorder: no client/span means nothing to finalize.
 	if r.client == nil || r.span == nil {
-		return errors.New("generation recorder is not initialized")
+		return
 	}
 
 	completedAt := r.client.now().UTC()
-	generation := r.normalizeGeneration(g, completedAt, callErr)
-	applyTraceContextFromSpan(r.span, &generation)
+	normalized := r.normalizeGeneration(generation, completedAt, callErr)
+	applyTraceContextFromSpan(r.span, &normalized)
 
-	r.span.SetName(generationSpanName(generation))
-	r.span.SetAttributes(generationSpanAttributes(generation)...)
+	r.span.SetName(generationSpanName(normalized))
+	r.span.SetAttributes(generationSpanAttributes(normalized)...)
 
 	r.mu.Lock()
-	r.lastGeneration = cloneGeneration(generation)
+	r.lastGeneration = cloneGeneration(normalized)
 	r.mu.Unlock()
 
-	recordErr := r.client.persistGeneration(r.ctx, generation)
+	recordErr := r.client.persistGeneration(r.ctx, normalized)
+
+	// Record errors on span.
 	if callErr != nil {
 		r.span.RecordError(callErr)
+	}
+	if mapErr != nil {
+		r.span.RecordError(mapErr)
 	}
 	if recordErr != nil {
 		r.span.RecordError(recordErr)
 	}
-	if errorType := generationErrorType(callErr, recordErr); errorType != "" {
+
+	if errorType := generationErrorType(callErr, mapErr, recordErr); errorType != "" {
 		r.span.SetAttributes(attribute.String(spanAttrErrorType, errorType))
 	}
+
 	switch {
 	case callErr != nil:
 		r.span.SetStatus(codes.Error, callErr.Error())
+	case mapErr != nil:
+		r.span.SetStatus(codes.Error, mapErr.Error())
 	case recordErr != nil:
 		r.span.SetStatus(codes.Error, recordErr.Error())
 	default:
 		r.span.SetStatus(codes.Ok, "")
 	}
-	r.span.End(trace.WithTimestamp(generation.CompletedAt))
+	r.span.End(trace.WithTimestamp(normalized.CompletedAt))
 
-	return combineErrors(callErr, recordErr)
+	// Store accumulated error for Err().
+	r.mu.Lock()
+	r.finalErr = combineAllErrors(callErr, mapErr, recordErr)
+	r.mu.Unlock()
+}
+
+// Err returns the accumulated error after End has been called, like sql.Rows.Err().
+// It is safe to call on a nil recorder.
+func (r *GenerationRecorder) Err() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.finalErr
+}
+
+// ---------------------------------------------------------------------------
+// ToolExecutionRecorder builder methods
+// ---------------------------------------------------------------------------
+
+// SetExecError records a tool execution error.
+// It is safe to call on a nil recorder.
+func (r *ToolExecutionRecorder) SetExecError(err error) {
+	if r == nil || err == nil {
+		return
+	}
+	r.mu.Lock()
+	r.execErr = err
+	r.mu.Unlock()
+}
+
+// SetResult stores the tool execution end data.
+// It is safe to call on a nil recorder.
+func (r *ToolExecutionRecorder) SetResult(end ToolExecutionEnd) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.result = end
+	r.hasResult = true
+	r.mu.Unlock()
 }
 
 // End finalizes tool execution span attributes, status, and end timestamp.
 //
-// End is single-use. A second call returns an error and does nothing.
-func (r *ToolExecutionRecorder) End(end ToolExecutionEnd, execErr error) error {
+// End is idempotent; subsequent calls are no-ops.
+// It is safe to call on a nil or no-op recorder.
+func (r *ToolExecutionRecorder) End() {
 	if r == nil {
-		return errors.New("tool execution recorder is nil")
+		return
 	}
 
 	r.mu.Lock()
 	if r.ended {
 		r.mu.Unlock()
-		return errors.New("tool execution recorder already ended")
+		return
 	}
 	r.ended = true
+	execErr := r.execErr
+	end := r.result
 	r.mu.Unlock()
+
+	// No-op recorder.
 	if r.client == nil || r.span == nil {
-		return errors.New("tool execution recorder is not initialized")
+		return
 	}
 
 	completedAt := end.CompletedAt
@@ -337,8 +459,25 @@ func (r *ToolExecutionRecorder) End(end ToolExecutionEnd, execErr error) error {
 	}
 	r.span.End(trace.WithTimestamp(completedAt))
 
-	return finalErr
+	r.mu.Lock()
+	r.finalErr = finalErr
+	r.mu.Unlock()
 }
+
+// Err returns the accumulated error after End has been called, like sql.Rows.Err().
+// It is safe to call on a nil recorder.
+func (r *ToolExecutionRecorder) Err() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.finalErr
+}
+
+// ---------------------------------------------------------------------------
+// internal helpers
+// ---------------------------------------------------------------------------
 
 func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt time.Time, callErr error) Generation {
 	g := cloneGeneration(raw)
@@ -398,17 +537,24 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	return g
 }
 
-func combineErrors(callErr, recordErr error) error {
-	switch {
-	case callErr != nil && recordErr != nil:
-		return errors.Join(callErr, fmt.Errorf("record generation: %w", recordErr))
-	case callErr != nil:
-		return callErr
-	case recordErr != nil:
-		return recordErr
-	default:
+func combineAllErrors(callErr, mapErr, recordErr error) error {
+	var errs []error
+	if callErr != nil {
+		errs = append(errs, callErr)
+	}
+	if mapErr != nil {
+		errs = append(errs, fmt.Errorf("mapping: %w", mapErr))
+	}
+	if recordErr != nil {
+		errs = append(errs, fmt.Errorf("record generation: %w", recordErr))
+	}
+	if len(errs) == 0 {
 		return nil
 	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	return errors.Join(errs...)
 }
 
 func (c *Client) persistGeneration(ctx context.Context, generation Generation) error {
@@ -507,10 +653,12 @@ func operationName(g Generation) string {
 	return operation
 }
 
-func generationErrorType(callErr, recordErr error) string {
+func generationErrorType(callErr, mapErr, recordErr error) string {
 	switch {
 	case callErr != nil:
 		return "provider_call_error"
+	case mapErr != nil:
+		return "mapping_error"
 	case errors.Is(recordErr, errGenerationValidation):
 		return "validation_error"
 	case errors.Is(recordErr, errGenerationStore):

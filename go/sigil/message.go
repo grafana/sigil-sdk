@@ -1,6 +1,8 @@
 package sigil
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type Role string
 
@@ -78,5 +80,43 @@ func ToolResultPart(result ToolResult) Part {
 	return Part{
 		Kind:       PartKindToolResult,
 		ToolResult: &result,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Message-level constructors
+// ---------------------------------------------------------------------------
+
+// UserTextMessage creates a user message with a single text part.
+func UserTextMessage(text string) Message {
+	return Message{
+		Role:  RoleUser,
+		Parts: []Part{TextPart(text)},
+	}
+}
+
+// AssistantTextMessage creates an assistant message with a single text part.
+func AssistantTextMessage(text string) Message {
+	return Message{
+		Role:  RoleAssistant,
+		Parts: []Part{TextPart(text)},
+	}
+}
+
+// ToolResultMessage creates a tool message with a single tool-result part.
+// content is marshaled to JSON; pass a string, map, or struct.
+func ToolResultMessage(callID string, content any) Message {
+	var contentJSON json.RawMessage
+	if content != nil {
+		if data, err := json.Marshal(content); err == nil {
+			contentJSON = data
+		}
+	}
+	return Message{
+		Role: RoleTool,
+		Parts: []Part{ToolResultPart(ToolResult{
+			ToolCallID:  callID,
+			ContentJSON: contentJSON,
+		})},
 	}
 }

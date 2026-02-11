@@ -10,69 +10,49 @@ import (
 func ExampleClient_StartGeneration() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 
-	callCtx, recorder, err := client.StartGeneration(context.Background(), sigil.GenerationStart{
+	ctx, recorder := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-9b2f",
 		Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 	})
-	if err != nil {
-		panic(err)
-	}
+	defer recorder.End()
 
-	// Use callCtx for the provider request so the request is inside the generation span.
-	_ = callCtx
+	// Use ctx for the provider request so the request is inside the generation span.
+	_ = ctx
 
 	// Keep the provider response in normal local scope.
 	responseText := "Hi!"
 
-	generation := sigil.Generation{
-		Input: []sigil.Message{
-			{Role: sigil.RoleUser, Parts: []sigil.Part{sigil.TextPart("Hello")}},
-		},
-		Output: []sigil.Message{
-			{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(responseText)}},
-		},
-		Usage: sigil.TokenUsage{InputTokens: 120, OutputTokens: 42},
-	}
-
-	if err := recorder.End(generation, nil); err != nil {
-		panic(err)
-	}
+	recorder.SetResult(sigil.Generation{
+		Input:  []sigil.Message{sigil.UserTextMessage("Hello")},
+		Output: []sigil.Message{sigil.AssistantTextMessage(responseText)},
+		Usage:  sigil.TokenUsage{InputTokens: 120, OutputTokens: 42},
+	}, nil)
 }
 
-func ExampleClient_StartStreamingGeneration() {
+func ExampleClient_StartGeneration_streaming() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 
-	callCtx, recorder, err := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
+	ctx, recorder := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-stream",
 		Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 	})
-	if err != nil {
-		panic(err)
-	}
+	defer recorder.End()
 
-	_ = callCtx
+	_ = ctx
 
 	chunks := []string{"Hel", "lo", " ", "world"}
 	assistantText := strings.Join(chunks, "")
 
-	generation := sigil.Generation{
-		Input: []sigil.Message{
-			{Role: sigil.RoleUser, Parts: []sigil.Part{sigil.TextPart("Say hello")}},
-		},
-		Output: []sigil.Message{
-			{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(assistantText)}},
-		},
-	}
-
-	if err := recorder.End(generation, nil); err != nil {
-		panic(err)
-	}
+	recorder.SetResult(sigil.Generation{
+		Input:  []sigil.Message{sigil.UserTextMessage("Say hello")},
+		Output: []sigil.Message{sigil.AssistantTextMessage(assistantText)},
+	}, nil)
 }
 
 func ExampleClient_StartToolExecution() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 
-	callCtx, recorder, err := client.StartToolExecution(context.Background(), sigil.ToolExecutionStart{
+	ctx, recorder := client.StartToolExecution(context.Background(), sigil.ToolExecutionStart{
 		ToolName:        "weather",
 		ToolCallID:      "call_weather",
 		ToolType:        "function",
@@ -80,17 +60,13 @@ func ExampleClient_StartToolExecution() {
 		ConversationID:  "conv-tools",
 		IncludeContent:  true,
 	})
-	if err != nil {
-		panic(err)
-	}
+	defer recorder.End()
 
-	_ = callCtx
+	_ = ctx
 	result := map[string]any{"temp_c": 18}
 
-	if err := recorder.End(sigil.ToolExecutionEnd{
+	recorder.SetResult(sigil.ToolExecutionEnd{
 		Arguments: map[string]any{"city": "Paris"},
 		Result:    result,
-	}, nil); err != nil {
-		panic(err)
-	}
+	})
 }

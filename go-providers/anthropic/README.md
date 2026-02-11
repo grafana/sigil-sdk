@@ -1,66 +1,82 @@
 # Grafana Sigil Go Provider Helper: Anthropic
 
-This module maps Anthropic SDK request/response payloads into the typed Sigil core `Generation` model.
+This module maps Anthropic Messages SDK request/response payloads into the
+typed Sigil `Generation` model.
 
 ## Scope
+- One-liner wrappers:
+  - `Message(ctx, sigilClient, provider, req, opts...)`
+  - `MessageStream(ctx, sigilClient, provider, req, opts...)`
 - Request/response mapper:
   - `FromRequestResponse(req, resp, opts...)`
-- Streaming mapper:
+- Stream mapper:
   - `FromStream(req, summary, opts...)`
-- Includes typed artifacts for:
+- Typed artifacts:
   - `request`
   - `response`
   - `tools`
   - `provider_event` (stream events)
 
-## Request/Response Recording
+## SDK
+- Official SDK: `github.com/anthropics/anthropic-sdk-go`
+
+## Wrapper (one-liner)
 ```go
-callCtx, rec, err := client.StartGeneration(ctx, sigil.GenerationStart{
-	ConversationID: "conv-9b2f",
-	Model:    sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
-})
+resp, err := anthropic.Message(ctx, sigilClient, providerClient, req,
+	anthropic.WithConversationID("conv-1"),
+)
 if err != nil {
 	return err
 }
-
-resp, callErr := anthropicClient.Beta.Messages.New(callCtx, req)
-if callErr != nil {
-	return rec.End(sigil.Generation{}, callErr)
-}
-
-gen, mapErr := anthropic.FromRequestResponse(req, resp,
-	anthropic.WithConversationID("conv-9b2f"),
-	anthropic.WithTag("tenant", "t-123"),
-)
-
-if err := rec.End(gen, mapErr); err != nil {
-	return err
-}
+_ = resp.Content[0].Text
 ```
 
-## Streaming Recording
+## Defer Pattern (full control)
 ```go
-callCtx, rec, err := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-	ConversationID: "conv-stream",
-	Model:    sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+	ConversationID: "conv-9b2f",
+	Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
+defer rec.End()
+
+resp, err := anthropicClient.Beta.Messages.New(ctx, req)
 if err != nil {
+	rec.SetCallError(err)
 	return err
 }
 
-stream, callErr := anthropicClient.Beta.Messages.NewStreaming(callCtx, req)
-if callErr != nil {
-	return rec.End(sigil.Generation{}, callErr)
+rec.SetResult(anthropic.FromRequestResponse(req, resp))
+```
+
+## Streaming Defer Pattern
+```go
+ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+	Model: sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+})
+defer rec.End()
+
+stream := anthropicClient.Beta.Messages.NewStreaming(ctx, req)
+defer stream.Close()
+
+summary := anthropic.StreamSummary{}
+for stream.Next() {
+	event := stream.Current()
+	summary.Events = append(summary.Events, event)
+	// process event here
 }
-
-summary := collectAnthropicStream(stream) // user code: gather final response + events
-
-gen, mapErr := anthropic.FromStream(req, summary,
-	anthropic.WithConversationID("conv-stream"),
-)
-// gen.Input and gen.Output are both populated by the mapper.
-
-if err := rec.End(gen, mapErr); err != nil {
+if err := stream.Err(); err != nil {
+	rec.SetCallError(err)
 	return err
 }
+
+rec.SetResult(anthropic.FromStream(req, summary))
+```
+
+## Live SDK examples
+Real end-to-end examples using the actual Anthropic SDK (no fake provider calls) are in:
+- `sdk_example_test.go`
+
+Run them with:
+```bash
+SIGIL_RUN_LIVE_EXAMPLES=1 ANTHROPIC_API_KEY=... go test -run Example_withSigil -v
 ```
