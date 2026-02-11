@@ -20,6 +20,8 @@ type ToolDefinition struct {
 type Generation struct {
 	ID           string            `json:"id,omitempty"`
 	ThreadID     string            `json:"thread_id,omitempty"`
+	TraceID      string            `json:"trace_id,omitempty"`
+	SpanID       string            `json:"span_id,omitempty"`
 	Model        ModelRef          `json:"model"`
 	SystemPrompt string            `json:"system_prompt,omitempty"`
 	Messages     []Message         `json:"messages,omitempty"`
@@ -37,6 +39,8 @@ type Generation struct {
 type GenerationStart struct {
 	ID           string
 	ThreadID     string
+	TraceID      string
+	SpanID       string
 	Model        ModelRef
 	SystemPrompt string
 	Messages     []Message
@@ -48,6 +52,8 @@ type GenerationStart struct {
 
 type GenerationRef struct {
 	GenerationID string        `json:"generation_id"`
+	TraceID      string        `json:"trace_id,omitempty"`
+	SpanID       string        `json:"span_id,omitempty"`
 	ArtifactRefs []ArtifactRef `json:"artifact_refs,omitempty"`
 }
 
@@ -59,6 +65,8 @@ func (s GenerationStart) toGeneration() Generation {
 	return Generation{
 		ID:           s.ID,
 		ThreadID:     s.ThreadID,
+		TraceID:      s.TraceID,
+		SpanID:       s.SpanID,
 		Model:        s.Model,
 		SystemPrompt: s.SystemPrompt,
 		Messages:     cloneMessages(s.Messages),
@@ -73,6 +81,8 @@ func cloneGeneration(in Generation) Generation {
 	return Generation{
 		ID:           in.ID,
 		ThreadID:     in.ThreadID,
+		TraceID:      in.TraceID,
+		SpanID:       in.SpanID,
 		Model:        in.Model,
 		SystemPrompt: in.SystemPrompt,
 		Messages:     cloneMessages(in.Messages),

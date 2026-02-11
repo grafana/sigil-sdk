@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestRecordGenerationExternalizesArtifacts(t *testing.T) {
@@ -173,5 +175,148 @@ func TestFinishMarksCallError(t *testing.T) {
 
 	if _, err := handle.Finish(context.Background(), errors.New("provider unavailable")); err != nil {
 		t.Fatalf("finish generation: %v", err)
+	}
+}
+
+func TestRecordGenerationAutoTraceSpanLink(t *testing.T) {
+	client := NewClient(DefaultConfig())
+
+	traceID, err := trace.TraceIDFromHex("00112233445566778899aabbccddeeff")
+	if err != nil {
+		t.Fatalf("trace id from hex: %v", err)
+	}
+	spanID, err := trace.SpanIDFromHex("0011223344556677")
+	if err != nil {
+		t.Fatalf("span id from hex: %v", err)
+	}
+
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
+
+	ref, err := client.RecordGeneration(ctx, Generation{
+		ID:       "gen_trace_link",
+		ThreadID: "thread-4",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+		Messages: []Message{
+			{
+				Role:  RoleUser,
+				Parts: []Part{TextPart("hello")},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record generation: %v", err)
+	}
+
+	if ref.TraceID != traceID.String() {
+		t.Fatalf("expected trace id %q, got %q", traceID.String(), ref.TraceID)
+	}
+	if ref.SpanID != spanID.String() {
+		t.Fatalf("expected span id %q, got %q", spanID.String(), ref.SpanID)
+	}
+}
+
+func TestRecordGenerationDoesNotOverrideTraceSpan(t *testing.T) {
+	client := NewClient(DefaultConfig())
+
+	traceID, _ := trace.TraceIDFromHex("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	spanID, _ := trace.SpanIDFromHex("bbbbbbbbbbbbbbbb")
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID,
+		SpanID:  spanID,
+	}))
+
+	ref, err := client.RecordGeneration(ctx, Generation{
+		ID:       "gen_manual_trace",
+		ThreadID: "thread-5",
+		TraceID:  "manual-trace-id",
+		SpanID:   "manual-span-id",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+		Messages: []Message{
+			{
+				Role:  RoleUser,
+				Parts: []Part{TextPart("hello")},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record generation: %v", err)
+	}
+
+	if ref.TraceID != "manual-trace-id" {
+		t.Fatalf("expected manual trace id, got %q", ref.TraceID)
+	}
+	if ref.SpanID != "manual-span-id" {
+		t.Fatalf("expected manual span id, got %q", ref.SpanID)
+	}
+}
+
+func TestLifecyclePreservesTraceSpanFromStartContext(t *testing.T) {
+	client := NewClient(DefaultConfig())
+
+	traceID, _ := trace.TraceIDFromHex("1234567890abcdef1234567890abcdef")
+	spanID, _ := trace.SpanIDFromHex("0123456789abcdef")
+	startCtx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID,
+		SpanID:  spanID,
+	}))
+
+	handle, _, err := client.StartGeneration(startCtx, GenerationStart{
+		ID:       "gen_lifecycle_trace",
+		ThreadID: "thread-6",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+		Messages: []Message{
+			{
+				Role:  RoleUser,
+				Parts: []Part{TextPart("question")},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("start generation: %v", err)
+	}
+
+	handle.SetGeneration(Generation{
+		ID:       "gen_lifecycle_trace",
+		ThreadID: "thread-6",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+		Messages: []Message{
+			{
+				Role:  RoleUser,
+				Parts: []Part{TextPart("question")},
+			},
+			{
+				Role:  RoleAssistant,
+				Parts: []Part{TextPart("answer")},
+			},
+		},
+	})
+
+	ref, err := handle.Finish(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("finish generation: %v", err)
+	}
+
+	if ref.TraceID != traceID.String() {
+		t.Fatalf("expected trace id %q, got %q", traceID.String(), ref.TraceID)
+	}
+	if ref.SpanID != spanID.String() {
+		t.Fatalf("expected span id %q, got %q", spanID.String(), ref.SpanID)
 	}
 }

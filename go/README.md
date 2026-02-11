@@ -21,6 +21,8 @@ Typed core SDK for normalized generation recording.
   - `StartGeneration(ctx, start)`
   - `(*GenerationHandle).SetGeneration(g)`
   - `(*GenerationHandle).Finish(ctx, callErr)`
+- Trace linking:
+  - `TraceID`/`SpanID` are auto-linked from the active OTel span in `ctx` when recording.
 
 ## Example
 ```go

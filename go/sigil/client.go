@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Config struct {
@@ -71,6 +73,7 @@ func (c *Client) RecordGeneration(ctx context.Context, generation Generation) (G
 	if g.CompletedAt.IsZero() {
 		g.CompletedAt = c.now().UTC()
 	}
+	c.applyTraceContext(ctx, &g)
 
 	g.Usage = g.Usage.Normalize()
 
@@ -85,6 +88,8 @@ func (c *Client) RecordGeneration(ctx context.Context, generation Generation) (G
 
 	return GenerationRef{
 		GenerationID: g.ID,
+		TraceID:      g.TraceID,
+		SpanID:       g.SpanID,
 		ArtifactRefs: artifactRefs,
 	}, nil
 }
@@ -97,6 +102,7 @@ func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (*G
 	if g.StartedAt.IsZero() {
 		g.StartedAt = c.now().UTC()
 	}
+	c.applyTraceContext(ctx, &g)
 
 	if err := ValidateGeneration(g); err != nil {
 		return nil, nil, err
@@ -127,6 +133,12 @@ func (h *GenerationHandle) SetGeneration(g Generation) {
 	}
 	if next.ThreadID == "" {
 		next.ThreadID = h.generation.ThreadID
+	}
+	if next.TraceID == "" {
+		next.TraceID = h.generation.TraceID
+	}
+	if next.SpanID == "" {
+		next.SpanID = h.generation.SpanID
 	}
 
 	h.generation = next
@@ -159,6 +171,24 @@ func (h *GenerationHandle) Finish(ctx context.Context, callErr error) (Generatio
 
 func (c *Client) now() time.Time {
 	return c.config.Now()
+}
+
+func (c *Client) applyTraceContext(ctx context.Context, generation *Generation) {
+	if generation == nil || ctx == nil {
+		return
+	}
+
+	spanContext := trace.SpanContextFromContext(ctx)
+	if !spanContext.IsValid() {
+		return
+	}
+
+	if generation.TraceID == "" {
+		generation.TraceID = spanContext.TraceID().String()
+	}
+	if generation.SpanID == "" {
+		generation.SpanID = spanContext.SpanID().String()
+	}
 }
 
 func (c *Client) externalizeArtifacts(ctx context.Context, artifacts []Artifact) ([]ArtifactRef, error) {
