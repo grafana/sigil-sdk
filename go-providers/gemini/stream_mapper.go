@@ -9,10 +9,12 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
+// StreamSummary captures Gemini streamed responses.
 type StreamSummary struct {
 	Responses []*genai.GenerateContentResponse
 }
 
+// FromStream maps Gemini streaming output to sigil.Generation.
 func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Option) (sigil.Generation, error) {
 	if strings.TrimSpace(req.Model) == "" {
 		return sigil.Generation{}, errors.New("request model is required")

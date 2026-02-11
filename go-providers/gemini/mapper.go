@@ -10,12 +10,14 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
+// GenerateContentRequest wraps Gemini generate-content arguments in one mapper input type.
 type GenerateContentRequest struct {
 	Model    string                       `json:"model"`
 	Contents []*genai.Content             `json:"contents,omitempty"`
 	Config   *genai.GenerateContentConfig `json:"config,omitempty"`
 }
 
+// FromRequestResponse maps a Gemini request/response pair to sigil.Generation.
 func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContentResponse, opts ...Option) (sigil.Generation, error) {
 	if resp == nil {
 		return sigil.Generation{}, errors.New("response is required")

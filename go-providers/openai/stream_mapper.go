@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
+// StreamSummary captures OpenAI stream chunks and an optional final response.
 type StreamSummary struct {
 	Chunks        []osdk.ChatCompletionChunk
 	FinalResponse *osdk.ChatCompletion
@@ -20,6 +21,7 @@ type streamToolCall struct {
 	arguments strings.Builder
 }
 
+// FromStream maps OpenAI streaming output to sigil.Generation.
 func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ...Option) (sigil.Generation, error) {
 	if summary.FinalResponse != nil {
 		generation, err := FromRequestResponse(req, summary.FinalResponse, opts...)

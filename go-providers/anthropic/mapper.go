@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
+// FromRequestResponse maps an Anthropic request/response pair to sigil.Generation.
 func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, opts ...Option) (sigil.Generation, error) {
 	if resp == nil {
 		return sigil.Generation{}, errors.New("response is required")

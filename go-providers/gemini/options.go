@@ -1,5 +1,6 @@
 package gemini
 
+// Option configures Gemini mapper behavior.
 type Option func(*mapperOptions)
 
 type mapperOptions struct {
@@ -32,18 +33,21 @@ func applyOptions(options []Option) mapperOptions {
 	return out
 }
 
+// WithProviderName overrides the provider name stored in Generation.Model.Provider.
 func WithProviderName(provider string) Option {
 	return func(options *mapperOptions) {
 		options.providerName = provider
 	}
 }
 
+// WithThreadID sets Generation.ThreadID.
 func WithThreadID(threadID string) Option {
 	return func(options *mapperOptions) {
 		options.threadID = threadID
 	}
 }
 
+// WithTags merges all provided tags into Generation.Tags.
 func WithTags(tags map[string]string) Option {
 	return func(options *mapperOptions) {
 		if len(tags) == 0 {
@@ -58,6 +62,7 @@ func WithTags(tags map[string]string) Option {
 	}
 }
 
+// WithTag sets one key/value tag in Generation.Tags.
 func WithTag(key, value string) Option {
 	return func(options *mapperOptions) {
 		if options.tags == nil {
@@ -67,6 +72,7 @@ func WithTag(key, value string) Option {
 	}
 }
 
+// WithMetadata merges all provided values into Generation.Metadata.
 func WithMetadata(metadata map[string]any) Option {
 	return func(options *mapperOptions) {
 		if len(metadata) == 0 {
@@ -81,24 +87,28 @@ func WithMetadata(metadata map[string]any) Option {
 	}
 }
 
+// WithoutRequestArtifact disables request artifact emission.
 func WithoutRequestArtifact() Option {
 	return func(options *mapperOptions) {
 		options.includeRequestArtifact = false
 	}
 }
 
+// WithoutResponseArtifact disables response artifact emission.
 func WithoutResponseArtifact() Option {
 	return func(options *mapperOptions) {
 		options.includeResponseArtifact = false
 	}
 }
 
+// WithoutToolsArtifact disables tools artifact emission.
 func WithoutToolsArtifact() Option {
 	return func(options *mapperOptions) {
 		options.includeToolsArtifact = false
 	}
 }
 
+// WithoutEventsArtifact disables stream events artifact emission.
 func WithoutEventsArtifact() Option {
 	return func(options *mapperOptions) {
 		options.includeEventsArtifact = false

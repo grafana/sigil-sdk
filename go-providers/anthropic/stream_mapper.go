@@ -7,11 +7,13 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
+// StreamSummary captures Anthropic stream events and an optional final message.
 type StreamSummary struct {
 	Events       []asdk.BetaRawMessageStreamEventUnion
 	FinalMessage *asdk.BetaMessage
 }
 
+// FromStream maps Anthropic streaming output to sigil.Generation.
 func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Option) (sigil.Generation, error) {
 	if summary.FinalMessage != nil {
 		generation, err := FromRequestResponse(req, summary.FinalMessage, opts...)
