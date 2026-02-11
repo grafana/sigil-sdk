@@ -16,7 +16,7 @@ This module maps Anthropic SDK request/response payloads into the typed Sigil co
 ## Request/Response Recording
 ```go
 callCtx, rec, err := client.StartGeneration(ctx, sigil.GenerationStart{
-	ThreadID: "thread-9b2f",
+	ConversationID: "conv-9b2f",
 	Model:    sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
 if err != nil {
@@ -29,7 +29,7 @@ if callErr != nil {
 }
 
 gen, mapErr := anthropic.FromRequestResponse(req, resp,
-	anthropic.WithThreadID("thread-9b2f"),
+	anthropic.WithConversationID("conv-9b2f"),
 	anthropic.WithTag("tenant", "t-123"),
 )
 
@@ -41,7 +41,7 @@ if err := rec.End(gen, mapErr); err != nil {
 ## Streaming Recording
 ```go
 callCtx, rec, err := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-	ThreadID: "thread-stream",
+	ConversationID: "conv-stream",
 	Model:    sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
 if err != nil {
@@ -56,7 +56,7 @@ if callErr != nil {
 summary := collectAnthropicStream(stream) // user code: gather final response + events
 
 gen, mapErr := anthropic.FromStream(req, summary,
-	anthropic.WithThreadID("thread-stream"),
+	anthropic.WithConversationID("conv-stream"),
 )
 // gen.Input and gen.Output are both populated by the mapper.
 

@@ -4,6 +4,8 @@
 // start returns a context for your provider call and End closes the GenAI span
 // after you map the final normalized Generation with distinct Input and Output messages.
 //
+// Tool calls can be wrapped with Client.StartToolExecution + ToolExecutionRecorder.End.
+//
 // Linking is bi-directional:
 //   - Generation.TraceID/SpanID point to the created span.
 //   - The span includes the generation ID in attribute "sigil.generation.id".

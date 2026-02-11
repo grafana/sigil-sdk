@@ -4,10 +4,10 @@ package openai
 type Option func(*mapperOptions)
 
 type mapperOptions struct {
-	providerName string
-	threadID     string
-	tags         map[string]string
-	metadata     map[string]any
+	providerName   string
+	conversationID string
+	tags           map[string]string
+	metadata       map[string]any
 
 	includeRequestArtifact  bool
 	includeResponseArtifact bool
@@ -40,10 +40,10 @@ func WithProviderName(provider string) Option {
 	}
 }
 
-// WithThreadID sets Generation.ThreadID.
-func WithThreadID(threadID string) Option {
+// WithConversationID sets Generation.ConversationID.
+func WithConversationID(conversationID string) Option {
 	return func(options *mapperOptions) {
-		options.threadID = threadID
+		options.conversationID = conversationID
 	}
 }
 

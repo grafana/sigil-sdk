@@ -79,3 +79,31 @@ func TestValidateGenerationRolePartCompatibility(t *testing.T) {
 		}
 	})
 }
+
+func TestValidateGenerationAllowsConversationAndResponseFields(t *testing.T) {
+	g := Generation{
+		ConversationID: "conv-1",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+		ResponseID:    "resp-1",
+		ResponseModel: "claude-sonnet-4-5-20260201",
+		Input: []Message{
+			{
+				Role:  RoleUser,
+				Parts: []Part{TextPart("hello")},
+			},
+		},
+		Output: []Message{
+			{
+				Role:  RoleAssistant,
+				Parts: []Part{TextPart("hi")},
+			},
+		},
+	}
+
+	if err := ValidateGeneration(g); err != nil {
+		t.Fatalf("expected valid generation, got %v", err)
+	}
+}

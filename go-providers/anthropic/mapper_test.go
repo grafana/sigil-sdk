@@ -26,7 +26,7 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 
 	generation, err := FromRequestResponse(req, resp,
-		WithThreadID("thread-9b2f"),
+		WithConversationID("conv-9b2f"),
 		WithTag("tenant", "t-123"),
 	)
 	if err != nil {
@@ -39,8 +39,14 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Model.Name != "claude-sonnet-4-5" {
 		t.Fatalf("expected model claude-sonnet-4-5, got %q", generation.Model.Name)
 	}
-	if generation.ThreadID != "thread-9b2f" {
-		t.Fatalf("expected thread id thread-9b2f, got %q", generation.ThreadID)
+	if generation.ConversationID != "conv-9b2f" {
+		t.Fatalf("expected conversation id conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.ResponseID != "msg_1" {
+		t.Fatalf("expected response id msg_1, got %q", generation.ResponseID)
+	}
+	if generation.ResponseModel != "claude-sonnet-4-5" {
+		t.Fatalf("expected response model claude-sonnet-4-5, got %q", generation.ResponseModel)
 	}
 	if generation.SystemPrompt != "Be precise." {
 		t.Fatalf("unexpected system prompt: %q", generation.SystemPrompt)
@@ -79,6 +85,7 @@ func TestFromStream(t *testing.T) {
 			{
 				Type: "message_start",
 				Message: asdk.BetaMessage{
+					ID:    "msg_stream_1",
 					Model: asdk.Model("claude-sonnet-4-5"),
 				},
 			},
@@ -120,16 +127,22 @@ func TestFromStream(t *testing.T) {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithThreadID("thread-stream"))
+	generation, err := FromStream(req, summary, WithConversationID("conv-stream"))
 	if err != nil {
 		t.Fatalf("from stream: %v", err)
 	}
 
-	if generation.ThreadID != "thread-stream" {
-		t.Fatalf("expected thread-stream, got %q", generation.ThreadID)
+	if generation.ConversationID != "conv-stream" {
+		t.Fatalf("expected conv-stream, got %q", generation.ConversationID)
+	}
+	if generation.ResponseID != "msg_stream_1" {
+		t.Fatalf("expected response id msg_stream_1, got %q", generation.ResponseID)
 	}
 	if generation.StopReason != "end_turn" {
 		t.Fatalf("expected end_turn stop reason, got %q", generation.StopReason)
+	}
+	if generation.ResponseModel != "claude-sonnet-4-5" {
+		t.Fatalf("expected response model claude-sonnet-4-5, got %q", generation.ResponseModel)
 	}
 	if generation.Usage.TotalTokens != 105 {
 		t.Fatalf("expected total tokens 105, got %d", generation.Usage.TotalTokens)

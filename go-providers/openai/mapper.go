@@ -44,23 +44,26 @@ func FromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatComple
 		artifacts = append(artifacts, artifact)
 	}
 
-	modelName := string(req.Model)
-	if resp.Model != "" {
-		modelName = resp.Model
+	requestModel := string(req.Model)
+	responseModel := strings.TrimSpace(resp.Model)
+	if responseModel == "" {
+		responseModel = requestModel
 	}
 
 	generation := sigil.Generation{
-		ThreadID:     options.threadID,
-		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
-		SystemPrompt: systemPrompt,
-		Input:        input,
-		Output:       output,
-		Tools:        mapTools(req.Tools),
-		Usage:        mapUsage(resp.Usage),
-		StopReason:   firstFinishReason(resp.Choices),
-		Tags:         cloneStringMap(options.tags),
-		Metadata:     cloneAnyMap(options.metadata),
-		Artifacts:    artifacts,
+		ConversationID: options.conversationID,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: requestModel},
+		ResponseID:     resp.ID,
+		ResponseModel:  responseModel,
+		SystemPrompt:   systemPrompt,
+		Input:          input,
+		Output:         output,
+		Tools:          mapTools(req.Tools),
+		Usage:          mapUsage(resp.Usage),
+		StopReason:     firstFinishReason(resp.Choices),
+		Tags:           cloneStringMap(options.tags),
+		Metadata:       cloneAnyMap(options.metadata),
+		Artifacts:      artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {

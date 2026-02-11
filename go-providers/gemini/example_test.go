@@ -18,7 +18,7 @@ func ExampleFromRequestResponse() {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp, WithThreadID("thread-1"))
+	generation, err := FromRequestResponse(req, resp, WithConversationID("conv-1"))
 	if err != nil {
 		panic(err)
 	}
@@ -47,7 +47,7 @@ func ExampleFromStream() {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithThreadID("thread-2"))
+	generation, err := FromStream(req, summary, WithConversationID("conv-2"))
 	if err != nil {
 		panic(err)
 	}

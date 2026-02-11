@@ -11,8 +11,8 @@ func ExampleClient_StartGeneration() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 
 	callCtx, recorder, err := client.StartGeneration(context.Background(), sigil.GenerationStart{
-		ThreadID: "thread-9b2f",
-		Model:    sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+		ConversationID: "conv-9b2f",
+		Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 	})
 	if err != nil {
 		panic(err)
@@ -43,8 +43,8 @@ func ExampleClient_StartStreamingGeneration() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 
 	callCtx, recorder, err := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
-		ThreadID: "thread-stream",
-		Model:    sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
+		ConversationID: "conv-stream",
+		Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 	})
 	if err != nil {
 		panic(err)
@@ -65,6 +65,32 @@ func ExampleClient_StartStreamingGeneration() {
 	}
 
 	if err := recorder.End(generation, nil); err != nil {
+		panic(err)
+	}
+}
+
+func ExampleClient_StartToolExecution() {
+	client := sigil.NewClient(sigil.DefaultConfig())
+
+	callCtx, recorder, err := client.StartToolExecution(context.Background(), sigil.ToolExecutionStart{
+		ToolName:        "weather",
+		ToolCallID:      "call_weather",
+		ToolType:        "function",
+		ToolDescription: "Get weather for a city",
+		ConversationID:  "conv-tools",
+		IncludeContent:  true,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_ = callCtx
+	result := map[string]any{"temp_c": 18}
+
+	if err := recorder.End(sigil.ToolExecutionEnd{
+		Arguments: map[string]any{"city": "Paris"},
+		Result:    result,
+	}, nil); err != nil {
 		panic(err)
 	}
 }

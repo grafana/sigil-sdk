@@ -23,6 +23,9 @@ Typed core SDK for normalized generation recording.
 - `StartStreamingGeneration(ctx, start)` returns:
   - `callCtx`: use this context for your streaming provider call.
   - `recorder`: call `recorder.End(generation, callErr)` once when done.
+- `StartToolExecution(ctx, start)` returns:
+  - `callCtx`: use this context for your tool execution call.
+  - `recorder`: call `recorder.End(toolEnd, execErr)` once when done.
 - `End` sets GenAI attributes, persists artifacts, sets span status, and closes the span.
 - `Generation` separates `Input` and `Output` message lists.
 - Trace linking is bi-directional:
@@ -35,8 +38,8 @@ Typed core SDK for normalized generation recording.
 client := sigil.NewClient(sigil.DefaultConfig())
 
 callCtx, rec, err := client.StartGeneration(ctx, sigil.GenerationStart{
-	ThreadID: "thread-9b2f",
-	Model:    sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+	ConversationID: "conv-9b2f",
+	Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
 if err != nil {
 	return err
@@ -62,8 +65,8 @@ if err := rec.End(gen, callErr); err != nil {
 ## Streaming Example
 ```go
 callCtx, rec, err := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-	ThreadID: "thread-stream",
-	Model:    sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
+	ConversationID: "conv-stream",
+	Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 })
 if err != nil {
 	return err
@@ -90,6 +93,30 @@ gen := sigil.Generation{
 }
 
 if err := rec.End(gen, streamErr); err != nil {
+	return err
+}
+```
+
+## Tool Execution Example
+```go
+callCtx, rec, err := client.StartToolExecution(ctx, sigil.ToolExecutionStart{
+	ToolName:        "weather",
+	ToolCallID:      "call_weather",
+	ToolType:        "function",
+	ToolDescription: "Get weather",
+	ConversationID:  "conv-tools",
+	IncludeContent:  true, // enables args/result attributes
+})
+if err != nil {
+	return err
+}
+
+result, execErr := weatherTool.Run(callCtx, "Paris")
+
+if err := rec.End(sigil.ToolExecutionEnd{
+	Arguments: map[string]any{"city": "Paris"},
+	Result:    result,
+}, execErr); err != nil {
 	return err
 }
 ```

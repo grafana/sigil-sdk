@@ -40,6 +40,7 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 	output := make([]sigil.Message, 0, 1)
 
 	modelName := string(req.Model)
+	responseID := ""
 	usage := sigil.TokenUsage{}
 	stopReason := ""
 	var text strings.Builder
@@ -49,6 +50,9 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 
 	for i := range summary.Chunks {
 		chunk := summary.Chunks[i]
+		if chunk.ID != "" {
+			responseID = chunk.ID
+		}
 		if chunk.Model != "" {
 			modelName = chunk.Model
 		}
@@ -134,17 +138,19 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 	}
 
 	generation := sigil.Generation{
-		ThreadID:     options.threadID,
-		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
-		SystemPrompt: systemPrompt,
-		Input:        input,
-		Output:       output,
-		Tools:        mapTools(req.Tools),
-		Usage:        usage,
-		StopReason:   stopReason,
-		Tags:         cloneStringMap(options.tags),
-		Metadata:     cloneAnyMap(options.metadata),
-		Artifacts:    artifacts,
+		ConversationID: options.conversationID,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
+		ResponseID:     responseID,
+		ResponseModel:  modelName,
+		SystemPrompt:   systemPrompt,
+		Input:          input,
+		Output:         output,
+		Tools:          mapTools(req.Tools),
+		Usage:          usage,
+		StopReason:     stopReason,
+		Tags:           cloneStringMap(options.tags),
+		Metadata:       cloneAnyMap(options.metadata),
+		Artifacts:      artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {

@@ -43,23 +43,26 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 		artifacts = append(artifacts, artifact)
 	}
 
-	modelName := string(req.Model)
-	if resp.Model != "" {
-		modelName = string(resp.Model)
+	requestModel := string(req.Model)
+	responseModel := string(resp.Model)
+	if responseModel == "" {
+		responseModel = requestModel
 	}
 
 	generation := sigil.Generation{
-		ThreadID:     options.threadID,
-		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
-		SystemPrompt: mapSystemPrompt(req.System),
-		Input:        input,
-		Output:       output,
-		Tools:        mapTools(req.Tools),
-		Usage:        mapUsage(resp.Usage),
-		StopReason:   string(resp.StopReason),
-		Tags:         cloneStringMap(options.tags),
-		Metadata:     cloneAnyMap(options.metadata),
-		Artifacts:    artifacts,
+		ConversationID: options.conversationID,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: requestModel},
+		ResponseID:     resp.ID,
+		ResponseModel:  responseModel,
+		SystemPrompt:   mapSystemPrompt(req.System),
+		Input:          input,
+		Output:         output,
+		Tools:          mapTools(req.Tools),
+		Usage:          mapUsage(resp.Usage),
+		StopReason:     string(resp.StopReason),
+		Tags:           cloneStringMap(options.tags),
+		Metadata:       cloneAnyMap(options.metadata),
+		Artifacts:      artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {

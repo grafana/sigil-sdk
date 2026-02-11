@@ -62,17 +62,19 @@ func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContent
 	}
 
 	generation := sigil.Generation{
-		ThreadID:     options.threadID,
-		Model:        sigil.ModelRef{Provider: options.providerName, Name: req.Model},
-		SystemPrompt: extractSystemPrompt(req.Config),
-		Input:        input,
-		Output:       output,
-		Tools:        mapTools(req.Config),
-		Usage:        mapUsage(resp.UsageMetadata),
-		StopReason:   stopReason,
-		Tags:         cloneStringMap(options.tags),
-		Metadata:     metadata,
-		Artifacts:    artifacts,
+		ConversationID: options.conversationID,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
+		ResponseID:     resp.ResponseID,
+		ResponseModel:  resp.ModelVersion,
+		SystemPrompt:   extractSystemPrompt(req.Config),
+		Input:          input,
+		Output:         output,
+		Tools:          mapTools(req.Config),
+		Usage:          mapUsage(resp.UsageMetadata),
+		StopReason:     stopReason,
+		Tags:           cloneStringMap(options.tags),
+		Metadata:       metadata,
+		Artifacts:      artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {

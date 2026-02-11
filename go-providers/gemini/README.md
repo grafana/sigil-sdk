@@ -20,7 +20,7 @@ typed Sigil `Generation` model.
 ## Request/Response Recording
 ```go
 callCtx, rec, err := client.StartGeneration(ctx, sigil.GenerationStart{
-	ThreadID: "thread-9b2f",
+	ConversationID: "conv-9b2f",
 	Model:    sigil.ModelRef{Provider: "gemini", Name: req.Model},
 })
 if err != nil {
@@ -41,7 +41,7 @@ if err := rec.End(gen, mapErr); err != nil {
 ## Streaming Recording
 ```go
 callCtx, rec, err := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-	ThreadID: "thread-stream",
+	ConversationID: "conv-stream",
 	Model:    sigil.ModelRef{Provider: "gemini", Name: req.Model},
 })
 if err != nil {

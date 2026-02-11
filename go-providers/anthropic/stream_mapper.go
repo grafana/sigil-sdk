@@ -34,10 +34,14 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 	usage := sigil.TokenUsage{}
 	stopReason := ""
 	modelName := string(req.Model)
+	responseID := ""
 
 	for _, event := range summary.Events {
 		switch event.Type {
 		case "message_start":
+			if event.Message.ID != "" {
+				responseID = event.Message.ID
+			}
 			if event.Message.Model != "" {
 				modelName = string(event.Message.Model)
 			}
@@ -105,17 +109,19 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 	}
 
 	generation := sigil.Generation{
-		ThreadID:     options.threadID,
-		Model:        sigil.ModelRef{Provider: options.providerName, Name: modelName},
-		SystemPrompt: mapSystemPrompt(req.System),
-		Input:        input,
-		Output:       output,
-		Tools:        mapTools(req.Tools),
-		Usage:        usage,
-		StopReason:   stopReason,
-		Tags:         cloneStringMap(options.tags),
-		Metadata:     cloneAnyMap(options.metadata),
-		Artifacts:    artifacts,
+		ConversationID: options.conversationID,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
+		ResponseID:     responseID,
+		ResponseModel:  modelName,
+		SystemPrompt:   mapSystemPrompt(req.System),
+		Input:          input,
+		Output:         output,
+		Tools:          mapTools(req.Tools),
+		Usage:          usage,
+		StopReason:     stopReason,
+		Tags:           cloneStringMap(options.tags),
+		Metadata:       cloneAnyMap(options.metadata),
+		Artifacts:      artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {

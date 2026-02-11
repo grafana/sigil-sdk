@@ -42,6 +42,7 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 
 	resp := &genai.GenerateContentResponse{
+		ResponseID:   "resp_1",
 		ModelVersion: "gemini-2.5-pro-001",
 		Candidates: []*genai.Candidate{
 			{
@@ -68,7 +69,7 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 
 	generation, err := FromRequestResponse(req, resp,
-		WithThreadID("thread-9b2f"),
+		WithConversationID("conv-9b2f"),
 		WithTag("tenant", "t-123"),
 	)
 	if err != nil {
@@ -81,8 +82,14 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Model.Name != "gemini-2.5-pro" {
 		t.Fatalf("expected model gemini-2.5-pro, got %q", generation.Model.Name)
 	}
-	if generation.ThreadID != "thread-9b2f" {
-		t.Fatalf("expected thread-9b2f, got %q", generation.ThreadID)
+	if generation.ConversationID != "conv-9b2f" {
+		t.Fatalf("expected conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.ResponseID != "resp_1" {
+		t.Fatalf("expected response id resp_1, got %q", generation.ResponseID)
+	}
+	if generation.ResponseModel != "gemini-2.5-pro-001" {
+		t.Fatalf("expected response model gemini-2.5-pro-001, got %q", generation.ResponseModel)
 	}
 	if generation.SystemPrompt != "Be concise." {
 		t.Fatalf("unexpected system prompt: %q", generation.SystemPrompt)
@@ -137,6 +144,8 @@ func TestFromStream(t *testing.T) {
 	summary := StreamSummary{
 		Responses: []*genai.GenerateContentResponse{
 			{
+				ResponseID:   "resp_stream_1",
+				ModelVersion: "gemini-2.5-pro-001",
 				Candidates: []*genai.Candidate{
 					{
 						Content: genai.NewContentFromParts([]*genai.Part{
@@ -152,6 +161,8 @@ func TestFromStream(t *testing.T) {
 				},
 			},
 			{
+				ResponseID:   "resp_stream_2",
+				ModelVersion: "gemini-2.5-pro-001",
 				Candidates: []*genai.Candidate{
 					{
 						FinishReason: genai.FinishReasonStop,
@@ -167,16 +178,22 @@ func TestFromStream(t *testing.T) {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithThreadID("thread-stream"))
+	generation, err := FromStream(req, summary, WithConversationID("conv-stream"))
 	if err != nil {
 		t.Fatalf("from stream: %v", err)
 	}
 
-	if generation.ThreadID != "thread-stream" {
-		t.Fatalf("expected thread-stream, got %q", generation.ThreadID)
+	if generation.ConversationID != "conv-stream" {
+		t.Fatalf("expected conv-stream, got %q", generation.ConversationID)
 	}
 	if generation.StopReason != "STOP" {
 		t.Fatalf("expected stop reason STOP, got %q", generation.StopReason)
+	}
+	if generation.ResponseID != "resp_stream_2" {
+		t.Fatalf("expected response id resp_stream_2, got %q", generation.ResponseID)
+	}
+	if generation.ResponseModel != "gemini-2.5-pro-001" {
+		t.Fatalf("expected response model gemini-2.5-pro-001, got %q", generation.ResponseModel)
 	}
 	if generation.Usage.TotalTokens != 26 {
 		t.Fatalf("expected total tokens 26, got %d", generation.Usage.TotalTokens)

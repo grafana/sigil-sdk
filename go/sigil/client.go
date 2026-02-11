@@ -2,6 +2,7 @@ package sigil
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,14 +32,31 @@ type Config struct {
 }
 
 const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
-const spanAttrGenerationID = "sigil.generation.id"
-const spanAttrGenerationMode = "sigil.generation.mode"
-
-type generationMode string
-
 const (
-	generationModeSync   generationMode = "generation"
-	generationModeStream generationMode = "streaming_generation"
+	spanAttrGenerationID      = "sigil.generation.id"
+	spanAttrConversationID    = "gen_ai.conversation.id"
+	spanAttrErrorType         = "error.type"
+	spanAttrOperationName     = "gen_ai.operation.name"
+	spanAttrProviderName      = "gen_ai.provider.name"
+	spanAttrRequestModel      = "gen_ai.request.model"
+	spanAttrResponseID        = "gen_ai.response.id"
+	spanAttrResponseModel     = "gen_ai.response.model"
+	spanAttrFinishReasons     = "gen_ai.response.finish_reasons"
+	spanAttrInputTokens       = "gen_ai.usage.input_tokens"
+	spanAttrOutputTokens      = "gen_ai.usage.output_tokens"
+	spanAttrCacheReadTokens   = "gen_ai.usage.cache_read_input_tokens"
+	spanAttrCacheWriteTokens  = "gen_ai.usage.cache_write_input_tokens"
+	spanAttrToolName          = "gen_ai.tool.name"
+	spanAttrToolCallID        = "gen_ai.tool.call.id"
+	spanAttrToolType          = "gen_ai.tool.type"
+	spanAttrToolDescription   = "gen_ai.tool.description"
+	spanAttrToolCallArguments = "gen_ai.tool.call.arguments"
+	spanAttrToolCallResult    = "gen_ai.tool.call.result"
+)
+
+var (
+	errGenerationValidation = errors.New("generation validation failed")
+	errGenerationStore      = errors.New("generation store failed")
 )
 
 // DefaultConfig returns a production-ready baseline configuration.
@@ -65,12 +83,25 @@ type GenerationRecorder struct {
 	ctx       context.Context
 	span      trace.Span
 	seed      GenerationStart
-	mode      generationMode
 	startedAt time.Time
 
 	mu             sync.Mutex
 	ended          bool
 	lastGeneration Generation
+}
+
+// ToolExecutionRecorder records and closes one in-flight execute_tool span.
+// A recorder is single-use; calling End more than once returns an error.
+type ToolExecutionRecorder struct {
+	client         *Client
+	ctx            context.Context
+	span           trace.Span
+	seed           ToolExecutionStart
+	startedAt      time.Time
+	includeContent bool
+
+	mu    sync.Mutex
+	ended bool
 }
 
 // NewClient creates a Client, applying defaults for empty config values.
@@ -107,20 +138,17 @@ func NewClient(config Config) *Client {
 //   - Generation.TraceID and Generation.SpanID are set from the created span context.
 //   - The span includes sigil.generation.id as an attribute.
 func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder, error) {
-	return c.startGeneration(ctx, start, generationModeSync)
+	return c.startGeneration(ctx, start)
 }
 
 // StartStreamingGeneration starts a GenAI span for streaming provider calls.
 func (c *Client) StartStreamingGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder, error) {
-	return c.startGeneration(ctx, start, generationModeStream)
+	return c.startGeneration(ctx, start)
 }
 
-func (c *Client) startGeneration(ctx context.Context, start GenerationStart, mode generationMode) (context.Context, *GenerationRecorder, error) {
+func (c *Client) startGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder, error) {
 	if c == nil {
 		return nil, nil, errors.New("sigil client is nil")
-	}
-	if mode == "" {
-		mode = generationModeSync
 	}
 
 	seed := cloneGenerationStart(start)
@@ -136,20 +164,59 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, mod
 	}
 	seed.StartedAt = startedAt
 
-	callCtx, span := c.startSpan(ctx, seed.OperationName, startedAt)
+	callCtx, span := c.startSpan(ctx, Generation{
+		ID:             seed.ID,
+		ConversationID: seed.ConversationID,
+		OperationName:  seed.OperationName,
+		Model:          seed.Model,
+	}, trace.SpanKindClient, startedAt)
 	span.SetAttributes(generationSpanAttributes(Generation{
-		ID:            seed.ID,
-		OperationName: seed.OperationName,
-		Model:         seed.Model,
-	}, mode)...)
+		ID:             seed.ID,
+		ConversationID: seed.ConversationID,
+		OperationName:  seed.OperationName,
+		Model:          seed.Model,
+	})...)
 
 	return callCtx, &GenerationRecorder{
 		client:    c,
 		ctx:       callCtx,
 		span:      span,
 		seed:      seed,
-		mode:      mode,
 		startedAt: startedAt,
+	}, nil
+}
+
+// StartToolExecution starts an execute_tool span and returns a context for the tool call.
+func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStart) (context.Context, *ToolExecutionRecorder, error) {
+	if c == nil {
+		return nil, nil, errors.New("sigil client is nil")
+	}
+
+	seed := start
+	seed.ToolName = strings.TrimSpace(seed.ToolName)
+	if seed.ToolName == "" {
+		return nil, nil, errors.New("tool name is required")
+	}
+
+	startedAt := seed.StartedAt
+	if startedAt.IsZero() {
+		startedAt = c.now().UTC()
+	} else {
+		startedAt = startedAt.UTC()
+	}
+	seed.StartedAt = startedAt
+
+	callCtx, span := c.startSpan(ctx, Generation{OperationName: "execute_tool", Model: ModelRef{Name: seed.ToolName}}, trace.SpanKindInternal, startedAt)
+	attrs := toolSpanAttributes(seed)
+	span.SetAttributes(attrs...)
+
+	return callCtx, &ToolExecutionRecorder{
+		client:         c,
+		ctx:            callCtx,
+		span:           span,
+		seed:           seed,
+		startedAt:      startedAt,
+		includeContent: seed.IncludeContent,
 	}, nil
 }
 
@@ -177,7 +244,7 @@ func (r *GenerationRecorder) End(g Generation, callErr error) error {
 	applyTraceContextFromSpan(r.span, &generation)
 
 	r.span.SetName(generationSpanName(generation))
-	r.span.SetAttributes(generationSpanAttributes(generation, r.mode)...)
+	r.span.SetAttributes(generationSpanAttributes(generation)...)
 
 	r.mu.Lock()
 	r.lastGeneration = cloneGeneration(generation)
@@ -189,6 +256,9 @@ func (r *GenerationRecorder) End(g Generation, callErr error) error {
 	}
 	if recordErr != nil {
 		r.span.RecordError(recordErr)
+	}
+	if errorType := generationErrorType(callErr, recordErr); errorType != "" {
+		r.span.SetAttributes(attribute.String(spanAttrErrorType, errorType))
 	}
 	switch {
 	case callErr != nil:
@@ -203,6 +273,73 @@ func (r *GenerationRecorder) End(g Generation, callErr error) error {
 	return combineErrors(callErr, recordErr)
 }
 
+// End finalizes tool execution span attributes, status, and end timestamp.
+//
+// End is single-use. A second call returns an error and does nothing.
+func (r *ToolExecutionRecorder) End(end ToolExecutionEnd, execErr error) error {
+	if r == nil {
+		return errors.New("tool execution recorder is nil")
+	}
+
+	r.mu.Lock()
+	if r.ended {
+		r.mu.Unlock()
+		return errors.New("tool execution recorder already ended")
+	}
+	r.ended = true
+	r.mu.Unlock()
+	if r.client == nil || r.span == nil {
+		return errors.New("tool execution recorder is not initialized")
+	}
+
+	completedAt := end.CompletedAt
+	if completedAt.IsZero() {
+		completedAt = r.client.now().UTC()
+	} else {
+		completedAt = completedAt.UTC()
+	}
+
+	r.span.SetName(toolSpanName(r.seed.ToolName))
+	r.span.SetAttributes(toolSpanAttributes(r.seed)...)
+
+	var contentErr error
+	if r.includeContent {
+		arguments, err := serializeToolContent(end.Arguments)
+		if err != nil {
+			contentErr = fmt.Errorf("serialize tool arguments: %w", err)
+		} else if arguments != "" {
+			r.span.SetAttributes(attribute.String(spanAttrToolCallArguments, arguments))
+		}
+
+		result, err := serializeToolContent(end.Result)
+		if err != nil && contentErr == nil {
+			contentErr = fmt.Errorf("serialize tool result: %w", err)
+		} else if err == nil && result != "" {
+			r.span.SetAttributes(attribute.String(spanAttrToolCallResult, result))
+		}
+	}
+
+	var finalErr error
+	switch {
+	case execErr != nil && contentErr != nil:
+		finalErr = errors.Join(execErr, contentErr)
+	case execErr != nil:
+		finalErr = execErr
+	case contentErr != nil:
+		finalErr = contentErr
+	}
+	if finalErr != nil {
+		r.span.RecordError(finalErr)
+		r.span.SetAttributes(attribute.String(spanAttrErrorType, "tool_execution_error"))
+		r.span.SetStatus(codes.Error, finalErr.Error())
+	} else {
+		r.span.SetStatus(codes.Ok, "")
+	}
+	r.span.End(trace.WithTimestamp(completedAt))
+
+	return finalErr
+}
+
 func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt time.Time, callErr error) Generation {
 	g := cloneGeneration(raw)
 
@@ -212,8 +349,8 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if g.ID == "" {
 		g.ID = newRandomID("gen")
 	}
-	if g.ThreadID == "" {
-		g.ThreadID = r.seed.ThreadID
+	if g.ConversationID == "" {
+		g.ConversationID = r.seed.ConversationID
 	}
 	if g.OperationName == "" {
 		g.OperationName = r.seed.OperationName
@@ -276,28 +413,33 @@ func combineErrors(callErr, recordErr error) error {
 
 func (c *Client) persistGeneration(ctx context.Context, generation Generation) error {
 	if err := ValidateGeneration(generation); err != nil {
-		return err
+		return fmt.Errorf("%w: %v", errGenerationValidation, err)
 	}
 
-	_, err := c.externalizeArtifacts(ctx, generation.Artifacts)
-	return err
+	if _, err := c.externalizeArtifacts(ctx, generation.Artifacts); err != nil {
+		return fmt.Errorf("%w: %v", errGenerationStore, err)
+	}
+	return nil
 }
 
 func (c *Client) now() time.Time {
 	return c.config.Now()
 }
 
-func (c *Client) startSpan(ctx context.Context, operation string, startedAt time.Time) (context.Context, trace.Span) {
+func (c *Client) startSpan(ctx context.Context, generation Generation, kind trace.SpanKind, startedAt time.Time) (context.Context, trace.Span) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if kind == 0 {
+		kind = trace.SpanKindClient
+	}
 
 	opts := []trace.SpanStartOption{
-		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithSpanKind(kind),
 		trace.WithTimestamp(startedAt),
 	}
 
-	return c.config.Tracer.Start(ctx, generationSpanName(Generation{OperationName: operation}), opts...)
+	return c.config.Tracer.Start(ctx, generationSpanName(generation), opts...)
 }
 
 func generationSpanName(g Generation) string {
@@ -306,41 +448,51 @@ func generationSpanName(g Generation) string {
 		operation = defaultOperationName
 	}
 
-	return "gen_ai." + operation
+	model := strings.TrimSpace(g.Model.Name)
+	if model == "" {
+		return operation
+	}
+	return operation + " " + model
 }
 
-func generationSpanAttributes(g Generation, mode generationMode) []attribute.KeyValue {
+func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.String("gen_ai.operation.name", operationName(g)),
-		attribute.String(spanAttrGenerationMode, string(mode)),
+		attribute.String(spanAttrOperationName, operationName(g)),
 	}
 	if g.ID != "" {
 		attrs = append(attrs, attribute.String(spanAttrGenerationID, g.ID))
 	}
-
+	if conversationID := strings.TrimSpace(g.ConversationID); conversationID != "" {
+		attrs = append(attrs, attribute.String(spanAttrConversationID, conversationID))
+	}
 	if provider := strings.TrimSpace(g.Model.Provider); provider != "" {
-		attrs = append(attrs, attribute.String("gen_ai.provider.name", provider))
+		attrs = append(attrs, attribute.String(spanAttrProviderName, provider))
 	}
 	if model := strings.TrimSpace(g.Model.Name); model != "" {
-		attrs = append(attrs, attribute.String("gen_ai.request.model", model))
+		attrs = append(attrs, attribute.String(spanAttrRequestModel, model))
+	}
+	if responseID := strings.TrimSpace(g.ResponseID); responseID != "" {
+		attrs = append(attrs, attribute.String(spanAttrResponseID, responseID))
+	}
+	if responseModel := strings.TrimSpace(g.ResponseModel); responseModel != "" {
+		attrs = append(attrs, attribute.String(spanAttrResponseModel, responseModel))
 	}
 	if g.StopReason != "" {
 		attrs = append(attrs,
-			attribute.String("gen_ai.response.finish_reason", g.StopReason),
-			attribute.StringSlice("gen_ai.response.finish_reasons", []string{g.StopReason}),
+			attribute.StringSlice(spanAttrFinishReasons, []string{g.StopReason}),
 		)
 	}
 	if g.Usage.InputTokens != 0 {
-		attrs = append(attrs, attribute.Int64("gen_ai.usage.input_tokens", g.Usage.InputTokens))
+		attrs = append(attrs, attribute.Int64(spanAttrInputTokens, g.Usage.InputTokens))
 	}
 	if g.Usage.OutputTokens != 0 {
-		attrs = append(attrs, attribute.Int64("gen_ai.usage.output_tokens", g.Usage.OutputTokens))
+		attrs = append(attrs, attribute.Int64(spanAttrOutputTokens, g.Usage.OutputTokens))
 	}
-	if g.Usage.TotalTokens != 0 {
-		attrs = append(attrs, attribute.Int64("gen_ai.usage.total_tokens", g.Usage.TotalTokens))
+	if g.Usage.CacheReadInputTokens != 0 {
+		attrs = append(attrs, attribute.Int64(spanAttrCacheReadTokens, g.Usage.CacheReadInputTokens))
 	}
-	if g.Usage.ReasoningTokens != 0 {
-		attrs = append(attrs, attribute.Int64("gen_ai.usage.reasoning_tokens", g.Usage.ReasoningTokens))
+	if g.Usage.CacheWriteInputTokens != 0 {
+		attrs = append(attrs, attribute.Int64(spanAttrCacheWriteTokens, g.Usage.CacheWriteInputTokens))
 	}
 
 	return attrs
@@ -353,6 +505,96 @@ func operationName(g Generation) string {
 	}
 
 	return operation
+}
+
+func generationErrorType(callErr, recordErr error) string {
+	switch {
+	case callErr != nil:
+		return "provider_call_error"
+	case errors.Is(recordErr, errGenerationValidation):
+		return "validation_error"
+	case errors.Is(recordErr, errGenerationStore):
+		return "record_store_error"
+	case recordErr != nil:
+		return "record_store_error"
+	default:
+		return ""
+	}
+}
+
+func toolSpanName(toolName string) string {
+	name := strings.TrimSpace(toolName)
+	if name == "" {
+		name = "unknown"
+	}
+	return "execute_tool " + name
+}
+
+func toolSpanAttributes(start ToolExecutionStart) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.String(spanAttrOperationName, "execute_tool"),
+		attribute.String(spanAttrToolName, start.ToolName),
+	}
+
+	if callID := strings.TrimSpace(start.ToolCallID); callID != "" {
+		attrs = append(attrs, attribute.String(spanAttrToolCallID, callID))
+	}
+	if toolType := strings.TrimSpace(start.ToolType); toolType != "" {
+		attrs = append(attrs, attribute.String(spanAttrToolType, toolType))
+	}
+	if toolDescription := strings.TrimSpace(start.ToolDescription); toolDescription != "" {
+		attrs = append(attrs, attribute.String(spanAttrToolDescription, toolDescription))
+	}
+	if conversationID := strings.TrimSpace(start.ConversationID); conversationID != "" {
+		attrs = append(attrs, attribute.String(spanAttrConversationID, conversationID))
+	}
+
+	return attrs
+}
+
+func serializeToolContent(value any) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return "", nil
+		}
+		if json.Valid([]byte(trimmed)) {
+			return trimmed, nil
+		}
+		data, err := json.Marshal(trimmed)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	case []byte:
+		trimmed := strings.TrimSpace(string(v))
+		if trimmed == "" {
+			return "", nil
+		}
+		if json.Valid([]byte(trimmed)) {
+			return trimmed, nil
+		}
+		data, err := json.Marshal(trimmed)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		trimmed := strings.TrimSpace(string(data))
+		if trimmed == "null" {
+			return "", nil
+		}
+		return trimmed, nil
+	}
 }
 
 func applyTraceContextFromSpan(span trace.Span, generation *Generation) {
