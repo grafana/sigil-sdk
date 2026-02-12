@@ -17,21 +17,18 @@ func TestFromRequestResponse(t *testing.T) {
 			osdk.UserMessage("What is the weather in Paris?"),
 			osdk.ToolMessage(`{"temp_c":18}`, "call_weather"),
 		},
-		Tools: []osdk.ChatCompletionToolParam{
-			{
-				Type: "function",
-				Function: shared.FunctionDefinitionParam{
-					Name:        "weather",
-					Description: osdk.String("Get weather"),
-					Parameters: shared.FunctionParameters{
-						"type": "object",
-						"properties": map[string]any{
-							"city": map[string]any{"type": "string"},
-						},
-						"required": []string{"city"},
+		Tools: []osdk.ChatCompletionToolUnionParam{
+			osdk.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+				Name:        "weather",
+				Description: osdk.String("Get weather"),
+				Parameters: shared.FunctionParameters{
+					"type": "object",
+					"properties": map[string]any{
+						"city": map[string]any{"type": "string"},
 					},
+					"required": []string{"city"},
 				},
-			},
+			}),
 		},
 	}
 
@@ -42,14 +39,14 @@ func TestFromRequestResponse(t *testing.T) {
 			{
 				FinishReason: "tool_calls",
 				Message: osdk.ChatCompletionMessage{
-					ToolCalls: []osdk.ChatCompletionMessageToolCall{
-						{
-							ID:   "call_weather",
-							Type: "function",
-							Function: osdk.ChatCompletionMessageToolCallFunction{
-								Name:      "weather",
-								Arguments: `{"city":"Paris"}`,
-							},
+						ToolCalls: []osdk.ChatCompletionMessageToolCallUnion{
+							{
+								ID:   "call_weather",
+								Type: "function",
+								Function: osdk.ChatCompletionMessageFunctionToolCallFunction{
+									Name:      "weather",
+									Arguments: `{"city":"Paris"}`,
+								},
 						},
 					},
 				},
@@ -142,16 +139,13 @@ func TestFromStream(t *testing.T) {
 			osdk.SystemMessage("You are concise."),
 			osdk.UserMessage("What is the weather in Paris?"),
 		},
-		Tools: []osdk.ChatCompletionToolParam{
-			{
-				Type: "function",
-				Function: shared.FunctionDefinitionParam{
-					Name: "weather",
-					Parameters: shared.FunctionParameters{
-						"type": "object",
-					},
+		Tools: []osdk.ChatCompletionToolUnionParam{
+			osdk.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+				Name: "weather",
+				Parameters: shared.FunctionParameters{
+					"type": "object",
 				},
-			},
+			}),
 		},
 	}
 
@@ -246,13 +240,10 @@ func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
 			osdk.SystemMessage("You are concise."),
 			osdk.UserMessage("hello"),
 		},
-		Tools: []osdk.ChatCompletionToolParam{
-			{
-				Type: "function",
-				Function: shared.FunctionDefinitionParam{
-					Name: "weather",
-				},
-			},
+		Tools: []osdk.ChatCompletionToolUnionParam{
+			osdk.ChatCompletionFunctionTool(shared.FunctionDefinitionParam{
+				Name: "weather",
+			}),
 		},
 	}
 
