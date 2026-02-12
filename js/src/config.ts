@@ -1,14 +1,30 @@
-import type { GenerationExportConfig, SigilLogger, SigilSdkConfig, SigilSdkConfigInput, TraceConfig } from './types.js';
+import type {
+  ExportAuthConfig,
+  GenerationExportConfig,
+  SigilLogger,
+  SigilSdkConfig,
+  SigilSdkConfigInput,
+  TraceConfig,
+} from './types.js';
+
+const tenantHeaderName = 'X-Scope-OrgID';
+const authorizationHeaderName = 'Authorization';
+
+const defaultExportAuthConfig: ExportAuthConfig = {
+  mode: 'none',
+};
 
 export const defaultTraceConfig: TraceConfig = {
   protocol: 'http',
   endpoint: 'http://localhost:4318/v1/traces',
+  auth: defaultExportAuthConfig,
   insecure: true,
 };
 
 export const defaultGenerationExportConfig: GenerationExportConfig = {
   protocol: 'http',
   endpoint: 'http://localhost:8080/api/v1/generations:export',
+  auth: defaultExportAuthConfig,
   insecure: true,
   batchSize: 100,
   flushIntervalMs: 1_000,
@@ -51,24 +67,110 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
 }
 
 function mergeTraceConfig(config: Partial<TraceConfig> | undefined): TraceConfig {
-  return {
+  const auth = mergeAuthConfig(config?.auth);
+  const headers = config?.headers !== undefined ? { ...config.headers } : undefined;
+  const merged: TraceConfig = {
     ...defaultTraceConfig,
     ...config,
-    headers: config?.headers !== undefined ? { ...config.headers } : undefined,
+    auth,
+    headers,
   };
+  merged.headers = resolveHeadersWithAuth(merged.headers, merged.auth, 'trace');
+  return merged;
 }
 
 function mergeGenerationExportConfig(config: Partial<GenerationExportConfig> | undefined): GenerationExportConfig {
-  return {
+  const auth = mergeAuthConfig(config?.auth);
+  const headers = config?.headers !== undefined ? { ...config.headers } : undefined;
+  const merged: GenerationExportConfig = {
     ...defaultGenerationExportConfig,
     ...config,
-    headers: config?.headers !== undefined ? { ...config.headers } : undefined,
+    auth,
+    headers,
   };
+  merged.headers = resolveHeadersWithAuth(merged.headers, merged.auth, 'generation export');
+  return merged;
+}
+
+function mergeAuthConfig(config: ExportAuthConfig | undefined): ExportAuthConfig {
+  return {
+    ...defaultExportAuthConfig,
+    ...config,
+  };
+}
+
+function resolveHeadersWithAuth(
+  headers: Record<string, string> | undefined,
+  auth: ExportAuthConfig,
+  label: string
+): Record<string, string> | undefined {
+  const mode = (auth.mode ?? 'none').trim().toLowerCase();
+  const tenantId = auth.tenantId?.trim() ?? '';
+  const bearerToken = auth.bearerToken?.trim() ?? '';
+  const out = headers ? { ...headers } : undefined;
+
+  if (mode === 'none') {
+    if (tenantId.length > 0 || bearerToken.length > 0) {
+      throw new Error(`${label} auth mode "none" does not allow tenantId or bearerToken`);
+    }
+    return out;
+  }
+
+  if (mode === 'tenant') {
+    if (tenantId.length === 0) {
+      throw new Error(`${label} auth mode "tenant" requires tenantId`);
+    }
+    if (bearerToken.length > 0) {
+      throw new Error(`${label} auth mode "tenant" does not allow bearerToken`);
+    }
+    if (hasHeaderKey(out, tenantHeaderName)) {
+      return out;
+    }
+    return {
+      ...(out ?? {}),
+      [tenantHeaderName]: tenantId,
+    };
+  }
+
+  if (mode === 'bearer') {
+    if (bearerToken.length === 0) {
+      throw new Error(`${label} auth mode "bearer" requires bearerToken`);
+    }
+    if (tenantId.length > 0) {
+      throw new Error(`${label} auth mode "bearer" does not allow tenantId`);
+    }
+    if (hasHeaderKey(out, authorizationHeaderName)) {
+      return out;
+    }
+    return {
+      ...(out ?? {}),
+      [authorizationHeaderName]: formatBearerTokenValue(bearerToken),
+    };
+  }
+
+  throw new Error(`unsupported ${label} auth mode: ${auth.mode}`);
+}
+
+function hasHeaderKey(headers: Record<string, string> | undefined, key: string): boolean {
+  if (headers === undefined) {
+    return false;
+  }
+  const target = key.toLowerCase();
+  return Object.keys(headers).some((existing) => existing.toLowerCase() === target);
+}
+
+function formatBearerTokenValue(token: string): string {
+  const value = token.trim();
+  if (value.toLowerCase().startsWith('bearer ')) {
+    return `Bearer ${value.slice(7).trim()}`;
+  }
+  return `Bearer ${value}`;
 }
 
 function cloneTraceConfig(config: TraceConfig): TraceConfig {
   return {
     ...config,
+    auth: { ...config.auth },
     headers: config.headers ? { ...config.headers } : undefined,
   };
 }
@@ -76,6 +178,7 @@ function cloneTraceConfig(config: TraceConfig): TraceConfig {
 function cloneGenerationExportConfig(config: GenerationExportConfig): GenerationExportConfig {
   return {
     ...config,
+    auth: { ...config.auth },
     headers: config.headers ? { ...config.headers } : undefined,
   };
 }

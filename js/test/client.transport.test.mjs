@@ -239,6 +239,110 @@ test('gRPC transport maps typed message parts to proto payloads', async () => {
   }
 });
 
+test('HTTP transport applies generation tenant auth header', async () => {
+  const receivedHeaders = [];
+  const server = createServer(async (request, response) => {
+    receivedHeaders.push(Object.fromEntries(Object.entries(request.headers)));
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    response.writeHead(202, { 'content-type': 'application/json' });
+    response.end(
+      JSON.stringify({
+        results: (payload.generations ?? []).map((generation) => ({
+          generationId: generation.id,
+          accepted: true,
+        })),
+      })
+    );
+  });
+
+  await listen(server);
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('failed to resolve transport test server address');
+  }
+
+  const defaults = defaultConfig();
+  const client = new SigilClient({
+    tracer: trace.getTracer('sigil-sdk-js-test'),
+    generationExport: {
+      ...defaults.generationExport,
+      protocol: 'http',
+      endpoint: `http://127.0.0.1:${address.port}/api/v1/generations:export`,
+      auth: {
+        mode: 'tenant',
+        tenantId: 'tenant-a',
+      },
+      batchSize: 1,
+      flushIntervalMs: 60_000,
+      maxRetries: 1,
+      initialBackoffMs: 1,
+      maxBackoffMs: 1,
+    },
+  });
+
+  try {
+    const { start, result } = payloadFromSeed(99);
+    const recorder = client.startGeneration(start);
+    recorder.setResult(result);
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+    await client.shutdown();
+
+    assert.equal(receivedHeaders.length, 1);
+    assert.equal(receivedHeaders[0]['x-scope-orgid'], 'tenant-a');
+  } finally {
+    await close(server);
+  }
+});
+
+test('gRPC transport applies generation bearer auth metadata with explicit header override', async () => {
+  const receivedMetadata = [];
+  const grpcServer = await startGRPCServer((_request, metadata) => {
+    receivedMetadata.push(metadata);
+  });
+
+  const defaults = defaultConfig();
+  const client = new SigilClient({
+    tracer: trace.getTracer('sigil-sdk-js-test'),
+    generationExport: {
+      ...defaults.generationExport,
+      protocol: 'grpc',
+      endpoint: `127.0.0.1:${grpcServer.port}`,
+      insecure: true,
+      headers: {
+        authorization: 'Bearer override-token',
+      },
+      auth: {
+        mode: 'bearer',
+        bearerToken: 'sdk-token',
+      },
+      batchSize: 1,
+      flushIntervalMs: 60_000,
+      maxRetries: 1,
+      initialBackoffMs: 1,
+      maxBackoffMs: 1,
+    },
+  });
+
+  try {
+    const { start, result } = payloadFromSeed(101);
+    const recorder = client.startGeneration(start);
+    recorder.setResult(result);
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+    await client.shutdown();
+
+    assert.equal(receivedMetadata.length, 1);
+    assert.equal(receivedMetadata[0].authorization, 'Bearer override-token');
+  } finally {
+    await stopGRPCServer(grpcServer.server);
+  }
+});
+
 function payloadFromSeed(seed) {
   const startedAt = new Date(Date.UTC(2026, 1, 12, 10, seed, 0));
   const completedAt = new Date(startedAt.getTime() + 250);
@@ -644,7 +748,7 @@ async function startGRPCServer(onRequest) {
   const server = new grpc.Server();
   server.addService(service.service, {
     ExportGenerations(call, callback) {
-      onRequest(call.request);
+      onRequest(call.request, call.metadata.getMap());
       callback(null, {
         results: (call.request.generations ?? []).map((generation) => ({
           generationId: generation.id,

@@ -40,10 +40,17 @@ cfg := sigil.DefaultConfig()
 // Trace export (OTLP)
 cfg.Trace.Protocol = sigil.TraceProtocolHTTP // or sigil.TraceProtocolGRPC
 cfg.Trace.Endpoint = "http://localhost:4318/v1/traces" // grpc example: "localhost:4317"
+cfg.Trace.Auth = sigil.AuthConfig{
+	Mode: sigil.ExportAuthModeNone,
+}
 
 // Generation export (custom ingest)
 cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default
 cfg.GenerationExport.Endpoint = "localhost:4317"                  // HTTP parity: "http://localhost:8080/api/v1/generations:export"
+cfg.GenerationExport.Auth = sigil.AuthConfig{
+	Mode:     sigil.ExportAuthModeTenant,
+	TenantID: "dev-tenant",
+}
 cfg.GenerationExport.BatchSize = 100
 cfg.GenerationExport.FlushInterval = time.Second
 cfg.GenerationExport.QueueSize = 2000
@@ -56,6 +63,57 @@ defer func() {
 	_ = client.Shutdown(context.Background())
 }()
 ```
+
+## Per-export auth modes
+
+Auth is configured independently for trace and generation export.
+
+- `none`
+- `tenant` (requires `TenantID`, injects `X-Scope-OrgID`)
+- `bearer` (requires `BearerToken`, injects `Authorization: Bearer <token>`)
+
+Invalid combinations fail fast during `NewClient(...)`.
+
+```go
+cfg.Trace.Auth = sigil.AuthConfig{
+	Mode: sigil.ExportAuthModeNone, // traces may go to Alloy/Collector with no auth
+}
+
+cfg.GenerationExport.Auth = sigil.AuthConfig{
+	Mode:        sigil.ExportAuthModeBearer,
+	BearerToken: "token-from-secret-manager",
+}
+```
+
+Explicit transport headers remain the highest-precedence escape hatch. If `Headers` already contains `Authorization` or `X-Scope-OrgID`, the SDK does not overwrite them.
+
+## Env-secret wiring example
+
+The SDK does not auto-load env vars. Read env values in your app and assign config explicitly.
+
+```go
+genToken := strings.TrimSpace(os.Getenv("SIGIL_GEN_BEARER_TOKEN"))
+if genToken != "" {
+	cfg.GenerationExport.Auth = sigil.AuthConfig{
+		Mode:        sigil.ExportAuthModeBearer,
+		BearerToken: genToken,
+	}
+}
+
+traceToken := strings.TrimSpace(os.Getenv("SIGIL_TRACE_BEARER_TOKEN"))
+if traceToken != "" {
+	cfg.Trace.Auth = sigil.AuthConfig{
+		Mode:        sigil.ExportAuthModeBearer,
+		BearerToken: traceToken,
+	}
+}
+```
+
+Common topology:
+
+- Generations direct to Sigil: generation `tenant` mode.
+- Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
+- Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
 ## Lifecycle requirement
 

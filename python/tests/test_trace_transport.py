@@ -11,6 +11,7 @@ import grpc
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2, trace_service_pb2_grpc
 
 from sigil_sdk import (
+    AuthConfig,
     Client,
     ClientConfig,
     GenerationExportConfig,
@@ -40,6 +41,7 @@ class _NoopGenerationExporter:
 
 class _HTTPTraceHandler(BaseHTTPRequestHandler):
     requests = []
+    headers = []
 
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("Content-Length", "0"))
@@ -48,6 +50,7 @@ class _HTTPTraceHandler(BaseHTTPRequestHandler):
         request = trace_service_pb2.ExportTraceServiceRequest()
         request.ParseFromString(payload)
         _HTTPTraceHandler.requests.append(request)
+        _HTTPTraceHandler.headers.append({k.lower(): v for k, v in self.headers.items()})
 
         response = trace_service_pb2.ExportTraceServiceResponse()
         encoded = response.SerializeToString()
@@ -64,14 +67,17 @@ class _HTTPTraceHandler(BaseHTTPRequestHandler):
 class _GRPCTraceServicer(trace_service_pb2_grpc.TraceServiceServicer):
     def __init__(self) -> None:
         self.requests = []
+        self.metadata = []
 
     def Export(self, request, context):  # noqa: N802
         self.requests.append(request)
+        self.metadata.append({item.key: item.value for item in context.invocation_metadata()})
         return trace_service_pb2.ExportTraceServiceResponse()
 
 
 def test_sdk_trace_export_over_http() -> None:
     _HTTPTraceHandler.requests = []
+    _HTTPTraceHandler.headers = []
     server = HTTPServer(("127.0.0.1", 0), _HTTPTraceHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -162,6 +168,94 @@ def test_sdk_trace_export_over_grpc() -> None:
 
         assert len(servicer.requests) == 1
         _assert_trace_request_for_generation(servicer.requests[0], rec.last_generation)
+    finally:
+        grpc_server.stop(grace=0)
+
+
+def test_sdk_trace_auth_bearer_over_http() -> None:
+    _HTTPTraceHandler.requests = []
+    _HTTPTraceHandler.headers = []
+    server = HTTPServer(("127.0.0.1", 0), _HTTPTraceHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    client = Client(
+        ClientConfig(
+            trace=TraceConfig(
+                protocol="http",
+                endpoint=f"http://127.0.0.1:{server.server_address[1]}/v1/traces",
+                insecure=True,
+                auth=AuthConfig(mode="bearer", bearer_token="trace-secret"),
+            ),
+            generation_export=GenerationExportConfig(batch_size=1, flush_interval=timedelta(seconds=1)),
+            generation_exporter=_NoopGenerationExporter(),
+        )
+    )
+
+    try:
+        rec = client.start_generation(
+            GenerationStart(
+                id="gen-trace-http-auth",
+                conversation_id="conv-trace-http-auth",
+                model=ModelRef(provider="openai", name="gpt-5"),
+            )
+        )
+        rec.set_result(output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="hi")])])
+        rec.end()
+        assert rec.err() is None
+        client.shutdown()
+
+        assert len(_HTTPTraceHandler.requests) == 1
+        assert len(_HTTPTraceHandler.headers) == 1
+        assert _HTTPTraceHandler.headers[0].get("authorization") == "Bearer trace-secret"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_sdk_trace_auth_tenant_over_grpc_with_header_override() -> None:
+    servicer = _GRPCTraceServicer()
+    grpc_server = grpc.server(thread_pool=__import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=2))
+    trace_service_pb2_grpc.add_TraceServiceServicer_to_server(servicer, grpc_server)
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    grpc_server.add_insecure_port(f"127.0.0.1:{port}")
+    grpc_server.start()
+
+    client = Client(
+        ClientConfig(
+            trace=TraceConfig(
+                protocol="grpc",
+                endpoint=f"127.0.0.1:{port}",
+                insecure=True,
+                headers={"x-scope-orgid": "override-tenant"},
+                auth=AuthConfig(mode="tenant", tenant_id="tenant-a"),
+            ),
+            generation_export=GenerationExportConfig(batch_size=1, flush_interval=timedelta(seconds=1)),
+            generation_exporter=_NoopGenerationExporter(),
+        )
+    )
+
+    try:
+        rec = client.start_generation(
+            GenerationStart(
+                id="gen-trace-grpc-auth",
+                conversation_id="conv-trace-grpc-auth",
+                model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+            )
+        )
+        rec.set_result(output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="hi")])])
+        rec.end()
+        assert rec.err() is None
+        client.shutdown()
+
+        assert len(servicer.requests) == 1
+        assert len(servicer.metadata) == 1
+        assert servicer.metadata[0].get("x-scope-orgid") == "override-tenant"
     finally:
         grpc_server.stop(grace=0)
 

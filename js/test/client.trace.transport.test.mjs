@@ -117,6 +117,96 @@ test('trace export over gRPC includes generation span attributes', async () => {
   }
 });
 
+test('trace export over HTTP applies bearer auth header', async () => {
+  const receivedHeaders = [];
+
+  const server = createServer(async (request, response) => {
+    receivedHeaders.push(Object.fromEntries(Object.entries(request.headers)));
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    const _payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{}');
+  });
+
+  await listen(server);
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('failed to resolve trace test http server address');
+  }
+
+  const client = newClient({
+    protocol: 'http',
+    endpoint: `http://127.0.0.1:${address.port}/v1/traces`,
+    insecure: true,
+    auth: {
+      mode: 'bearer',
+      bearerToken: 'trace-secret',
+    },
+  });
+
+  try {
+    const recorder = client.startGeneration({
+      id: 'gen-trace-http-auth',
+      conversationId: 'conv-trace-http-auth',
+      model: { provider: 'openai', name: 'gpt-5' },
+    });
+    recorder.setResult({
+      output: [{ role: 'assistant', content: 'hi' }],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+    await client.shutdown();
+
+    assert.equal(receivedHeaders.length, 1);
+    assert.equal(receivedHeaders[0].authorization, 'Bearer trace-secret');
+  } finally {
+    await close(server);
+  }
+});
+
+test('trace export over gRPC applies tenant metadata with explicit header override', async () => {
+  const receivedMetadata = [];
+  const grpcServer = await startTraceGRPCServer((_request, metadata) => {
+    receivedMetadata.push(metadata);
+  });
+
+  const client = newClient({
+    protocol: 'grpc',
+    endpoint: `127.0.0.1:${grpcServer.port}`,
+    insecure: true,
+    headers: {
+      'x-scope-orgid': 'override-tenant',
+    },
+    auth: {
+      mode: 'tenant',
+      tenantId: 'tenant-a',
+    },
+  });
+
+  try {
+    const recorder = client.startGeneration({
+      id: 'gen-trace-grpc-auth',
+      conversationId: 'conv-trace-grpc-auth',
+      model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
+    });
+    recorder.setResult({
+      output: [{ role: 'assistant', content: 'hi' }],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+    await client.shutdown();
+
+    assert.equal(receivedMetadata.length, 1);
+    assert.equal(receivedMetadata[0]['x-scope-orgid'], 'override-tenant');
+  } finally {
+    await stopGRPCServer(grpcServer.server);
+  }
+});
+
 function singleGeneration(client) {
   const snapshot = client.debugSnapshot();
   assert.equal(snapshot.generations.length, 1);
@@ -275,7 +365,7 @@ async function startTraceGRPCServer(onRequest) {
   const server = new grpc.Server();
   server.addService(service.service, {
     Export(call, callback) {
-      onRequest(call.request);
+      onRequest(call.request, call.metadata.getMap());
       callback(null, {});
     },
   });

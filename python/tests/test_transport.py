@@ -15,6 +15,7 @@ import grpc
 from sigil_sdk import (
     Artifact,
     ArtifactKind,
+    AuthConfig,
     Client,
     ClientConfig,
     Generation,
@@ -38,11 +39,13 @@ from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_
 class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceServicer):
     def __init__(self) -> None:
         self.requests: list[sigil_pb2.ExportGenerationsRequest] = []
+        self.metadata: list[dict[str, str]] = []
         self._lock = threading.Lock()
 
     def ExportGenerations(self, request, context):  # noqa: N802
         with self._lock:
             self.requests.append(request)
+            self.metadata.append({item.key: item.value for item in context.invocation_metadata()})
         return sigil_pb2.ExportGenerationsResponse(
             results=[
                 sigil_pb2.ExportGenerationResult(generation_id=generation.id, accepted=True)
@@ -168,6 +171,95 @@ def test_sdk_exports_generation_over_grpc_round_trip() -> None:
         request = servicer.requests[0]
         assert len(request.generations) == 1
         _assert_generation_proto_payload(request.generations[0])
+    finally:
+        grpc_server.stop(grace=0)
+
+
+def test_sdk_generation_auth_tenant_over_http() -> None:
+    captured_headers: list[dict[str, str]] = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            captured_headers.append({k.lower(): v for k, v in self.headers.items()})
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"results":[{"generation_id":"gen-fixture-1","accepted":true}]}')
+
+        def log_message(self, _format, *_args):  # noqa: A003
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    client = _new_client(
+        GenerationExportConfig(
+            protocol="http",
+            endpoint=f"http://127.0.0.1:{server.server_address[1]}/api/v1/generations:export",
+            auth=AuthConfig(mode="tenant", tenant_id="tenant-a"),
+            batch_size=1,
+            flush_interval=timedelta(seconds=1),
+            max_retries=1,
+            initial_backoff=timedelta(milliseconds=1),
+            max_backoff=timedelta(milliseconds=10),
+        )
+    )
+
+    try:
+        start, result = _payload_fixture()
+        rec = client.start_generation(start)
+        rec.set_result(result)
+        rec.end()
+        assert rec.err() is None
+        client.shutdown()
+
+        assert len(captured_headers) == 1
+        assert captured_headers[0].get("x-scope-orgid") == "tenant-a"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_sdk_generation_auth_bearer_over_grpc_with_header_override() -> None:
+    servicer = _CapturingGenerationServicer()
+    grpc_server = grpc.server(thread_pool=__import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=2))
+    sigil_pb2_grpc.add_GenerationIngestServiceServicer_to_server(servicer, grpc_server)
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    grpc_server.add_insecure_port(f"127.0.0.1:{port}")
+    grpc_server.start()
+
+    client = _new_client(
+        GenerationExportConfig(
+            protocol="grpc",
+            endpoint=f"127.0.0.1:{port}",
+            insecure=True,
+            headers={"authorization": "Bearer override-token"},
+            auth=AuthConfig(mode="bearer", bearer_token="should-not-win"),
+            batch_size=1,
+            flush_interval=timedelta(seconds=1),
+            max_retries=1,
+            initial_backoff=timedelta(milliseconds=1),
+            max_backoff=timedelta(milliseconds=10),
+        )
+    )
+
+    try:
+        start, result = _payload_fixture()
+        rec = client.start_generation(start)
+        rec.set_result(result)
+        rec.end()
+        assert rec.err() is None
+        client.shutdown()
+
+        assert len(servicer.requests) == 1
+        assert len(servicer.metadata) == 1
+        assert servicer.metadata[0].get("authorization") == "Bearer override-token"
     finally:
         grpc_server.stop(grace=0)
 

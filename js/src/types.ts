@@ -6,6 +6,15 @@ export type TraceProtocol = 'grpc' | 'http';
 export type GenerationExportProtocol = 'grpc' | 'http';
 /** Generation execution mode. */
 export type GenerationMode = 'SYNC' | 'STREAM';
+/** Supported auth modes for transport exports. */
+export type ExportAuthMode = 'none' | 'tenant' | 'bearer';
+
+/** Per-export auth configuration. */
+export interface ExportAuthConfig {
+  mode: ExportAuthMode;
+  tenantId?: string;
+  bearerToken?: string;
+}
 
 /** Trace exporter configuration. */
 export interface TraceConfig {
@@ -15,6 +24,8 @@ export interface TraceConfig {
   endpoint: string;
   /** Optional transport headers/metadata. */
   headers?: Record<string, string>;
+  /** Optional auth mode for trace transport. */
+  auth: ExportAuthConfig;
   /** Force insecure transport when protocol allows it. */
   insecure: boolean;
 }
@@ -27,6 +38,8 @@ export interface GenerationExportConfig {
   endpoint: string;
   /** Optional transport headers/metadata. */
   headers?: Record<string, string>;
+  /** Optional auth mode for generation transport. */
+  auth: ExportAuthConfig;
   /** Force insecure transport when protocol allows it. */
   insecure: boolean;
   /** Max generations per export request. */

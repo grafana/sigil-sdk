@@ -24,6 +24,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const (
+	tenantHeaderName        = "X-Scope-OrgID"
+	authorizationHeaderName = "Authorization"
+)
+
 type queuedGeneration struct {
 	generation *sigilv1.Generation
 }
@@ -243,6 +248,7 @@ func mergeTraceConfig(base, override TraceConfig) TraceConfig {
 	if override.Headers != nil {
 		out.Headers = cloneTags(override.Headers)
 	}
+	out.Auth = mergeAuthConfig(out.Auth, override.Auth)
 	if override.Insecure {
 		out.Insecure = true
 	}
@@ -260,6 +266,7 @@ func mergeGenerationExportConfig(base, override GenerationExportConfig) Generati
 	if override.Headers != nil {
 		out.Headers = cloneTags(override.Headers)
 	}
+	out.Auth = mergeAuthConfig(out.Auth, override.Auth)
 	if override.Insecure {
 		out.Insecure = true
 	}
@@ -285,6 +292,89 @@ func mergeGenerationExportConfig(base, override GenerationExportConfig) Generati
 		out.PayloadMaxBytes = override.PayloadMaxBytes
 	}
 	return out
+}
+
+func mergeAuthConfig(base, override AuthConfig) AuthConfig {
+	out := base
+	if override.Mode != "" {
+		out.Mode = override.Mode
+	}
+	if override.TenantID != "" {
+		out.TenantID = override.TenantID
+	}
+	if override.BearerToken != "" {
+		out.BearerToken = override.BearerToken
+	}
+	return out
+}
+
+func resolveHeadersWithAuth(headers map[string]string, auth AuthConfig) (map[string]string, error) {
+	mode := auth.Mode
+	if mode == "" {
+		mode = ExportAuthModeNone
+	}
+
+	tenantID := strings.TrimSpace(auth.TenantID)
+	bearerToken := strings.TrimSpace(auth.BearerToken)
+
+	switch mode {
+	case ExportAuthModeNone:
+		if tenantID != "" || bearerToken != "" {
+			return nil, errors.New("auth mode none does not allow tenant_id or bearer_token")
+		}
+		return cloneTags(headers), nil
+	case ExportAuthModeTenant:
+		if tenantID == "" {
+			return nil, errors.New("auth mode tenant requires tenant_id")
+		}
+		if bearerToken != "" {
+			return nil, errors.New("auth mode tenant does not allow bearer_token")
+		}
+		out := cloneTags(headers)
+		if hasHeaderKey(out, tenantHeaderName) {
+			return out, nil
+		}
+		if out == nil {
+			out = make(map[string]string, 1)
+		}
+		out[tenantHeaderName] = tenantID
+		return out, nil
+	case ExportAuthModeBearer:
+		if bearerToken == "" {
+			return nil, errors.New("auth mode bearer requires bearer_token")
+		}
+		if tenantID != "" {
+			return nil, errors.New("auth mode bearer does not allow tenant_id")
+		}
+		out := cloneTags(headers)
+		if hasHeaderKey(out, authorizationHeaderName) {
+			return out, nil
+		}
+		if out == nil {
+			out = make(map[string]string, 1)
+		}
+		out[authorizationHeaderName] = formatBearerTokenValue(bearerToken)
+		return out, nil
+	default:
+		return nil, fmt.Errorf("unsupported auth mode %q", mode)
+	}
+}
+
+func hasHeaderKey(headers map[string]string, key string) bool {
+	for existing := range headers {
+		if strings.EqualFold(existing, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func formatBearerTokenValue(token string) string {
+	trimmed := strings.TrimSpace(token)
+	if strings.HasPrefix(strings.ToLower(trimmed), "bearer ") {
+		trimmed = strings.TrimSpace(trimmed[len("bearer "):])
+	}
+	return "Bearer " + trimmed
 }
 
 func splitEndpoint(endpoint string) (host string, path string, insecure bool, err error) {

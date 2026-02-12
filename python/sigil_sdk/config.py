@@ -13,6 +13,18 @@ from opentelemetry.trace import Tracer
 from .exporters.base import GenerationExporter
 from .models import utc_now
 
+TENANT_HEADER = "X-Scope-OrgID"
+AUTHORIZATION_HEADER = "Authorization"
+
+
+@dataclass(slots=True)
+class AuthConfig:
+    """Per-export auth configuration."""
+
+    mode: str = "none"
+    tenant_id: str = ""
+    bearer_token: str = ""
+
 
 @dataclass(slots=True)
 class TraceConfig:
@@ -21,6 +33,7 @@ class TraceConfig:
     protocol: str = "http"
     endpoint: str = "http://localhost:4318/v1/traces"
     headers: dict[str, str] = field(default_factory=dict)
+    auth: AuthConfig = field(default_factory=AuthConfig)
     insecure: bool = True
 
 
@@ -31,6 +44,7 @@ class GenerationExportConfig:
     protocol: str = "grpc"
     endpoint: str = "localhost:4317"
     headers: dict[str, str] = field(default_factory=dict)
+    auth: AuthConfig = field(default_factory=AuthConfig)
     insecure: bool = True
     batch_size: int = 100
     flush_interval: timedelta = timedelta(seconds=1)
@@ -76,6 +90,14 @@ def resolve_config(config: Optional[ClientConfig]) -> ClientConfig:
         out.trace.endpoint = out.trace_endpoint
     if out.generation_export_endpoint:
         out.generation_export.endpoint = out.generation_export_endpoint
+
+    out.trace.headers = _resolve_export_headers(out.trace.headers, out.trace.auth, "trace")
+    out.generation_export.headers = _resolve_export_headers(
+        out.generation_export.headers,
+        out.generation_export.auth,
+        "generation export",
+    )
+
     if out.logger is None:
         out.logger = logging.getLogger("sigil_sdk")
     if out.now is None:
@@ -97,3 +119,45 @@ def resolve_config(config: Optional[ClientConfig]) -> ClientConfig:
         out.generation_export.max_backoff = timedelta(milliseconds=100)
 
     return out
+
+
+def _resolve_export_headers(headers: dict[str, str], auth: AuthConfig, label: str) -> dict[str, str]:
+    mode = auth.mode.strip().lower() if auth.mode else "none"
+    tenant_id = auth.tenant_id.strip()
+    bearer_token = auth.bearer_token.strip()
+    out = dict(headers)
+
+    if mode == "none":
+        if tenant_id or bearer_token:
+            raise ValueError(f"{label} auth mode 'none' does not allow tenant_id or bearer_token")
+        return out
+    if mode == "tenant":
+        if not tenant_id:
+            raise ValueError(f"{label} auth mode 'tenant' requires tenant_id")
+        if bearer_token:
+            raise ValueError(f"{label} auth mode 'tenant' does not allow bearer_token")
+        if not _has_header(out, TENANT_HEADER):
+            out[TENANT_HEADER] = tenant_id
+        return out
+    if mode == "bearer":
+        if not bearer_token:
+            raise ValueError(f"{label} auth mode 'bearer' requires bearer_token")
+        if tenant_id:
+            raise ValueError(f"{label} auth mode 'bearer' does not allow tenant_id")
+        if not _has_header(out, AUTHORIZATION_HEADER):
+            out[AUTHORIZATION_HEADER] = _format_bearer_token(bearer_token)
+        return out
+
+    raise ValueError(f"unsupported {label} auth mode {auth.mode!r}")
+
+
+def _has_header(headers: dict[str, str], key: str) -> bool:
+    target = key.lower()
+    return any(existing.lower() == target for existing in headers.keys())
+
+
+def _format_bearer_token(token: str) -> str:
+    value = token.strip()
+    if value.lower().startswith("bearer "):
+        value = value[7:].strip()
+    return f"Bearer {value}"

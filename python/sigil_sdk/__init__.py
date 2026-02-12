@@ -1,7 +1,7 @@
 """Public exports for the Sigil Python SDK."""
 
 from .client import Client
-from .config import ClientConfig, GenerationExportConfig, TraceConfig, default_config
+from .config import AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig, default_config
 from .context import (
     conversation_id_from_context,
     agent_name_from_context,
@@ -49,6 +49,7 @@ from .validation import validate_generation
 __all__ = [
     "Artifact",
     "ArtifactKind",
+    "AuthConfig",
     "Client",
     "ClientConfig",
     "ClientShutdownError",

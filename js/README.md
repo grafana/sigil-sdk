@@ -17,10 +17,12 @@ const client = new SigilClient({
   generationExport: {
     protocol: "http",
     endpoint: "http://localhost:8080/api/v1/generations:export",
+    auth: { mode: "tenant", tenantId: "dev-tenant" },
   },
   trace: {
     protocol: "http",
     endpoint: "http://localhost:4318/v1/traces",
+    auth: { mode: "none" },
   },
 });
 
@@ -98,3 +100,64 @@ await client.startToolExecution(
 - `flush()` drains queued generations; `shutdown()` flushes and closes exporters.
 - Empty tool names produce a no-op tool recorder.
 - Raw provider artifacts are opt-in (`rawArtifacts: true`).
+
+## Per-export auth modes
+
+Auth is configured independently for `generationExport` and `trace`.
+
+- `mode: "none"`
+- `mode: "tenant"` (requires `tenantId`, injects `X-Scope-OrgID`)
+- `mode: "bearer"` (requires `bearerToken`, injects `Authorization: Bearer <token>`)
+
+Invalid mode/field combinations throw during client config resolution.
+
+If explicit headers already contain `Authorization` or `X-Scope-OrgID`, explicit headers take precedence.
+
+```ts
+const client = new SigilClient({
+  generationExport: {
+    protocol: "http",
+    endpoint: "http://localhost:8080/api/v1/generations:export",
+    auth: { mode: "tenant", tenantId: "prod-tenant" },
+  },
+  trace: {
+    protocol: "grpc",
+    endpoint: "localhost:4317",
+    auth: { mode: "none" }, // traces through Collector/Alloy
+  },
+});
+```
+
+## Env-secret wiring example
+
+The SDK does not auto-load env vars. Resolve env secrets in your app and map them into config.
+
+```ts
+const generationBearerToken = (process.env.SIGIL_GEN_BEARER_TOKEN ?? "").trim();
+const traceBearerToken = (process.env.SIGIL_TRACE_BEARER_TOKEN ?? "").trim();
+
+const client = new SigilClient({
+  generationExport: {
+    protocol: "http",
+    endpoint: "http://localhost:8080/api/v1/generations:export",
+    auth:
+      generationBearerToken.length > 0
+        ? { mode: "bearer", bearerToken: generationBearerToken }
+        : { mode: "tenant", tenantId: "dev-tenant" },
+  },
+  trace: {
+    protocol: "grpc",
+    endpoint: "localhost:4317",
+    auth:
+      traceBearerToken.length > 0
+        ? { mode: "bearer", bearerToken: traceBearerToken }
+        : { mode: "none" },
+  },
+});
+```
+
+Common topology:
+
+- Generations direct to Sigil: generation `tenant` mode.
+- Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
+- Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.

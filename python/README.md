@@ -115,16 +115,18 @@ with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_ve
 ### HTTP generation + OTLP HTTP trace
 
 ```python
-from sigil_sdk import ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
 
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
         endpoint="http://localhost:8080/api/v1/generations:export",
+        auth=AuthConfig(mode="tenant", tenant_id="dev-tenant"),
     ),
     trace=TraceConfig(
         protocol="http",
         endpoint="http://localhost:4318/v1/traces",
+        auth=AuthConfig(mode="none"),
     ),
 )
 ```
@@ -137,14 +139,70 @@ cfg = ClientConfig(
         protocol="grpc",
         endpoint="localhost:50051",
         insecure=True,
+        auth=AuthConfig(mode="tenant", tenant_id="dev-tenant"),
     ),
     trace=TraceConfig(
         protocol="grpc",
         endpoint="localhost:4317",
         insecure=True,
+        auth=AuthConfig(mode="none"),
     ),
 )
 ```
+
+## Per-export auth modes
+
+Auth is resolved independently per export (`trace` and `generation_export`).
+
+- `mode="none"`
+- `mode="tenant"` (requires `tenant_id`, injects `X-Scope-OrgID`)
+- `mode="bearer"` (requires `bearer_token`, injects `Authorization: Bearer <token>`)
+
+Invalid mode/field combinations fail fast in `resolve_config(...)`.
+
+If explicit `headers` already include `Authorization` or `X-Scope-OrgID`, explicit headers win.
+
+```python
+from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
+
+cfg = ClientConfig(
+    generation_export=GenerationExportConfig(
+        protocol="http",
+        endpoint="http://localhost:8080/api/v1/generations:export",
+        auth=AuthConfig(mode="tenant", tenant_id="prod-tenant"),
+    ),
+    trace=TraceConfig(
+        protocol="grpc",
+        endpoint="localhost:4317",
+        auth=AuthConfig(mode="none"),
+    ),
+)
+```
+
+## Env-secret wiring example
+
+The SDK does not auto-load env vars. Resolve env values in your application and pass them into config explicitly.
+
+```python
+import os
+from sigil_sdk import AuthConfig, ClientConfig
+
+cfg = ClientConfig()
+
+gen_token = (os.getenv("SIGIL_GEN_BEARER_TOKEN") or "").strip()
+if gen_token:
+    cfg.generation_export.auth = AuthConfig(mode="bearer", bearer_token=gen_token)
+
+trace_token = (os.getenv("SIGIL_TRACE_BEARER_TOKEN") or "").strip()
+if trace_token:
+    cfg.trace.auth = AuthConfig(mode="bearer", bearer_token=trace_token)
+```
+
+Common topology:
+
+- Generations direct to Sigil: generation `tenant` mode.
+- Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
+- Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
 ## Lifecycle and Error Semantics
 

@@ -41,10 +41,25 @@ const (
 	TraceProtocolHTTP TraceProtocol = "http"
 )
 
+type ExportAuthMode string
+
+const (
+	ExportAuthModeNone   ExportAuthMode = "none"
+	ExportAuthModeTenant ExportAuthMode = "tenant"
+	ExportAuthModeBearer ExportAuthMode = "bearer"
+)
+
+type AuthConfig struct {
+	Mode        ExportAuthMode
+	TenantID    string
+	BearerToken string
+}
+
 type TraceConfig struct {
 	Protocol TraceProtocol
 	Endpoint string
 	Headers  map[string]string
+	Auth     AuthConfig
 	Insecure bool
 }
 
@@ -59,6 +74,7 @@ type GenerationExportConfig struct {
 	Protocol        GenerationExportProtocol
 	Endpoint        string
 	Headers         map[string]string
+	Auth            AuthConfig
 	Insecure        bool
 	BatchSize       int
 	FlushInterval   time.Duration
@@ -106,11 +122,15 @@ func DefaultConfig() Config {
 		Trace: TraceConfig{
 			Protocol: TraceProtocolHTTP,
 			Endpoint: "http://localhost:4318/v1/traces",
+			Auth: AuthConfig{
+				Mode: ExportAuthModeNone,
+			},
 			Insecure: true,
 		},
 		GenerationExport: GenerationExportConfig{
 			Protocol:        GenerationExportProtocolGRPC,
 			Endpoint:        "localhost:4317",
+			Auth:            AuthConfig{Mode: ExportAuthModeNone},
 			Insecure:        true,
 			BatchSize:       100,
 			FlushInterval:   time.Second,
@@ -200,6 +220,19 @@ func NewClient(config Config) *Client {
 
 	cfg.Trace = mergeTraceConfig(defaults.Trace, cfg.Trace)
 	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
+
+	traceHeaders, err := resolveHeadersWithAuth(cfg.Trace.Headers, cfg.Trace.Auth)
+	if err != nil {
+		panic(fmt.Sprintf("invalid trace auth config: %v", err))
+	}
+	cfg.Trace.Headers = traceHeaders
+
+	generationHeaders, err := resolveHeadersWithAuth(cfg.GenerationExport.Headers, cfg.GenerationExport.Auth)
+	if err != nil {
+		panic(fmt.Sprintf("invalid generation auth config: %v", err))
+	}
+	cfg.GenerationExport.Headers = generationHeaders
+
 	if cfg.Now == nil {
 		cfg.Now = defaults.Now
 	}
