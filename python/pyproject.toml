@@ -1,9 +1,39 @@
 [project]
 name = "sigil-sdk"
 version = "0.1.0"
-description = "Sigil Python SDK skeleton"
+description = "Grafana Sigil Python SDK"
+readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+  "grpcio>=1.78.0",
+  "protobuf>=6.31.1",
+  "opentelemetry-api>=1.27.0",
+  "opentelemetry-sdk>=1.27.0",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+  "opentelemetry-proto>=1.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "grpcio-tools>=1.78.0",
+  "pytest>=8.2.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sigil_sdk*"]
+
+[tool.setuptools.package-data]
+sigil_sdk = ["py.typed"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

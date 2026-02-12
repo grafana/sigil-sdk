@@ -1,0 +1,468 @@
+"""Generation transport parity tests (HTTP and gRPC)."""
+
+from __future__ import annotations
+
+import base64
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import socket
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import grpc
+
+from sigil_sdk import (
+    Artifact,
+    ArtifactKind,
+    Client,
+    ClientConfig,
+    Generation,
+    GenerationExportConfig,
+    GenerationMode,
+    GenerationStart,
+    Message,
+    MessageRole,
+    ModelRef,
+    Part,
+    PartKind,
+    TokenUsage,
+    ToolCall,
+    ToolDefinition,
+    ToolResult,
+)
+from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
+from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
+
+
+class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceServicer):
+    def __init__(self) -> None:
+        self.requests: list[sigil_pb2.ExportGenerationsRequest] = []
+        self._lock = threading.Lock()
+
+    def ExportGenerations(self, request, context):  # noqa: N802
+        with self._lock:
+            self.requests.append(request)
+        return sigil_pb2.ExportGenerationsResponse(
+            results=[
+                sigil_pb2.ExportGenerationResult(generation_id=generation.id, accepted=True)
+                for generation in request.generations
+            ]
+        )
+
+
+def test_sdk_exports_generation_over_http_round_trip() -> None:
+    captured = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            payload = json.loads(body.decode("utf-8"))
+            captured.append(
+                {
+                    "path": self.path,
+                    "content_type": self.headers.get("Content-Type"),
+                    "payload": payload,
+                }
+            )
+
+            response = {
+                "results": [
+                    {
+                        "generation_id": generation["id"],
+                        "accepted": True,
+                    }
+                    for generation in payload.get("generations", [])
+                ]
+            }
+            encoded = json.dumps(response).encode("utf-8")
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, _format, *_args):  # noqa: A003
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    client = _new_client(
+        GenerationExportConfig(
+            protocol="http",
+            endpoint=f"http://127.0.0.1:{server.server_address[1]}/api/v1/generations:export",
+            batch_size=1,
+            flush_interval=timedelta(seconds=1),
+            max_retries=1,
+            initial_backoff=timedelta(milliseconds=1),
+            max_backoff=timedelta(milliseconds=10),
+        )
+    )
+
+    try:
+        start, result = _payload_fixture()
+        rec = client.start_generation(start)
+        rec.set_result(result)
+        rec.end()
+        assert rec.err() is None
+
+        client.shutdown()
+
+        assert len(captured) == 1
+        request = captured[0]
+        assert request["path"] == "/api/v1/generations:export"
+        assert request["content_type"] == "application/json"
+
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        generations = payload.get("generations")
+        assert isinstance(generations, list)
+        assert len(generations) == 1
+        assert isinstance(generations[0], dict)
+
+        _assert_generation_json_payload(generations[0])
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_sdk_exports_generation_over_grpc_round_trip() -> None:
+    servicer = _CapturingGenerationServicer()
+    grpc_server = grpc.server(thread_pool=__import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=2))
+    sigil_pb2_grpc.add_GenerationIngestServiceServicer_to_server(servicer, grpc_server)
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    grpc_server.add_insecure_port(f"127.0.0.1:{port}")
+    grpc_server.start()
+
+    client = _new_client(
+        GenerationExportConfig(
+            protocol="grpc",
+            endpoint=f"127.0.0.1:{port}",
+            insecure=True,
+            batch_size=1,
+            flush_interval=timedelta(seconds=1),
+            max_retries=1,
+            initial_backoff=timedelta(milliseconds=1),
+            max_backoff=timedelta(milliseconds=10),
+        )
+    )
+
+    try:
+        start, result = _payload_fixture()
+        rec = client.start_generation(start)
+        rec.set_result(result)
+        rec.end()
+        assert rec.err() is None
+
+        client.shutdown()
+
+        assert len(servicer.requests) == 1
+        request = servicer.requests[0]
+        assert len(request.generations) == 1
+        _assert_generation_proto_payload(request.generations[0])
+    finally:
+        grpc_server.stop(grace=0)
+
+
+def _assert_generation_json_payload(generation: dict[str, Any]) -> None:
+    assert generation["id"] == "gen-fixture-1"
+    assert generation["conversation_id"] == "conv-fixture-1"
+    assert generation["operation_name"] == "streamText"
+    assert generation["mode"] == "GENERATION_MODE_STREAM"
+
+    trace_id = generation["trace_id"]
+    span_id = generation["span_id"]
+    assert isinstance(trace_id, str) and len(trace_id) == 32
+    assert isinstance(span_id, str) and len(span_id) == 16
+
+    model = generation["model"]
+    assert isinstance(model, dict)
+    assert model["provider"] == "anthropic"
+    assert model["name"] == "claude-sonnet-4-5"
+
+    assert generation["response_id"] == "resp-fixture"
+    assert generation["response_model"] == "claude-sonnet-4-5-20260201"
+    assert generation["system_prompt"] == "be concise"
+
+    input_messages = generation["input"]
+    assert isinstance(input_messages, list) and len(input_messages) == 1
+    user_message = input_messages[0]
+    assert user_message["role"] == "MESSAGE_ROLE_USER"
+    assert user_message["parts"][0]["text"] == "hello"
+
+    output_messages = generation["output"]
+    assert isinstance(output_messages, list) and len(output_messages) == 2
+
+    assistant_message = output_messages[0]
+    assert assistant_message["role"] == "MESSAGE_ROLE_ASSISTANT"
+    assert assistant_message["parts"][0]["thinking"] == "think"
+    tool_call = assistant_message["parts"][1]["tool_call"]
+    assert tool_call["id"] == "tool-call-1"
+    assert tool_call["name"] == "weather"
+    assert _decode_proto_json_bytes(tool_call["input_json"]) == b'{"city":"Paris"}'
+
+    tool_message = output_messages[1]
+    assert tool_message["role"] == "MESSAGE_ROLE_TOOL"
+    tool_result = tool_message["parts"][0]["tool_result"]
+    assert tool_result["tool_call_id"] == "tool-call-1"
+    assert tool_result["name"] == "weather"
+    assert tool_result["content"] == "18C"
+    assert _decode_proto_json_bytes(tool_result["content_json"]) == b'{"temp_c":18}'
+
+    tools = generation["tools"]
+    assert isinstance(tools, list) and len(tools) == 1
+    assert tools[0]["name"] == "weather"
+    assert tools[0]["description"] == "Get weather"
+    assert tools[0]["type"] == "function"
+    assert _decode_proto_json_bytes(tools[0]["input_schema_json"]) == b'{"type":"object"}'
+
+    usage = generation["usage"]
+    assert _proto_json_int(usage["input_tokens"]) == 120
+    assert _proto_json_int(usage["output_tokens"]) == 42
+    assert _proto_json_int(usage["total_tokens"]) == 162
+    assert _proto_json_int(usage["cache_read_input_tokens"]) == 8
+    assert _proto_json_int(usage["cache_write_input_tokens"]) == 4
+    assert _proto_json_int(usage["reasoning_tokens"]) == 5
+
+    assert generation["stop_reason"] == "end_turn"
+    assert generation["started_at"] == "2026-02-11T12:00:00Z"
+    assert generation["completed_at"] == "2026-02-11T12:00:01Z"
+    assert generation["tags"] == {"env": "test", "suite": "transport"}
+
+    metadata = generation["metadata"]
+    assert metadata["seed"] in (1, 1.0)
+    assert metadata["nested"] == {"ok": True}
+
+    artifacts = generation["raw_artifacts"]
+    assert isinstance(artifacts, list) and len(artifacts) == 2
+
+    request_artifact = artifacts[0]
+    assert request_artifact["kind"] == "ARTIFACT_KIND_REQUEST"
+    assert request_artifact["name"] == "request"
+    assert request_artifact["content_type"] == "application/json"
+    assert _decode_proto_json_bytes(request_artifact["payload"]) == b'{"request":true}'
+    assert request_artifact["record_id"] == "rec-1"
+    assert request_artifact["uri"] == "sigil://artifact/1"
+
+    provider_event_artifact = artifacts[1]
+    assert provider_event_artifact["kind"] == "ARTIFACT_KIND_PROVIDER_EVENT"
+    assert provider_event_artifact["name"] == "event"
+    assert provider_event_artifact["content_type"] == "application/json"
+    assert _decode_proto_json_bytes(provider_event_artifact["payload"]) == b'{"event":true}'
+
+    assert generation["agent_name"] == "agent-fixture"
+    assert generation["agent_version"] == "v1.2.3"
+
+
+def _assert_generation_proto_payload(generation: sigil_pb2.Generation) -> None:
+    assert generation.id == "gen-fixture-1"
+    assert generation.conversation_id == "conv-fixture-1"
+    assert generation.operation_name == "streamText"
+    assert generation.mode == sigil_pb2.GENERATION_MODE_STREAM
+
+    assert len(generation.trace_id) == 32
+    assert len(generation.span_id) == 16
+
+    assert generation.model.provider == "anthropic"
+    assert generation.model.name == "claude-sonnet-4-5"
+
+    assert generation.response_id == "resp-fixture"
+    assert generation.response_model == "claude-sonnet-4-5-20260201"
+    assert generation.system_prompt == "be concise"
+
+    assert len(generation.input) == 1
+    assert generation.input[0].role == sigil_pb2.MESSAGE_ROLE_USER
+    assert len(generation.input[0].parts) == 1
+    assert generation.input[0].parts[0].text == "hello"
+
+    assert len(generation.output) == 2
+
+    assert generation.output[0].role == sigil_pb2.MESSAGE_ROLE_ASSISTANT
+    assert len(generation.output[0].parts) == 2
+    assert generation.output[0].parts[0].thinking == "think"
+    assert generation.output[0].parts[1].tool_call.id == "tool-call-1"
+    assert generation.output[0].parts[1].tool_call.name == "weather"
+    assert generation.output[0].parts[1].tool_call.input_json == b'{"city":"Paris"}'
+
+    assert generation.output[1].role == sigil_pb2.MESSAGE_ROLE_TOOL
+    assert len(generation.output[1].parts) == 1
+    assert generation.output[1].parts[0].tool_result.tool_call_id == "tool-call-1"
+    assert generation.output[1].parts[0].tool_result.name == "weather"
+    assert generation.output[1].parts[0].tool_result.content == "18C"
+    assert generation.output[1].parts[0].tool_result.content_json == b'{"temp_c":18}'
+
+    assert len(generation.tools) == 1
+    assert generation.tools[0].name == "weather"
+    assert generation.tools[0].description == "Get weather"
+    assert generation.tools[0].type == "function"
+    assert generation.tools[0].input_schema_json == b'{"type":"object"}'
+
+    assert generation.usage.input_tokens == 120
+    assert generation.usage.output_tokens == 42
+    assert generation.usage.total_tokens == 162
+    assert generation.usage.cache_read_input_tokens == 8
+    assert generation.usage.cache_write_input_tokens == 4
+    assert generation.usage.reasoning_tokens == 5
+
+    assert generation.stop_reason == "end_turn"
+    assert generation.started_at.ToDatetime(tzinfo=timezone.utc) == datetime(2026, 2, 11, 12, 0, tzinfo=timezone.utc)
+    assert generation.completed_at.ToDatetime(tzinfo=timezone.utc) == datetime(2026, 2, 11, 12, 0, 1, tzinfo=timezone.utc)
+    assert dict(generation.tags) == {"env": "test", "suite": "transport"}
+
+    assert generation.metadata["seed"] in (1, 1.0)
+    assert generation.metadata["nested"] == {"ok": True}
+
+    assert len(generation.raw_artifacts) == 2
+
+    request_artifact = generation.raw_artifacts[0]
+    assert request_artifact.kind == sigil_pb2.ARTIFACT_KIND_REQUEST
+    assert request_artifact.name == "request"
+    assert request_artifact.content_type == "application/json"
+    assert request_artifact.payload == b'{"request":true}'
+    assert request_artifact.record_id == "rec-1"
+    assert request_artifact.uri == "sigil://artifact/1"
+
+    provider_event_artifact = generation.raw_artifacts[1]
+    assert provider_event_artifact.kind == sigil_pb2.ARTIFACT_KIND_PROVIDER_EVENT
+    assert provider_event_artifact.name == "event"
+    assert provider_event_artifact.content_type == "application/json"
+    assert provider_event_artifact.payload == b'{"event":true}'
+
+    assert generation.agent_name == "agent-fixture"
+    assert generation.agent_version == "v1.2.3"
+
+
+def _decode_proto_json_bytes(value: Any) -> bytes:
+    assert isinstance(value, str)
+    return base64.b64decode(value)
+
+
+def _proto_json_int(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value)
+    raise AssertionError(f"expected int-compatible value, got {type(value)!r}")
+
+
+def _new_client(generation_export: GenerationExportConfig) -> Client:
+    return Client(
+        ClientConfig(
+            generation_export=generation_export,
+        )
+    )
+
+
+def _payload_fixture() -> tuple[GenerationStart, Generation]:
+    started_at = datetime(2026, 2, 11, 12, 0, tzinfo=timezone.utc)
+    completed_at = started_at + timedelta(seconds=1)
+
+    start = GenerationStart(
+        id="gen-fixture-1",
+        conversation_id="conv-fixture-1",
+        agent_name="agent-fixture",
+        agent_version="v1.2.3",
+        mode=GenerationMode.STREAM,
+        operation_name="streamText",
+        model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+        system_prompt="be concise",
+        tools=[
+            ToolDefinition(
+                name="weather",
+                description="Get weather",
+                type="function",
+                input_schema_json=b'{"type":"object"}',
+            )
+        ],
+        tags={"env": "test"},
+        metadata={"seed": 1},
+        started_at=started_at,
+    )
+
+    result = Generation(
+        id=start.id,
+        conversation_id=start.conversation_id,
+        agent_name=start.agent_name,
+        agent_version=start.agent_version,
+        mode=start.mode,
+        operation_name=start.operation_name,
+        model=start.model,
+        response_id="resp-fixture",
+        response_model="claude-sonnet-4-5-20260201",
+        system_prompt=start.system_prompt,
+        input=[
+            Message(
+                role=MessageRole.USER,
+                parts=[Part(kind=PartKind.TEXT, text="hello")],
+            )
+        ],
+        output=[
+            Message(
+                role=MessageRole.ASSISTANT,
+                parts=[
+                    Part(kind=PartKind.THINKING, thinking="think"),
+                    Part(
+                        kind=PartKind.TOOL_CALL,
+                        tool_call=ToolCall(
+                            id="tool-call-1",
+                            name="weather",
+                            input_json=b'{"city":"Paris"}',
+                        ),
+                    ),
+                ],
+            ),
+            Message(
+                role=MessageRole.TOOL,
+                parts=[
+                    Part(
+                        kind=PartKind.TOOL_RESULT,
+                        tool_result=ToolResult(
+                            tool_call_id="tool-call-1",
+                            name="weather",
+                            content="18C",
+                            content_json=b'{"temp_c":18}',
+                        ),
+                    )
+                ],
+            ),
+        ],
+        tools=start.tools,
+        usage=TokenUsage(
+            input_tokens=120,
+            output_tokens=42,
+            total_tokens=162,
+            cache_read_input_tokens=8,
+            cache_write_input_tokens=4,
+            reasoning_tokens=5,
+        ),
+        stop_reason="end_turn",
+        started_at=started_at,
+        completed_at=completed_at,
+        tags={"env": "test", "suite": "transport"},
+        metadata={"seed": 1, "nested": {"ok": True}},
+        artifacts=[
+            Artifact(
+                kind=ArtifactKind.REQUEST,
+                name="request",
+                content_type="application/json",
+                payload=b'{"request":true}',
+                record_id="rec-1",
+                uri="sigil://artifact/1",
+            ),
+            Artifact(
+                kind=ArtifactKind.PROVIDER_EVENT,
+                name="event",
+                content_type="application/json",
+                payload=b'{"event":true}',
+            ),
+        ],
+    )
+    return start, result

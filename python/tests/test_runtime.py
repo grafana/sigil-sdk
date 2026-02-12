@@ -1,0 +1,295 @@
+"""Core lifecycle and span behavior tests for Sigil Python SDK."""
+
+from __future__ import annotations
+
+import time
+from datetime import timedelta
+
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+from sigil_sdk import (
+    Client,
+    ClientConfig,
+    EnqueueError,
+    Generation,
+    GenerationExportConfig,
+    GenerationStart,
+    Message,
+    MessageRole,
+    ModelRef,
+    Part,
+    PartKind,
+    QueueFullError,
+    ToolExecutionStart,
+    TraceConfig,
+    ValidationError,
+    with_agent_name,
+    with_agent_version,
+    with_conversation_id,
+)
+
+from conftest import CapturingGenerationExporter
+
+
+def _new_client(exporter: CapturingGenerationExporter, tracer=None, **overrides) -> Client:
+    generation_export = GenerationExportConfig(
+        batch_size=overrides.get("batch_size", 10),
+        flush_interval=overrides.get("flush_interval", timedelta(seconds=60)),
+        queue_size=overrides.get("queue_size", 10),
+        max_retries=overrides.get("max_retries", 1),
+        initial_backoff=overrides.get("initial_backoff", timedelta(milliseconds=1)),
+        max_backoff=overrides.get("max_backoff", timedelta(milliseconds=1)),
+        payload_max_bytes=overrides.get("payload_max_bytes", 4 << 20),
+    )
+    return Client(
+        ClientConfig(
+            tracer=tracer,
+            generation_export=generation_export,
+            generation_exporter=exporter,
+            trace=TraceConfig(protocol="http", endpoint="http://localhost:4318/v1/traces"),
+        )
+    )
+
+
+def _seed_generation(conversation_id: str) -> GenerationStart:
+    return GenerationStart(
+        conversation_id=conversation_id,
+        model=ModelRef(provider="openai", name="gpt-5"),
+    )
+
+
+def _assistant_output(text: str) -> list[Message]:
+    return [Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=text)])]
+
+
+def test_flushes_generation_exports_by_batch_size() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter, batch_size=2)
+    try:
+        rec1 = client.start_generation(_seed_generation("conv-1"))
+        rec1.set_result(output=_assistant_output("ok-1"))
+        rec1.end()
+        assert rec1.err() is None
+
+        rec2 = client.start_generation(_seed_generation("conv-2"))
+        rec2.set_result(output=_assistant_output("ok-2"))
+        rec2.end()
+        assert rec2.err() is None
+
+        _wait_for(lambda: len(exporter.requests) == 1)
+        assert len(exporter.requests[0].generations) == 2
+    finally:
+        client.shutdown()
+
+
+def test_flushes_generation_exports_by_interval() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter, batch_size=10, flush_interval=timedelta(milliseconds=20))
+    try:
+        rec = client.start_generation(_seed_generation("conv-3"))
+        rec.set_result(output=_assistant_output("ok-3"))
+        rec.end()
+        assert rec.err() is None
+
+        _wait_for(lambda: len(exporter.requests) >= 1)
+        assert len(exporter.requests[0].generations) == 1
+    finally:
+        client.shutdown()
+
+
+def test_flush_retries_failed_exports_with_backoff() -> None:
+    exporter = CapturingGenerationExporter(failures_before_success=2)
+    client = _new_client(exporter, batch_size=10, max_retries=2)
+    try:
+        rec = client.start_generation(_seed_generation("conv-4"))
+        rec.set_result(output=_assistant_output("ok-4"))
+        rec.end()
+
+        client.flush()
+        assert exporter.attempts == 3
+        assert len(exporter.requests) == 3
+    finally:
+        client.shutdown()
+
+
+def test_shutdown_flushes_pending_generation() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter, batch_size=10)
+
+    rec = client.start_generation(_seed_generation("conv-5"))
+    rec.set_result(output=_assistant_output("ok-5"))
+    rec.end()
+
+    client.shutdown()
+
+    assert len(exporter.requests) == 1
+    assert len(exporter.requests[0].generations) == 1
+    assert exporter.shutdown_calls == 1
+
+
+def test_queue_full_error_is_exposed_as_local_recorder_error() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter, batch_size=10, queue_size=1)
+    try:
+        rec1 = client.start_generation(_seed_generation("conv-6"))
+        rec1.set_result(output=_assistant_output("ok-6"))
+        rec1.end()
+        assert rec1.err() is None
+
+        rec2 = client.start_generation(_seed_generation("conv-7"))
+        rec2.set_result(output=_assistant_output("full"))
+        rec2.end()
+
+        assert isinstance(rec2.err(), QueueFullError)
+        assert isinstance(rec2.err(), EnqueueError)
+    finally:
+        client.shutdown()
+
+
+def test_default_operation_name_is_mode_aware_and_mode_not_emitted_as_span_attribute() -> None:
+    exporter = CapturingGenerationExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+
+    client = _new_client(exporter, tracer=tracer)
+    try:
+        sync_rec = client.start_generation(_seed_generation("conv-sync"))
+        sync_rec.set_result(output=_assistant_output("sync"))
+        sync_rec.end()
+
+        stream_rec = client.start_streaming_generation(_seed_generation("conv-stream"))
+        stream_rec.set_result(output=_assistant_output("stream"))
+        stream_rec.end()
+
+        spans = span_exporter.get_finished_spans()
+        names = {span.name for span in spans if span.attributes.get("gen_ai.request.model") == "gpt-5"}
+        assert "generateText gpt-5" in names
+        assert "streamText gpt-5" in names
+
+        for span in spans:
+            assert "sigil.generation.mode" not in span.attributes
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
+def test_call_error_sets_span_error_and_does_not_set_local_error() -> None:
+    exporter = CapturingGenerationExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+
+    client = _new_client(exporter, tracer=tracer)
+    try:
+        rec = client.start_generation(_seed_generation("conv-call-error"))
+        rec.set_call_error(RuntimeError("provider unavailable"))
+        rec.end()
+
+        assert rec.err() is None
+        assert rec.last_generation is not None
+        assert rec.last_generation.call_error == "provider unavailable"
+
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.status.status_code.name == "ERROR"
+        assert span.attributes.get("error.type") == "provider_call_error"
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
+def test_validation_error_sets_local_error() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter)
+    try:
+        rec = client.start_generation(_seed_generation("conv-validation"))
+        rec.set_result(
+            input=[Message(role=MessageRole.USER, parts=[])],
+            output=_assistant_output("ok"),
+        )
+        rec.end()
+
+        assert isinstance(rec.err(), ValidationError)
+    finally:
+        client.shutdown()
+
+
+def test_context_defaults_apply_and_explicit_fields_override() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter)
+    try:
+        with with_conversation_id("conv-from-ctx"), with_agent_name("agent-from-ctx"), with_agent_version("v-ctx"):
+            rec = client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                )
+            )
+            rec.end()
+
+        assert rec.last_generation is not None
+        assert rec.last_generation.conversation_id == "conv-from-ctx"
+        assert rec.last_generation.agent_name == "agent-from-ctx"
+        assert rec.last_generation.agent_version == "v-ctx"
+
+        with with_conversation_id("ctx-id"):
+            rec2 = client.start_generation(
+                GenerationStart(
+                    conversation_id="explicit-id",
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                )
+            )
+            rec2.end()
+
+        assert rec2.last_generation is not None
+        assert rec2.last_generation.conversation_id == "explicit-id"
+    finally:
+        client.shutdown()
+
+
+def test_tool_execution_attributes_and_content_capture() -> None:
+    exporter = CapturingGenerationExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+
+    client = _new_client(exporter, tracer=tracer)
+    try:
+        with client.start_tool_execution(
+            ToolExecutionStart(
+                tool_name="weather",
+                tool_call_id="call_weather",
+                tool_type="function",
+                tool_description="Get weather",
+                conversation_id="conv-tool",
+                agent_name="agent-tools",
+                agent_version="2026.02.12",
+                include_content=True,
+            )
+        ) as rec:
+            rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
+
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.name == "execute_tool weather"
+        assert span.attributes.get("gen_ai.operation.name") == "execute_tool"
+        assert span.attributes.get("gen_ai.tool.name") == "weather"
+        assert span.attributes.get("gen_ai.tool.call.id") == "call_weather"
+        assert span.attributes.get("gen_ai.tool.call.arguments") is not None
+        assert span.attributes.get("gen_ai.tool.call.result") is not None
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
+def _wait_for(predicate, timeout_s: float = 1.0) -> None:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("timed out waiting for condition")

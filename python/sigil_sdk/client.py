@@ -1,0 +1,752 @@
+"""Sigil client runtime and recorder lifecycle implementation."""
+
+from __future__ import annotations
+
+import copy
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import json
+import secrets
+import threading
+from typing import Any, Optional
+
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+
+from .config import ClientConfig, resolve_config
+from .context import agent_name_from_context, agent_version_from_context, conversation_id_from_context
+from .errors import ClientShutdownError, EnqueueError, QueueFullError, ValidationError
+from .exporters import GRPCGenerationExporter, HTTPGenerationExporter
+from .models import (
+    ExportGenerationsRequest,
+    Generation,
+    GenerationMode,
+    GenerationStart,
+    ToolExecutionEnd,
+    ToolExecutionStart,
+)
+from .proto_mapping import generation_to_proto
+from .tracing import create_trace_runtime
+from .validation import validate_generation
+
+
+_span_attr_generation_id = "sigil.generation.id"
+_span_attr_conversation_id = "gen_ai.conversation.id"
+_span_attr_agent_name = "gen_ai.agent.name"
+_span_attr_agent_version = "gen_ai.agent.version"
+_span_attr_error_type = "error.type"
+_span_attr_operation_name = "gen_ai.operation.name"
+_span_attr_provider_name = "gen_ai.provider.name"
+_span_attr_request_model = "gen_ai.request.model"
+_span_attr_response_id = "gen_ai.response.id"
+_span_attr_response_model = "gen_ai.response.model"
+_span_attr_finish_reasons = "gen_ai.response.finish_reasons"
+_span_attr_input_tokens = "gen_ai.usage.input_tokens"
+_span_attr_output_tokens = "gen_ai.usage.output_tokens"
+_span_attr_cache_read_tokens = "gen_ai.usage.cache_read_input_tokens"
+_span_attr_cache_write_tokens = "gen_ai.usage.cache_write_input_tokens"
+_span_attr_tool_name = "gen_ai.tool.name"
+_span_attr_tool_call_id = "gen_ai.tool.call.id"
+_span_attr_tool_type = "gen_ai.tool.type"
+_span_attr_tool_description = "gen_ai.tool.description"
+_span_attr_tool_call_arguments = "gen_ai.tool.call.arguments"
+_span_attr_tool_call_result = "gen_ai.tool.call.result"
+
+
+class Client:
+    """Sigil client that records generations, tool spans, and exports in background."""
+
+    def __init__(self, config: Optional[ClientConfig] = None) -> None:
+        self._config = resolve_config(config)
+        self._logger = self._config.logger
+        self._now = self._config.now
+        self._sleep = self._config.sleep
+
+        self._pending_generations: list[Generation] = []
+        self._pending_lock = threading.Lock()
+        self._flush_lock = threading.Lock()
+        self._flush_thread_lock = threading.Lock()
+        self._flush_thread: Optional[threading.Thread] = None
+
+        self._shutdown_lock = threading.Lock()
+        self._shutting_down = False
+        self._closed = False
+
+        self._generation_exporter = self._config.generation_exporter
+        if self._generation_exporter is None:
+            protocol = self._config.generation_export.protocol.strip().lower()
+            if protocol == "http":
+                self._generation_exporter = HTTPGenerationExporter(
+                    endpoint=self._config.generation_export.endpoint,
+                    headers=self._config.generation_export.headers,
+                )
+            elif protocol == "grpc":
+                self._generation_exporter = GRPCGenerationExporter(
+                    endpoint=self._config.generation_export.endpoint,
+                    headers=self._config.generation_export.headers,
+                    insecure=self._config.generation_export.insecure,
+                )
+            else:
+                raise ValueError(f"unsupported generation export protocol {self._config.generation_export.protocol!r}")
+
+        if self._config.tracer is not None:
+            self._tracer = self._config.tracer
+            self._trace_runtime = None
+        else:
+            trace_runtime = create_trace_runtime(self._config.trace, self._log_warn)
+            self._tracer = trace_runtime.tracer
+            self._trace_runtime = trace_runtime
+
+        self._timer_stop = threading.Event()
+        self._timer_thread: Optional[threading.Thread] = None
+        flush_interval_s = self._config.generation_export.flush_interval.total_seconds()
+        if flush_interval_s > 0:
+            self._timer_thread = threading.Thread(target=self._run_flush_timer, daemon=True)
+            self._timer_thread.start()
+
+    def start_generation(self, start: GenerationStart) -> "GenerationRecorder":
+        """Starts a non-stream generation recorder."""
+
+        return self._start_generation(start=start, default_mode=GenerationMode.SYNC)
+
+    def start_streaming_generation(self, start: GenerationStart) -> "GenerationRecorder":
+        """Starts a stream generation recorder."""
+
+        return self._start_generation(start=start, default_mode=GenerationMode.STREAM)
+
+    def start_tool_execution(self, start: ToolExecutionStart) -> "ToolExecutionRecorder":
+        """Starts a tool execution recorder."""
+
+        self._assert_open()
+
+        seed = copy.deepcopy(start)
+        seed.tool_name = seed.tool_name.strip()
+        if seed.tool_name == "":
+            return NoopToolExecutionRecorder()
+
+        if seed.conversation_id == "":
+            conversation_id = conversation_id_from_context() or ""
+            seed.conversation_id = conversation_id
+        if seed.agent_name == "":
+            agent_name = agent_name_from_context() or ""
+            seed.agent_name = agent_name
+        if seed.agent_version == "":
+            agent_version = agent_version_from_context() or ""
+            seed.agent_version = agent_version
+
+        started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
+        seed.started_at = started_at
+
+        span = self._tracer.start_span(
+            _tool_span_name(seed.tool_name),
+            kind=SpanKind.INTERNAL,
+            start_time=_datetime_to_ns(started_at),
+        )
+        _set_tool_span_attributes(span, seed)
+
+        return ToolExecutionRecorder(
+            client=self,
+            seed=seed,
+            span=span,
+            started_at=started_at,
+            include_content=seed.include_content,
+        )
+
+    def flush(self) -> None:
+        """Flushes all queued generations immediately."""
+
+        if self._shutting_down:
+            raise ClientShutdownError("sigil: client is shutting down")
+        self._flush_internal()
+
+    def shutdown(self) -> None:
+        """Flushes pending data and shuts down exporters."""
+
+        with self._shutdown_lock:
+            if self._closed:
+                return
+            self._shutting_down = True
+
+            self._timer_stop.set()
+            if self._timer_thread is not None:
+                self._timer_thread.join(timeout=2)
+
+            try:
+                self._flush_internal()
+            except Exception as exc:  # noqa: BLE001
+                self._log_warn("sigil generation export flush on shutdown failed", exc)
+
+            try:
+                shutdown_fn = getattr(self._generation_exporter, "shutdown", None)
+                if callable(shutdown_fn):
+                    shutdown_fn()
+            except Exception as exc:  # noqa: BLE001
+                self._log_warn("sigil generation exporter shutdown failed", exc)
+
+            if self._trace_runtime is not None:
+                try:
+                    self._trace_runtime.flush()
+                except Exception as exc:  # noqa: BLE001
+                    self._log_warn("sigil trace provider flush on shutdown failed", exc)
+                try:
+                    self._trace_runtime.shutdown()
+                except Exception as exc:  # noqa: BLE001
+                    self._log_warn("sigil trace provider shutdown failed", exc)
+
+            self._closed = True
+
+    def _start_generation(self, start: GenerationStart, default_mode: GenerationMode) -> "GenerationRecorder":
+        self._assert_open()
+
+        seed = copy.deepcopy(start)
+        if seed.mode is None:
+            seed.mode = default_mode
+        if seed.operation_name == "":
+            seed.operation_name = _default_operation_name(seed.mode)
+
+        if seed.conversation_id == "":
+            seed.conversation_id = conversation_id_from_context() or ""
+        if seed.agent_name == "":
+            seed.agent_name = agent_name_from_context() or ""
+        if seed.agent_version == "":
+            seed.agent_version = agent_version_from_context() or ""
+
+        started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
+        seed.started_at = started_at
+
+        span = self._tracer.start_span(
+            _generation_span_name(seed.operation_name, seed.model.name),
+            kind=SpanKind.CLIENT,
+            start_time=_datetime_to_ns(started_at),
+        )
+        _set_generation_span_attributes(
+            span,
+            Generation(
+                id=seed.id,
+                conversation_id=seed.conversation_id,
+                agent_name=seed.agent_name,
+                agent_version=seed.agent_version,
+                mode=seed.mode,
+                operation_name=seed.operation_name,
+                model=copy.deepcopy(seed.model),
+            ),
+        )
+
+        return GenerationRecorder(
+            client=self,
+            seed=seed,
+            span=span,
+            started_at=started_at,
+        )
+
+    def _enqueue_generation(self, generation: Generation) -> None:
+        if self._shutting_down or self._closed:
+            raise ClientShutdownError("sigil: client is shutting down")
+
+        max_payload_bytes = self._config.generation_export.payload_max_bytes
+        if max_payload_bytes > 0:
+            payload_size = generation_to_proto(generation).ByteSize()
+            if payload_size > max_payload_bytes:
+                raise EnqueueError(f"generation payload exceeds max bytes ({payload_size} > {max_payload_bytes})")
+
+        should_trigger_flush = False
+        with self._pending_lock:
+            if len(self._pending_generations) >= self._config.generation_export.queue_size:
+                raise QueueFullError("sigil: generation queue is full")
+            self._pending_generations.append(copy.deepcopy(generation))
+            if len(self._pending_generations) >= self._config.generation_export.batch_size:
+                should_trigger_flush = True
+
+        if should_trigger_flush:
+            self._trigger_async_flush()
+
+    def _trigger_async_flush(self) -> None:
+        with self._flush_thread_lock:
+            if self._flush_thread is not None and self._flush_thread.is_alive():
+                return
+            self._flush_thread = threading.Thread(target=self._run_async_flush, daemon=True)
+            self._flush_thread.start()
+
+    def _run_async_flush(self) -> None:
+        try:
+            self._flush_internal()
+        except Exception as exc:  # noqa: BLE001
+            self._log_warn("sigil generation export failed", exc)
+
+    def _flush_internal(self) -> None:
+        with self._flush_lock:
+            while True:
+                with self._pending_lock:
+                    if not self._pending_generations:
+                        return
+                    batch_size = self._config.generation_export.batch_size
+                    batch = self._pending_generations[:batch_size]
+                    del self._pending_generations[:batch_size]
+
+                response = self._export_with_retry(ExportGenerationsRequest(generations=batch))
+                for result in response.results:
+                    if not result.accepted:
+                        self._log_warn(
+                            f"sigil generation rejected id={result.generation_id} error={result.error}"
+                        )
+
+    def _export_with_retry(self, request: ExportGenerationsRequest):
+        attempts = self._config.generation_export.max_retries + 1
+        backoff = self._config.generation_export.initial_backoff.total_seconds()
+        max_backoff = self._config.generation_export.max_backoff.total_seconds()
+        if backoff <= 0:
+            backoff = 0.1
+
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                return self._generation_exporter.export_generations(request)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                if attempt == attempts - 1:
+                    break
+                self._sleep(backoff)
+                if backoff < max_backoff:
+                    backoff *= 2
+                    if backoff > max_backoff:
+                        backoff = max_backoff
+
+        assert last_error is not None
+        raise last_error
+
+    def _run_flush_timer(self) -> None:
+        interval = self._config.generation_export.flush_interval.total_seconds()
+        while not self._timer_stop.wait(interval):
+            self._trigger_async_flush()
+
+    def _assert_open(self) -> None:
+        if self._closed:
+            raise ClientShutdownError("sigil: client is shutting down")
+
+    def _log_warn(self, message: str, error: Exception | None = None) -> None:
+        if self._logger is None:
+            return
+        if error is None:
+            self._logger.warning(message)
+            return
+        self._logger.warning("%s: %s", message, error)
+
+
+@dataclass(slots=True)
+class GenerationRecorder:
+    """Recorder for one generation lifecycle."""
+
+    client: Client
+    seed: GenerationStart
+    span: Span
+    started_at: datetime
+
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _ended: bool = False
+    _call_error: Exception | None = None
+    _mapping_error: Exception | None = None
+    _result: Generation | None = None
+    _last_generation: Generation | None = None
+    _final_error: Exception | None = None
+
+    def __enter__(self) -> "GenerationRecorder":
+        return self
+
+    def __exit__(self, exc_type, exc, _tb) -> bool:
+        if exc is not None and self._call_error is None:
+            self.set_call_error(exc)
+        self.end()
+        return False
+
+    def set_call_error(self, error: Exception) -> None:
+        """Records provider/runtime call error on this generation."""
+
+        if error is None:
+            return
+        with self._lock:
+            self._call_error = error
+
+    def set_result(self, generation: Generation | None = None, mapping_error: Exception | None = None, **kwargs: Any) -> None:
+        """Stores mapped generation result and optional mapping error."""
+
+        if generation is None:
+            generation = Generation(**kwargs)
+        elif kwargs:
+            raise ValueError("set_result accepts either a generation object or keyword fields")
+
+        with self._lock:
+            self._result = copy.deepcopy(generation)
+            if mapping_error is not None:
+                self._mapping_error = mapping_error
+
+    def end(self) -> None:
+        """Finalizes span and queues generation export. Safe to call multiple times."""
+
+        with self._lock:
+            if self._ended:
+                return
+            self._ended = True
+            call_error = self._call_error
+            mapping_error = self._mapping_error
+            result = copy.deepcopy(self._result) if self._result is not None else Generation()
+
+        completed_at = _to_utc(self.client._now())
+        generation = self._normalize_generation(result, completed_at, call_error)
+        _apply_trace_context_from_span(self.span, generation)
+
+        self.span.update_name(_generation_span_name(generation.operation_name, generation.model.name))
+        _set_generation_span_attributes(self.span, generation)
+
+        local_error: Exception | None = None
+        try:
+            validate_generation(generation)
+        except Exception as exc:  # noqa: BLE001
+            local_error = ValidationError(f"sigil: generation validation failed: {exc}")
+
+        if local_error is None:
+            try:
+                self.client._enqueue_generation(generation)
+            except QueueFullError as exc:
+                local_error = exc
+            except ClientShutdownError as exc:
+                local_error = exc
+            except Exception as exc:  # noqa: BLE001
+                local_error = EnqueueError(f"sigil: generation enqueue failed: {exc}")
+
+        if call_error is not None:
+            self.span.record_exception(call_error)
+        if mapping_error is not None:
+            self.span.record_exception(mapping_error)
+        if local_error is not None:
+            self.span.record_exception(local_error)
+
+        if call_error is not None:
+            self.span.set_attribute(_span_attr_error_type, "provider_call_error")
+            self.span.set_status(Status(StatusCode.ERROR, str(call_error)))
+        elif mapping_error is not None:
+            self.span.set_attribute(_span_attr_error_type, "mapping_error")
+            self.span.set_status(Status(StatusCode.ERROR, str(mapping_error)))
+        elif local_error is not None:
+            error_type = "validation_error" if isinstance(local_error, ValidationError) else "enqueue_error"
+            self.span.set_attribute(_span_attr_error_type, error_type)
+            self.span.set_status(Status(StatusCode.ERROR, str(local_error)))
+        else:
+            self.span.set_status(Status(StatusCode.OK))
+
+        self.span.end(end_time=_datetime_to_ns(generation.completed_at or completed_at))
+
+        with self._lock:
+            self._last_generation = copy.deepcopy(generation)
+            self._final_error = local_error
+
+    def err(self) -> Exception | None:
+        """Returns local validation/enqueue error after `end()`."""
+
+        with self._lock:
+            return self._final_error
+
+    @property
+    def last_generation(self) -> Generation | None:
+        """Returns the normalized generation payload after end for tests/debug."""
+
+        with self._lock:
+            return copy.deepcopy(self._last_generation)
+
+    def _normalize_generation(self, raw: Generation, completed_at: datetime, call_error: Exception | None) -> Generation:
+        generation = copy.deepcopy(raw)
+
+        if generation.id == "":
+            generation.id = self.seed.id
+        if generation.id == "":
+            generation.id = _new_random_id("gen")
+
+        if generation.conversation_id == "":
+            generation.conversation_id = self.seed.conversation_id
+        if generation.agent_name == "":
+            generation.agent_name = self.seed.agent_name
+        if generation.agent_version == "":
+            generation.agent_version = self.seed.agent_version
+
+        if generation.mode is None:
+            generation.mode = self.seed.mode
+        if generation.mode is None:
+            generation.mode = GenerationMode.SYNC
+
+        if generation.operation_name == "":
+            generation.operation_name = self.seed.operation_name
+        if generation.operation_name == "":
+            generation.operation_name = _default_operation_name(generation.mode)
+
+        if generation.model.provider == "":
+            generation.model.provider = self.seed.model.provider
+        if generation.model.name == "":
+            generation.model.name = self.seed.model.name
+
+        if generation.system_prompt == "":
+            generation.system_prompt = self.seed.system_prompt
+
+        if len(generation.tools) == 0:
+            generation.tools = copy.deepcopy(self.seed.tools)
+
+        merged_tags = dict(self.seed.tags)
+        merged_tags.update(generation.tags)
+        generation.tags = merged_tags
+
+        merged_metadata: dict[str, Any] = dict(self.seed.metadata)
+        merged_metadata.update(generation.metadata)
+        generation.metadata = merged_metadata
+
+        generation.started_at = _to_utc(generation.started_at) if generation.started_at is not None else self.started_at
+        generation.completed_at = _to_utc(generation.completed_at) if generation.completed_at is not None else completed_at
+
+        if call_error is not None:
+            if generation.call_error == "":
+                generation.call_error = str(call_error)
+            generation.metadata["call_error"] = str(call_error)
+
+        generation.usage = generation.usage.normalize()
+        return generation
+
+
+@dataclass(slots=True)
+class ToolExecutionRecorder:
+    """Recorder for one tool execution lifecycle."""
+
+    client: Client
+    seed: ToolExecutionStart
+    span: Span
+    started_at: datetime
+    include_content: bool
+
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _ended: bool = False
+    _exec_error: Exception | None = None
+    _result: ToolExecutionEnd = field(default_factory=ToolExecutionEnd)
+    _has_result: bool = False
+    _final_error: Exception | None = None
+
+    def __enter__(self) -> "ToolExecutionRecorder":
+        return self
+
+    def __exit__(self, exc_type, exc, _tb) -> bool:
+        if exc is not None and self._exec_error is None:
+            self.set_exec_error(exc)
+        self.end()
+        return False
+
+    def set_exec_error(self, error: Exception) -> None:
+        """Records a tool execution error."""
+
+        if error is None:
+            return
+        with self._lock:
+            self._exec_error = error
+
+    def set_result(self, end: ToolExecutionEnd | None = None, **kwargs: Any) -> None:
+        """Stores tool arguments/result payload."""
+
+        payload = ToolExecutionEnd(**kwargs) if end is None else end
+        with self._lock:
+            self._result = copy.deepcopy(payload)
+            self._has_result = True
+
+    def end(self) -> None:
+        """Finalizes the execute_tool span. Safe to call multiple times."""
+
+        with self._lock:
+            if self._ended:
+                return
+            self._ended = True
+            exec_error = self._exec_error
+            result = copy.deepcopy(self._result)
+
+        completed_at = _to_utc(result.completed_at) if result.completed_at is not None else _to_utc(self.client._now())
+
+        self.span.update_name(_tool_span_name(self.seed.tool_name))
+        _set_tool_span_attributes(self.span, self.seed)
+
+        content_error: Exception | None = None
+        if self.include_content:
+            try:
+                arguments = _serialize_tool_content(result.arguments)
+                if arguments != "":
+                    self.span.set_attribute(_span_attr_tool_call_arguments, arguments)
+            except Exception as exc:  # noqa: BLE001
+                content_error = RuntimeError(f"serialize tool arguments: {exc}")
+
+            try:
+                tool_result = _serialize_tool_content(result.result)
+                if tool_result != "":
+                    self.span.set_attribute(_span_attr_tool_call_result, tool_result)
+            except Exception as exc:  # noqa: BLE001
+                if content_error is None:
+                    content_error = RuntimeError(f"serialize tool result: {exc}")
+
+        final_error: Exception | None = None
+        if exec_error is not None and content_error is not None:
+            final_error = RuntimeError(f"{exec_error}; {content_error}")
+        elif exec_error is not None:
+            final_error = exec_error
+        elif content_error is not None:
+            final_error = content_error
+
+        if final_error is not None:
+            self.span.record_exception(final_error)
+            self.span.set_attribute(_span_attr_error_type, "tool_execution_error")
+            self.span.set_status(Status(StatusCode.ERROR, str(final_error)))
+        else:
+            self.span.set_status(Status(StatusCode.OK))
+
+        self.span.end(end_time=_datetime_to_ns(completed_at))
+
+        with self._lock:
+            self._final_error = final_error
+
+    def err(self) -> Exception | None:
+        """Returns execute_tool finalization error after `end()`."""
+
+        with self._lock:
+            return self._final_error
+
+
+class NoopToolExecutionRecorder:
+    """No-op tool recorder returned for empty tool names."""
+
+    def __enter__(self) -> "NoopToolExecutionRecorder":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ARG002
+        return False
+
+    def set_exec_error(self, error: Exception) -> None:  # noqa: ARG002
+        return
+
+    def set_result(self, end: ToolExecutionEnd | None = None, **kwargs: Any) -> None:  # noqa: ARG002
+        return
+
+    def end(self) -> None:
+        return
+
+    def err(self) -> Exception | None:
+        return None
+
+
+def _apply_trace_context_from_span(span: Span, generation: Generation) -> None:
+    context = span.get_span_context()
+    if context is None:
+        return
+
+    if context.trace_id:
+        generation.trace_id = f"{context.trace_id:032x}"
+    if context.span_id:
+        generation.span_id = f"{context.span_id:016x}"
+
+
+def _generation_span_name(operation_name: str, model_name: str) -> str:
+    operation = operation_name.strip()
+    if operation == "":
+        operation = _default_operation_name(GenerationMode.SYNC)
+
+    model = model_name.strip()
+    if model == "":
+        return operation
+    return f"{operation} {model}"
+
+
+def _tool_span_name(tool_name: str) -> str:
+    name = tool_name.strip() or "unknown"
+    return f"execute_tool {name}"
+
+
+def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
+    span.set_attribute(_span_attr_operation_name, generation.operation_name or _default_operation_name(generation.mode))
+
+    if generation.id:
+        span.set_attribute(_span_attr_generation_id, generation.id)
+    if generation.conversation_id:
+        span.set_attribute(_span_attr_conversation_id, generation.conversation_id)
+    if generation.agent_name:
+        span.set_attribute(_span_attr_agent_name, generation.agent_name)
+    if generation.agent_version:
+        span.set_attribute(_span_attr_agent_version, generation.agent_version)
+    if generation.model.provider:
+        span.set_attribute(_span_attr_provider_name, generation.model.provider)
+    if generation.model.name:
+        span.set_attribute(_span_attr_request_model, generation.model.name)
+    if generation.response_id:
+        span.set_attribute(_span_attr_response_id, generation.response_id)
+    if generation.response_model:
+        span.set_attribute(_span_attr_response_model, generation.response_model)
+    if generation.stop_reason:
+        span.set_attribute(_span_attr_finish_reasons, [generation.stop_reason])
+
+    usage = generation.usage
+    if usage.input_tokens:
+        span.set_attribute(_span_attr_input_tokens, usage.input_tokens)
+    if usage.output_tokens:
+        span.set_attribute(_span_attr_output_tokens, usage.output_tokens)
+    if usage.cache_read_input_tokens:
+        span.set_attribute(_span_attr_cache_read_tokens, usage.cache_read_input_tokens)
+    if usage.cache_write_input_tokens:
+        span.set_attribute(_span_attr_cache_write_tokens, usage.cache_write_input_tokens)
+
+
+def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
+    span.set_attribute(_span_attr_operation_name, "execute_tool")
+    span.set_attribute(_span_attr_tool_name, start.tool_name)
+
+    if start.tool_call_id:
+        span.set_attribute(_span_attr_tool_call_id, start.tool_call_id)
+    if start.tool_type:
+        span.set_attribute(_span_attr_tool_type, start.tool_type)
+    if start.tool_description:
+        span.set_attribute(_span_attr_tool_description, start.tool_description)
+    if start.conversation_id:
+        span.set_attribute(_span_attr_conversation_id, start.conversation_id)
+    if start.agent_name:
+        span.set_attribute(_span_attr_agent_name, start.agent_name)
+    if start.agent_version:
+        span.set_attribute(_span_attr_agent_version, start.agent_version)
+
+
+def _default_operation_name(mode: GenerationMode | None) -> str:
+    if mode == GenerationMode.STREAM:
+        return "streamText"
+    return "generateText"
+
+
+def _new_random_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_hex(8)}"
+
+
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _datetime_to_ns(value: datetime) -> int:
+    return int(_to_utc(value).timestamp() * 1_000_000_000)
+
+
+def _serialize_tool_content(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed == "":
+            return ""
+        try:
+            json.loads(trimmed)
+            return trimmed
+        except Exception:  # noqa: BLE001
+            return json.dumps(trimmed)
+    if isinstance(value, bytes):
+        trimmed = value.decode("utf-8", errors="replace").strip()
+        if trimmed == "":
+            return ""
+        try:
+            json.loads(trimmed)
+            return trimmed
+        except Exception:  # noqa: BLE001
+            return json.dumps(trimmed)
+    return json.dumps(value)

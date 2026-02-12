@@ -1,0 +1,1 @@
+"""Generated sigil protobuf namespace."""
