@@ -39,14 +39,14 @@ func TestFromRequestResponse(t *testing.T) {
 			{
 				FinishReason: "tool_calls",
 				Message: osdk.ChatCompletionMessage{
-						ToolCalls: []osdk.ChatCompletionMessageToolCallUnion{
-							{
-								ID:   "call_weather",
-								Type: "function",
-								Function: osdk.ChatCompletionMessageFunctionToolCallFunction{
-									Name:      "weather",
-									Arguments: `{"city":"Paris"}`,
-								},
+					ToolCalls: []osdk.ChatCompletionMessageToolCallUnion{
+						{
+							ID:   "call_weather",
+							Type: "function",
+							Function: osdk.ChatCompletionMessageFunctionToolCallFunction{
+								Name:      "weather",
+								Arguments: `{"city":"Paris"}`,
+							},
 						},
 					},
 				},
