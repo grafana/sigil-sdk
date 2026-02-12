@@ -50,7 +50,7 @@ rec.SetResult(anthropic.FromRequestResponse(req, resp))
 
 ## Streaming Defer Pattern
 ```go
-ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+ctx, rec := sigilClient.StartStreamingGeneration(ctx, sigil.GenerationStart{
 	Model: sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
 defer rec.End()

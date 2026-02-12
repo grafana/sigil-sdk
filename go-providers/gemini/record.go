@@ -39,7 +39,7 @@ func GenerateContent(
 // GenerateContentStream calls the Gemini streaming generate-content API and records the generation.
 // It mirrors providerClient.Models.GenerateContentStream but adds Sigil recording.
 // All responses are collected into StreamSummary; for per-response processing use the
-// defer pattern directly with StartGeneration.
+// defer pattern directly with StartStreamingGeneration.
 func GenerateContentStream(
 	ctx context.Context,
 	client *sigil.Client,
@@ -49,7 +49,7 @@ func GenerateContentStream(
 ) (StreamSummary, error) {
 	options := applyOptions(opts)
 
-	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
+	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
 		ConversationID: options.conversationID,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
 	})

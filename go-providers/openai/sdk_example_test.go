@@ -104,14 +104,19 @@ func Example_withSigilStreamingDefer() {
 	providerClient := osdk.NewClient(osdkoption.WithAPIKey(apiKey))
 	req := exampleOpenAIRequest()
 
-	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
+	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-openai-4",
 		Model:          sigil.ModelRef{Provider: "openai", Name: string(req.Model)},
 	})
 	defer rec.End()
 
 	stream := providerClient.Chat.Completions.NewStreaming(ctx, req)
-	defer stream.Close()
+	defer func() {
+		if closeErr := stream.Close(); closeErr != nil {
+			// Best-effort close in example flow.
+			_ = closeErr
+		}
+	}()
 
 	summary := StreamSummary{}
 	for stream.Next() {

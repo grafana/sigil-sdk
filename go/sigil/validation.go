@@ -7,6 +7,10 @@ import (
 )
 
 func ValidateGeneration(g Generation) error {
+	if g.Mode != "" && g.Mode != GenerationModeSync && g.Mode != GenerationModeStream {
+		return errors.New("generation.mode must be one of SYNC|STREAM")
+	}
+
 	if strings.TrimSpace(g.Model.Provider) == "" {
 		return errors.New("generation.model.provider is required")
 	}

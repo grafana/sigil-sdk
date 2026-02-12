@@ -1,0 +1,505 @@
+package sigil
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+)
+
+type queuedGeneration struct {
+	generation *sigilv1.Generation
+}
+
+type generationExporter interface {
+	Export(ctx context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error)
+	Shutdown(ctx context.Context) error
+}
+
+type noopGenerationExporter struct {
+	err error
+}
+
+func newNoopGenerationExporter(err error) generationExporter {
+	return &noopGenerationExporter{err: err}
+}
+
+func (e *noopGenerationExporter) Export(_ context.Context, _ *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+	if e.err != nil {
+		return nil, e.err
+	}
+	return nil, errors.New("generation exporter unavailable")
+}
+
+func (e *noopGenerationExporter) Shutdown(_ context.Context) error {
+	return nil
+}
+
+type grpcGenerationExporter struct {
+	client  sigilv1.GenerationIngestServiceClient
+	conn    *grpc.ClientConn
+	headers map[string]string
+}
+
+func newGRPCGenerationExporter(cfg GenerationExportConfig) (generationExporter, error) {
+	endpoint, _, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	transportCreds := credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	if cfg.Insecure || insecureEndpoint {
+		transportCreds = insecure.NewCredentials()
+	}
+
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(transportCreds))
+	if err != nil {
+		return nil, fmt.Errorf("dial generation ingest grpc endpoint %q: %w", endpoint, err)
+	}
+
+	return &grpcGenerationExporter{
+		client:  sigilv1.NewGenerationIngestServiceClient(conn),
+		conn:    conn,
+		headers: cloneTags(cfg.Headers),
+	}, nil
+}
+
+func (e *grpcGenerationExporter) Export(ctx context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+	if len(e.headers) > 0 {
+		ctx = metadata.NewOutgoingContext(ctx, metadata.New(e.headers))
+	}
+	return e.client.ExportGenerations(ctx, request)
+}
+
+func (e *grpcGenerationExporter) Shutdown(_ context.Context) error {
+	if e.conn != nil {
+		return e.conn.Close()
+	}
+	return nil
+}
+
+type httpGenerationExporter struct {
+	endpoint string
+	headers  map[string]string
+	client   *http.Client
+}
+
+func newHTTPGenerationExporter(cfg GenerationExportConfig) (generationExporter, error) {
+	endpoint, path, _, err := splitEndpoint(cfg.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	urlString := endpoint
+	if !strings.HasPrefix(urlString, "http://") && !strings.HasPrefix(urlString, "https://") {
+		scheme := "https://"
+		if cfg.Insecure {
+			scheme = "http://"
+		}
+		urlString = scheme + endpoint
+	}
+	if path != "" {
+		urlString = strings.TrimRight(urlString, "/") + path
+	}
+
+	return &httpGenerationExporter{
+		endpoint: urlString,
+		headers:  cloneTags(cfg.Headers),
+		client: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}, nil
+}
+
+func (e *httpGenerationExporter) Export(ctx context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+	payload, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshal generation request: %w", err)
+	}
+
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, strings.NewReader(string(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("build generation request: %w", err)
+	}
+	httpRequest.Header.Set("Content-Type", "application/json")
+	for key, value := range e.headers {
+		httpRequest.Header.Set(key, value)
+	}
+
+	response, err := e.client.Do(httpRequest)
+	if err != nil {
+		return nil, fmt.Errorf("http generation export failed: %w", err)
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read generation response: %w", err)
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("http generation export status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var exportResponse sigilv1.ExportGenerationsResponse
+	if err := protojson.Unmarshal(body, &exportResponse); err != nil {
+		return nil, fmt.Errorf("unmarshal generation response: %w", err)
+	}
+
+	return &exportResponse, nil
+}
+
+func (e *httpGenerationExporter) Shutdown(_ context.Context) error {
+	return nil
+}
+
+func newGenerationExporter(cfg GenerationExportConfig) (generationExporter, error) {
+	switch cfg.Protocol {
+	case GenerationExportProtocolGRPC:
+		return newGRPCGenerationExporter(cfg)
+	case GenerationExportProtocolHTTP:
+		return newHTTPGenerationExporter(cfg)
+	default:
+		return nil, fmt.Errorf("unsupported generation export protocol %q", cfg.Protocol)
+	}
+}
+
+func newTraceProvider(cfg TraceConfig) (trace.Tracer, *sdktrace.TracerProvider, error) {
+	switch cfg.Protocol {
+	case TraceProtocolGRPC:
+		endpoint, _, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(endpoint)}
+		if cfg.Insecure || insecureEndpoint {
+			opts = append(opts, otlptracegrpc.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			opts = append(opts, otlptracegrpc.WithHeaders(cfg.Headers))
+		}
+
+		exporter, err := otlptracegrpc.New(context.Background(), opts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("init otlp grpc trace exporter: %w", err)
+		}
+
+		provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
+		return provider.Tracer(instrumentationName), provider, nil
+	case TraceProtocolHTTP:
+		endpoint, path, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(endpoint)}
+		if path != "" {
+			opts = append(opts, otlptracehttp.WithURLPath(path))
+		}
+		if cfg.Insecure || insecureEndpoint {
+			opts = append(opts, otlptracehttp.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			opts = append(opts, otlptracehttp.WithHeaders(cfg.Headers))
+		}
+
+		exporter, err := otlptracehttp.New(context.Background(), opts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("init otlp http trace exporter: %w", err)
+		}
+
+		provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
+		return provider.Tracer(instrumentationName), provider, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported trace protocol %q", cfg.Protocol)
+	}
+}
+
+func mergeTraceConfig(base, override TraceConfig) TraceConfig {
+	out := base
+	if override.Protocol != "" {
+		out.Protocol = override.Protocol
+	}
+	if override.Endpoint != "" {
+		out.Endpoint = override.Endpoint
+	}
+	if override.Headers != nil {
+		out.Headers = cloneTags(override.Headers)
+	}
+	if override.Insecure {
+		out.Insecure = true
+	}
+	return out
+}
+
+func mergeGenerationExportConfig(base, override GenerationExportConfig) GenerationExportConfig {
+	out := base
+	if override.Protocol != "" {
+		out.Protocol = override.Protocol
+	}
+	if override.Endpoint != "" {
+		out.Endpoint = override.Endpoint
+	}
+	if override.Headers != nil {
+		out.Headers = cloneTags(override.Headers)
+	}
+	if override.Insecure {
+		out.Insecure = true
+	}
+	if override.BatchSize > 0 {
+		out.BatchSize = override.BatchSize
+	}
+	if override.FlushInterval > 0 {
+		out.FlushInterval = override.FlushInterval
+	}
+	if override.QueueSize > 0 {
+		out.QueueSize = override.QueueSize
+	}
+	if override.MaxRetries > 0 {
+		out.MaxRetries = override.MaxRetries
+	}
+	if override.InitialBackoff > 0 {
+		out.InitialBackoff = override.InitialBackoff
+	}
+	if override.MaxBackoff > 0 {
+		out.MaxBackoff = override.MaxBackoff
+	}
+	if override.PayloadMaxBytes > 0 {
+		out.PayloadMaxBytes = override.PayloadMaxBytes
+	}
+	return out
+}
+
+func splitEndpoint(endpoint string) (host string, path string, insecure bool, err error) {
+	trimmed := strings.TrimSpace(endpoint)
+	if trimmed == "" {
+		return "", "", false, errors.New("endpoint is required")
+	}
+
+	if strings.Contains(trimmed, "://") {
+		parsed, parseErr := url.Parse(trimmed)
+		if parseErr != nil {
+			return "", "", false, fmt.Errorf("parse endpoint %q: %w", endpoint, parseErr)
+		}
+		if parsed.Host == "" {
+			return "", "", false, fmt.Errorf("endpoint %q has empty host", endpoint)
+		}
+		return parsed.Host, parsed.Path, parsed.Scheme == "http", nil
+	}
+
+	return trimmed, "", false, nil
+}
+
+func (c *Client) startWorker() {
+	c.workerOnce.Do(func() {
+		go c.runExportWorker()
+	})
+}
+
+func (c *Client) runExportWorker() {
+	defer close(c.workerDone)
+
+	batch := make([]*sigilv1.Generation, 0, c.config.GenerationExport.BatchSize)
+	flushInterval := c.config.GenerationExport.FlushInterval
+	timer := time.NewTimer(flushInterval)
+	defer timer.Stop()
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+
+		request := &sigilv1.ExportGenerationsRequest{Generations: batch}
+		err := c.exportWithRetry(request)
+		batch = batch[:0]
+		return err
+	}
+
+	for {
+		select {
+		case queued, ok := <-c.queue:
+			if !ok {
+				if err := flush(); err != nil {
+					c.logf("sigil generation export flush on shutdown failed: %v", err)
+				}
+				return
+			}
+			batch = append(batch, queued.generation)
+			if len(batch) >= c.config.GenerationExport.BatchSize {
+				if err := flush(); err != nil {
+					c.logf("sigil generation export failed: %v", err)
+				}
+				resetTimer(timer, flushInterval)
+			}
+		case ack := <-c.flushReq:
+			ack <- flush()
+		case <-timer.C:
+			if err := flush(); err != nil {
+				c.logf("sigil generation export failed: %v", err)
+			}
+			resetTimer(timer, flushInterval)
+		}
+	}
+}
+
+func resetTimer(timer *time.Timer, duration time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(duration)
+}
+
+func (c *Client) exportWithRetry(request *sigilv1.ExportGenerationsRequest) error {
+	attempts := c.config.GenerationExport.MaxRetries + 1
+	backoff := c.config.GenerationExport.InitialBackoff
+	if backoff <= 0 {
+		backoff = 100 * time.Millisecond
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		response, err := c.exporter.Export(timeoutCtx, request)
+		cancel()
+		if err == nil {
+			for i := range response.Results {
+				if !response.Results[i].Accepted {
+					c.logf("sigil generation rejected id=%s error=%s", response.Results[i].GenerationId, response.Results[i].Error)
+				}
+			}
+			return nil
+		}
+
+		lastErr = err
+		if attempt == attempts-1 {
+			break
+		}
+		time.Sleep(backoff)
+		if backoff < c.config.GenerationExport.MaxBackoff {
+			backoff *= 2
+			if backoff > c.config.GenerationExport.MaxBackoff {
+				backoff = c.config.GenerationExport.MaxBackoff
+			}
+		}
+	}
+
+	return lastErr
+}
+
+func (c *Client) enqueueGeneration(generation Generation) error {
+	protoGeneration, err := generationToProto(generation)
+	if err != nil {
+		return err
+	}
+
+	if maxPayload := c.config.GenerationExport.PayloadMaxBytes; maxPayload > 0 {
+		if payloadSize := proto.Size(protoGeneration); payloadSize > maxPayload {
+			return fmt.Errorf("generation payload exceeds max bytes (%d > %d)", payloadSize, maxPayload)
+		}
+	}
+
+	c.queueMu.RLock()
+	defer c.queueMu.RUnlock()
+
+	if c.shutdown {
+		return ErrClientShutdown
+	}
+
+	select {
+	case c.queue <- queuedGeneration{generation: protoGeneration}:
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+func (c *Client) Flush(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	c.queueMu.RLock()
+	shuttingDown := c.shutdown
+	c.queueMu.RUnlock()
+	if shuttingDown {
+		return ErrClientShutdown
+	}
+
+	ack := make(chan error, 1)
+	select {
+	case c.flushReq <- ack:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case err := <-ack:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *Client) Shutdown(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var shutdownErr error
+	c.shutdownOnce.Do(func() {
+		c.queueMu.Lock()
+		c.shutdown = true
+		close(c.queue)
+		c.queueMu.Unlock()
+
+		select {
+		case <-c.workerDone:
+		case <-ctx.Done():
+			shutdownErr = errors.Join(shutdownErr, ctx.Err())
+			return
+		}
+
+		if err := c.exporter.Shutdown(ctx); err != nil {
+			shutdownErr = errors.Join(shutdownErr, err)
+		}
+		if c.traceProvider != nil {
+			if err := c.traceProvider.Shutdown(ctx); err != nil {
+				shutdownErr = errors.Join(shutdownErr, err)
+			}
+		}
+	})
+
+	return shutdownErr
+}
+
+func (c *Client) logf(format string, args ...any) {
+	if c == nil || c.config.Logger == nil {
+		return
+	}
+	c.config.Logger.Printf(format, args...)
+}

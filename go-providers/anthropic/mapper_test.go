@@ -63,8 +63,8 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
 	}
-	if len(generation.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(generation.Artifacts))
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
 
 	hasToolRole := false
@@ -147,8 +147,8 @@ func TestFromStream(t *testing.T) {
 	if generation.Usage.TotalTokens != 105 {
 		t.Fatalf("expected total tokens 105, got %d", generation.Usage.TotalTokens)
 	}
-	if len(generation.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(generation.Artifacts))
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
 }
 
@@ -177,8 +177,38 @@ func TestFromStreamWithFinalMessageAppendsEventsArtifact(t *testing.T) {
 		t.Fatalf("from stream with final message: %v", err)
 	}
 
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
+	}
+}
+
+func TestFromStreamWithRawArtifacts(t *testing.T) {
+	req := testRequest()
+	finalMessage := &asdk.BetaMessage{
+		ID:         "msg_final",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			{Type: "text", Text: "final output"},
+		},
+		Usage: asdk.BetaUsage{
+			InputTokens:  10,
+			OutputTokens: 4,
+		},
+	}
+
+	generation, err := FromStream(req, StreamSummary{
+		Events: []asdk.BetaRawMessageStreamEventUnion{
+			{Type: "message_stop"},
+		},
+		FinalMessage: finalMessage,
+	}, WithRawArtifacts())
+	if err != nil {
+		t.Fatalf("from stream with final message: %v", err)
+	}
+
 	if len(generation.Artifacts) != 4 {
-		t.Fatalf("expected 4 artifacts (request/response/tools/events), got %d", len(generation.Artifacts))
+		t.Fatalf("expected 4 artifacts with raw artifact opt-in, got %d", len(generation.Artifacts))
 	}
 }
 

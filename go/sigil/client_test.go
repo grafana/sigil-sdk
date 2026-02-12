@@ -3,10 +3,13 @@ package sigil
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -14,10 +17,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func TestStartGenerationExternalizesArtifacts(t *testing.T) {
-	store := NewMemoryRecordStore()
+func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{
-		RecordStore: store,
 		Now: func() time.Time {
 			return time.Date(2026, 2, 11, 12, 0, 0, 0, time.UTC)
 		},
@@ -60,9 +61,8 @@ func TestStartGenerationExternalizesArtifacts(t *testing.T) {
 	if err := generationRecorder.Err(); err != nil {
 		t.Fatalf("end generation: %v", err)
 	}
-
-	if store.Count() != 2 {
-		t.Fatalf("expected 2 records in store, got %d", store.Count())
+	if len(generationRecorder.lastGeneration.Artifacts) != 2 {
+		t.Fatalf("expected 2 artifacts on generation, got %d", len(generationRecorder.lastGeneration.Artifacts))
 	}
 
 	if generationRecorder.lastGeneration.ID != "gen_test_externalize" {
@@ -190,7 +190,7 @@ func TestStartGenerationSpanNameIncludesModelAndOperation(t *testing.T) {
 		t.Fatalf("end generation: %v", err)
 	}
 
-	_, streamRecorder := client.StartGeneration(context.Background(), GenerationStart{
+	_, streamRecorder := client.StartStreamingGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-stream",
 		OperationName:  "text_completion",
 		Model: ModelRef{
@@ -228,6 +228,84 @@ func TestStartGenerationSpanNameIncludesModelAndOperation(t *testing.T) {
 	}
 }
 
+func TestStartGenerationUsesModeAwareDefaultOperationName(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, syncRecorder := client.StartGeneration(context.Background(), GenerationStart{
+		ConversationID: "conv-default-sync",
+		Model: ModelRef{
+			Provider: "openai",
+			Name:     "gpt-5",
+		},
+	})
+	syncRecorder.SetResult(Generation{
+		Input:  []Message{{Role: RoleUser, Parts: []Part{TextPart("hello")}}},
+		Output: []Message{{Role: RoleAssistant, Parts: []Part{TextPart("hi")}}},
+	}, nil)
+	syncRecorder.End()
+	if err := syncRecorder.Err(); err != nil {
+		t.Fatalf("end sync generation: %v", err)
+	}
+	if syncRecorder.lastGeneration.Mode != GenerationModeSync {
+		t.Fatalf("expected sync mode %q, got %q", GenerationModeSync, syncRecorder.lastGeneration.Mode)
+	}
+
+	_, streamRecorder := client.StartStreamingGeneration(context.Background(), GenerationStart{
+		ConversationID: "conv-default-stream",
+		Model: ModelRef{
+			Provider: "openai",
+			Name:     "gpt-5",
+		},
+	})
+	streamRecorder.SetResult(Generation{
+		Input:  []Message{{Role: RoleUser, Parts: []Part{TextPart("hello")}}},
+		Output: []Message{{Role: RoleAssistant, Parts: []Part{TextPart("hi")}}},
+	}, nil)
+	streamRecorder.End()
+	if err := streamRecorder.Err(); err != nil {
+		t.Fatalf("end stream generation: %v", err)
+	}
+	if streamRecorder.lastGeneration.Mode != GenerationModeStream {
+		t.Fatalf("expected stream mode %q, got %q", GenerationModeStream, streamRecorder.lastGeneration.Mode)
+	}
+
+	spans := recorder.Ended()
+	if got := countGenerationSpans(spans); got != 2 {
+		t.Fatalf("expected 2 generation spans, got %d", got)
+	}
+
+	sawSync := false
+	sawStream := false
+	for _, span := range spans {
+		if !isGenerationSpan(span) {
+			continue
+		}
+		attrs := spanAttributeMap(span)
+		switch attrs[spanAttrConversationID].AsString() {
+		case "conv-default-sync":
+			sawSync = true
+			if attrs[spanAttrOperationName].AsString() != defaultOperationNameSync {
+				t.Fatalf("expected sync operation %q, got %q", defaultOperationNameSync, attrs[spanAttrOperationName].AsString())
+			}
+			if span.Name() != defaultOperationNameSync+" gpt-5" {
+				t.Fatalf("expected sync span name %q, got %q", defaultOperationNameSync+" gpt-5", span.Name())
+			}
+		case "conv-default-stream":
+			sawStream = true
+			if attrs[spanAttrOperationName].AsString() != defaultOperationNameStream {
+				t.Fatalf("expected stream operation %q, got %q", defaultOperationNameStream, attrs[spanAttrOperationName].AsString())
+			}
+			if span.Name() != defaultOperationNameStream+" gpt-5" {
+				t.Fatalf("expected stream span name %q, got %q", defaultOperationNameStream+" gpt-5", span.Name())
+			}
+		}
+	}
+
+	if !sawSync || !sawStream {
+		t.Fatalf("expected both sync and stream default operation spans")
+	}
+}
+
 func TestGenerationRecorderSetCallErrorMarksSpanError(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -243,11 +321,8 @@ func TestGenerationRecorderSetCallErrorMarksSpanError(t *testing.T) {
 	generationRecorder.End()
 
 	err := generationRecorder.Err()
-	if err == nil {
-		t.Fatalf("expected call error")
-	}
-	if !strings.Contains(err.Error(), "provider unavailable") {
-		t.Fatalf("expected provider unavailable error, got %v", err)
+	if err != nil {
+		t.Fatalf("expected nil recorder error for call failure, got %v", err)
 	}
 	if generationRecorder.lastGeneration.CallError != "provider unavailable" {
 		t.Fatalf("expected call error on generation, got %q", generationRecorder.lastGeneration.CallError)
@@ -281,11 +356,8 @@ func TestGenerationRecorderSetResultMappingErrorMarksSpanError(t *testing.T) {
 	generationRecorder.End()
 
 	err := generationRecorder.Err()
-	if err == nil {
-		t.Fatalf("expected mapping error")
-	}
-	if !strings.Contains(err.Error(), "mapping failed") {
-		t.Fatalf("expected mapping error, got %v", err)
+	if err != nil {
+		t.Fatalf("expected nil recorder error for mapping failure, got %v", err)
 	}
 
 	span := onlyGenerationSpan(t, recorder.Ended())
@@ -302,12 +374,14 @@ func TestGenerationRecorderSetResultMappingErrorMarksSpanError(t *testing.T) {
 	}
 }
 
-func TestGenerationRecorderEndReturnsRecordErrorAndMarksSpanError(t *testing.T) {
+func TestGenerationRecorderEndReturnsEnqueueErrorAndMarksSpanError(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{
-		RecordStore: &failingRecordStore{err: errors.New("store unavailable")},
+		GenerationExport: GenerationExportConfig{
+			PayloadMaxBytes: 32,
+		},
 	})
 
-	artifact, err := NewJSONArtifact(ArtifactKindRequest, "request", map[string]any{"ok": true})
+	artifact, err := NewJSONArtifact(ArtifactKindRequest, "request", map[string]any{"payload": strings.Repeat("x", 256)})
 	if err != nil {
 		t.Fatalf("new artifact: %v", err)
 	}
@@ -325,12 +399,12 @@ func TestGenerationRecorderEndReturnsRecordErrorAndMarksSpanError(t *testing.T) 
 	}, nil)
 	generationRecorder.End()
 
-	recordErr := generationRecorder.Err()
-	if recordErr == nil {
-		t.Fatalf("expected record error")
+	enqueueErr := generationRecorder.Err()
+	if enqueueErr == nil {
+		t.Fatalf("expected enqueue error")
 	}
-	if !strings.Contains(recordErr.Error(), "store artifact") {
-		t.Fatalf("expected store artifact error, got %v", recordErr)
+	if !errors.Is(enqueueErr, ErrEnqueueFailed) {
+		t.Fatalf("expected enqueue sentinel error, got %v", enqueueErr)
 	}
 
 	span := onlyGenerationSpan(t, recorder.Ended())
@@ -338,8 +412,8 @@ func TestGenerationRecorderEndReturnsRecordErrorAndMarksSpanError(t *testing.T) 
 		t.Fatalf("expected error span status, got %v", got)
 	}
 	attrs := spanAttributeMap(span)
-	if attrs[spanAttrErrorType].AsString() != "record_store_error" {
-		t.Fatalf("expected error.type=record_store_error")
+	if attrs[spanAttrErrorType].AsString() != "enqueue_error" {
+		t.Fatalf("expected error.type=enqueue_error")
 	}
 }
 
@@ -382,7 +456,7 @@ func TestGenerationRecorderEndReturnsValidationErrorAndMarksSpanError(t *testing
 func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
+	_, generationRecorder := client.StartStreamingGeneration(context.Background(), GenerationStart{
 		ConversationID: "conv-6",
 		Model: ModelRef{
 			Provider: "anthropic",
@@ -786,10 +860,12 @@ func TestToolExecutionConversationIDFromContext(t *testing.T) {
 
 func TestSentinelErrorsAreMatchable(t *testing.T) {
 	client, _, _ := newTestClient(t, Config{
-		RecordStore: &failingRecordStore{err: errors.New("store unavailable")},
+		GenerationExport: GenerationExportConfig{
+			PayloadMaxBytes: 32,
+		},
 	})
 
-	artifact, err := NewJSONArtifact(ArtifactKindRequest, "request", map[string]any{"ok": true})
+	artifact, err := NewJSONArtifact(ArtifactKindRequest, "request", map[string]any{"payload": strings.Repeat("x", 256)})
 	if err != nil {
 		t.Fatalf("new artifact: %v", err)
 	}
@@ -800,22 +876,14 @@ func TestSentinelErrorsAreMatchable(t *testing.T) {
 	rec.SetResult(Generation{Artifacts: []Artifact{artifact}}, nil)
 	rec.End()
 
-	if !errors.Is(rec.Err(), ErrStoreFailed) {
-		t.Fatalf("expected errors.Is(err, ErrStoreFailed), got %v", rec.Err())
+	if !errors.Is(rec.Err(), ErrEnqueueFailed) {
+		t.Fatalf("expected errors.Is(err, ErrEnqueueFailed), got %v", rec.Err())
 	}
 }
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
-
-type failingRecordStore struct {
-	err error
-}
-
-func (s *failingRecordStore) Put(_ context.Context, _ Record) (string, error) {
-	return "", s.err
-}
 
 func newTestClient(t *testing.T, config Config) (*Client, *tracetest.SpanRecorder, *sdktrace.TracerProvider) {
 	t.Helper()
@@ -831,11 +899,48 @@ func newTestClient(t *testing.T, config Config) (*Client, *tracetest.SpanRecorde
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	if cfg.RecordStore == nil {
-		cfg.RecordStore = NewMemoryRecordStore()
+	if cfg.testGenerationExporter == nil {
+		cfg.testGenerationExporter = &capturingGenerationExporter{}
 	}
 
-	return NewClient(cfg), recorder, tp
+	client := NewClient(cfg)
+	t.Cleanup(func() {
+		_ = client.Shutdown(context.Background())
+	})
+	return client, recorder, tp
+}
+
+type capturingGenerationExporter struct {
+	mu       sync.Mutex
+	requests []*sigilv1.ExportGenerationsRequest
+	err      error
+}
+
+func (e *capturingGenerationExporter) Export(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+	if e.err != nil {
+		return nil, e.err
+	}
+
+	e.mu.Lock()
+	e.requests = append(e.requests, req)
+	e.mu.Unlock()
+
+	results := make([]*sigilv1.ExportGenerationResult, len(req.Generations))
+	for i := range req.Generations {
+		results[i] = &sigilv1.ExportGenerationResult{
+			GenerationId: req.Generations[i].Id,
+			Accepted:     true,
+		}
+	}
+	return &sigilv1.ExportGenerationsResponse{Results: results}, nil
+}
+
+func (e *capturingGenerationExporter) Shutdown(_ context.Context) error {
+	return nil
+}
+
+func (e *capturingGenerationExporter) failureForAll(message string) {
+	e.err = fmt.Errorf("%s", message)
 }
 
 func countGenerationSpans(spans []sdktrace.ReadOnlySpan) int {

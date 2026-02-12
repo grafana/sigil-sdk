@@ -50,7 +50,7 @@ rec.SetResult(openai.FromRequestResponse(req, resp))
 
 ## Streaming Defer Pattern
 ```go
-ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+ctx, rec := sigilClient.StartStreamingGeneration(ctx, sigil.GenerationStart{
 	Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 })
 defer rec.End()

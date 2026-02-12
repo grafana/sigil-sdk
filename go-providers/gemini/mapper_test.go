@@ -109,8 +109,8 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
 	}
-	if len(generation.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(generation.Artifacts))
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
 
 	hasToolRole := false
@@ -198,7 +198,45 @@ func TestFromStream(t *testing.T) {
 	if generation.Usage.TotalTokens != 26 {
 		t.Fatalf("expected total tokens 26, got %d", generation.Usage.TotalTokens)
 	}
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
+	}
+}
+
+func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
+	req := GenerateContentRequest{
+		Model: "gemini-2.5-pro",
+		Contents: []*genai.Content{
+			genai.NewContentFromText("hello", genai.RoleUser),
+		},
+		Config: &genai.GenerateContentConfig{
+			Tools: []*genai.Tool{
+				{
+					FunctionDeclarations: []*genai.FunctionDeclaration{
+						{Name: "weather"},
+					},
+				},
+			},
+		},
+	}
+
+	resp := &genai.GenerateContentResponse{
+		ResponseID:   "resp_1",
+		ModelVersion: "gemini-2.5-pro-001",
+		Candidates: []*genai.Candidate{
+			{
+				FinishReason: genai.FinishReasonStop,
+				Content:      genai.NewContentFromText("done", genai.RoleModel),
+			},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp, WithRawArtifacts())
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
 	if len(generation.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(generation.Artifacts))
+		t.Fatalf("expected 3 artifacts with raw artifact opt-in, got %d", len(generation.Artifacts))
 	}
 }

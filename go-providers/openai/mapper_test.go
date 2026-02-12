@@ -112,8 +112,8 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
 	}
-	if len(generation.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(generation.Artifacts))
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
 
 	hasToolRole := false
@@ -216,7 +216,47 @@ func TestFromStream(t *testing.T) {
 	if generation.Usage.TotalTokens != 25 {
 		t.Fatalf("expected total tokens 25, got %d", generation.Usage.TotalTokens)
 	}
+	if len(generation.Artifacts) != 0 {
+		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
+	}
+}
+
+func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
+	req := osdk.ChatCompletionNewParams{
+		Model: shared.ChatModel("gpt-4o-mini"),
+		Messages: []osdk.ChatCompletionMessageParamUnion{
+			osdk.SystemMessage("You are concise."),
+			osdk.UserMessage("hello"),
+		},
+		Tools: []osdk.ChatCompletionToolParam{
+			{
+				Type: "function",
+				Function: shared.FunctionDefinitionParam{
+					Name: "weather",
+				},
+			},
+		},
+	}
+
+	resp := &osdk.ChatCompletion{
+		ID:    "chatcmpl_1",
+		Model: "gpt-4o-mini",
+		Choices: []osdk.ChatCompletionChoice{
+			{
+				FinishReason: "stop",
+				Message: osdk.ChatCompletionMessage{
+					Content: "hi",
+				},
+			},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp, WithRawArtifacts())
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
 	if len(generation.Artifacts) != 3 {
-		t.Fatalf("expected 3 artifacts, got %d", len(generation.Artifacts))
+		t.Fatalf("expected 3 artifacts with raw artifact opt-in, got %d", len(generation.Artifacts))
 	}
 }

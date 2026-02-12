@@ -93,7 +93,7 @@ func Example_withSigilStreamingDefer() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 	req := exampleGeminiRequest()
 
-	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
+	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-gemini-3",
 		Model:          sigil.ModelRef{Provider: "gemini", Name: req.Model},
 	})

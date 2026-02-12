@@ -16,8 +16,12 @@ var (
 	ErrToolNameRequired = errors.New("sigil: tool name is required")
 	// ErrValidationFailed wraps generation validation failures.
 	ErrValidationFailed = errors.New("sigil: generation validation failed")
-	// ErrStoreFailed wraps artifact store failures.
-	ErrStoreFailed = errors.New("sigil: generation store failed")
+	// ErrEnqueueFailed wraps generation enqueue failures.
+	ErrEnqueueFailed = errors.New("sigil: generation enqueue failed")
+	// ErrQueueFull is returned when the generation queue is at capacity.
+	ErrQueueFull = errors.New("sigil: generation queue is full")
+	// ErrClientShutdown is returned when enqueue happens after shutdown starts.
+	ErrClientShutdown = errors.New("sigil: client is shutting down")
 	// ErrMappingFailed wraps provider-to-generation mapping failures.
 	ErrMappingFailed = errors.New("sigil: generation mapping failed")
 )

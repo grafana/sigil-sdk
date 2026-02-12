@@ -1,0 +1,321 @@
+package sigil
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"math/rand"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
+	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+)
+
+type exportTransport int
+
+const (
+	exportTransportHTTP exportTransport = iota
+	exportTransportGRPC
+)
+
+func TestSDKExportsGenerationOverHTTP_AllPropertiesRoundTrip(t *testing.T) {
+	start, result := payloadFromSeed(42)
+	expected, received := runSDKRoundTrip(t, exportTransportHTTP, start, result)
+
+	if !proto.Equal(expected, received) {
+		t.Fatalf("http roundtrip mismatch\nexpected=%s\nreceived=%s", protojson.Format(expected), protojson.Format(received))
+	}
+}
+
+func TestSDKExportsGenerationOverGRPC_AllPropertiesRoundTrip(t *testing.T) {
+	start, result := payloadFromSeed(99)
+	expected, received := runSDKRoundTrip(t, exportTransportGRPC, start, result)
+
+	if !proto.Equal(expected, received) {
+		t.Fatalf("grpc roundtrip mismatch\nexpected=%s\nreceived=%s", protojson.Format(expected), protojson.Format(received))
+	}
+}
+
+func TestSDKExportRoundTripProperties(t *testing.T) {
+	for seed := uint64(1); seed <= 20; seed++ {
+		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
+			start, result := payloadFromSeed(seed)
+
+			httpExpected, httpReceived := runSDKRoundTrip(t, exportTransportHTTP, start, result)
+			if !proto.Equal(httpExpected, httpReceived) {
+				t.Fatalf("http roundtrip mismatch for seed=%d", seed)
+			}
+
+			grpcExpected, grpcReceived := runSDKRoundTrip(t, exportTransportGRPC, start, result)
+			if !proto.Equal(grpcExpected, grpcReceived) {
+				t.Fatalf("grpc roundtrip mismatch for seed=%d", seed)
+			}
+		})
+	}
+}
+
+func runSDKRoundTrip(t *testing.T, transport exportTransport, start GenerationStart, result Generation) (*sigilv1.Generation, *sigilv1.Generation) {
+	t.Helper()
+
+	ingest := &capturingIngestServer{}
+	client := newTransportTestClient(t, transport, ingest)
+
+	_, rec := client.StartGeneration(context.Background(), start)
+	rec.SetResult(result, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("recorder error: %v", err)
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("shutdown client: %v", err)
+	}
+
+	request := ingest.singleRequest(t)
+	if len(request.Generations) != 1 {
+		t.Fatalf("expected 1 generation, got %d", len(request.Generations))
+	}
+
+	expected, err := generationToProto(rec.lastGeneration)
+	if err != nil {
+		t.Fatalf("convert expected generation to proto: %v", err)
+	}
+
+	return expected, request.Generations[0]
+}
+
+func newTransportTestClient(t *testing.T, transport exportTransport, ingest *capturingIngestServer) *Client {
+	t.Helper()
+
+	cfg := Config{
+		Tracer: trace.NewNoopTracerProvider().Tracer("test"),
+		GenerationExport: GenerationExportConfig{
+			BatchSize:      1,
+			QueueSize:      10,
+			FlushInterval:  time.Second,
+			MaxRetries:     1,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     10 * time.Millisecond,
+		},
+	}
+
+	switch transport {
+	case exportTransportHTTP:
+		httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			payload, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, "read body", http.StatusBadRequest)
+				return
+			}
+
+			request := &sigilv1.ExportGenerationsRequest{}
+			if err := protojson.Unmarshal(payload, request); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			ingest.capture(request)
+
+			response := acceptanceResponse(request)
+			encoded, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(response)
+			if err != nil {
+				http.Error(w, "marshal response", http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write(encoded)
+		}))
+		t.Cleanup(httpServer.Close)
+
+		cfg.GenerationExport.Protocol = GenerationExportProtocolHTTP
+		cfg.GenerationExport.Endpoint = httpServer.URL + "/api/v1/generations:export"
+	case exportTransportGRPC:
+		grpcServer := grpc.NewServer()
+		sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen grpc: %v", err)
+		}
+
+		go func() {
+			_ = grpcServer.Serve(listener)
+		}()
+
+		t.Cleanup(func() {
+			grpcServer.Stop()
+			_ = listener.Close()
+		})
+
+		cfg.GenerationExport.Protocol = GenerationExportProtocolGRPC
+		cfg.GenerationExport.Endpoint = listener.Addr().String()
+		cfg.GenerationExport.Insecure = true
+	default:
+		t.Fatalf("unsupported transport: %v", transport)
+	}
+
+	return NewClient(cfg)
+}
+
+func payloadFromSeed(seed uint64) (GenerationStart, Generation) {
+	rnd := rand.New(rand.NewSource(int64(seed)))
+	mode := GenerationModeSync
+	if seed%2 == 0 {
+		mode = GenerationModeStream
+	}
+
+	startedAt := time.Unix(int64(seed%1_000_000), int64(seed%1000)*int64(time.Millisecond)).UTC()
+	completedAt := startedAt.Add(250 * time.Millisecond)
+
+	start := GenerationStart{
+		ID:             "gen-" + randomASCII(rnd, 10),
+		ConversationID: "conv-" + randomASCII(rnd, 8),
+		Mode:           mode,
+		Model: ModelRef{
+			Provider: "provider-" + randomASCII(rnd, 5),
+			Name:     "model-" + randomASCII(rnd, 5),
+		},
+		SystemPrompt: "system-" + randomASCII(rnd, 10),
+		Tools: []ToolDefinition{
+			{Name: "tool-" + randomASCII(rnd, 5), Description: "desc-" + randomASCII(rnd, 6), Type: "function", InputSchema: []byte(`{"type":"object"}`)},
+		},
+		Tags: map[string]string{
+			"seed": fmt.Sprintf("%d", seed),
+			"env":  "test",
+		},
+		Metadata: map[string]any{
+			"seed":    seed % 10000,
+			"enabled": seed%2 == 0,
+			"nested":  map[string]any{"n": rnd.Intn(100)},
+		},
+		StartedAt: startedAt,
+	}
+
+	result := Generation{
+		ID:             start.ID,
+		ConversationID: start.ConversationID,
+		Mode:           start.Mode,
+		OperationName:  defaultOperationNameForMode(start.Mode),
+		TraceID:        randomHex(rnd, 32),
+		SpanID:         randomHex(rnd, 16),
+		Model:          start.Model,
+		ResponseID:     "resp-" + randomASCII(rnd, 8),
+		ResponseModel:  "response-model-" + randomASCII(rnd, 5),
+		SystemPrompt:   start.SystemPrompt,
+		Input: []Message{
+			{Role: RoleUser, Name: "user", Parts: []Part{TextPart("input-" + randomASCII(rnd, 8))}},
+		},
+		Output: []Message{
+			{Role: RoleAssistant, Name: "assistant", Parts: []Part{ThinkingPart("think-" + randomASCII(rnd, 6)), ToolCallPart(ToolCall{ID: "call-" + randomASCII(rnd, 5), Name: "tool", InputJSON: []byte(`{"x":1}`)})}},
+			{Role: RoleTool, Name: "tool", Parts: []Part{ToolResultPart(ToolResult{ToolCallID: "call-" + randomASCII(rnd, 5), Name: "tool", Content: "ok", ContentJSON: []byte(`{"ok":true}`), IsError: seed%3 == 0})}},
+		},
+		Tools: start.Tools,
+		Usage: TokenUsage{
+			InputTokens:           int64(rnd.Intn(1000)),
+			OutputTokens:          int64(rnd.Intn(1000)),
+			TotalTokens:           int64(rnd.Intn(2000) + 1),
+			CacheReadInputTokens:  int64(rnd.Intn(100)),
+			CacheWriteInputTokens: int64(rnd.Intn(100)),
+			ReasoningTokens:       int64(rnd.Intn(100)),
+		},
+		StopReason:  "stop-" + randomASCII(rnd, 4),
+		StartedAt:   startedAt,
+		CompletedAt: completedAt,
+		Tags: map[string]string{
+			"seed": fmt.Sprintf("%d", seed),
+			"env":  "test",
+		},
+		Metadata: map[string]any{
+			"seed":    seed % 10000,
+			"enabled": seed%2 == 0,
+			"nested":  map[string]any{"n": rnd.Intn(100)},
+		},
+		Artifacts: []Artifact{
+			{Kind: ArtifactKindRequest, Name: "request", ContentType: "application/json", Payload: []byte(`{"request":true}`), RecordID: "rec-" + randomASCII(rnd, 6), URI: "sigil://artifact/" + randomASCII(rnd, 6)},
+			{Kind: ArtifactKindProviderEvent, Name: "event", ContentType: "application/json", Payload: []byte(`{"event":true}`)},
+		},
+	}
+
+	return start, result
+}
+
+func randomASCII(rnd *rand.Rand, n int) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	bytes := make([]byte, n)
+	for i := range bytes {
+		bytes[i] = alphabet[rnd.Intn(len(alphabet))]
+	}
+	return string(bytes)
+}
+
+func randomHex(rnd *rand.Rand, n int) string {
+	const alphabet = "0123456789abcdef"
+	bytes := make([]byte, n)
+	for i := range bytes {
+		bytes[i] = alphabet[rnd.Intn(len(alphabet))]
+	}
+	return string(bytes)
+}
+
+type capturingIngestServer struct {
+	sigilv1.UnimplementedGenerationIngestServiceServer
+
+	mu       sync.Mutex
+	requests []*sigilv1.ExportGenerationsRequest
+}
+
+func (s *capturingIngestServer) ExportGenerations(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+	s.capture(req)
+	return acceptanceResponse(req), nil
+}
+
+func (s *capturingIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
+	if req == nil {
+		return
+	}
+
+	clone := proto.Clone(req)
+	typed, ok := clone.(*sigilv1.ExportGenerationsRequest)
+	if !ok {
+		return
+	}
+
+	s.mu.Lock()
+	s.requests = append(s.requests, typed)
+	s.mu.Unlock()
+}
+
+func (s *capturingIngestServer) singleRequest(t *testing.T) *sigilv1.ExportGenerationsRequest {
+	t.Helper()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.requests) != 1 {
+		t.Fatalf("expected exactly one export request, got %d", len(s.requests))
+	}
+	return s.requests[0]
+}
+
+func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
+	response := &sigilv1.ExportGenerationsResponse{Results: make([]*sigilv1.ExportGenerationResult, len(req.GetGenerations()))}
+	for i := range req.GetGenerations() {
+		response.Results[i] = &sigilv1.ExportGenerationResult{GenerationId: req.Generations[i].Id, Accepted: true}
+	}
+	return response
+}

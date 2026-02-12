@@ -39,7 +39,7 @@ func ChatCompletion(
 // ChatCompletionStream calls the OpenAI streaming chat completion API and records the generation.
 // It mirrors providerClient.Chat.Completions.NewStreaming but adds Sigil recording.
 // All chunks are collected into StreamSummary; for per-chunk processing use the
-// defer pattern directly with StartGeneration.
+// defer pattern directly with StartStreamingGeneration.
 func ChatCompletionStream(
 	ctx context.Context,
 	client *sigil.Client,
@@ -49,14 +49,19 @@ func ChatCompletionStream(
 ) (*osdk.ChatCompletion, StreamSummary, error) {
 	options := applyOptions(opts)
 
-	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
+	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
 		ConversationID: options.conversationID,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
 	})
 	defer rec.End()
 
 	stream := provider.Chat.Completions.NewStreaming(ctx, req)
-	defer stream.Close()
+	defer func() {
+		if closeErr := stream.Close(); closeErr != nil {
+			// Best-effort close on stream teardown.
+			_ = closeErr
+		}
+	}()
 
 	summary := StreamSummary{}
 	for stream.Next() {

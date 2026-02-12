@@ -17,11 +17,7 @@ type mapperOptions struct {
 
 func defaultOptions() mapperOptions {
 	return mapperOptions{
-		providerName:            "gemini",
-		includeRequestArtifact:  true,
-		includeResponseArtifact: true,
-		includeToolsArtifact:    true,
-		includeEventsArtifact:   true,
+		providerName: "gemini",
 	}
 }
 
@@ -84,6 +80,44 @@ func WithMetadata(metadata map[string]any) Option {
 		for key, value := range metadata {
 			options.metadata[key] = value
 		}
+	}
+}
+
+// WithRawArtifacts enables all raw provider artifacts for debug workflows.
+func WithRawArtifacts() Option {
+	return func(options *mapperOptions) {
+		options.includeRequestArtifact = true
+		options.includeResponseArtifact = true
+		options.includeToolsArtifact = true
+		options.includeEventsArtifact = true
+	}
+}
+
+// WithRequestArtifact enables request artifact emission.
+func WithRequestArtifact() Option {
+	return func(options *mapperOptions) {
+		options.includeRequestArtifact = true
+	}
+}
+
+// WithResponseArtifact enables response artifact emission.
+func WithResponseArtifact() Option {
+	return func(options *mapperOptions) {
+		options.includeResponseArtifact = true
+	}
+}
+
+// WithToolsArtifact enables tools artifact emission.
+func WithToolsArtifact() Option {
+	return func(options *mapperOptions) {
+		options.includeToolsArtifact = true
+	}
+}
+
+// WithEventsArtifact enables stream events artifact emission.
+func WithEventsArtifact() Option {
+	return func(options *mapperOptions) {
+		options.includeEventsArtifact = true
 	}
 }
 

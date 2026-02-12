@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -12,23 +13,60 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
 // Config controls Sigil client behavior.
 type Config struct {
-	// OTLPHTTPEndpoint is the OTLP HTTP traces endpoint used by Sigil services.
-	OTLPHTTPEndpoint string
-	// RecordsEndpoint is the records API endpoint used for payload externalization.
-	RecordsEndpoint string
-	// PayloadMaxBytes is the max payload size before externalization.
-	PayloadMaxBytes int
-	// RecordStore persists externalized artifacts.
-	RecordStore RecordStore
-	// Tracer is used to create GenAI spans around StartGeneration/End.
+	Trace            TraceConfig
+	GenerationExport GenerationExportConfig
+	// Tracer is optional and mainly used for tests. If nil, the client builds one from Trace config.
 	Tracer trace.Tracer
+	// Logger receives async export failures. Defaults to log.Default().
+	Logger *log.Logger
 	// Now controls clock behavior (useful for tests).
 	Now func() time.Time
+
+	// testGenerationExporter overrides transport for in-package tests.
+	testGenerationExporter generationExporter
+	// testDisableWorker keeps queue synchronous for in-package tests.
+	testDisableWorker bool
+}
+
+type TraceProtocol string
+
+const (
+	TraceProtocolGRPC TraceProtocol = "grpc"
+	TraceProtocolHTTP TraceProtocol = "http"
+)
+
+type TraceConfig struct {
+	Protocol TraceProtocol
+	Endpoint string
+	Headers  map[string]string
+	Insecure bool
+}
+
+type GenerationExportProtocol string
+
+const (
+	GenerationExportProtocolGRPC GenerationExportProtocol = "grpc"
+	GenerationExportProtocolHTTP GenerationExportProtocol = "http"
+)
+
+type GenerationExportConfig struct {
+	Protocol        GenerationExportProtocol
+	Endpoint        string
+	Headers         map[string]string
+	Insecure        bool
+	BatchSize       int
+	FlushInterval   time.Duration
+	QueueSize       int
+	MaxRetries      int
+	InitialBackoff  time.Duration
+	MaxBackoff      time.Duration
+	PayloadMaxBytes int
 }
 
 const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
@@ -57,24 +95,50 @@ const (
 // Keep unexported aliases for backward-compatible fmt.Errorf wrapping.
 var (
 	errGenerationValidation = ErrValidationFailed
-	errGenerationStore      = ErrStoreFailed
+	errGenerationEnqueue    = ErrEnqueueFailed
 )
 
 // DefaultConfig returns a production-ready baseline configuration.
 func DefaultConfig() Config {
 	return Config{
-		OTLPHTTPEndpoint: "http://localhost:4318/v1/traces",
-		RecordsEndpoint:  "http://localhost:8080/api/v1/records",
-		PayloadMaxBytes:  8192,
-		RecordStore:      NewMemoryRecordStore(),
-		Tracer:           otel.Tracer(instrumentationName),
-		Now:              time.Now,
+		Trace: TraceConfig{
+			Protocol: TraceProtocolHTTP,
+			Endpoint: "http://localhost:4318/v1/traces",
+			Insecure: true,
+		},
+		GenerationExport: GenerationExportConfig{
+			Protocol:        GenerationExportProtocolGRPC,
+			Endpoint:        "localhost:4317",
+			Insecure:        true,
+			BatchSize:       100,
+			FlushInterval:   time.Second,
+			QueueSize:       2000,
+			MaxRetries:      5,
+			InitialBackoff:  100 * time.Millisecond,
+			MaxBackoff:      5 * time.Second,
+			PayloadMaxBytes: 4 << 20,
+		},
+		Tracer: nil,
+		Logger: log.Default(),
+		Now:    time.Now,
 	}
 }
 
 // Client records normalized generation data and GenAI spans.
 type Client struct {
-	config Config
+	config        Config
+	tracer        trace.Tracer
+	traceProvider *sdktrace.TracerProvider
+	exporter      generationExporter
+
+	queue    chan queuedGeneration
+	flushReq chan chan error
+
+	queueMu      sync.RWMutex
+	shutdown     bool
+	workerOnce   sync.Once
+	shutdownOnce sync.Once
+	workerDone   chan struct{}
 }
 
 // GenerationRecorder records and closes one in-flight generation span.
@@ -86,6 +150,9 @@ type Client struct {
 //	resp, err := provider.Call(ctx, req)
 //	if err != nil { rec.SetCallError(err); return err }
 //	rec.SetResult(mapper.FromRequestResponse(req, resp))
+//
+// For streaming calls, use StartStreamingGeneration and set the final stitched
+// generation result before End.
 //
 // All methods are safe to call on a nil or no-op recorder.
 type GenerationRecorder struct {
@@ -129,28 +196,55 @@ func NewClient(config Config) *Client {
 	cfg := config
 	defaults := DefaultConfig()
 
-	if cfg.OTLPHTTPEndpoint == "" {
-		cfg.OTLPHTTPEndpoint = defaults.OTLPHTTPEndpoint
-	}
-	if cfg.RecordsEndpoint == "" {
-		cfg.RecordsEndpoint = defaults.RecordsEndpoint
-	}
-	if cfg.RecordStore == nil {
-		cfg.RecordStore = defaults.RecordStore
-	}
-	if cfg.Tracer == nil {
-		cfg.Tracer = defaults.Tracer
-	}
+	cfg.Trace = mergeTraceConfig(defaults.Trace, cfg.Trace)
+	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
 	if cfg.Now == nil {
 		cfg.Now = defaults.Now
 	}
-
-	return &Client{
-		config: cfg,
+	if cfg.Logger == nil {
+		cfg.Logger = defaults.Logger
 	}
+
+	client := &Client{
+		config:     cfg,
+		flushReq:   make(chan chan error),
+		workerDone: make(chan struct{}),
+	}
+
+	if cfg.Tracer != nil {
+		client.tracer = cfg.Tracer
+	} else {
+		tracer, provider, err := newTraceProvider(cfg.Trace)
+		if err != nil {
+			cfg.Logger.Printf("sigil trace exporter init failed: %v", err)
+			client.tracer = defaults.Tracer
+		} else {
+			client.tracer = tracer
+			client.traceProvider = provider
+		}
+	}
+
+	exporter := cfg.testGenerationExporter
+	if exporter == nil {
+		var err error
+		exporter, err = newGenerationExporter(cfg.GenerationExport)
+		if err != nil {
+			cfg.Logger.Printf("sigil generation exporter init failed: %v", err)
+			exporter = newNoopGenerationExporter(err)
+		}
+	}
+	client.exporter = exporter
+	client.queue = make(chan queuedGeneration, cfg.GenerationExport.QueueSize)
+
+	if !cfg.testDisableWorker {
+		client.startWorker()
+	} else {
+		close(client.workerDone)
+	}
+	return client
 }
 
-// StartGeneration starts a GenAI span and returns a context for the provider call.
+// StartGeneration starts a non-stream GenAI span and returns a context for the provider call.
 //
 // Start fields are seeds: End fills zero-valued generation fields from start.
 // If the client is nil a no-op recorder is returned (instrumentation never crashes business logic).
@@ -159,13 +253,28 @@ func NewClient(config Config) *Client {
 //   - Generation.TraceID and Generation.SpanID are set from the created span context.
 //   - The span includes sigil.generation.id as an attribute.
 func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder) {
+	return c.startGeneration(ctx, start, GenerationModeSync)
+}
+
+// StartStreamingGeneration starts a streaming GenAI span and returns a context for the provider call.
+//
+// It applies STREAM defaults when start fields are zero-valued.
+// If the client is nil a no-op recorder is returned (instrumentation never crashes business logic).
+func (c *Client) StartStreamingGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder) {
+	return c.startGeneration(ctx, start, GenerationModeStream)
+}
+
+func (c *Client) startGeneration(ctx context.Context, start GenerationStart, defaultMode GenerationMode) (context.Context, *GenerationRecorder) {
 	if c == nil {
 		return ctx, &GenerationRecorder{}
 	}
 
 	seed := cloneGenerationStart(start)
+	if seed.Mode == "" {
+		seed.Mode = defaultMode
+	}
 	if seed.OperationName == "" {
-		seed.OperationName = defaultOperationName
+		seed.OperationName = defaultOperationNameForMode(seed.Mode)
 	}
 	// Read conversation ID from context when explicit field is empty.
 	if seed.ConversationID == "" {
@@ -185,12 +294,14 @@ func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (co
 	callCtx, span := c.startSpan(ctx, Generation{
 		ID:             seed.ID,
 		ConversationID: seed.ConversationID,
+		Mode:           seed.Mode,
 		OperationName:  seed.OperationName,
 		Model:          seed.Model,
 	}, trace.SpanKindClient, startedAt)
 	span.SetAttributes(generationSpanAttributes(Generation{
 		ID:             seed.ID,
 		ConversationID: seed.ConversationID,
+		Mode:           seed.Mode,
 		OperationName:  seed.OperationName,
 		Model:          seed.Model,
 	})...)
@@ -317,7 +428,7 @@ func (r *GenerationRecorder) End() {
 	r.lastGeneration = cloneGeneration(normalized)
 	r.mu.Unlock()
 
-	recordErr := r.client.persistGeneration(r.ctx, normalized)
+	enqueueErr := r.client.persistGeneration(r.ctx, normalized)
 
 	// Record errors on span.
 	if callErr != nil {
@@ -326,11 +437,11 @@ func (r *GenerationRecorder) End() {
 	if mapErr != nil {
 		r.span.RecordError(mapErr)
 	}
-	if recordErr != nil {
-		r.span.RecordError(recordErr)
+	if enqueueErr != nil {
+		r.span.RecordError(enqueueErr)
 	}
 
-	if errorType := generationErrorType(callErr, mapErr, recordErr); errorType != "" {
+	if errorType := generationErrorType(callErr, mapErr, enqueueErr); errorType != "" {
 		r.span.SetAttributes(attribute.String(spanAttrErrorType, errorType))
 	}
 
@@ -339,16 +450,16 @@ func (r *GenerationRecorder) End() {
 		r.span.SetStatus(codes.Error, callErr.Error())
 	case mapErr != nil:
 		r.span.SetStatus(codes.Error, mapErr.Error())
-	case recordErr != nil:
-		r.span.SetStatus(codes.Error, recordErr.Error())
+	case enqueueErr != nil:
+		r.span.SetStatus(codes.Error, enqueueErr.Error())
 	default:
 		r.span.SetStatus(codes.Ok, "")
 	}
 	r.span.End(trace.WithTimestamp(normalized.CompletedAt))
 
-	// Store accumulated error for Err().
+	// rec.Err reports local validation/enqueue failures only.
 	r.mu.Lock()
-	r.finalErr = combineAllErrors(callErr, mapErr, recordErr)
+	r.finalErr = combineAllErrors(enqueueErr)
 	r.mu.Unlock()
 }
 
@@ -491,11 +602,17 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if g.ConversationID == "" {
 		g.ConversationID = r.seed.ConversationID
 	}
+	if g.Mode == "" {
+		g.Mode = r.seed.Mode
+	}
+	if g.Mode == "" {
+		g.Mode = GenerationModeSync
+	}
 	if g.OperationName == "" {
 		g.OperationName = r.seed.OperationName
 	}
 	if g.OperationName == "" {
-		g.OperationName = defaultOperationName
+		g.OperationName = defaultOperationNameForMode(g.Mode)
 	}
 	if g.Model.Provider == "" {
 		g.Model.Provider = r.seed.Model.Provider
@@ -537,33 +654,29 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	return g
 }
 
-func combineAllErrors(callErr, mapErr, recordErr error) error {
-	var errs []error
-	if callErr != nil {
-		errs = append(errs, callErr)
+func combineAllErrors(errs ...error) error {
+	filtered := make([]error, 0, len(errs))
+	for i := range errs {
+		if errs[i] != nil {
+			filtered = append(filtered, errs[i])
+		}
 	}
-	if mapErr != nil {
-		errs = append(errs, fmt.Errorf("mapping: %w", mapErr))
-	}
-	if recordErr != nil {
-		errs = append(errs, fmt.Errorf("record generation: %w", recordErr))
-	}
-	if len(errs) == 0 {
+	if len(filtered) == 0 {
 		return nil
 	}
-	if len(errs) == 1 {
-		return errs[0]
+	if len(filtered) == 1 {
+		return filtered[0]
 	}
-	return errors.Join(errs...)
+	return errors.Join(filtered...)
 }
 
-func (c *Client) persistGeneration(ctx context.Context, generation Generation) error {
+func (c *Client) persistGeneration(_ context.Context, generation Generation) error {
 	if err := ValidateGeneration(generation); err != nil {
 		return fmt.Errorf("%w: %v", errGenerationValidation, err)
 	}
 
-	if _, err := c.externalizeArtifacts(ctx, generation.Artifacts); err != nil {
-		return fmt.Errorf("%w: %v", errGenerationStore, err)
+	if err := c.enqueueGeneration(generation); err != nil {
+		return fmt.Errorf("%w: %w", errGenerationEnqueue, err)
 	}
 	return nil
 }
@@ -585,13 +698,18 @@ func (c *Client) startSpan(ctx context.Context, generation Generation, kind trac
 		trace.WithTimestamp(startedAt),
 	}
 
-	return c.config.Tracer.Start(ctx, generationSpanName(generation), opts...)
+	tracer := c.tracer
+	if tracer == nil {
+		tracer = otel.Tracer(instrumentationName)
+	}
+
+	return tracer.Start(ctx, generationSpanName(generation), opts...)
 }
 
 func generationSpanName(g Generation) string {
 	operation := strings.TrimSpace(g.OperationName)
 	if operation == "" {
-		operation = defaultOperationName
+		operation = defaultOperationNameForMode(g.Mode)
 	}
 
 	model := strings.TrimSpace(g.Model.Name)
@@ -647,24 +765,24 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 func operationName(g Generation) string {
 	operation := strings.TrimSpace(g.OperationName)
 	if operation == "" {
-		return defaultOperationName
+		return defaultOperationNameForMode(g.Mode)
 	}
 
 	return operation
 }
 
-func generationErrorType(callErr, mapErr, recordErr error) string {
+func generationErrorType(callErr, mapErr, enqueueErr error) string {
 	switch {
 	case callErr != nil:
 		return "provider_call_error"
 	case mapErr != nil:
 		return "mapping_error"
-	case errors.Is(recordErr, errGenerationValidation):
+	case errors.Is(enqueueErr, errGenerationValidation):
 		return "validation_error"
-	case errors.Is(recordErr, errGenerationStore):
-		return "record_store_error"
-	case recordErr != nil:
-		return "record_store_error"
+	case errors.Is(enqueueErr, errGenerationEnqueue), errors.Is(enqueueErr, ErrQueueFull):
+		return "enqueue_error"
+	case enqueueErr != nil:
+		return "enqueue_error"
 	default:
 		return ""
 	}
@@ -787,62 +905,4 @@ func mergeMetadata(base, override map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
-}
-
-func (c *Client) externalizeArtifacts(ctx context.Context, artifacts []Artifact) ([]ArtifactRef, error) {
-	if len(artifacts) == 0 {
-		return nil, nil
-	}
-
-	if c.config.RecordStore == nil {
-		return nil, nil
-	}
-
-	refs := make([]ArtifactRef, 0, len(artifacts))
-	for i := range artifacts {
-		if len(artifacts[i].Payload) == 0 && artifacts[i].RecordID == "" {
-			continue
-		}
-
-		recordID := artifacts[i].RecordID
-		if recordID == "" {
-			recordID = newRandomID("rec")
-
-			record := Record{
-				ID:          recordID,
-				Kind:        artifacts[i].Kind,
-				Name:        artifacts[i].Name,
-				ContentType: contentTypeOrDefault(artifacts[i].ContentType),
-				Payload:     append([]byte(nil), artifacts[i].Payload...),
-				CreatedAt:   c.now().UTC(),
-			}
-
-			if _, err := c.config.RecordStore.Put(ctx, record); err != nil {
-				return nil, fmt.Errorf("store artifact[%d]: %w", i, err)
-			}
-		}
-
-		uri := artifacts[i].URI
-		if uri == "" {
-			uri = "sigil://record/" + recordID
-		}
-
-		refs = append(refs, ArtifactRef{
-			Kind:        artifacts[i].Kind,
-			Name:        artifacts[i].Name,
-			ContentType: contentTypeOrDefault(artifacts[i].ContentType),
-			RecordID:    recordID,
-			URI:         uri,
-		})
-	}
-
-	return refs, nil
-}
-
-func contentTypeOrDefault(contentType string) string {
-	if contentType != "" {
-		return contentType
-	}
-
-	return "application/json"
 }

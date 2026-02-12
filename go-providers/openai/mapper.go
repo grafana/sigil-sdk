@@ -222,6 +222,7 @@ func mapToolMessage(message *osdk.ChatCompletionToolMessageParam) *sigil.Part {
 	return &part
 }
 
+//nolint:staticcheck // OpenAI API still exposes this deprecated message type in union payloads.
 func mapFunctionMessage(message *osdk.ChatCompletionFunctionMessageParam) *sigil.Part {
 	if !message.Content.Valid() {
 		return nil
@@ -346,17 +347,6 @@ func parseJSONOrString(value string) []byte {
 		return nil
 	}
 	return quoted
-}
-
-func marshalAny(value any) []byte {
-	if value == nil {
-		return nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	return data
 }
 
 func derefString(value *string) string {

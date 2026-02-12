@@ -29,10 +29,10 @@ func ExampleClient_StartGeneration() {
 	}, nil)
 }
 
-func ExampleClient_StartGeneration_streaming() {
+func ExampleClient_StartStreamingGeneration() {
 	client := sigil.NewClient(sigil.DefaultConfig())
 
-	ctx, recorder := client.StartGeneration(context.Background(), sigil.GenerationStart{
+	ctx, recorder := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-stream",
 		Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 	})

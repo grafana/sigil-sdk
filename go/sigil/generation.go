@@ -5,7 +5,17 @@ import (
 	"time"
 )
 
-const defaultOperationName = "chat"
+const (
+	defaultOperationNameSync   = "generateText"
+	defaultOperationNameStream = "streamText"
+)
+
+type GenerationMode string
+
+const (
+	GenerationModeSync   GenerationMode = "SYNC"
+	GenerationModeStream GenerationMode = "STREAM"
+)
 
 // ModelRef identifies the LLM provider and model used for a generation.
 type ModelRef struct {
@@ -25,11 +35,16 @@ type ToolDefinition struct {
 // It can represent both request/response and streaming outcomes.
 type Generation struct {
 	// ID is the Sigil generation identifier. If empty, End assigns one.
-	ID             string `json:"id,omitempty"`
-	ConversationID string `json:"conversation_id,omitempty"`
-	// OperationName maps to gen_ai.operation.name. Defaults to "chat".
+	ID             string         `json:"id,omitempty"`
+	ConversationID string         `json:"conversation_id,omitempty"`
+	Mode           GenerationMode `json:"mode,omitempty"`
+	// OperationName maps to gen_ai.operation.name.
+	// Defaults are mode-aware:
+	//   - SYNC   -> "generateText"
+	//   - STREAM -> "streamText"
 	OperationName string `json:"operation_name,omitempty"`
-	// TraceID and SpanID identify the OTel span created by StartGeneration.
+	// TraceID and SpanID identify the OTel span created by StartGeneration or
+	// StartStreamingGeneration.
 	TraceID       string            `json:"trace_id,omitempty"`
 	SpanID        string            `json:"span_id,omitempty"`
 	Model         ModelRef          `json:"model"`
@@ -55,6 +70,7 @@ type Generation struct {
 type GenerationStart struct {
 	ID             string
 	ConversationID string
+	Mode           GenerationMode
 	OperationName  string
 	Model          ModelRef
 	SystemPrompt   string
@@ -68,10 +84,18 @@ func (g Generation) Validate() error {
 	return ValidateGeneration(g)
 }
 
+func defaultOperationNameForMode(mode GenerationMode) string {
+	if mode == GenerationModeStream {
+		return defaultOperationNameStream
+	}
+	return defaultOperationNameSync
+}
+
 func cloneGeneration(in Generation) Generation {
 	return Generation{
 		ID:             in.ID,
 		ConversationID: in.ConversationID,
+		Mode:           in.Mode,
 		OperationName:  in.OperationName,
 		TraceID:        in.TraceID,
 		SpanID:         in.SpanID,
@@ -97,6 +121,7 @@ func cloneGenerationStart(in GenerationStart) GenerationStart {
 	return GenerationStart{
 		ID:             in.ID,
 		ConversationID: in.ConversationID,
+		Mode:           in.Mode,
 		OperationName:  in.OperationName,
 		Model:          in.Model,
 		SystemPrompt:   in.SystemPrompt,

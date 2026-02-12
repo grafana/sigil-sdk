@@ -1,40 +1,63 @@
 # Grafana Sigil Go SDK (Core)
 
-Typed core SDK for normalized generation recording.
+Typed core SDK for normalized generation recording with OTEL traces and generation-first export.
 
 ## Core model
+
 - `Generation` is the canonical entity.
-- `OperationName` defaults to `chat` and maps to `gen_ai.operation.name`.
+- `Generation.Mode` is explicit: `SYNC` or `STREAM`.
+- `OperationName` defaults are mode-aware:
+  - `SYNC` -> `generateText`
+  - `STREAM` -> `streamText`
 - `ModelRef` bundles `provider + model`.
 - `SystemPrompt` is separate from messages.
-- `Message` contains typed `Part` values:
-  - `text`
-  - `thinking`
-  - `tool_call`
-  - `tool_result`
+- `Message` contains typed parts: `text`, `thinking`, `tool_call`, `tool_result`.
 - `TokenUsage` includes token/cache/reasoning fields.
-- `Tags` and `Metadata` are the only extension maps.
-- Provider payload capture goes through typed `Artifacts`.
+- Raw provider `Artifacts` are optional debug payloads.
 
 ## Recording API
 
-The API follows OTel-like conventions: `Start` returns a context and a recorder,
-`End()` takes no arguments and is safe for `defer`.
+- `StartGeneration(ctx, start)` -> `(ctx, *GenerationRecorder)`
+- `StartStreamingGeneration(ctx, start)` -> `(ctx, *GenerationRecorder)`
+- `StartToolExecution(ctx, start)` -> `(ctx, *ToolExecutionRecorder)`
+- `End()` is defer-safe and idempotent.
+- `rec.Err()` reports only local validation/enqueue failures.
+- Background export failures are retried and logged.
 
-- `StartGeneration(ctx, start)` returns `(ctx, *GenerationRecorder)`.
-- `StartToolExecution(ctx, start)` returns `(ctx, *ToolExecutionRecorder)`.
-- Nil client or invalid input returns a no-op recorder (instrumentation never crashes business logic).
-- `End()` is idempotent, nil-safe, and returns nothing.
-- `Err()` returns accumulated errors after `End` (like `sql.Rows.Err()`).
-- Trace linking is bi-directional:
-  - The generation span is a child of the active span in `ctx` when present.
-  - `Generation.TraceID` / `Generation.SpanID` are set from the created span.
-  - The span stores the generation id in attribute `sigil.generation.id`.
+## Configuration
+
+```go
+cfg := sigil.DefaultConfig()
+
+// Trace export (OTLP)
+cfg.Trace.Protocol = sigil.TraceProtocolHTTP // or sigil.TraceProtocolGRPC
+cfg.Trace.Endpoint = "http://localhost:4318/v1/traces" // grpc example: "localhost:4317"
+
+// Generation export (custom ingest)
+cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default
+cfg.GenerationExport.Endpoint = "localhost:4317"                  // HTTP parity: "http://localhost:8080/api/v1/generations:export"
+cfg.GenerationExport.BatchSize = 100
+cfg.GenerationExport.FlushInterval = time.Second
+cfg.GenerationExport.QueueSize = 2000
+cfg.GenerationExport.MaxRetries = 5
+cfg.GenerationExport.InitialBackoff = 100 * time.Millisecond
+cfg.GenerationExport.MaxBackoff = 5 * time.Second
+
+client := sigil.NewClient(cfg)
+defer func() {
+	_ = client.Shutdown(context.Background())
+}()
+```
+
+## Lifecycle Requirement
+
+- Always call `client.Shutdown(ctx)` before process exit.
+- `Shutdown` flushes pending generation batches and shuts down the trace provider.
+- Optional `client.Flush(ctx)` is available for explicit flush points.
 
 ## Request/Response Example
-```go
-client := sigil.NewClient(sigil.DefaultConfig())
 
+```go
 ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-9b2f",
 	Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
@@ -55,74 +78,23 @@ rec.SetResult(sigil.Generation{
 ```
 
 ## Streaming Example
+
 ```go
-ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
+ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-stream",
 	Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 })
 defer rec.End()
 
-stream, err := provider.StartStream(ctx, req)
-if err != nil {
-	rec.SetCallError(err)
-	return err
-}
-
-var parts []string
-for stream.Next() {
-	parts = append(parts, stream.Chunk().Text)
-}
-if err := stream.Err(); err != nil {
-	rec.SetCallError(err)
-	return err
-}
-
+// accumulate stream output...
 rec.SetResult(sigil.Generation{
 	Input:  []sigil.Message{sigil.UserTextMessage("Say hello")},
-	Output: []sigil.Message{sigil.AssistantTextMessage(strings.Join(parts, ""))},
+	Output: []sigil.Message{sigil.AssistantTextMessage(stitchedOutput)},
 }, nil)
 ```
 
-## Tool Execution Example
-```go
-ctx, rec := client.StartToolExecution(ctx, sigil.ToolExecutionStart{
-	ToolName:        "weather",
-	ToolCallID:      "call_weather",
-	ToolType:        "function",
-	ToolDescription: "Get weather",
-	ConversationID:  "conv-tools",
-	IncludeContent:  true, // enables args/result attributes
-})
-defer rec.End()
+## Raw Artifact Policy
 
-result, err := weatherTool.Run(ctx, "Paris")
-if err != nil {
-	rec.SetExecError(err)
-	return err
-}
-
-rec.SetResult(sigil.ToolExecutionEnd{
-	Arguments: map[string]any{"city": "Paris"},
-	Result:    result,
-})
-```
-
-## Context Conversation Propagation
-```go
-// Set once, flows through all Start calls.
-ctx = sigil.WithConversationID(ctx, "conv-123")
-
-// No need to repeat ConversationID in GenerationStart.
-ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
-	Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
-})
-defer rec.End()
-```
-
-## Sentinel Errors
-```go
-rec.End()
-if errors.Is(rec.Err(), sigil.ErrStoreFailed) {
-	// handle store failure
-}
-```
+- Default: raw artifacts OFF in provider wrappers.
+- Opt-in only for debug workflows (`WithRawArtifacts()` in provider helper packages).
+- Normalized generation fields remain always on (system prompt, tools schema, stitched output, usage, etc.).

@@ -50,7 +50,7 @@ rec.SetResult(gemini.FromRequestResponse(req, resp))
 
 ## Streaming Defer Pattern
 ```go
-ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
+ctx, rec := sigilClient.StartStreamingGeneration(ctx, sigil.GenerationStart{
 	Model: sigil.ModelRef{Provider: "gemini", Name: "gemini-2.5-pro"},
 })
 defer rec.End()

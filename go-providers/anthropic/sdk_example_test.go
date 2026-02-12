@@ -103,14 +103,19 @@ func Example_withSigilStreamingDefer() {
 	providerClient := asdk.NewClient(asdkoption.WithAPIKey(apiKey))
 	req := exampleAnthropicRequest()
 
-	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
+	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-anthropic-4",
 		Model:          sigil.ModelRef{Provider: "anthropic", Name: string(req.Model)},
 	})
 	defer rec.End()
 
 	stream := providerClient.Beta.Messages.NewStreaming(ctx, req)
-	defer stream.Close()
+	defer func() {
+		if closeErr := stream.Close(); closeErr != nil {
+			// Best-effort close in example flow.
+			_ = closeErr
+		}
+	}()
 
 	summary := StreamSummary{}
 	for stream.Next() {

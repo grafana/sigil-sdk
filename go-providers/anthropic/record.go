@@ -39,7 +39,7 @@ func Message(
 // MessageStream calls the Anthropic streaming messages API and records the generation.
 // It mirrors providerClient.Beta.Messages.NewStreaming but adds Sigil recording.
 // All events are collected into StreamSummary; for per-event processing use the
-// defer pattern directly with StartGeneration.
+// defer pattern directly with StartStreamingGeneration.
 func MessageStream(
 	ctx context.Context,
 	client *sigil.Client,
@@ -49,14 +49,19 @@ func MessageStream(
 ) (*asdk.BetaMessage, StreamSummary, error) {
 	options := applyOptions(opts)
 
-	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
+	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
 		ConversationID: options.conversationID,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
 	})
 	defer rec.End()
 
 	stream := provider.Beta.Messages.NewStreaming(ctx, req)
-	defer stream.Close()
+	defer func() {
+		if closeErr := stream.Close(); closeErr != nil {
+			// Best-effort close on stream teardown.
+			_ = closeErr
+		}
+	}()
 
 	summary := StreamSummary{}
 	for stream.Next() {
