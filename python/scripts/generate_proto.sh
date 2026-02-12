@@ -20,11 +20,11 @@ fi
 PROTO_INCLUDE="$(${PYTHON_BIN} -c 'import pathlib, grpc_tools; print(pathlib.Path(grpc_tools.__file__).parent / "_proto")')"
 
 "${PYTHON_BIN}" -m grpc_tools.protoc \
-  -I"${ROOT_DIR}/api/proto" \
+  -I"${ROOT_DIR}/sigil/proto" \
   -I"${PROTO_INCLUDE}" \
   --python_out="${OUT_DIR}" \
   --grpc_python_out="${OUT_DIR}" \
-  "${ROOT_DIR}/api/proto/sigil/v1/generation_ingest.proto"
+  "${ROOT_DIR}/sigil/proto/sigil/v1/generation_ingest.proto"
 
 # The grpc plugin emits absolute import paths; normalize to relative package import.
 TMP_FILE="$(mktemp)"

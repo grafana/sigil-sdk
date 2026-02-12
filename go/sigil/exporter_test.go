@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestGenerationRecorderQueueFullReturnsEnqueueError(t *testing.T) {
@@ -15,7 +15,7 @@ func TestGenerationRecorderQueueFullReturnsEnqueueError(t *testing.T) {
 		GenerationExport: GenerationExportConfig{
 			QueueSize: 1,
 		},
-		Tracer:                 trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer:                 noop.NewTracerProvider().Tracer("test"),
 		Now:                    time.Now,
 		testDisableWorker:      true,
 		testGenerationExporter: exporter,
@@ -60,7 +60,7 @@ func TestGenerationExporterFlushesByBatchSize(t *testing.T) {
 			InitialBackoff: time.Millisecond,
 			MaxBackoff:     time.Millisecond,
 		},
-		Tracer:                 trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer:                 noop.NewTracerProvider().Tracer("test"),
 		Now:                    time.Now,
 		testGenerationExporter: exporter,
 	})
@@ -100,7 +100,7 @@ func TestGenerationExporterFlushesByInterval(t *testing.T) {
 			InitialBackoff: time.Millisecond,
 			MaxBackoff:     time.Millisecond,
 		},
-		Tracer:                 trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer:                 noop.NewTracerProvider().Tracer("test"),
 		Now:                    time.Now,
 		testGenerationExporter: exporter,
 	})
@@ -138,7 +138,7 @@ func TestShutdownFlushesPendingGenerations(t *testing.T) {
 			InitialBackoff: time.Millisecond,
 			MaxBackoff:     time.Millisecond,
 		},
-		Tracer:                 trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer:                 noop.NewTracerProvider().Tracer("test"),
 		Now:                    time.Now,
 		testGenerationExporter: exporter,
 	})

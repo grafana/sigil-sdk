@@ -152,7 +152,9 @@ func (e *httpGenerationExporter) Export(ctx context.Context, request *sigilv1.Ex
 	if err != nil {
 		return nil, fmt.Errorf("http generation export failed: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {

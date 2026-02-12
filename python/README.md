@@ -262,4 +262,4 @@ Then regenerate:
 ./sdks/python/scripts/generate_proto.sh
 ```
 
-This regenerates `sigil_sdk/internal/gen/sigil/v1/*_pb2*.py` from `api/proto/sigil/v1/generation_ingest.proto`.
+This regenerates `sigil_sdk/internal/gen/sigil/v1/*_pb2*.py` from `sigil/proto/sigil/v1/generation_ingest.proto`.

@@ -3,7 +3,6 @@ package sigil
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -1086,10 +1085,6 @@ func (e *capturingGenerationExporter) Export(_ context.Context, req *sigilv1.Exp
 
 func (e *capturingGenerationExporter) Shutdown(_ context.Context) error {
 	return nil
-}
-
-func (e *capturingGenerationExporter) failureForAll(message string) {
-	e.err = fmt.Errorf("%s", message)
 }
 
 func countGenerationSpans(spans []sdktrace.ReadOnlySpan) int {

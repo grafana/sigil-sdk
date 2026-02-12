@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestResolveHeadersWithAuthTenantMode(t *testing.T) {
@@ -83,7 +83,7 @@ func TestNewClientPanicsOnInvalidAuthConfig(t *testing.T) {
 	}()
 
 	_ = NewClient(Config{
-		Tracer: trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer: noop.NewTracerProvider().Tracer("test"),
 		GenerationExport: GenerationExportConfig{
 			Protocol:        GenerationExportProtocolHTTP,
 			Endpoint:        "http://localhost:8080/api/v1/generations:export",
@@ -104,7 +104,7 @@ func TestNewClientPanicsOnInvalidAuthConfig(t *testing.T) {
 
 func TestNewClientAppliesPerExportAuthToGenerationExporter(t *testing.T) {
 	client := NewClient(Config{
-		Tracer: trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer: noop.NewTracerProvider().Tracer("test"),
 		GenerationExport: GenerationExportConfig{
 			Protocol:        GenerationExportProtocolHTTP,
 			Endpoint:        "http://localhost:8080/api/v1/generations:export",

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -98,7 +98,7 @@ func newTransportTestClient(t *testing.T, transport exportTransport, ingest *cap
 	t.Helper()
 
 	cfg := Config{
-		Tracer: trace.NewNoopTracerProvider().Tracer("test"),
+		Tracer: noop.NewTracerProvider().Tracer("test"),
 		GenerationExport: GenerationExportConfig{
 			BatchSize:      1,
 			QueueSize:      10,
