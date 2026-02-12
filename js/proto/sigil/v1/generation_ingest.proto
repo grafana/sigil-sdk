@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package sigil.v1;
+
+option go_package = "github.com/grafana/sigil/api/internal/gen/sigil/v1;sigilv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service GenerationIngestService {
+  rpc ExportGenerations(ExportGenerationsRequest) returns (ExportGenerationsResponse);
+}
+
+message ExportGenerationsRequest {
+  repeated Generation generations = 1;
+}
+
+message ExportGenerationsResponse {
+  repeated ExportGenerationResult results = 1;
+}
+
+message ExportGenerationResult {
+  string generation_id = 1;
+  bool accepted = 2;
+  string error = 3;
+}
+
+enum GenerationMode {
+  GENERATION_MODE_UNSPECIFIED = 0;
+  GENERATION_MODE_SYNC = 1;
+  GENERATION_MODE_STREAM = 2;
+}
+
+message ModelRef {
+  string provider = 1;
+  string name = 2;
+}
+
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_ASSISTANT = 2;
+  MESSAGE_ROLE_TOOL = 3;
+}
+
+message PartMetadata {
+  string provider_type = 1;
+}
+
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  bytes input_json = 3;
+}
+
+message ToolResult {
+  string tool_call_id = 1;
+  string name = 2;
+  string content = 3;
+  bytes content_json = 4;
+  bool is_error = 5;
+}
+
+message Part {
+  PartMetadata metadata = 1;
+
+  oneof payload {
+    string text = 2;
+    string thinking = 3;
+    ToolCall tool_call = 4;
+    ToolResult tool_result = 5;
+  }
+}
+
+message Message {
+  MessageRole role = 1;
+  string name = 2;
+  repeated Part parts = 3;
+}
+
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  string type = 3;
+  bytes input_schema_json = 4;
+}
+
+message TokenUsage {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  int64 total_tokens = 3;
+  int64 cache_read_input_tokens = 4;
+  int64 cache_write_input_tokens = 5;
+  int64 reasoning_tokens = 6;
+}
+
+enum ArtifactKind {
+  ARTIFACT_KIND_UNSPECIFIED = 0;
+  ARTIFACT_KIND_REQUEST = 1;
+  ARTIFACT_KIND_RESPONSE = 2;
+  ARTIFACT_KIND_TOOLS = 3;
+  ARTIFACT_KIND_PROVIDER_EVENT = 4;
+}
+
+message Artifact {
+  ArtifactKind kind = 1;
+  string name = 2;
+  string content_type = 3;
+  bytes payload = 4;
+  string record_id = 5;
+  string uri = 6;
+}
+
+message Generation {
+  string id = 1;
+  string conversation_id = 2;
+  string operation_name = 3;
+  GenerationMode mode = 4;
+  string trace_id = 5;
+  string span_id = 6;
+  ModelRef model = 7;
+  string response_id = 8;
+  string response_model = 9;
+  string system_prompt = 10;
+  repeated Message input = 11;
+  repeated Message output = 12;
+  repeated ToolDefinition tools = 13;
+  TokenUsage usage = 14;
+  string stop_reason = 15;
+  google.protobuf.Timestamp started_at = 16;
+  google.protobuf.Timestamp completed_at = 17;
+  map<string, string> tags = 18;
+  google.protobuf.Struct metadata = 19;
+  repeated Artifact raw_artifacts = 20;
+  string call_error = 21;
+  string agent_name = 22;
+  string agent_version = 23;
+}

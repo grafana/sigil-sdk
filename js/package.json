@@ -3,5 +3,35 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "src/index.ts"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "proto",
+    "docs",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "clean": "find dist -type f -delete 2>/dev/null || true && find dist -type d -empty -delete 2>/dev/null || true",
+    "build": "pnpm run clean && tsc --project tsconfig.build.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test:build": "rm -rf .test-dist && tsc --project tsconfig.test.json",
+    "test": "pnpm run test:build && node --test test/**/*.test.mjs",
+    "test:ci": "pnpm run test"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.1",
+    "@grpc/proto-loader": "^0.8.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.211.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.211.0",
+    "@opentelemetry/sdk-trace-base": "^2.5.0"
+  }
 }

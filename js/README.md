@@ -1,75 +1,100 @@
 # Grafana Sigil TypeScript/JavaScript SDK
 
-If you already use OpenTelemetry, Sigil is a thin extension plus sugar for AI observability.
+Sigil records normalized LLM generation and tool-execution telemetry with OpenTelemetry traces.
 
-This package is authored in TypeScript and serves both TypeScript and JavaScript users.
+## Installation
 
-## Core API direction (explicit, primary)
+```bash
+pnpm add @grafana/sigil-sdk-js
+```
 
-Core SDK docs are explicit API first:
-
-- `startGeneration(...)`
-- `startStreamingGeneration(...)`
-- `startToolExecution(...)`
-- recorder methods: `setResult(...)`, `setCallError(...)`, `end()`
-- lifecycle: `flush()`, `shutdown()`
-
-### Primary usage style: active-span callback
+## Quick Start
 
 ```ts
-const client = new SigilClient(config);
+import { SigilClient } from "@grafana/sigil-sdk-js";
+
+const client = new SigilClient({
+  generationExport: {
+    protocol: "http",
+    endpoint: "http://localhost:8080/api/v1/generations:export",
+  },
+  trace: {
+    protocol: "http",
+    endpoint: "http://localhost:4318/v1/traces",
+  },
+});
 
 await client.startGeneration(
   {
     conversationId: "conv-1",
     model: { provider: "openai", name: "gpt-5" },
   },
-  async (rec) => {
-    const resp = await openai.responses.create(req);
-    rec.setResult(sigilOpenAI.fromResponse(req, resp));
+  async (recorder) => {
+    const outputText = "Hello from model";
+    recorder.setResult({
+      output: [{ role: "assistant", content: outputText }],
+    });
   }
 );
 
 await client.shutdown();
 ```
 
-### Alternative explicit style: `try/finally`
+## Core API
+
+- `startGeneration(...)` and `startStreamingGeneration(...)`
+- `startToolExecution(...)`
+- Recorder methods: `setResult(...)`, `setCallError(...)`, `end()`, `getError()`
+- Lifecycle: `flush()`, `shutdown()`
+
+### Manual `try/finally` style
 
 ```ts
-const rec = client.startGeneration({
-  conversationId: "conv-1",
-  model: { provider: "openai", name: "gpt-5" },
+const recorder = client.startGeneration({
+  model: { provider: "anthropic", name: "claude-sonnet-4-5" },
 });
 
 try {
-  const resp = await openai.responses.create(req);
-  rec.setResult(sigilOpenAI.fromResponse(req, resp));
-} catch (err) {
-  rec.setCallError(err as Error);
-  throw err;
+  recorder.setResult({
+    output: [{ role: "assistant", content: "Done" }],
+  });
+} catch (error) {
+  recorder.setCallError(error);
+  throw error;
 } finally {
-  rec.end();
+  recorder.end();
 }
 ```
 
-## Provider docs direction (wrapper-first)
+## Tool Execution Example
 
-Provider package docs are wrapper-first and include explicit flow as secondary guidance.
+```ts
+await client.startToolExecution(
+  {
+    toolName: "weather",
+    includeContent: true,
+  },
+  async (recorder) => {
+    recorder.setResult({
+      arguments: { city: "Paris" },
+      result: { temp_c: 18 },
+    });
+  }
+);
+```
 
-Parity target:
+## Provider Helpers
 
-- OpenAI
-- Anthropic
-- Gemini
+- OpenAI: `docs/providers/openai.md`
+- Anthropic: `docs/providers/anthropic.md`
+- Gemini: `docs/providers/gemini.md`
 
-## Runtime behavior contract
+## Behavior
 
-- generation mode is explicit (`SYNC` / `STREAM`)
-- exports are async with bounded queue + retry/backoff
-- `shutdown()` flushes pending generation batches and trace state
-- local recorder errors are separated from background export retries
-
-## Raw artifact policy
-
-- default OFF
-- explicit debug opt-in only
+- Generation modes are explicit: `SYNC` and `STREAM`.
+- Generation export supports HTTP and gRPC.
+- Trace export supports OTLP HTTP and OTLP gRPC.
+- Exports are asynchronous with bounded queueing and retry/backoff.
+- `flush()` drains queued generations; `shutdown()` flushes and closes exporters.
+- Empty tool names produce a no-op tool recorder.
+- Raw provider artifacts are opt-in (`rawArtifacts: true`).
