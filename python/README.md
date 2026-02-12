@@ -1,61 +1,207 @@
 # Grafana Sigil Python SDK
 
-If you already use OpenTelemetry, Sigil is a thin extension plus sugar for AI observability.
+`sigil-sdk` records normalized LLM generation and tool-execution telemetry and exports it to Sigil ingest plus OTLP traces.
 
-## Core API direction (explicit, primary)
+Use this package when you want:
 
-Core SDK docs are explicit API first:
+- A provider-agnostic generation record (same schema for OpenAI, Anthropic, Gemini, or custom adapters).
+- OTel-aligned tracing attributes for generation and tool spans.
+- Async export with retry/backoff, queueing, batching, and explicit shutdown semantics.
 
-- `start_generation(...)`
-- `start_streaming_generation(...)`
-- `start_tool_execution(...)`
-- recorder methods: `set_result(...)`, `set_call_error(...)`, `end()`
-- lifecycle: `flush()`, `shutdown()`
+## Installation
 
-### Primary usage style: context manager
+```bash
+pip install sigil-sdk
+```
+
+Optional provider helper packages:
+
+```bash
+pip install sigil-sdk-openai
+pip install sigil-sdk-anthropic
+pip install sigil-sdk-gemini
+```
+
+## Quick Start (Sync Generation)
 
 ```python
-client = sigil.Client(config)
+from sigil_sdk import (
+    Client,
+    ClientConfig,
+    GenerationStart,
+    ModelRef,
+    assistant_text_message,
+    user_text_message,
+)
+
+client = Client(
+    ClientConfig(
+        generation_export_endpoint="http://localhost:8080/api/v1/generations:export",
+        trace_endpoint="http://localhost:4318/v1/traces",
+    )
+)
 
 with client.start_generation(
-    conversation_id="conv-1",
-    model={"provider": "openai", "name": "gpt-5"},
+    GenerationStart(
+        conversation_id="conv-1",
+        agent_name="my-service",
+        agent_version="1.0.0",
+        model=ModelRef(provider="openai", name="gpt-5"),
+    )
 ) as rec:
-    resp = openai_client.responses.create(**req)
-    rec.set_result(sigil_openai.from_response(req, resp))
+    rec.set_result(
+        input=[user_text_message("What is the weather in Paris?")],
+        output=[assistant_text_message("It is 18C and sunny.")],
+    )
+
+    # Recorder errors are local SDK errors (validation/enqueue/shutdown),
+    # not provider call failures.
+    if rec.err() is not None:
+        raise rec.err()
 
 client.shutdown()
 ```
 
-Streaming variant:
+## Streaming Generation
+
+Use `start_streaming_generation(...)` when the upstream provider call is streaming.
 
 ```python
+from sigil_sdk import GenerationStart, ModelRef
+
 with client.start_streaming_generation(
-    conversation_id="conv-1",
-    model={"provider": "anthropic", "name": "claude-sonnet-4-5"},
+    GenerationStart(
+        conversation_id="conv-stream",
+        model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+    )
 ) as rec:
-    summary = collect_stream(...)
-    rec.set_result(sigil_anthropic.from_stream(req, summary))
+    rec.set_result(output=[assistant_text_message("partial stream summary")])
 ```
 
-## Provider docs direction (wrapper-first)
+## Tool Execution Span Recording
 
-Provider package docs are wrapper-first and include explicit flow as secondary guidance.
+Tool spans are recorded independently of generation export.
 
-Parity target:
+```python
+from sigil_sdk import ToolExecutionStart
 
-- OpenAI
-- Anthropic
-- Gemini
+with client.start_tool_execution(
+    ToolExecutionStart(
+        tool_name="weather",
+        tool_call_id="call_weather_1",
+        tool_type="function",
+        include_content=True,
+    )
+) as rec:
+    rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
+```
 
-## Runtime behavior contract
+## Context Defaults
 
-- generation mode is explicit (`SYNC` / `STREAM`)
-- exports are async with bounded queue + retry/backoff
-- `shutdown()` flushes pending batches and trace provider state
-- local recorder errors are surfaced separately from background export retries
+Use context helpers to set defaults once per request/task boundary.
 
-## Raw artifact policy
+```python
+from sigil_sdk import with_agent_name, with_agent_version, with_conversation_id
 
-- default OFF
-- explicit debug opt-in only
+with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_version("2026.02"):
+    with client.start_generation(
+        GenerationStart(model=ModelRef(provider="gemini", name="gemini-2.5-pro"))
+    ) as rec:
+        rec.set_result(output=[assistant_text_message("ok")])
+```
+
+## Export Configuration
+
+### HTTP generation + OTLP HTTP trace
+
+```python
+from sigil_sdk import ClientConfig, GenerationExportConfig, TraceConfig
+
+cfg = ClientConfig(
+    generation_export=GenerationExportConfig(
+        protocol="http",
+        endpoint="http://localhost:8080/api/v1/generations:export",
+    ),
+    trace=TraceConfig(
+        protocol="http",
+        endpoint="http://localhost:4318/v1/traces",
+    ),
+)
+```
+
+### gRPC generation + OTLP gRPC trace
+
+```python
+cfg = ClientConfig(
+    generation_export=GenerationExportConfig(
+        protocol="grpc",
+        endpoint="localhost:50051",
+        insecure=True,
+    ),
+    trace=TraceConfig(
+        protocol="grpc",
+        endpoint="localhost:4317",
+        insecure=True,
+    ),
+)
+```
+
+## Lifecycle and Error Semantics
+
+- `flush()` forces immediate export of queued generations.
+- `shutdown()` flushes pending generations, then closes generation and trace exporters.
+- Always call `shutdown()` during process teardown to avoid dropped telemetry.
+- `recorder.set_call_error(exc)` marks provider-call failures on the generation payload and span status.
+- `recorder.err()` is for local SDK runtime errors only (validation, queue full, payload too large, shutdown).
+
+## Public API Overview
+
+Core client and lifecycle:
+
+- `Client`
+- `Client.start_generation(...)`
+- `Client.start_streaming_generation(...)`
+- `Client.start_tool_execution(...)`
+- `Client.flush()`
+- `Client.shutdown()`
+
+Typed payloads:
+
+- `GenerationStart`, `Generation`, `ModelRef`
+- `Message`, `Part`, `ToolDefinition`, `TokenUsage`
+- `ToolExecutionStart`, `ToolExecutionEnd`
+
+Helpers:
+
+- `user_text_message(...)`, `assistant_text_message(...)`
+- `with_conversation_id(...)`, `with_agent_name(...)`, `with_agent_version(...)`
+
+Validation:
+
+- `validate_generation(...)`
+
+## Provider Helper Packages
+
+Provider wrappers are wrapper-first and mapper-explicit:
+
+- `sigil-sdk-openai`
+- `sigil-sdk-anthropic`
+- `sigil-sdk-gemini`
+
+Each package exposes sync + async wrappers and explicit mapper functions for custom integration points.
+
+## Regenerating gRPC Stubs
+
+Install dev dependencies once:
+
+```bash
+python3 -m pip install -e 'sdks/python[dev]'
+```
+
+Then regenerate:
+
+```bash
+./sdks/python/scripts/generate_proto.sh
+```
+
+This regenerates `sigil_sdk/internal/gen/sigil/v1/*_pb2*.py` from `api/proto/sigil/v1/generation_ingest.proto`.
