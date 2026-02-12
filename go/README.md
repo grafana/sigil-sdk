@@ -1,6 +1,8 @@
 # Grafana Sigil Go SDK (Core)
 
-Typed core SDK for normalized generation recording with OTEL traces and generation-first export.
+If you already use OpenTelemetry, Sigil is a thin extension plus sugar for AI observability.
+
+The Go SDK is the current production-ready baseline for normalized generation recording with OTEL traces and generation-first export.
 
 ## Core model
 
@@ -16,13 +18,14 @@ Typed core SDK for normalized generation recording with OTEL traces and generati
 - `TokenUsage` includes token/cache/reasoning fields.
 - Raw provider `Artifacts` are optional debug payloads.
 
-## Recording API
+## Recording API (explicit, OTel-like)
 
 - `StartGeneration(ctx, start)` -> `(ctx, *GenerationRecorder)`
 - `StartStreamingGeneration(ctx, start)` -> `(ctx, *GenerationRecorder)`
 - `StartToolExecution(ctx, start)` -> `(ctx, *ToolExecutionRecorder)`
-- `End()` is defer-safe and idempotent.
-- `rec.Err()` reports only local validation/enqueue failures.
+- `rec.SetResult(...)` / `rec.SetCallError(...)`
+- `rec.End()` is defer-safe and idempotent.
+- `rec.Err()` reports local validation/enqueue failures only.
 - Background export failures are retried and logged.
 - Context helpers are available for defaults:
   - `WithConversationID(ctx, id)`
@@ -54,13 +57,13 @@ defer func() {
 }()
 ```
 
-## Lifecycle Requirement
+## Lifecycle requirement
 
 - Always call `client.Shutdown(ctx)` before process exit.
 - `Shutdown` flushes pending generation batches and shuts down the trace provider.
 - Optional `client.Flush(ctx)` is available for explicit flush points.
 
-## Request/Response Example
+## Explicit flow example
 
 ```go
 ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
@@ -84,7 +87,7 @@ rec.SetResult(sigil.Generation{
 }, nil)
 ```
 
-## Streaming Example
+## Streaming example
 
 ```go
 ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
@@ -102,8 +105,18 @@ rec.SetResult(sigil.Generation{
 }, nil)
 ```
 
-## Raw Artifact Policy
+## Provider wrappers
+
+Provider modules are documented wrapper-first for ergonomics and include explicit-flow alternatives.
+
+Current Go provider helpers:
+
+- `sdks/go-providers/openai`
+- `sdks/go-providers/anthropic`
+- `sdks/go-providers/gemini`
+
+## Raw artifact policy
 
 - Default: raw artifacts OFF in provider wrappers.
 - Opt-in only for debug workflows (`WithRawArtifacts()` in provider helper packages).
-- Normalized generation fields remain always on (system prompt, tools schema, stitched output, usage, etc.).
+- Normalized generation fields remain always on.
