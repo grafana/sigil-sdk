@@ -6,6 +6,8 @@ type Option func(*mapperOptions)
 type mapperOptions struct {
 	providerName   string
 	conversationID string
+	agentName      string
+	agentVersion   string
 	tags           map[string]string
 	metadata       map[string]any
 
@@ -40,6 +42,20 @@ func WithProviderName(provider string) Option {
 func WithConversationID(conversationID string) Option {
 	return func(options *mapperOptions) {
 		options.conversationID = conversationID
+	}
+}
+
+// WithAgentName sets Generation.AgentName.
+func WithAgentName(agentName string) Option {
+	return func(options *mapperOptions) {
+		options.agentName = agentName
+	}
+}
+
+// WithAgentVersion sets Generation.AgentVersion.
+func WithAgentVersion(agentVersion string) Option {
+	return func(options *mapperOptions) {
+		options.agentVersion = agentVersion
 	}
 }
 

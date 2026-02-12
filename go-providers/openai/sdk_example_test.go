@@ -27,6 +27,8 @@ func Example_withSigilWrapper() {
 
 	resp, err := ChatCompletion(context.Background(), client, providerClient, req,
 		WithConversationID("conv-openai-1"),
+		WithAgentName("assistant-openai"),
+		WithAgentVersion("1.0.0"),
 	)
 	if err != nil {
 		panic(err)
@@ -52,6 +54,8 @@ func Example_withSigilDefer() {
 
 	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-openai-2",
+		AgentName:      "assistant-openai",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "openai", Name: string(req.Model)},
 	})
 	defer rec.End()
@@ -62,7 +66,11 @@ func Example_withSigilDefer() {
 		return
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp, WithConversationID("conv-openai-2")))
+	rec.SetResult(FromRequestResponse(req, resp,
+		WithConversationID("conv-openai-2"),
+		WithAgentName("assistant-openai"),
+		WithAgentVersion("1.0.0"),
+	))
 	_ = resp.Choices[0].Message.Content
 }
 
@@ -83,6 +91,8 @@ func Example_withSigilStreamingWrapper() {
 
 	_, _, err := ChatCompletionStream(context.Background(), client, providerClient, req,
 		WithConversationID("conv-openai-3"),
+		WithAgentName("assistant-openai"),
+		WithAgentVersion("1.0.0"),
 	)
 	if err != nil {
 		panic(err)
@@ -106,6 +116,8 @@ func Example_withSigilStreamingDefer() {
 
 	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-openai-4",
+		AgentName:      "assistant-openai",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "openai", Name: string(req.Model)},
 	})
 	defer rec.End()
@@ -129,7 +141,11 @@ func Example_withSigilStreamingDefer() {
 		return
 	}
 
-	rec.SetResult(FromStream(req, summary, WithConversationID("conv-openai-4")))
+	rec.SetResult(FromStream(req, summary,
+		WithConversationID("conv-openai-4"),
+		WithAgentName("assistant-openai"),
+		WithAgentVersion("1.0.0"),
+	))
 }
 
 func exampleOpenAIRequest() osdk.ChatCompletionNewParams {

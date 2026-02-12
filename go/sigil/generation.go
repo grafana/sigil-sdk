@@ -37,6 +37,8 @@ type Generation struct {
 	// ID is the Sigil generation identifier. If empty, End assigns one.
 	ID             string         `json:"id,omitempty"`
 	ConversationID string         `json:"conversation_id,omitempty"`
+	AgentName      string         `json:"agent_name,omitempty"`
+	AgentVersion   string         `json:"agent_version,omitempty"`
 	Mode           GenerationMode `json:"mode,omitempty"`
 	// OperationName maps to gen_ai.operation.name.
 	// Defaults are mode-aware:
@@ -70,6 +72,8 @@ type Generation struct {
 type GenerationStart struct {
 	ID             string
 	ConversationID string
+	AgentName      string
+	AgentVersion   string
 	Mode           GenerationMode
 	OperationName  string
 	Model          ModelRef
@@ -95,6 +99,8 @@ func cloneGeneration(in Generation) Generation {
 	return Generation{
 		ID:             in.ID,
 		ConversationID: in.ConversationID,
+		AgentName:      in.AgentName,
+		AgentVersion:   in.AgentVersion,
 		Mode:           in.Mode,
 		OperationName:  in.OperationName,
 		TraceID:        in.TraceID,
@@ -121,6 +127,8 @@ func cloneGenerationStart(in GenerationStart) GenerationStart {
 	return GenerationStart{
 		ID:             in.ID,
 		ConversationID: in.ConversationID,
+		AgentName:      in.AgentName,
+		AgentVersion:   in.AgentVersion,
 		Mode:           in.Mode,
 		OperationName:  in.OperationName,
 		Model:          in.Model,

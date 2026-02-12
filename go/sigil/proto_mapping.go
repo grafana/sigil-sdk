@@ -18,6 +18,8 @@ func generationToProto(g Generation) (*sigilv1.Generation, error) {
 	out := &sigilv1.Generation{
 		Id:             g.ID,
 		ConversationId: g.ConversationID,
+		AgentName:      g.AgentName,
+		AgentVersion:   g.AgentVersion,
 		OperationName:  g.OperationName,
 		Mode:           mapGenerationModeToProto(g.Mode),
 		TraceId:        g.TraceID,

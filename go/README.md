@@ -10,6 +10,7 @@ Typed core SDK for normalized generation recording with OTEL traces and generati
   - `SYNC` -> `generateText`
   - `STREAM` -> `streamText`
 - `ModelRef` bundles `provider + model`.
+- `AgentName` and `AgentVersion` are optional generation/tool identity fields.
 - `SystemPrompt` is separate from messages.
 - `Message` contains typed parts: `text`, `thinking`, `tool_call`, `tool_result`.
 - `TokenUsage` includes token/cache/reasoning fields.
@@ -23,6 +24,10 @@ Typed core SDK for normalized generation recording with OTEL traces and generati
 - `End()` is defer-safe and idempotent.
 - `rec.Err()` reports only local validation/enqueue failures.
 - Background export failures are retried and logged.
+- Context helpers are available for defaults:
+  - `WithConversationID(ctx, id)`
+  - `WithAgentName(ctx, name)`
+  - `WithAgentVersion(ctx, version)`
 
 ## Configuration
 
@@ -60,6 +65,8 @@ defer func() {
 ```go
 ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-9b2f",
+	AgentName:      "assistant-core",
+	AgentVersion:   "1.0.0",
 	Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
 defer rec.End()
@@ -82,6 +89,8 @@ rec.SetResult(sigil.Generation{
 ```go
 ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-stream",
+	AgentName:      "assistant-core",
+	AgentVersion:   "1.0.0",
 	Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 })
 defer rec.End()

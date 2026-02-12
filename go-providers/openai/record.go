@@ -22,6 +22,8 @@ func ChatCompletion(
 
 	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
 	})
 	defer rec.End()
@@ -51,6 +53,8 @@ func ChatCompletionStream(
 
 	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
 	})
 	defer rec.End()

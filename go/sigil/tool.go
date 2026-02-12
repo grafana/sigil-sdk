@@ -9,6 +9,8 @@ type ToolExecutionStart struct {
 	ToolType        string
 	ToolDescription string
 	ConversationID  string
+	AgentName       string
+	AgentVersion    string
 	StartedAt       time.Time
 	// IncludeContent enables gen_ai.tool.call.arguments and gen_ai.tool.call.result attributes.
 	IncludeContent bool

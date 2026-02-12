@@ -41,6 +41,8 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
 		ID:             "gen_test_externalize",
 		ConversationID: "conv-1",
+		AgentName:      "agent-support",
+		AgentVersion:   "v1.2.3",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
@@ -68,6 +70,12 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	if generationRecorder.lastGeneration.ID != "gen_test_externalize" {
 		t.Fatalf("expected generation id gen_test_externalize, got %q", generationRecorder.lastGeneration.ID)
 	}
+	if generationRecorder.lastGeneration.AgentName != "agent-support" {
+		t.Fatalf("expected agent name agent-support, got %q", generationRecorder.lastGeneration.AgentName)
+	}
+	if generationRecorder.lastGeneration.AgentVersion != "v1.2.3" {
+		t.Fatalf("expected agent version v1.2.3, got %q", generationRecorder.lastGeneration.AgentVersion)
+	}
 
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
@@ -76,6 +84,12 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	}
 	if attrs[spanAttrConversationID].AsString() != "conv-1" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-1")
+	}
+	if attrs[spanAttrAgentName].AsString() != "agent-support" {
+		t.Fatalf("expected gen_ai.agent.name=agent-support")
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "v1.2.3" {
+		t.Fatalf("expected gen_ai.agent.version=v1.2.3")
 	}
 }
 
@@ -666,6 +680,8 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 		ToolType:        "function",
 		ToolDescription: "Get weather",
 		ConversationID:  "conv-tool",
+		AgentName:       "agent-tools",
+		AgentVersion:    "2026.02.12",
 	})
 
 	if !trace.SpanContextFromContext(callCtx).IsValid() {
@@ -702,6 +718,12 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 	}
 	if attrs[spanAttrConversationID].AsString() != "conv-tool" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-tool")
+	}
+	if attrs[spanAttrAgentName].AsString() != "agent-tools" {
+		t.Fatalf("expected gen_ai.agent.name=agent-tools")
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "2026.02.12" {
+		t.Fatalf("expected gen_ai.agent.version=2026.02.12")
 	}
 }
 
@@ -822,6 +844,29 @@ func TestConversationIDFromContext(t *testing.T) {
 	}
 }
 
+func TestAgentNameAndVersionFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithAgentName(context.Background(), "agent-from-ctx")
+	ctx = WithAgentVersion(ctx, "v-ctx")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrAgentName].AsString() != "agent-from-ctx" {
+		t.Fatalf("expected gen_ai.agent.name=agent-from-ctx, got %q", attrs[spanAttrAgentName].AsString())
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "v-ctx" {
+		t.Fatalf("expected gen_ai.agent.version=v-ctx, got %q", attrs[spanAttrAgentVersion].AsString())
+	}
+}
+
 func TestExplicitConversationIDOverridesContext(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -842,6 +887,31 @@ func TestExplicitConversationIDOverridesContext(t *testing.T) {
 	}
 }
 
+func TestExplicitAgentNameAndVersionOverrideContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithAgentName(context.Background(), "ctx-agent")
+	ctx = WithAgentVersion(ctx, "ctx-version")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		AgentName:    "start-agent",
+		AgentVersion: "start-version",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrAgentName].AsString() != "start-agent" {
+		t.Fatalf("expected gen_ai.agent.name=start-agent, got %q", attrs[spanAttrAgentName].AsString())
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "start-version" {
+		t.Fatalf("expected gen_ai.agent.version=start-version, got %q", attrs[spanAttrAgentVersion].AsString())
+	}
+}
+
 func TestToolExecutionConversationIDFromContext(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -855,6 +925,85 @@ func TestToolExecutionConversationIDFromContext(t *testing.T) {
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationID].AsString() != "conv-tool-ctx" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-tool-ctx, got %q", attrs[spanAttrConversationID].AsString())
+	}
+}
+
+func TestToolExecutionAgentNameAndVersionFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithAgentName(context.Background(), "tool-agent-ctx")
+	ctx = WithAgentVersion(ctx, "tool-v-ctx")
+	_, toolRecorder := client.StartToolExecution(ctx, ToolExecutionStart{
+		ToolName: "weather",
+	})
+	toolRecorder.End()
+
+	span := onlyToolSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrAgentName].AsString() != "tool-agent-ctx" {
+		t.Fatalf("expected gen_ai.agent.name=tool-agent-ctx, got %q", attrs[spanAttrAgentName].AsString())
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "tool-v-ctx" {
+		t.Fatalf("expected gen_ai.agent.version=tool-v-ctx, got %q", attrs[spanAttrAgentVersion].AsString())
+	}
+}
+
+func TestGenerationResultAgentFieldsOverrideSeed(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithAgentName(context.Background(), "ctx-agent")
+	ctx = WithAgentVersion(ctx, "ctx-version")
+	_, rec := client.StartGeneration(ctx, GenerationStart{
+		AgentName:    "start-agent",
+		AgentVersion: "start-version",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	rec.SetResult(Generation{
+		AgentName:    "result-agent",
+		AgentVersion: "result-version",
+		Input:        []Message{{Role: RoleUser, Parts: []Part{TextPart("hello")}}},
+		Output:       []Message{{Role: RoleAssistant, Parts: []Part{TextPart("hi")}}},
+	}, nil)
+	rec.End()
+
+	if rec.lastGeneration.AgentName != "result-agent" {
+		t.Fatalf("expected last generation agent name result-agent, got %q", rec.lastGeneration.AgentName)
+	}
+	if rec.lastGeneration.AgentVersion != "result-version" {
+		t.Fatalf("expected last generation agent version result-version, got %q", rec.lastGeneration.AgentVersion)
+	}
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrAgentName].AsString() != "result-agent" {
+		t.Fatalf("expected gen_ai.agent.name=result-agent, got %q", attrs[spanAttrAgentName].AsString())
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "result-version" {
+		t.Fatalf("expected gen_ai.agent.version=result-version, got %q", attrs[spanAttrAgentVersion].AsString())
+	}
+}
+
+func TestEmptyAgentFieldsAreNotEmitted(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	rec.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if _, ok := attrs[spanAttrAgentName]; ok {
+		t.Fatalf("did not expect %s attribute", spanAttrAgentName)
+	}
+	if _, ok := attrs[spanAttrAgentVersion]; ok {
+		t.Fatalf("did not expect %s attribute", spanAttrAgentVersion)
 	}
 }
 

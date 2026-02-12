@@ -24,6 +24,8 @@ typed Sigil `Generation` model.
 ```go
 resp, err := gemini.GenerateContent(ctx, sigilClient, providerClient, req,
 	gemini.WithConversationID("conv-1"),
+	gemini.WithAgentName("assistant-gemini"),
+	gemini.WithAgentVersion("1.0.0"),
 )
 if err != nil {
 	return err
@@ -35,6 +37,8 @@ _ = resp.Candidates[0].Content.Parts[0].Text
 ```go
 ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-9b2f",
+	AgentName:      "assistant-gemini",
+	AgentVersion:   "1.0.0",
 	Model:          sigil.ModelRef{Provider: "gemini", Name: "gemini-2.5-pro"},
 })
 defer rec.End()

@@ -18,7 +18,11 @@ func ExampleFromRequestResponse() {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp, WithConversationID("conv-1"))
+	generation, err := FromRequestResponse(req, resp,
+		WithConversationID("conv-1"),
+		WithAgentName("assistant-gemini"),
+		WithAgentVersion("1.0.0"),
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -47,7 +51,11 @@ func ExampleFromStream() {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithConversationID("conv-2"))
+	generation, err := FromStream(req, summary,
+		WithConversationID("conv-2"),
+		WithAgentName("assistant-gemini"),
+		WithAgentVersion("1.0.0"),
+	)
 	if err != nil {
 		panic(err)
 	}

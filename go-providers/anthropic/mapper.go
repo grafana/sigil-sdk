@@ -51,6 +51,8 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 
 	generation := sigil.Generation{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: requestModel},
 		ResponseID:     resp.ID,
 		ResponseModel:  responseModel,

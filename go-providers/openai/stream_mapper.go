@@ -139,6 +139,8 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 
 	generation := sigil.Generation{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
 		ResponseID:     responseID,
 		ResponseModel:  modelName,

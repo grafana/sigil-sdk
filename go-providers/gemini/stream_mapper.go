@@ -77,6 +77,8 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 
 	generation := sigil.Generation{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
 		ResponseID:     responseID,
 		ResponseModel:  responseModel,

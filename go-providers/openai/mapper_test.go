@@ -70,6 +70,8 @@ func TestFromRequestResponse(t *testing.T) {
 
 	generation, err := FromRequestResponse(req, resp,
 		WithConversationID("conv-9b2f"),
+		WithAgentName("agent-openai"),
+		WithAgentVersion("v-openai"),
 		WithTag("tenant", "t-123"),
 	)
 	if err != nil {
@@ -84,6 +86,12 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 	if generation.ConversationID != "conv-9b2f" {
 		t.Fatalf("expected conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.AgentName != "agent-openai" {
+		t.Fatalf("expected agent-openai, got %q", generation.AgentName)
+	}
+	if generation.AgentVersion != "v-openai" {
+		t.Fatalf("expected v-openai, got %q", generation.AgentVersion)
 	}
 	if generation.ResponseID != "chatcmpl_1" {
 		t.Fatalf("expected response id chatcmpl_1, got %q", generation.ResponseID)
@@ -196,13 +204,23 @@ func TestFromStream(t *testing.T) {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithConversationID("conv-stream"))
+	generation, err := FromStream(req, summary,
+		WithConversationID("conv-stream"),
+		WithAgentName("agent-openai-stream"),
+		WithAgentVersion("v-openai-stream"),
+	)
 	if err != nil {
 		t.Fatalf("from stream: %v", err)
 	}
 
 	if generation.ConversationID != "conv-stream" {
 		t.Fatalf("expected conv-stream, got %q", generation.ConversationID)
+	}
+	if generation.AgentName != "agent-openai-stream" {
+		t.Fatalf("expected agent-openai-stream, got %q", generation.AgentName)
+	}
+	if generation.AgentVersion != "v-openai-stream" {
+		t.Fatalf("expected v-openai-stream, got %q", generation.AgentVersion)
 	}
 	if generation.ResponseID != "chatcmpl_stream_1" {
 		t.Fatalf("expected response id chatcmpl_stream_1, got %q", generation.ResponseID)

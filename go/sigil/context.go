@@ -2,17 +2,45 @@ package sigil
 
 import "context"
 
-type contextKey struct{}
+type conversationIDContextKey struct{}
+type agentNameContextKey struct{}
+type agentVersionContextKey struct{}
 
 // WithConversationID stores a conversation ID in the context.
 // StartGeneration, StartStreamingGeneration, and StartToolExecution read it when
 // the explicit field is empty.
 func WithConversationID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, contextKey{}, id)
+	return context.WithValue(ctx, conversationIDContextKey{}, id)
 }
 
 // ConversationIDFromContext retrieves the conversation ID stored by WithConversationID.
 func ConversationIDFromContext(ctx context.Context) (string, bool) {
-	id, ok := ctx.Value(contextKey{}).(string)
+	id, ok := ctx.Value(conversationIDContextKey{}).(string)
 	return id, ok && id != ""
+}
+
+// WithAgentName stores an agent name in the context.
+// StartGeneration, StartStreamingGeneration, and StartToolExecution read it when
+// the explicit field is empty.
+func WithAgentName(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, agentNameContextKey{}, name)
+}
+
+// AgentNameFromContext retrieves the agent name stored by WithAgentName.
+func AgentNameFromContext(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(agentNameContextKey{}).(string)
+	return name, ok && name != ""
+}
+
+// WithAgentVersion stores an agent version in the context.
+// StartGeneration, StartStreamingGeneration, and StartToolExecution read it when
+// the explicit field is empty.
+func WithAgentVersion(ctx context.Context, version string) context.Context {
+	return context.WithValue(ctx, agentVersionContextKey{}, version)
+}
+
+// AgentVersionFromContext retrieves the agent version stored by WithAgentVersion.
+func AgentVersionFromContext(ctx context.Context) (string, bool) {
+	version, ok := ctx.Value(agentVersionContextKey{}).(string)
+	return version, ok && version != ""
 }

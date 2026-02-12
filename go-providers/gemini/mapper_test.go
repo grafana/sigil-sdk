@@ -70,6 +70,8 @@ func TestFromRequestResponse(t *testing.T) {
 
 	generation, err := FromRequestResponse(req, resp,
 		WithConversationID("conv-9b2f"),
+		WithAgentName("agent-gemini"),
+		WithAgentVersion("v-gemini"),
 		WithTag("tenant", "t-123"),
 	)
 	if err != nil {
@@ -84,6 +86,12 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 	if generation.ConversationID != "conv-9b2f" {
 		t.Fatalf("expected conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.AgentName != "agent-gemini" {
+		t.Fatalf("expected agent-gemini, got %q", generation.AgentName)
+	}
+	if generation.AgentVersion != "v-gemini" {
+		t.Fatalf("expected v-gemini, got %q", generation.AgentVersion)
 	}
 	if generation.ResponseID != "resp_1" {
 		t.Fatalf("expected response id resp_1, got %q", generation.ResponseID)
@@ -178,13 +186,23 @@ func TestFromStream(t *testing.T) {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithConversationID("conv-stream"))
+	generation, err := FromStream(req, summary,
+		WithConversationID("conv-stream"),
+		WithAgentName("agent-gemini-stream"),
+		WithAgentVersion("v-gemini-stream"),
+	)
 	if err != nil {
 		t.Fatalf("from stream: %v", err)
 	}
 
 	if generation.ConversationID != "conv-stream" {
 		t.Fatalf("expected conv-stream, got %q", generation.ConversationID)
+	}
+	if generation.AgentName != "agent-gemini-stream" {
+		t.Fatalf("expected agent-gemini-stream, got %q", generation.AgentName)
+	}
+	if generation.AgentVersion != "v-gemini-stream" {
+		t.Fatalf("expected v-gemini-stream, got %q", generation.AgentVersion)
 	}
 	if generation.StopReason != "STOP" {
 		t.Fatalf("expected stop reason STOP, got %q", generation.StopReason)

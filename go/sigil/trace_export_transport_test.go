@@ -35,6 +35,8 @@ func TestSDKTraceExportOverHTTP(t *testing.T) {
 	_, rec := client.StartGeneration(context.Background(), GenerationStart{
 		ID:             "gen-trace-http",
 		ConversationID: "conv-trace-http",
+		AgentName:      "trace-agent-http",
+		AgentVersion:   "trace-v-http",
 		Model:          ModelRef{Provider: "openai", Name: "gpt-5"},
 	})
 	rec.SetResult(Generation{
@@ -72,6 +74,8 @@ func TestSDKTraceExportOverGRPC(t *testing.T) {
 	_, rec := client.StartStreamingGeneration(context.Background(), GenerationStart{
 		ID:             "gen-trace-grpc",
 		ConversationID: "conv-trace-grpc",
+		AgentName:      "trace-agent-grpc",
+		AgentVersion:   "trace-v-grpc",
 		Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 	})
 	rec.SetResult(Generation{
@@ -111,6 +115,12 @@ func assertTraceRequestForGeneration(t *testing.T, request *collecttracev1.Expor
 	}
 	if attrs[spanAttrConversationID] != generation.ConversationID {
 		t.Fatalf("expected %s=%q, got %q", spanAttrConversationID, generation.ConversationID, attrs[spanAttrConversationID])
+	}
+	if attrs[spanAttrAgentName] != generation.AgentName {
+		t.Fatalf("expected %s=%q, got %q", spanAttrAgentName, generation.AgentName, attrs[spanAttrAgentName])
+	}
+	if attrs[spanAttrAgentVersion] != generation.AgentVersion {
+		t.Fatalf("expected %s=%q, got %q", spanAttrAgentVersion, generation.AgentVersion, attrs[spanAttrAgentVersion])
 	}
 	if attrs[spanAttrProviderName] != generation.Model.Provider {
 		t.Fatalf("expected %s=%q, got %q", spanAttrProviderName, generation.Model.Provider, attrs[spanAttrProviderName])

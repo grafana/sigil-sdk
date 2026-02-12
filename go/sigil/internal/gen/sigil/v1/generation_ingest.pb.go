@@ -1000,6 +1000,8 @@ type Generation struct {
 	Metadata       *structpb.Struct       `protobuf:"bytes,19,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	RawArtifacts   []*Artifact            `protobuf:"bytes,20,rep,name=raw_artifacts,json=rawArtifacts,proto3" json:"raw_artifacts,omitempty"`
 	CallError      string                 `protobuf:"bytes,21,opt,name=call_error,json=callError,proto3" json:"call_error,omitempty"`
+	AgentName      string                 `protobuf:"bytes,22,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	AgentVersion   string                 `protobuf:"bytes,23,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1181,6 +1183,20 @@ func (x *Generation) GetCallError() string {
 	return ""
 }
 
+func (x *Generation) GetAgentName() string {
+	if x != nil {
+		return x.AgentName
+	}
+	return ""
+}
+
+func (x *Generation) GetAgentVersion() string {
+	if x != nil {
+		return x.AgentVersion
+	}
+	return ""
+}
+
 var File_sigil_v1_generation_ingest_proto protoreflect.FileDescriptor
 
 const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
@@ -1243,7 +1259,7 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\x12\x18\n" +
 	"\apayload\x18\x04 \x01(\fR\apayload\x12\x1b\n" +
 	"\trecord_id\x18\x05 \x01(\tR\brecordId\x12\x10\n" +
-	"\x03uri\x18\x06 \x01(\tR\x03uri\"\xaa\a\n" +
+	"\x03uri\x18\x06 \x01(\tR\x03uri\"\xee\a\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
@@ -1271,7 +1287,10 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\bmetadata\x18\x13 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x127\n" +
 	"\rraw_artifacts\x18\x14 \x03(\v2\x12.sigil.v1.ArtifactR\frawArtifacts\x12\x1d\n" +
 	"\n" +
-	"call_error\x18\x15 \x01(\tR\tcallError\x1a7\n" +
+	"call_error\x18\x15 \x01(\tR\tcallError\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\x16 \x01(\tR\tagentName\x12#\n" +
+	"\ragent_version\x18\x17 \x01(\tR\fagentVersion\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*g\n" +

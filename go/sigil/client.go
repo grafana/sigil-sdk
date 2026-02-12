@@ -73,6 +73,8 @@ const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
 const (
 	spanAttrGenerationID      = "sigil.generation.id"
 	spanAttrConversationID    = "gen_ai.conversation.id"
+	spanAttrAgentName         = "gen_ai.agent.name"
+	spanAttrAgentVersion      = "gen_ai.agent.version"
 	spanAttrErrorType         = "error.type"
 	spanAttrOperationName     = "gen_ai.operation.name"
 	spanAttrProviderName      = "gen_ai.provider.name"
@@ -282,6 +284,16 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 			seed.ConversationID = id
 		}
 	}
+	if seed.AgentName == "" {
+		if name, ok := AgentNameFromContext(ctx); ok {
+			seed.AgentName = name
+		}
+	}
+	if seed.AgentVersion == "" {
+		if version, ok := AgentVersionFromContext(ctx); ok {
+			seed.AgentVersion = version
+		}
+	}
 
 	startedAt := seed.StartedAt
 	if startedAt.IsZero() {
@@ -294,6 +306,8 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	callCtx, span := c.startSpan(ctx, Generation{
 		ID:             seed.ID,
 		ConversationID: seed.ConversationID,
+		AgentName:      seed.AgentName,
+		AgentVersion:   seed.AgentVersion,
 		Mode:           seed.Mode,
 		OperationName:  seed.OperationName,
 		Model:          seed.Model,
@@ -301,6 +315,8 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	span.SetAttributes(generationSpanAttributes(Generation{
 		ID:             seed.ID,
 		ConversationID: seed.ConversationID,
+		AgentName:      seed.AgentName,
+		AgentVersion:   seed.AgentVersion,
 		Mode:           seed.Mode,
 		OperationName:  seed.OperationName,
 		Model:          seed.Model,
@@ -332,6 +348,16 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 	if seed.ConversationID == "" {
 		if id, ok := ConversationIDFromContext(ctx); ok {
 			seed.ConversationID = id
+		}
+	}
+	if seed.AgentName == "" {
+		if name, ok := AgentNameFromContext(ctx); ok {
+			seed.AgentName = name
+		}
+	}
+	if seed.AgentVersion == "" {
+		if version, ok := AgentVersionFromContext(ctx); ok {
+			seed.AgentVersion = version
 		}
 	}
 
@@ -602,6 +628,12 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if g.ConversationID == "" {
 		g.ConversationID = r.seed.ConversationID
 	}
+	if g.AgentName == "" {
+		g.AgentName = r.seed.AgentName
+	}
+	if g.AgentVersion == "" {
+		g.AgentVersion = r.seed.AgentVersion
+	}
 	if g.Mode == "" {
 		g.Mode = r.seed.Mode
 	}
@@ -729,6 +761,12 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	if conversationID := strings.TrimSpace(g.ConversationID); conversationID != "" {
 		attrs = append(attrs, attribute.String(spanAttrConversationID, conversationID))
 	}
+	if agentName := strings.TrimSpace(g.AgentName); agentName != "" {
+		attrs = append(attrs, attribute.String(spanAttrAgentName, agentName))
+	}
+	if agentVersion := strings.TrimSpace(g.AgentVersion); agentVersion != "" {
+		attrs = append(attrs, attribute.String(spanAttrAgentVersion, agentVersion))
+	}
 	if provider := strings.TrimSpace(g.Model.Provider); provider != "" {
 		attrs = append(attrs, attribute.String(spanAttrProviderName, provider))
 	}
@@ -813,6 +851,12 @@ func toolSpanAttributes(start ToolExecutionStart) []attribute.KeyValue {
 	}
 	if conversationID := strings.TrimSpace(start.ConversationID); conversationID != "" {
 		attrs = append(attrs, attribute.String(spanAttrConversationID, conversationID))
+	}
+	if agentName := strings.TrimSpace(start.AgentName); agentName != "" {
+		attrs = append(attrs, attribute.String(spanAttrAgentName, agentName))
+	}
+	if agentVersion := strings.TrimSpace(start.AgentVersion); agentVersion != "" {
+		attrs = append(attrs, attribute.String(spanAttrAgentVersion, agentVersion))
 	}
 
 	return attrs

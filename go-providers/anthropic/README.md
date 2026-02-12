@@ -24,6 +24,8 @@ typed Sigil `Generation` model.
 ```go
 resp, err := anthropic.Message(ctx, sigilClient, providerClient, req,
 	anthropic.WithConversationID("conv-1"),
+	anthropic.WithAgentName("assistant-anthropic"),
+	anthropic.WithAgentVersion("1.0.0"),
 )
 if err != nil {
 	return err
@@ -35,6 +37,8 @@ _ = resp.Content[0].Text
 ```go
 ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-9b2f",
+	AgentName:      "assistant-anthropic",
+	AgentVersion:   "1.0.0",
 	Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 })
 defer rec.End()

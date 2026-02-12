@@ -186,6 +186,8 @@ func payloadFromSeed(seed uint64) (GenerationStart, Generation) {
 	start := GenerationStart{
 		ID:             "gen-" + randomASCII(rnd, 10),
 		ConversationID: "conv-" + randomASCII(rnd, 8),
+		AgentName:      "agent-" + randomASCII(rnd, 8),
+		AgentVersion:   "v-" + randomASCII(rnd, 6),
 		Mode:           mode,
 		Model: ModelRef{
 			Provider: "provider-" + randomASCII(rnd, 5),
@@ -210,6 +212,8 @@ func payloadFromSeed(seed uint64) (GenerationStart, Generation) {
 	result := Generation{
 		ID:             start.ID,
 		ConversationID: start.ConversationID,
+		AgentName:      start.AgentName,
+		AgentVersion:   start.AgentVersion,
 		Mode:           start.Mode,
 		OperationName:  defaultOperationNameForMode(start.Mode),
 		TraceID:        randomHex(rnd, 32),

@@ -12,6 +12,8 @@ func ExampleClient_StartGeneration() {
 
 	ctx, recorder := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-9b2f",
+		AgentName:      "assistant-core",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 	})
 	defer recorder.End()
@@ -34,6 +36,8 @@ func ExampleClient_StartStreamingGeneration() {
 
 	ctx, recorder := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-stream",
+		AgentName:      "assistant-core",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 	})
 	defer recorder.End()
@@ -58,6 +62,8 @@ func ExampleClient_StartToolExecution() {
 		ToolType:        "function",
 		ToolDescription: "Get weather for a city",
 		ConversationID:  "conv-tools",
+		AgentName:       "assistant-core",
+		AgentVersion:    "1.0.0",
 		IncludeContent:  true,
 	})
 	defer recorder.End()

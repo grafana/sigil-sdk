@@ -26,6 +26,8 @@ func Example_withSigilWrapper() {
 
 	resp, err := Message(context.Background(), client, providerClient, req,
 		WithConversationID("conv-anthropic-1"),
+		WithAgentName("assistant-anthropic"),
+		WithAgentVersion("1.0.0"),
 	)
 	if err != nil {
 		panic(err)
@@ -51,6 +53,8 @@ func Example_withSigilDefer() {
 
 	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-anthropic-2",
+		AgentName:      "assistant-anthropic",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "anthropic", Name: string(req.Model)},
 	})
 	defer rec.End()
@@ -61,7 +65,11 @@ func Example_withSigilDefer() {
 		return
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp, WithConversationID("conv-anthropic-2")))
+	rec.SetResult(FromRequestResponse(req, resp,
+		WithConversationID("conv-anthropic-2"),
+		WithAgentName("assistant-anthropic"),
+		WithAgentVersion("1.0.0"),
+	))
 	_ = resp.Content[0].Text
 }
 
@@ -82,6 +90,8 @@ func Example_withSigilStreamingWrapper() {
 
 	_, _, err := MessageStream(context.Background(), client, providerClient, req,
 		WithConversationID("conv-anthropic-3"),
+		WithAgentName("assistant-anthropic"),
+		WithAgentVersion("1.0.0"),
 	)
 	if err != nil {
 		panic(err)
@@ -105,6 +115,8 @@ func Example_withSigilStreamingDefer() {
 
 	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-anthropic-4",
+		AgentName:      "assistant-anthropic",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "anthropic", Name: string(req.Model)},
 	})
 	defer rec.End()
@@ -128,7 +140,11 @@ func Example_withSigilStreamingDefer() {
 		return
 	}
 
-	rec.SetResult(FromStream(req, summary, WithConversationID("conv-anthropic-4")))
+	rec.SetResult(FromStream(req, summary,
+		WithConversationID("conv-anthropic-4"),
+		WithAgentName("assistant-anthropic"),
+		WithAgentVersion("1.0.0"),
+	))
 }
 
 func exampleAnthropicRequest() asdk.BetaMessageNewParams {

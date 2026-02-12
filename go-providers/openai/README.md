@@ -24,6 +24,8 @@ typed Sigil `Generation` model.
 ```go
 resp, err := openai.ChatCompletion(ctx, sigilClient, providerClient, req,
 	openai.WithConversationID("conv-1"),
+	openai.WithAgentName("assistant-openai"),
+	openai.WithAgentVersion("1.0.0"),
 )
 if err != nil {
 	return err
@@ -35,6 +37,8 @@ _ = resp.Choices[0].Message.Content
 ```go
 ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
 	ConversationID: "conv-9b2f",
+	AgentName:      "assistant-openai",
+	AgentVersion:   "1.0.0",
 	Model:          sigil.ModelRef{Provider: "openai", Name: "gpt-5"},
 })
 defer rec.End()

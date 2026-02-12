@@ -27,6 +27,8 @@ func TestFromRequestResponse(t *testing.T) {
 
 	generation, err := FromRequestResponse(req, resp,
 		WithConversationID("conv-9b2f"),
+		WithAgentName("agent-anthropic"),
+		WithAgentVersion("v-anthropic"),
 		WithTag("tenant", "t-123"),
 	)
 	if err != nil {
@@ -41,6 +43,12 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 	if generation.ConversationID != "conv-9b2f" {
 		t.Fatalf("expected conversation id conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.AgentName != "agent-anthropic" {
+		t.Fatalf("expected agent-anthropic, got %q", generation.AgentName)
+	}
+	if generation.AgentVersion != "v-anthropic" {
+		t.Fatalf("expected v-anthropic, got %q", generation.AgentVersion)
 	}
 	if generation.ResponseID != "msg_1" {
 		t.Fatalf("expected response id msg_1, got %q", generation.ResponseID)
@@ -127,13 +135,23 @@ func TestFromStream(t *testing.T) {
 		},
 	}
 
-	generation, err := FromStream(req, summary, WithConversationID("conv-stream"))
+	generation, err := FromStream(req, summary,
+		WithConversationID("conv-stream"),
+		WithAgentName("agent-anthropic-stream"),
+		WithAgentVersion("v-anthropic-stream"),
+	)
 	if err != nil {
 		t.Fatalf("from stream: %v", err)
 	}
 
 	if generation.ConversationID != "conv-stream" {
 		t.Fatalf("expected conv-stream, got %q", generation.ConversationID)
+	}
+	if generation.AgentName != "agent-anthropic-stream" {
+		t.Fatalf("expected agent-anthropic-stream, got %q", generation.AgentName)
+	}
+	if generation.AgentVersion != "v-anthropic-stream" {
+		t.Fatalf("expected v-anthropic-stream, got %q", generation.AgentVersion)
 	}
 	if generation.ResponseID != "msg_stream_1" {
 		t.Fatalf("expected response id msg_stream_1, got %q", generation.ResponseID)

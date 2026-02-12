@@ -32,6 +32,8 @@ func Example_withSigilWrapper() {
 
 	resp, err := GenerateContent(context.Background(), client, providerClient, req,
 		WithConversationID("conv-gemini-1"),
+		WithAgentName("assistant-gemini"),
+		WithAgentVersion("1.0.0"),
 	)
 	if err != nil {
 		panic(err)
@@ -56,6 +58,8 @@ func Example_withSigilDefer() {
 
 	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-gemini-2",
+		AgentName:      "assistant-gemini",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "gemini", Name: req.Model},
 	})
 	defer rec.End()
@@ -75,7 +79,11 @@ func Example_withSigilDefer() {
 		return
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp, WithConversationID("conv-gemini-2")))
+	rec.SetResult(FromRequestResponse(req, resp,
+		WithConversationID("conv-gemini-2"),
+		WithAgentName("assistant-gemini"),
+		WithAgentVersion("1.0.0"),
+	))
 	_ = resp.Candidates[0].Content.Parts[0].Text
 }
 
@@ -95,6 +103,8 @@ func Example_withSigilStreamingDefer() {
 
 	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-gemini-3",
+		AgentName:      "assistant-gemini",
+		AgentVersion:   "1.0.0",
 		Model:          sigil.ModelRef{Provider: "gemini", Name: req.Model},
 	})
 	defer rec.End()
@@ -120,7 +130,11 @@ func Example_withSigilStreamingDefer() {
 		}
 	}
 
-	rec.SetResult(FromStream(req, summary, WithConversationID("conv-gemini-3")))
+	rec.SetResult(FromStream(req, summary,
+		WithConversationID("conv-gemini-3"),
+		WithAgentName("assistant-gemini"),
+		WithAgentVersion("1.0.0"),
+	))
 }
 
 func exampleGeminiRequest() GenerateContentRequest {

@@ -110,6 +110,8 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 
 	generation := sigil.Generation{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
 		ResponseID:     responseID,
 		ResponseModel:  modelName,

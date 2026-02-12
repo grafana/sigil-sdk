@@ -63,6 +63,8 @@ func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContent
 
 	generation := sigil.Generation{
 		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
 		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
 		ResponseID:     resp.ResponseID,
 		ResponseModel:  resp.ModelVersion,
