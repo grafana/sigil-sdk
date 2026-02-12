@@ -3,7 +3,7 @@ package openai
 import (
 	"context"
 
-	osdk "github.com/openai/openai-go"
+	osdk "github.com/openai/openai-go/v3"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
 )

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	osdk "github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	osdk "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
 )

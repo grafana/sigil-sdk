@@ -1,8 +1,8 @@
 package openai
 
 import (
-	osdk "github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	osdk "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 func ExampleFromRequestResponse() {

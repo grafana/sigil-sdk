@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
-	osdk "github.com/openai/openai-go"
-	osdkoption "github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/shared"
+	osdk "github.com/openai/openai-go/v3"
+	osdkoption "github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/shared"
 )
 
 // Example_withSigilWrapper shows the one-liner wrapper approach.
