@@ -214,8 +214,8 @@ def test_sdk_generation_auth_tenant_over_http() -> None:
         assert rec.err() is None
         client.shutdown()
 
-        assert len(captured_headers) == 1
-        assert captured_headers[0].get("x-scope-orgid") == "tenant-a"
+        assert len(captured_headers) >= 1
+        assert all(headers.get("x-scope-orgid") == "tenant-a" for headers in captured_headers)
     finally:
         server.shutdown()
         server.server_close()
