@@ -5,6 +5,7 @@ include(":providers:openai")
 include(":providers:anthropic")
 include(":providers:gemini")
 include(":benchmarks")
+include(":devex-emitter")
 
 project(":providers:openai").projectDir = file("providers/openai")
 project(":providers:anthropic").projectDir = file("providers/anthropic")
