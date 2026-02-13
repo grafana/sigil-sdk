@@ -4,6 +4,12 @@ If you already use OpenTelemetry, Sigil is a thin extension plus sugar for AI ob
 
 The Go SDK is the current production-ready baseline for normalized generation recording with OTEL traces and generation-first export.
 
+Cross-language parity tracks are available for:
+
+- Python: `sdks/python`
+- TypeScript/JavaScript: `sdks/js`
+- .NET/C#: `sdks/dotnet`
+
 ## Core model
 
 - `Generation` is the canonical entity.

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Grafana.Sigil.Anthropic</AssemblyName>
+    <RootNamespace>Grafana.Sigil.Anthropic</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Grafana.Sigil.Anthropic</PackageId>
+    <Description>Grafana Sigil Anthropic provider helpers for .NET.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Grafana.Sigil/Grafana.Sigil.csproj" />
+    <PackageReference Include="Anthropic" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
