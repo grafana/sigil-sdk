@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Grafana.Sigil.OpenAI</AssemblyName>
+    <RootNamespace>Grafana.Sigil.OpenAI</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Grafana.Sigil.OpenAI</PackageId>
+    <Description>Grafana Sigil OpenAI provider helpers for .NET.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Grafana.Sigil/Grafana.Sigil.csproj" />
+    <PackageReference Include="OpenAI" Version="2.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>
