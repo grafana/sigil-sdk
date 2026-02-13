@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"math"
 	"testing"
 
 	"google.golang.org/genai"
@@ -9,6 +10,9 @@ import (
 )
 
 func TestFromRequestResponse(t *testing.T) {
+	temperature := float32(0.4)
+	topP := float32(0.75)
+	thinkingBudget := int32(2048)
 	req := GenerateContentRequest{
 		Model: "gemini-2.5-pro",
 		Contents: []*genai.Content{
@@ -21,6 +25,18 @@ func TestFromRequestResponse(t *testing.T) {
 		},
 		Config: &genai.GenerateContentConfig{
 			SystemInstruction: genai.NewContentFromText("Be concise.", genai.RoleUser),
+			MaxOutputTokens:   300,
+			Temperature:       &temperature,
+			TopP:              &topP,
+			ToolConfig: &genai.ToolConfig{
+				FunctionCallingConfig: &genai.FunctionCallingConfig{
+					Mode: genai.FunctionCallingConfigModeAny,
+				},
+			},
+			ThinkingConfig: &genai.ThinkingConfig{
+				IncludeThoughts: true,
+				ThinkingBudget:  &thinkingBudget,
+			},
 			Tools: []*genai.Tool{
 				{
 					FunctionDeclarations: []*genai.FunctionDeclaration{
@@ -114,6 +130,27 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Usage.ReasoningTokens != 10 {
 		t.Fatalf("expected reasoning tokens 10, got %d", generation.Usage.ReasoningTokens)
 	}
+	if generation.MaxTokens == nil || *generation.MaxTokens != 300 {
+		t.Fatalf("expected max tokens 300, got %v", generation.MaxTokens)
+	}
+	if generation.Temperature == nil || math.Abs(*generation.Temperature-0.4) > 1e-6 {
+		t.Fatalf("expected temperature 0.4, got %v", generation.Temperature)
+	}
+	if generation.TopP == nil || math.Abs(*generation.TopP-0.75) > 1e-6 {
+		t.Fatalf("expected top_p 0.75, got %v", generation.TopP)
+	}
+	if generation.ToolChoice == nil || *generation.ToolChoice != "any" {
+		t.Fatalf("unexpected tool choice %v", generation.ToolChoice)
+	}
+	if generation.ThinkingEnabled == nil || !*generation.ThinkingEnabled {
+		t.Fatalf("expected thinking enabled true, got %v", generation.ThinkingEnabled)
+	}
+	if generation.Metadata == nil {
+		t.Fatalf("expected metadata map")
+	}
+	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(2048) {
+		t.Fatalf("expected thinking budget metadata 2048, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	}
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
 	}
@@ -133,12 +170,27 @@ func TestFromRequestResponse(t *testing.T) {
 }
 
 func TestFromStream(t *testing.T) {
+	temperature := float32(0.2)
+	topP := float32(0.6)
+	thinkingBudget := int32(1536)
 	req := GenerateContentRequest{
 		Model: "gemini-2.5-pro",
 		Contents: []*genai.Content{
 			genai.NewContentFromText("What is the weather in Paris?", genai.RoleUser),
 		},
 		Config: &genai.GenerateContentConfig{
+			MaxOutputTokens: 90,
+			Temperature:     &temperature,
+			TopP:            &topP,
+			ToolConfig: &genai.ToolConfig{
+				FunctionCallingConfig: &genai.FunctionCallingConfig{
+					Mode: genai.FunctionCallingConfigModeAuto,
+				},
+			},
+			ThinkingConfig: &genai.ThinkingConfig{
+				IncludeThoughts: false,
+				ThinkingBudget:  &thinkingBudget,
+			},
 			Tools: []*genai.Tool{
 				{
 					FunctionDeclarations: []*genai.FunctionDeclaration{
@@ -215,6 +267,27 @@ func TestFromStream(t *testing.T) {
 	}
 	if generation.Usage.TotalTokens != 26 {
 		t.Fatalf("expected total tokens 26, got %d", generation.Usage.TotalTokens)
+	}
+	if generation.MaxTokens == nil || *generation.MaxTokens != 90 {
+		t.Fatalf("expected max tokens 90, got %v", generation.MaxTokens)
+	}
+	if generation.Temperature == nil || math.Abs(*generation.Temperature-0.2) > 1e-6 {
+		t.Fatalf("expected temperature 0.2, got %v", generation.Temperature)
+	}
+	if generation.TopP == nil || math.Abs(*generation.TopP-0.6) > 1e-6 {
+		t.Fatalf("expected top_p 0.6, got %v", generation.TopP)
+	}
+	if generation.ToolChoice == nil || *generation.ToolChoice != "auto" {
+		t.Fatalf("unexpected tool choice %v", generation.ToolChoice)
+	}
+	if generation.ThinkingEnabled == nil || *generation.ThinkingEnabled {
+		t.Fatalf("expected thinking enabled false, got %v", generation.ThinkingEnabled)
+	}
+	if generation.Metadata == nil {
+		t.Fatalf("expected metadata map")
+	}
+	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1536) {
+		t.Fatalf("expected thinking budget metadata 1536, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
 	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))

@@ -3,6 +3,7 @@ package openai
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	osdk "github.com/openai/openai-go/v3"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
+
+const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
 
 // FromRequestResponse maps an OpenAI chat completion request/response pair to sigil.Generation.
 func FromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatCompletion, opts ...Option) (sigil.Generation, error) {
@@ -49,23 +52,29 @@ func FromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatComple
 	if responseModel == "" {
 		responseModel = requestModel
 	}
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req)
 
 	generation := sigil.Generation{
-		ConversationID: options.conversationID,
-		AgentName:      options.agentName,
-		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: requestModel},
-		ResponseID:     resp.ID,
-		ResponseModel:  responseModel,
-		SystemPrompt:   systemPrompt,
-		Input:          input,
-		Output:         output,
-		Tools:          mapTools(req.Tools),
-		Usage:          mapUsage(resp.Usage),
-		StopReason:     firstFinishReason(resp.Choices),
-		Tags:           cloneStringMap(options.tags),
-		Metadata:       cloneAnyMap(options.metadata),
-		Artifacts:      artifacts,
+		ConversationID:  options.conversationID,
+		AgentName:       options.agentName,
+		AgentVersion:    options.agentVersion,
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: requestModel},
+		ResponseID:      resp.ID,
+		ResponseModel:   responseModel,
+		SystemPrompt:    systemPrompt,
+		Input:           input,
+		Output:          output,
+		Tools:           mapTools(req.Tools),
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		TopP:            topP,
+		ToolChoice:      toolChoice,
+		ThinkingEnabled: thinkingEnabled,
+		Usage:           mapUsage(resp.Usage),
+		StopReason:      firstFinishReason(resp.Choices),
+		Tags:            cloneStringMap(options.tags),
+		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Artifacts:       artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {
@@ -309,6 +318,163 @@ func firstFinishReason(choices []osdk.ChatCompletionChoice) string {
 		}
 	}
 	return ""
+}
+
+func mapRequestControls(req osdk.ChatCompletionNewParams) (*int64, *float64, *float64, *string, *bool, *int64) {
+	payload := marshalRequest(req)
+	if payload == nil {
+		return nil, nil, nil, nil, nil, nil
+	}
+
+	maxTokens := readInt64(payload, "max_completion_tokens")
+	if maxTokens == nil {
+		maxTokens = readInt64(payload, "max_tokens")
+	}
+
+	temperature := readFloat64(payload, "temperature")
+	topP := readFloat64(payload, "top_p")
+	toolChoice := canonicalToolChoice(payload["tool_choice"])
+
+	var thinkingEnabled *bool
+	if _, ok := payload["reasoning"]; ok {
+		thinkingEnabled = boolPtr(true)
+	} else if _, ok := payload["reasoning_effort"]; ok {
+		thinkingEnabled = boolPtr(true)
+	}
+
+	thinkingBudget := resolveThinkingBudget(payload["reasoning"])
+
+	return maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget
+}
+
+func marshalRequest(req osdk.ChatCompletionNewParams) map[string]any {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil
+	}
+
+	return payload
+}
+
+func readInt64(payload map[string]any, key string) *int64 {
+	value, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case float64:
+		asInt := int64(typed)
+		if typed != float64(asInt) {
+			return nil
+		}
+		return &asInt
+	}
+	return nil
+}
+
+func readFloat64(payload map[string]any, key string) *float64 {
+	value, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case float64:
+		return &typed
+	}
+	return nil
+}
+
+func canonicalToolChoice(value any) *string {
+	if value == nil {
+		return nil
+	}
+
+	if text, ok := value.(string); ok {
+		normalized := strings.ToLower(strings.TrimSpace(text))
+		if normalized == "" {
+			return nil
+		}
+		return &normalized
+	}
+
+	raw, err := json.Marshal(value)
+	if err != nil || len(raw) == 0 {
+		return nil
+	}
+	normalized := string(raw)
+	return &normalized
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func mergeThinkingBudgetMetadata(metadata map[string]any, thinkingBudget *int64) map[string]any {
+	out := cloneAnyMap(metadata)
+	if thinkingBudget == nil {
+		return out
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	out[thinkingBudgetMetadataKey] = *thinkingBudget
+	return out
+}
+
+func resolveThinkingBudget(value any) *int64 {
+	object, ok := value.(map[string]any)
+	if !ok || len(object) == 0 {
+		return nil
+	}
+	if resolved := coerceInt64Pointer(object["budget_tokens"]); resolved != nil {
+		return resolved
+	}
+	if resolved := coerceInt64Pointer(object["thinking_budget"]); resolved != nil {
+		return resolved
+	}
+	if resolved := coerceInt64Pointer(object["thinkingBudget"]); resolved != nil {
+		return resolved
+	}
+	if resolved := coerceInt64Pointer(object["max_output_tokens"]); resolved != nil {
+		return resolved
+	}
+	return nil
+}
+
+func coerceInt64Pointer(value any) *int64 {
+	switch typed := value.(type) {
+	case float64:
+		asInt := int64(typed)
+		if typed != float64(asInt) {
+			return nil
+		}
+		return &asInt
+	case int:
+		asInt := int64(typed)
+		return &asInt
+	case int64:
+		asInt := typed
+		return &asInt
+	case json.Number:
+		asInt, err := typed.Int64()
+		if err != nil {
+			return nil
+		}
+		return &asInt
+	case string:
+		asInt, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return nil
+		}
+		return &asInt
+	default:
+		return nil
+	}
 }
 
 func extractTextFromSystem(message *osdk.ChatCompletionSystemMessageParam) string {

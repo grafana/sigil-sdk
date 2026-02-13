@@ -115,6 +115,11 @@ def test_anthropic_wrapper_propagates_provider_error_and_sets_call_error() -> No
 def test_anthropic_mappers_filter_system_messages_and_support_raw_artifacts() -> None:
     request = AnthropicRequest(
         model="claude-sonnet-4-5",
+        max_tokens=512,
+        temperature=0.3,
+        top_p=0.75,
+        tool_choice={"type": "tool", "name": "weather"},
+        thinking={"type": "adaptive", "budget_tokens": 2048},
         messages=[
             AnthropicMessage(role="system", content="system"),
             AnthropicMessage(role="user", content="hello"),
@@ -128,6 +133,12 @@ def test_anthropic_mappers_filter_system_messages_and_support_raw_artifacts() ->
     assert len(mapped_default.input) == 2
     assert mapped_default.input[0].role.value == "user"
     assert mapped_default.input[1].role.value == "tool"
+    assert mapped_default.max_tokens == 512
+    assert mapped_default.temperature == 0.3
+    assert mapped_default.top_p == 0.75
+    assert mapped_default.tool_choice == '{"name":"weather","type":"tool"}'
+    assert mapped_default.thinking_enabled is True
+    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
     assert mapped_default.artifacts == []
 
     mapped_with_artifacts = from_request_response(request, response, AnthropicOptions(raw_artifacts=True))
@@ -140,4 +151,20 @@ def test_anthropic_mappers_filter_system_messages_and_support_raw_artifacts() ->
     )
     assert stream_mapped.response_model == "claude-sonnet-4-5"
     assert stream_mapped.output[0].parts[0].text == "stream-output"
+    assert stream_mapped.max_tokens == 512
+    assert stream_mapped.tool_choice == '{"name":"weather","type":"tool"}'
+    assert stream_mapped.thinking_enabled is True
+    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
     assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "provider_event"]
+
+
+def test_anthropic_mapper_maps_thinking_disabled() -> None:
+    request = AnthropicRequest(
+        model="claude-sonnet-4-5",
+        thinking="disabled",
+        messages=[AnthropicMessage(role="user", content="hello")],
+    )
+    response = AnthropicResponse(id="resp-1", output_text="ok")
+    mapped = from_request_response(request, response)
+
+    assert mapped.thinking_enabled is False

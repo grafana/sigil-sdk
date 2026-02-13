@@ -22,6 +22,8 @@ from sigil_sdk import (
     ToolDefinition,
 )
 
+_thinking_budget_metadata_key = "sigil.gen_ai.request.thinking.budget_tokens"
+
 
 @dataclass(slots=True)
 class OpenAIMessage:
@@ -39,6 +41,12 @@ class OpenAIChatRequest:
     model: str
     messages: list[OpenAIMessage]
     system_prompt: str = ""
+    max_completion_tokens: int | None = None
+    max_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    tool_choice: Any = None
+    reasoning: Any = None
     tools: list[ToolDefinition] = field(default_factory=list)
 
 
@@ -180,6 +188,7 @@ def from_request_response(
     """Maps OpenAI request/response payloads into a normalized generation."""
 
     opts = options or OpenAIOptions()
+    metadata = _metadata_with_thinking_budget(opts.metadata, _openai_thinking_budget(request.reasoning))
     generation = Generation(
         conversation_id=opts.conversation_id,
         agent_name=opts.agent_name,
@@ -189,13 +198,18 @@ def from_request_response(
         response_id=response.id,
         response_model=response.model or request.model,
         system_prompt=request.system_prompt,
+        max_tokens=_request_max_tokens(request),
+        temperature=request.temperature,
+        top_p=request.top_p,
+        tool_choice=_canonical_tool_choice(request.tool_choice),
+        thinking_enabled=_openai_thinking_enabled(request),
         input=_map_input_messages(request.messages),
         output=[_assistant_text_message(response.output_text)],
         tools=copy.deepcopy(request.tools),
         usage=copy.deepcopy(response.usage),
         stop_reason=response.stop_reason,
         tags=dict(opts.tags),
-        metadata=dict(opts.metadata),
+        metadata=metadata,
     )
 
     if opts.raw_artifacts:
@@ -234,6 +248,7 @@ def from_stream(
     """Maps OpenAI stream summary into a normalized generation."""
 
     opts = options or OpenAIOptions()
+    metadata = _metadata_with_thinking_budget(opts.metadata, _openai_thinking_budget(request.reasoning))
 
     if summary.final_response is not None:
         generation = from_request_response(request, summary.final_response, opts)
@@ -247,11 +262,16 @@ def from_stream(
             model=ModelRef(provider=opts.provider_name, name=request.model),
             response_model=request.model,
             system_prompt=request.system_prompt,
+            max_tokens=_request_max_tokens(request),
+            temperature=request.temperature,
+            top_p=request.top_p,
+            tool_choice=_canonical_tool_choice(request.tool_choice),
+            thinking_enabled=_openai_thinking_enabled(request),
             input=_map_input_messages(request.messages),
             output=[_assistant_text_message(summary.output_text)],
             tools=copy.deepcopy(request.tools),
             tags=dict(opts.tags),
-            metadata=dict(opts.metadata),
+            metadata=metadata,
         )
 
     if generation.output:
@@ -310,6 +330,7 @@ def _assistant_text_message(text: str) -> Message:
 
 
 def _start_payload(request: OpenAIChatRequest, options: OpenAIOptions, mode: GenerationMode) -> GenerationStart:
+    metadata = _metadata_with_thinking_budget(options.metadata, _openai_thinking_budget(request.reasoning))
     return GenerationStart(
         conversation_id=options.conversation_id,
         agent_name=options.agent_name,
@@ -317,11 +338,87 @@ def _start_payload(request: OpenAIChatRequest, options: OpenAIOptions, mode: Gen
         mode=mode,
         model=ModelRef(provider=options.provider_name, name=request.model),
         system_prompt=request.system_prompt,
+        max_tokens=_request_max_tokens(request),
+        temperature=request.temperature,
+        top_p=request.top_p,
+        tool_choice=_canonical_tool_choice(request.tool_choice),
+        thinking_enabled=_openai_thinking_enabled(request),
         tools=copy.deepcopy(request.tools),
         tags=dict(options.tags),
-        metadata=dict(options.metadata),
+        metadata=metadata,
     )
 
 
 def _json_bytes(payload: Any) -> bytes:
     return json.dumps(payload, default=str, separators=(",", ":")).encode("utf-8")
+
+
+def _request_max_tokens(request: OpenAIChatRequest) -> int | None:
+    if request.max_completion_tokens is not None:
+        return request.max_completion_tokens
+    return request.max_tokens
+
+
+def _openai_thinking_enabled(request: OpenAIChatRequest) -> bool | None:
+    if request.reasoning is None:
+        return None
+    return True
+
+
+def _openai_thinking_budget(reasoning: Any) -> int | None:
+    if reasoning is None:
+        return None
+    if not isinstance(reasoning, dict):
+        return None
+
+    for key in ("budget_tokens", "thinking_budget", "thinkingBudget", "max_output_tokens"):
+        candidate = _coerce_int(reasoning.get(key))
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _canonical_tool_choice(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized or None
+    if hasattr(value, "value"):
+        normalized = str(value.value).strip().lower()
+        return normalized or None
+
+    try:
+        encoded = json.dumps(value, default=str, separators=(",", ":"), sort_keys=True)
+    except Exception:  # noqa: BLE001
+        normalized = str(value).strip().lower()
+        return normalized or None
+    return encoded if encoded != "" else None
+
+
+def _metadata_with_thinking_budget(metadata: dict[str, Any], thinking_budget: int | None) -> dict[str, Any]:
+    out = dict(metadata)
+    if thinking_budget is not None:
+        out[_thinking_budget_metadata_key] = thinking_budget
+    return out
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        integer = int(value)
+        if float(integer) == value:
+            return integer
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text == "":
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+    return None

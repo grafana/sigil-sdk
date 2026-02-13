@@ -33,15 +33,24 @@ func TestSDKTraceExportOverHTTP(t *testing.T) {
 	})
 
 	_, rec := client.StartGeneration(context.Background(), GenerationStart{
-		ID:             "gen-trace-http",
-		ConversationID: "conv-trace-http",
-		AgentName:      "trace-agent-http",
-		AgentVersion:   "trace-v-http",
-		Model:          ModelRef{Provider: "openai", Name: "gpt-5"},
+		ID:              "gen-trace-http",
+		ConversationID:  "conv-trace-http",
+		AgentName:       "trace-agent-http",
+		AgentVersion:    "trace-v-http",
+		Model:           ModelRef{Provider: "openai", Name: "gpt-5"},
+		MaxTokens:       int64Ptr(512),
+		Temperature:     float64Ptr(0.2),
+		TopP:            float64Ptr(0.95),
+		ToolChoice:      stringPtr("required"),
+		ThinkingEnabled: boolPtr(false),
 	})
 	rec.SetResult(Generation{
-		Input:  []Message{UserTextMessage("hello")},
-		Output: []Message{AssistantTextMessage("hi")},
+		Input:      []Message{UserTextMessage("hello")},
+		Output:     []Message{AssistantTextMessage("hi")},
+		StopReason: "end_turn",
+		Metadata: map[string]any{
+			"sigil.gen_ai.request.thinking.budget_tokens": int64(2048),
+		},
 	}, nil)
 	rec.End()
 	if err := rec.Err(); err != nil {
@@ -72,15 +81,24 @@ func TestSDKTraceExportOverGRPC(t *testing.T) {
 	})
 
 	_, rec := client.StartStreamingGeneration(context.Background(), GenerationStart{
-		ID:             "gen-trace-grpc",
-		ConversationID: "conv-trace-grpc",
-		AgentName:      "trace-agent-grpc",
-		AgentVersion:   "trace-v-grpc",
-		Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+		ID:              "gen-trace-grpc",
+		ConversationID:  "conv-trace-grpc",
+		AgentName:       "trace-agent-grpc",
+		AgentVersion:    "trace-v-grpc",
+		Model:           ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+		MaxTokens:       int64Ptr(1024),
+		Temperature:     float64Ptr(0.1),
+		TopP:            float64Ptr(0.9),
+		ToolChoice:      stringPtr("auto"),
+		ThinkingEnabled: boolPtr(true),
 	})
 	rec.SetResult(Generation{
-		Input:  []Message{UserTextMessage("hello")},
-		Output: []Message{AssistantTextMessage("hi")},
+		Input:      []Message{UserTextMessage("hello")},
+		Output:     []Message{AssistantTextMessage("hi")},
+		StopReason: "stop",
+		Metadata: map[string]any{
+			"sigil.gen_ai.request.thinking.budget_tokens": int64(1024),
+		},
 	}, nil)
 	rec.End()
 	if err := rec.Err(); err != nil {
@@ -109,27 +127,53 @@ func assertTraceRequestForGeneration(t *testing.T, request *collecttracev1.Expor
 		t.Fatalf("expected span %q in exported traces", generationSpanName(generation))
 	}
 
-	attrs := attrStringMap(span.Attributes)
-	if attrs[spanAttrGenerationID] != generation.ID {
-		t.Fatalf("expected %s=%q, got %q", spanAttrGenerationID, generation.ID, attrs[spanAttrGenerationID])
+	attrs := attrMap(span.Attributes)
+	if attrs[spanAttrGenerationID].GetStringValue() != generation.ID {
+		t.Fatalf("expected %s=%q, got %q", spanAttrGenerationID, generation.ID, attrs[spanAttrGenerationID].GetStringValue())
 	}
-	if attrs[spanAttrConversationID] != generation.ConversationID {
-		t.Fatalf("expected %s=%q, got %q", spanAttrConversationID, generation.ConversationID, attrs[spanAttrConversationID])
+	if attrs[spanAttrConversationID].GetStringValue() != generation.ConversationID {
+		t.Fatalf("expected %s=%q, got %q", spanAttrConversationID, generation.ConversationID, attrs[spanAttrConversationID].GetStringValue())
 	}
-	if attrs[spanAttrAgentName] != generation.AgentName {
-		t.Fatalf("expected %s=%q, got %q", spanAttrAgentName, generation.AgentName, attrs[spanAttrAgentName])
+	if attrs[spanAttrAgentName].GetStringValue() != generation.AgentName {
+		t.Fatalf("expected %s=%q, got %q", spanAttrAgentName, generation.AgentName, attrs[spanAttrAgentName].GetStringValue())
 	}
-	if attrs[spanAttrAgentVersion] != generation.AgentVersion {
-		t.Fatalf("expected %s=%q, got %q", spanAttrAgentVersion, generation.AgentVersion, attrs[spanAttrAgentVersion])
+	if attrs[spanAttrAgentVersion].GetStringValue() != generation.AgentVersion {
+		t.Fatalf("expected %s=%q, got %q", spanAttrAgentVersion, generation.AgentVersion, attrs[spanAttrAgentVersion].GetStringValue())
 	}
-	if attrs[spanAttrProviderName] != generation.Model.Provider {
-		t.Fatalf("expected %s=%q, got %q", spanAttrProviderName, generation.Model.Provider, attrs[spanAttrProviderName])
+	if attrs[spanAttrProviderName].GetStringValue() != generation.Model.Provider {
+		t.Fatalf("expected %s=%q, got %q", spanAttrProviderName, generation.Model.Provider, attrs[spanAttrProviderName].GetStringValue())
 	}
-	if attrs[spanAttrRequestModel] != generation.Model.Name {
-		t.Fatalf("expected %s=%q, got %q", spanAttrRequestModel, generation.Model.Name, attrs[spanAttrRequestModel])
+	if attrs[spanAttrRequestModel].GetStringValue() != generation.Model.Name {
+		t.Fatalf("expected %s=%q, got %q", spanAttrRequestModel, generation.Model.Name, attrs[spanAttrRequestModel].GetStringValue())
 	}
-	if attrs[spanAttrOperationName] != operationName(generation) {
-		t.Fatalf("expected %s=%q, got %q", spanAttrOperationName, operationName(generation), attrs[spanAttrOperationName])
+	if attrs[spanAttrOperationName].GetStringValue() != operationName(generation) {
+		t.Fatalf("expected %s=%q, got %q", spanAttrOperationName, operationName(generation), attrs[spanAttrOperationName].GetStringValue())
+	}
+	if generation.MaxTokens != nil && attrs[spanAttrRequestMaxTokens].GetIntValue() != *generation.MaxTokens {
+		t.Fatalf("expected %s=%d, got %d", spanAttrRequestMaxTokens, *generation.MaxTokens, attrs[spanAttrRequestMaxTokens].GetIntValue())
+	}
+	if generation.Temperature != nil && attrs[spanAttrRequestTemperature].GetDoubleValue() != *generation.Temperature {
+		t.Fatalf("expected %s=%v, got %v", spanAttrRequestTemperature, *generation.Temperature, attrs[spanAttrRequestTemperature].GetDoubleValue())
+	}
+	if generation.TopP != nil && attrs[spanAttrRequestTopP].GetDoubleValue() != *generation.TopP {
+		t.Fatalf("expected %s=%v, got %v", spanAttrRequestTopP, *generation.TopP, attrs[spanAttrRequestTopP].GetDoubleValue())
+	}
+	if generation.ToolChoice != nil && attrs[spanAttrRequestToolChoice].GetStringValue() != *generation.ToolChoice {
+		t.Fatalf("expected %s=%q, got %q", spanAttrRequestToolChoice, *generation.ToolChoice, attrs[spanAttrRequestToolChoice].GetStringValue())
+	}
+	if generation.ThinkingEnabled != nil && attrs[spanAttrRequestThinkingEnabled].GetBoolValue() != *generation.ThinkingEnabled {
+		t.Fatalf("expected %s=%v, got %v", spanAttrRequestThinkingEnabled, *generation.ThinkingEnabled, attrs[spanAttrRequestThinkingEnabled].GetBoolValue())
+	}
+	if budget, ok := generation.Metadata[spanAttrRequestThinkingBudget].(int64); ok {
+		if attrs[spanAttrRequestThinkingBudget].GetIntValue() != budget {
+			t.Fatalf("expected %s=%d, got %d", spanAttrRequestThinkingBudget, budget, attrs[spanAttrRequestThinkingBudget].GetIntValue())
+		}
+	}
+	if generation.StopReason != "" {
+		reasons := attrs[spanAttrFinishReasons].GetArrayValue().GetValues()
+		if len(reasons) != 1 || reasons[0].GetStringValue() != generation.StopReason {
+			t.Fatalf("expected %s=[%q], got %v", spanAttrFinishReasons, generation.StopReason, reasons)
+		}
 	}
 
 	traceID := hex.EncodeToString(span.TraceId)
@@ -155,17 +199,13 @@ func findSpanByName(request *collecttracev1.ExportTraceServiceRequest, name stri
 	return nil, false
 }
 
-func attrStringMap(attrs []*commonv1.KeyValue) map[string]string {
-	out := make(map[string]string, len(attrs))
+func attrMap(attrs []*commonv1.KeyValue) map[string]*commonv1.AnyValue {
+	out := make(map[string]*commonv1.AnyValue, len(attrs))
 	for _, kv := range attrs {
 		if kv == nil || kv.Value == nil {
 			continue
 		}
-
-		switch value := kv.Value.Value.(type) {
-		case *commonv1.AnyValue_StringValue:
-			out[kv.Key] = value.StringValue
-		}
+		out[kv.Key] = kv.Value
 	}
 	return out
 }

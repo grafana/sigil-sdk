@@ -523,14 +523,27 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
 		},
+		MaxTokens:       int64Ptr(1024),
+		Temperature:     float64Ptr(0.25),
+		TopP:            float64Ptr(0.9),
+		ToolChoice:      stringPtr("auto"),
+		ThinkingEnabled: boolPtr(true),
 	})
 
 	generationRecorder.SetResult(Generation{
-		OperationName:  "text_completion",
-		ConversationID: "conv-7",
-		ResponseID:     "resp-7",
-		ResponseModel:  "claude-sonnet-4-5-20260201",
-		StopReason:     "end_turn",
+		OperationName:   "text_completion",
+		ConversationID:  "conv-7",
+		ResponseID:      "resp-7",
+		ResponseModel:   "claude-sonnet-4-5-20260201",
+		StopReason:      "end_turn",
+		MaxTokens:       int64Ptr(256),
+		Temperature:     float64Ptr(0.1),
+		TopP:            float64Ptr(0.8),
+		ToolChoice:      stringPtr("required"),
+		ThinkingEnabled: boolPtr(false),
+		Metadata: map[string]any{
+			"sigil.gen_ai.request.thinking.budget_tokens": int64(4096),
+		},
 		Usage: TokenUsage{
 			InputTokens:           10,
 			OutputTokens:          4,
@@ -592,6 +605,24 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 	}
 	if attrs[spanAttrCacheWriteTokens].AsInt64() != 2 {
 		t.Fatalf("expected gen_ai.usage.cache_write_input_tokens=2")
+	}
+	if attrs[spanAttrRequestMaxTokens].AsInt64() != 256 {
+		t.Fatalf("expected gen_ai.request.max_tokens=256")
+	}
+	if attrs[spanAttrRequestTemperature].AsFloat64() != 0.1 {
+		t.Fatalf("expected gen_ai.request.temperature=0.1")
+	}
+	if attrs[spanAttrRequestTopP].AsFloat64() != 0.8 {
+		t.Fatalf("expected gen_ai.request.top_p=0.8")
+	}
+	if attrs[spanAttrRequestToolChoice].AsString() != "required" {
+		t.Fatalf("expected sigil.gen_ai.request.tool_choice=required")
+	}
+	if attrs[spanAttrRequestThinkingEnabled].AsBool() {
+		t.Fatalf("expected sigil.gen_ai.request.thinking.enabled=false")
+	}
+	if attrs[spanAttrRequestThinkingBudget].AsInt64() != 4096 {
+		t.Fatalf("expected sigil.gen_ai.request.thinking.budget_tokens=4096")
 	}
 	if _, ok := attrs["gen_ai.response.finish_reason"]; ok {
 		t.Fatalf("did not expect gen_ai.response.finish_reason")

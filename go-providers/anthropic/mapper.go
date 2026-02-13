@@ -3,11 +3,14 @@ package anthropic
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
+
+const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
 
 // FromRequestResponse maps an Anthropic request/response pair to sigil.Generation.
 func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, opts ...Option) (sigil.Generation, error) {
@@ -48,23 +51,29 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 	if responseModel == "" {
 		responseModel = requestModel
 	}
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req)
 
 	generation := sigil.Generation{
-		ConversationID: options.conversationID,
-		AgentName:      options.agentName,
-		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: requestModel},
-		ResponseID:     resp.ID,
-		ResponseModel:  responseModel,
-		SystemPrompt:   mapSystemPrompt(req.System),
-		Input:          input,
-		Output:         output,
-		Tools:          mapTools(req.Tools),
-		Usage:          mapUsage(resp.Usage),
-		StopReason:     string(resp.StopReason),
-		Tags:           cloneStringMap(options.tags),
-		Metadata:       cloneAnyMap(options.metadata),
-		Artifacts:      artifacts,
+		ConversationID:  options.conversationID,
+		AgentName:       options.agentName,
+		AgentVersion:    options.agentVersion,
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: requestModel},
+		ResponseID:      resp.ID,
+		ResponseModel:   responseModel,
+		SystemPrompt:    mapSystemPrompt(req.System),
+		Input:           input,
+		Output:          output,
+		Tools:           mapTools(req.Tools),
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		TopP:            topP,
+		ToolChoice:      toolChoice,
+		ThinkingEnabled: thinkingEnabled,
+		Usage:           mapUsage(resp.Usage),
+		StopReason:      string(resp.StopReason),
+		Tags:            cloneStringMap(options.tags),
+		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Artifacts:       artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {
@@ -445,6 +454,159 @@ func mapRequestRole(role asdk.BetaMessageParamRole) sigil.Role {
 	return sigil.RoleUser
 }
 
+func mapRequestControls(req asdk.BetaMessageNewParams) (*int64, *float64, *float64, *string, *bool, *int64) {
+	payload := marshalRequest(req)
+	if payload == nil {
+		return nil, nil, nil, nil, nil, nil
+	}
+
+	maxTokens := readInt64(payload, "max_tokens")
+	temperature := readFloat64(payload, "temperature")
+	topP := readFloat64(payload, "top_p")
+	toolChoice := canonicalToolChoice(payload["tool_choice"])
+
+	var thinkingEnabled *bool
+	var thinkingBudget *int64
+	if thinkingValue, ok := payload["thinking"]; ok {
+		if resolved, ok := resolveThinkingEnabled(thinkingValue); ok {
+			thinkingEnabled = &resolved
+		}
+		thinkingBudget = resolveThinkingBudget(thinkingValue)
+	}
+
+	return maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget
+}
+
+func marshalRequest(req asdk.BetaMessageNewParams) map[string]any {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil
+	}
+
+	return payload
+}
+
+func readInt64(payload map[string]any, key string) *int64 {
+	value, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case float64:
+		asInt := int64(typed)
+		if typed != float64(asInt) {
+			return nil
+		}
+		return &asInt
+	}
+	return nil
+}
+
+func readFloat64(payload map[string]any, key string) *float64 {
+	value, ok := payload[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case float64:
+		return &typed
+	}
+	return nil
+}
+
+func canonicalToolChoice(value any) *string {
+	if value == nil {
+		return nil
+	}
+
+	if text, ok := value.(string); ok {
+		normalized := strings.ToLower(strings.TrimSpace(text))
+		if normalized == "" {
+			return nil
+		}
+		return &normalized
+	}
+
+	raw, err := json.Marshal(value)
+	if err != nil || len(raw) == 0 {
+		return nil
+	}
+	normalized := string(raw)
+	return &normalized
+}
+
+func resolveThinkingEnabled(value any) (bool, bool) {
+	if value == nil {
+		return false, false
+	}
+
+	switch typed := value.(type) {
+	case string:
+		return resolveThinkingType(typed)
+	case map[string]any:
+		if text, ok := typed["type"].(string); ok {
+			return resolveThinkingType(text)
+		}
+	}
+
+	return false, false
+}
+
+func resolveThinkingType(raw string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "enabled", "adaptive":
+		return true, true
+	case "disabled":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func resolveThinkingBudget(value any) *int64 {
+	object, ok := value.(map[string]any)
+	if !ok || len(object) == 0 {
+		return nil
+	}
+	return coerceInt64Pointer(object["budget_tokens"])
+}
+
+func coerceInt64Pointer(value any) *int64 {
+	switch typed := value.(type) {
+	case float64:
+		asInt := int64(typed)
+		if typed != float64(asInt) {
+			return nil
+		}
+		return &asInt
+	case int:
+		asInt := int64(typed)
+		return &asInt
+	case int64:
+		asInt := typed
+		return &asInt
+	case json.Number:
+		asInt, err := typed.Int64()
+		if err != nil {
+			return nil
+		}
+		return &asInt
+	case string:
+		asInt, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return nil
+		}
+		return &asInt
+	default:
+		return nil
+	}
+}
+
 func derefString(value *string) string {
 	if value == nil {
 		return ""
@@ -500,5 +662,17 @@ func cloneAnyMap(in map[string]any) map[string]any {
 		out[key] = value
 	}
 
+	return out
+}
+
+func mergeThinkingBudgetMetadata(metadata map[string]any, thinkingBudget *int64) map[string]any {
+	out := cloneAnyMap(metadata)
+	if thinkingBudget == nil {
+		return out
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	out[thinkingBudgetMetadataKey] = *thinkingBudget
 	return out
 }

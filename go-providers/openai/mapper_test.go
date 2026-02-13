@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	osdk "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
@@ -30,6 +31,12 @@ func TestFromRequestResponse(t *testing.T) {
 				},
 			}),
 		},
+		MaxCompletionTokens: param.NewOpt(int64(128)),
+		MaxTokens:           param.NewOpt(int64(256)),
+		Temperature:         param.NewOpt(0.7),
+		TopP:                param.NewOpt(0.9),
+		ToolChoice:          osdk.ToolChoiceOptionFunctionToolChoice(osdk.ChatCompletionNamedToolChoiceFunctionParam{Name: "weather"}),
+		ReasoningEffort:     shared.ReasoningEffortLow,
 	}
 
 	resp := &osdk.ChatCompletion{
@@ -114,6 +121,21 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Usage.ReasoningTokens != 5 {
 		t.Fatalf("expected reasoning tokens 5, got %d", generation.Usage.ReasoningTokens)
 	}
+	if generation.MaxTokens == nil || *generation.MaxTokens != 128 {
+		t.Fatalf("expected max tokens 128, got %v", generation.MaxTokens)
+	}
+	if generation.Temperature == nil || *generation.Temperature != 0.7 {
+		t.Fatalf("expected temperature 0.7, got %v", generation.Temperature)
+	}
+	if generation.TopP == nil || *generation.TopP != 0.9 {
+		t.Fatalf("expected top_p 0.9, got %v", generation.TopP)
+	}
+	if generation.ToolChoice == nil || *generation.ToolChoice != `{"function":{"name":"weather"},"type":"function"}` {
+		t.Fatalf("unexpected tool choice: %v", generation.ToolChoice)
+	}
+	if generation.ThinkingEnabled == nil || !*generation.ThinkingEnabled {
+		t.Fatalf("expected thinking enabled true, got %v", generation.ThinkingEnabled)
+	}
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
 	}
@@ -147,6 +169,11 @@ func TestFromStream(t *testing.T) {
 				},
 			}),
 		},
+		MaxCompletionTokens: param.NewOpt(int64(42)),
+		Temperature:         param.NewOpt(0.15),
+		TopP:                param.NewOpt(0.4),
+		ToolChoice:          osdk.ToolChoiceOptionFunctionToolChoice(osdk.ChatCompletionNamedToolChoiceFunctionParam{Name: "weather"}),
+		ReasoningEffort:     shared.ReasoningEffortMedium,
 	}
 
 	summary := StreamSummary{
@@ -228,6 +255,21 @@ func TestFromStream(t *testing.T) {
 	if generation.Usage.TotalTokens != 25 {
 		t.Fatalf("expected total tokens 25, got %d", generation.Usage.TotalTokens)
 	}
+	if generation.MaxTokens == nil || *generation.MaxTokens != 42 {
+		t.Fatalf("expected max tokens 42, got %v", generation.MaxTokens)
+	}
+	if generation.Temperature == nil || *generation.Temperature != 0.15 {
+		t.Fatalf("expected temperature 0.15, got %v", generation.Temperature)
+	}
+	if generation.TopP == nil || *generation.TopP != 0.4 {
+		t.Fatalf("expected top_p 0.4, got %v", generation.TopP)
+	}
+	if generation.ToolChoice == nil || *generation.ToolChoice != `{"function":{"name":"weather"},"type":"function"}` {
+		t.Fatalf("unexpected tool choice: %v", generation.ToolChoice)
+	}
+	if generation.ThinkingEnabled == nil || !*generation.ThinkingEnabled {
+		t.Fatalf("expected thinking enabled true, got %v", generation.ThinkingEnabled)
+	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
@@ -267,5 +309,35 @@ func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
 
 	if len(generation.Artifacts) != 3 {
 		t.Fatalf("expected 3 artifacts with raw artifact opt-in, got %d", len(generation.Artifacts))
+	}
+}
+
+func TestFromRequestResponseLeavesThinkingUnsetWithoutReasoningConfig(t *testing.T) {
+	req := osdk.ChatCompletionNewParams{
+		Model: shared.ChatModel("gpt-4o-mini"),
+		Messages: []osdk.ChatCompletionMessageParamUnion{
+			osdk.UserMessage("hello"),
+		},
+	}
+	resp := &osdk.ChatCompletion{
+		ID:    "chatcmpl_1",
+		Model: "gpt-4o-mini",
+		Choices: []osdk.ChatCompletionChoice{
+			{
+				FinishReason: "stop",
+				Message: osdk.ChatCompletionMessage{
+					Content: "hi",
+				},
+			},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if generation.ThinkingEnabled != nil {
+		t.Fatalf("expected thinking_enabled unset, got %v", generation.ThinkingEnabled)
 	}
 }

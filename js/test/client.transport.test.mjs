@@ -239,6 +239,49 @@ test('gRPC transport maps typed message parts to proto payloads', async () => {
   }
 });
 
+test('gRPC transport omits maxTokens when it is unset', async () => {
+  const receivedGenerations = [];
+  const grpcServer = await startGRPCServer((request) => {
+    for (const generation of request.generations ?? []) {
+      receivedGenerations.push(generation);
+    }
+  });
+
+  const defaults = defaultConfig();
+  const client = new SigilClient({
+    tracer: trace.getTracer('sigil-sdk-js-test'),
+    generationExport: {
+      ...defaults.generationExport,
+      protocol: 'grpc',
+      endpoint: `127.0.0.1:${grpcServer.port}`,
+      insecure: true,
+      batchSize: 1,
+      flushIntervalMs: 60_000,
+      maxRetries: 1,
+      initialBackoffMs: 1,
+      maxBackoffMs: 1,
+    },
+  });
+
+  try {
+    const recorder = client.startGeneration({
+      id: 'gen-no-max-tokens',
+      model: { provider: 'openai', name: 'gpt-5' },
+    });
+    recorder.setResult({
+      output: [{ role: 'assistant', content: 'ok' }],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    await waitFor(() => receivedGenerations.length === 1, 2_000);
+    assert.equal(receivedGenerations[0].maxTokens, undefined);
+  } finally {
+    await client.shutdown();
+    await stopGRPCServer(grpcServer.server);
+  }
+});
+
 test('HTTP transport applies generation tenant auth header', async () => {
   const receivedHeaders = [];
   const server = createServer(async (request, response) => {
@@ -361,6 +404,11 @@ function payloadFromSeed(seed) {
         name: `gpt-5-${seed}`,
       },
       systemPrompt: `system-${seed}`,
+      maxTokens: 1000 + seed,
+      temperature: 0.7,
+      topP: 0.9,
+      toolChoice: 'auto',
+      thinkingEnabled: true,
       tools: [
         {
           name: `tool-${seed}`,
@@ -389,6 +437,11 @@ function payloadFromSeed(seed) {
     result: {
       responseId: `resp-${seed}`,
       responseModel: `gpt-5-${seed}`,
+      maxTokens: 200 + seed,
+      temperature: 0.2,
+      topP: 0.85,
+      toolChoice: 'required',
+      thinkingEnabled: seed % 2 === 0,
       input: [
         {
           role: 'user',
@@ -471,6 +524,11 @@ function canonicalizeSDKGeneration(generation) {
     responseId: generation.responseId ?? '',
     responseModel: generation.responseModel ?? '',
     systemPrompt: generation.systemPrompt ?? '',
+    maxTokens: asNumber(generation.maxTokens),
+    temperature: asNumber(generation.temperature),
+    topP: asNumber(generation.topP),
+    toolChoice: generation.toolChoice ?? '',
+    thinkingEnabled: generation.thinkingEnabled ?? false,
     input: (generation.input ?? []).map(canonicalizeSDKMessage),
     output: (generation.output ?? []).map(canonicalizeSDKMessage),
     tools: (generation.tools ?? []).map((tool) => ({
@@ -530,6 +588,11 @@ function canonicalizeProtoGeneration(generation) {
     responseId: generation.responseId ?? '',
     responseModel: generation.responseModel ?? '',
     systemPrompt: generation.systemPrompt ?? '',
+    maxTokens: asNumber(generation.maxTokens),
+    temperature: asNumber(generation.temperature),
+    topP: asNumber(generation.topP),
+    toolChoice: generation.toolChoice ?? '',
+    thinkingEnabled: Boolean(generation.thinkingEnabled),
     input: (generation.input ?? []).map(canonicalizeProtoMessage),
     output: (generation.output ?? []).map(canonicalizeProtoMessage),
     tools: (generation.tools ?? []).map((tool) => ({

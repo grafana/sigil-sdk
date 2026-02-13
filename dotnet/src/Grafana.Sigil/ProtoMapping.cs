@@ -50,6 +50,31 @@ internal static class ProtoMapping
             proto.CompletedAt = Timestamp.FromDateTimeOffset(model.CompletedAt.Value);
         }
 
+        if (model.MaxTokens.HasValue)
+        {
+            proto.MaxTokens = model.MaxTokens.Value;
+        }
+
+        if (model.Temperature.HasValue)
+        {
+            proto.Temperature = model.Temperature.Value;
+        }
+
+        if (model.TopP.HasValue)
+        {
+            proto.TopP = model.TopP.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(model.ToolChoice))
+        {
+            proto.ToolChoice = model.ToolChoice;
+        }
+
+        if (model.ThinkingEnabled.HasValue)
+        {
+            proto.ThinkingEnabled = model.ThinkingEnabled.Value;
+        }
+
         foreach (var tag in model.Tags)
         {
             proto.Tags[tag.Key] = tag.Value;

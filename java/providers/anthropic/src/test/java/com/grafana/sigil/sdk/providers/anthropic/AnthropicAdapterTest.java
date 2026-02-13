@@ -17,6 +17,7 @@ import io.opentelemetry.api.GlobalOpenTelemetry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,12 @@ class AnthropicAdapterTest {
         assertThat(exporter.generations).hasSize(2);
         assertThat(exporter.generations.get(0).getModel().getProvider()).isEqualTo("anthropic");
         assertThat(exporter.generations.get(0).getMode()).isEqualTo(GenerationMode.SYNC);
+        assertThat(exporter.generations.get(0).getMaxTokens()).isEqualTo(256L);
+        assertThat(exporter.generations.get(0).getTemperature()).isEqualTo(0.25);
+        assertThat(exporter.generations.get(0).getTopP()).isEqualTo(0.9);
+        assertThat(exporter.generations.get(0).getToolChoice()).isEqualTo("{\"name\":\"weather\",\"type\":\"tool\"}");
+        assertThat(exporter.generations.get(0).getThinkingEnabled()).isTrue();
+        assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).isEqualTo(2048L);
         assertThat(exporter.generations.get(1).getMode()).isEqualTo(GenerationMode.STREAM);
     }
 
@@ -92,8 +99,24 @@ class AnthropicAdapterTest {
         assertThat(exporter.generations.get(0).getCallError()).contains("anthropic failed");
     }
 
+    @Test
+    void mapperSetsThinkingFalseWhenDisabled() {
+        var mapped = AnthropicAdapter.fromRequestResponse(
+                request().setThinking(Map.of("type", "disabled")),
+                response(),
+                new OpenAiAdapter.OpenAiOptions());
+        assertThat(mapped.getThinkingEnabled()).isFalse();
+    }
+
     private static OpenAiAdapter.OpenAiChatRequest request() {
-        return new OpenAiAdapter.OpenAiChatRequest().setModel("claude-3").setMessages(List.of(new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hi")));
+        return new OpenAiAdapter.OpenAiChatRequest()
+                .setModel("claude-3")
+                .setMaxTokens(256L)
+                .setTemperature(0.25)
+                .setTopP(0.9)
+                .setToolChoice(Map.of("type", "tool", "name", "weather"))
+                .setThinking(Map.of("type", "adaptive", "budget_tokens", 2048))
+                .setMessages(List.of(new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hi")));
     }
 
     private static OpenAiAdapter.OpenAiChatResponse response() {

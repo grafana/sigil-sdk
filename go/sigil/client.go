@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,27 +88,33 @@ type GenerationExportConfig struct {
 
 const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
 const (
-	spanAttrGenerationID      = "sigil.generation.id"
-	spanAttrConversationID    = "gen_ai.conversation.id"
-	spanAttrAgentName         = "gen_ai.agent.name"
-	spanAttrAgentVersion      = "gen_ai.agent.version"
-	spanAttrErrorType         = "error.type"
-	spanAttrOperationName     = "gen_ai.operation.name"
-	spanAttrProviderName      = "gen_ai.provider.name"
-	spanAttrRequestModel      = "gen_ai.request.model"
-	spanAttrResponseID        = "gen_ai.response.id"
-	spanAttrResponseModel     = "gen_ai.response.model"
-	spanAttrFinishReasons     = "gen_ai.response.finish_reasons"
-	spanAttrInputTokens       = "gen_ai.usage.input_tokens"
-	spanAttrOutputTokens      = "gen_ai.usage.output_tokens"
-	spanAttrCacheReadTokens   = "gen_ai.usage.cache_read_input_tokens"
-	spanAttrCacheWriteTokens  = "gen_ai.usage.cache_write_input_tokens"
-	spanAttrToolName          = "gen_ai.tool.name"
-	spanAttrToolCallID        = "gen_ai.tool.call.id"
-	spanAttrToolType          = "gen_ai.tool.type"
-	spanAttrToolDescription   = "gen_ai.tool.description"
-	spanAttrToolCallArguments = "gen_ai.tool.call.arguments"
-	spanAttrToolCallResult    = "gen_ai.tool.call.result"
+	spanAttrGenerationID           = "sigil.generation.id"
+	spanAttrConversationID         = "gen_ai.conversation.id"
+	spanAttrAgentName              = "gen_ai.agent.name"
+	spanAttrAgentVersion           = "gen_ai.agent.version"
+	spanAttrErrorType              = "error.type"
+	spanAttrOperationName          = "gen_ai.operation.name"
+	spanAttrProviderName           = "gen_ai.provider.name"
+	spanAttrRequestModel           = "gen_ai.request.model"
+	spanAttrRequestMaxTokens       = "gen_ai.request.max_tokens"
+	spanAttrRequestTemperature     = "gen_ai.request.temperature"
+	spanAttrRequestTopP            = "gen_ai.request.top_p"
+	spanAttrRequestToolChoice      = "sigil.gen_ai.request.tool_choice"
+	spanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled"
+	spanAttrRequestThinkingBudget  = "sigil.gen_ai.request.thinking.budget_tokens"
+	spanAttrResponseID             = "gen_ai.response.id"
+	spanAttrResponseModel          = "gen_ai.response.model"
+	spanAttrFinishReasons          = "gen_ai.response.finish_reasons"
+	spanAttrInputTokens            = "gen_ai.usage.input_tokens"
+	spanAttrOutputTokens           = "gen_ai.usage.output_tokens"
+	spanAttrCacheReadTokens        = "gen_ai.usage.cache_read_input_tokens"
+	spanAttrCacheWriteTokens       = "gen_ai.usage.cache_write_input_tokens"
+	spanAttrToolName               = "gen_ai.tool.name"
+	spanAttrToolCallID             = "gen_ai.tool.call.id"
+	spanAttrToolType               = "gen_ai.tool.type"
+	spanAttrToolDescription        = "gen_ai.tool.description"
+	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
+	spanAttrToolCallResult         = "gen_ai.tool.call.result"
 )
 
 // Keep unexported aliases for backward-compatible fmt.Errorf wrapping.
@@ -337,22 +344,32 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	seed.StartedAt = startedAt
 
 	callCtx, span := c.startSpan(ctx, Generation{
-		ID:             seed.ID,
-		ConversationID: seed.ConversationID,
-		AgentName:      seed.AgentName,
-		AgentVersion:   seed.AgentVersion,
-		Mode:           seed.Mode,
-		OperationName:  seed.OperationName,
-		Model:          seed.Model,
+		ID:              seed.ID,
+		ConversationID:  seed.ConversationID,
+		AgentName:       seed.AgentName,
+		AgentVersion:    seed.AgentVersion,
+		Mode:            seed.Mode,
+		OperationName:   seed.OperationName,
+		Model:           seed.Model,
+		MaxTokens:       cloneInt64Ptr(seed.MaxTokens),
+		Temperature:     cloneFloat64Ptr(seed.Temperature),
+		TopP:            cloneFloat64Ptr(seed.TopP),
+		ToolChoice:      cloneStringPtr(seed.ToolChoice),
+		ThinkingEnabled: cloneBoolPtr(seed.ThinkingEnabled),
 	}, trace.SpanKindClient, startedAt)
 	span.SetAttributes(generationSpanAttributes(Generation{
-		ID:             seed.ID,
-		ConversationID: seed.ConversationID,
-		AgentName:      seed.AgentName,
-		AgentVersion:   seed.AgentVersion,
-		Mode:           seed.Mode,
-		OperationName:  seed.OperationName,
-		Model:          seed.Model,
+		ID:              seed.ID,
+		ConversationID:  seed.ConversationID,
+		AgentName:       seed.AgentName,
+		AgentVersion:    seed.AgentVersion,
+		Mode:            seed.Mode,
+		OperationName:   seed.OperationName,
+		Model:           seed.Model,
+		MaxTokens:       cloneInt64Ptr(seed.MaxTokens),
+		Temperature:     cloneFloat64Ptr(seed.Temperature),
+		TopP:            cloneFloat64Ptr(seed.TopP),
+		ToolChoice:      cloneStringPtr(seed.ToolChoice),
+		ThinkingEnabled: cloneBoolPtr(seed.ThinkingEnabled),
 	})...)
 
 	return callCtx, &GenerationRecorder{
@@ -691,6 +708,21 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if len(g.Tools) == 0 {
 		g.Tools = cloneTools(r.seed.Tools)
 	}
+	if g.MaxTokens == nil {
+		g.MaxTokens = cloneInt64Ptr(r.seed.MaxTokens)
+	}
+	if g.Temperature == nil {
+		g.Temperature = cloneFloat64Ptr(r.seed.Temperature)
+	}
+	if g.TopP == nil {
+		g.TopP = cloneFloat64Ptr(r.seed.TopP)
+	}
+	if g.ToolChoice == nil {
+		g.ToolChoice = cloneStringPtr(r.seed.ToolChoice)
+	}
+	if g.ThinkingEnabled == nil {
+		g.ThinkingEnabled = cloneBoolPtr(r.seed.ThinkingEnabled)
+	}
 	g.Tags = mergeTags(r.seed.Tags, g.Tags)
 	g.Metadata = mergeMetadata(r.seed.Metadata, g.Metadata)
 
@@ -812,6 +844,26 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	if responseModel := strings.TrimSpace(g.ResponseModel); responseModel != "" {
 		attrs = append(attrs, attribute.String(spanAttrResponseModel, responseModel))
 	}
+	if g.MaxTokens != nil {
+		attrs = append(attrs, attribute.Int64(spanAttrRequestMaxTokens, *g.MaxTokens))
+	}
+	if g.Temperature != nil {
+		attrs = append(attrs, attribute.Float64(spanAttrRequestTemperature, *g.Temperature))
+	}
+	if g.TopP != nil {
+		attrs = append(attrs, attribute.Float64(spanAttrRequestTopP, *g.TopP))
+	}
+	if g.ToolChoice != nil {
+		if toolChoice := strings.TrimSpace(*g.ToolChoice); toolChoice != "" {
+			attrs = append(attrs, attribute.String(spanAttrRequestToolChoice, toolChoice))
+		}
+	}
+	if g.ThinkingEnabled != nil {
+		attrs = append(attrs, attribute.Bool(spanAttrRequestThinkingEnabled, *g.ThinkingEnabled))
+	}
+	if thinkingBudget, ok := thinkingBudgetFromMetadata(g.Metadata); ok {
+		attrs = append(attrs, attribute.Int64(spanAttrRequestThinkingBudget, thinkingBudget))
+	}
 	if g.StopReason != "" {
 		attrs = append(attrs,
 			attribute.StringSlice(spanAttrFinishReasons, []string{g.StopReason}),
@@ -840,6 +892,78 @@ func operationName(g Generation) string {
 	}
 
 	return operation
+}
+
+func thinkingBudgetFromMetadata(metadata map[string]any) (int64, bool) {
+	if len(metadata) == 0 {
+		return 0, false
+	}
+
+	value, ok := metadata[spanAttrRequestThinkingBudget]
+	if !ok || value == nil {
+		return 0, false
+	}
+
+	coerced, ok := coerceInt64(value)
+	if !ok {
+		return 0, false
+	}
+
+	return coerced, true
+}
+
+func coerceInt64(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), true
+	case int8:
+		return int64(typed), true
+	case int16:
+		return int64(typed), true
+	case int32:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case uint:
+		return int64(typed), true
+	case uint8:
+		return int64(typed), true
+	case uint16:
+		return int64(typed), true
+	case uint32:
+		return int64(typed), true
+	case uint64:
+		if typed > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(typed), true
+	case float32:
+		asInt := int64(typed)
+		if float32(asInt) != typed {
+			return 0, false
+		}
+		return asInt, true
+	case float64:
+		asInt := int64(typed)
+		if float64(asInt) != typed {
+			return 0, false
+		}
+		return asInt, true
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
 }
 
 func generationErrorType(callErr, mapErr, enqueueErr error) string {

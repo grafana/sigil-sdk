@@ -18,6 +18,7 @@ import com.grafana.sigil.sdk.ToolDefinition;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,12 @@ class OpenAiAdapterTest {
         Generation generation = exporter.singleGeneration();
         assertThat(generation.getMode()).isEqualTo(GenerationMode.SYNC);
         assertThat(generation.getModel().getProvider()).isEqualTo("openai");
+        assertThat(generation.getMaxTokens()).isEqualTo(512L);
+        assertThat(generation.getTemperature()).isEqualTo(0.3);
+        assertThat(generation.getTopP()).isEqualTo(0.8);
+        assertThat(generation.getToolChoice()).isEqualTo("{\"function\":{\"name\":\"weather\"},\"type\":\"function\"}");
+        assertThat(generation.getThinkingEnabled()).isTrue();
+        assertThat(generation.getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).isEqualTo(1024L);
         assertThat(generation.getArtifacts()).isEmpty();
     }
 
@@ -89,6 +96,21 @@ class OpenAiAdapterTest {
         assertThat(mapped.getInput()).hasSize(2);
         assertThat(mapped.getInput().get(0).getRole()).isEqualTo(MessageRole.USER);
         assertThat(mapped.getInput().get(1).getRole()).isEqualTo(MessageRole.TOOL);
+        assertThat(mapped.getMaxTokens()).isEqualTo(512L);
+        assertThat(mapped.getTemperature()).isEqualTo(0.3);
+        assertThat(mapped.getTopP()).isEqualTo(0.8);
+        assertThat(mapped.getToolChoice()).isEqualTo("{\"function\":{\"name\":\"weather\"},\"type\":\"function\"}");
+        assertThat(mapped.getThinkingEnabled()).isTrue();
+        assertThat(mapped.getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).isEqualTo(1024L);
+    }
+
+    @Test
+    void mapperLeavesThinkingUnsetWithoutReasoningConfig() {
+        OpenAiAdapter.OpenAiChatRequest request = requestFixture().setReasoning(null);
+        OpenAiAdapter.OpenAiChatResponse response = responseFixture();
+
+        var mapped = OpenAiAdapter.fromRequestResponse(request, response, new OpenAiAdapter.OpenAiOptions());
+        assertThat(mapped.getThinkingEnabled()).isNull();
     }
 
     private static SigilClient newClient(CapturingExporter exporter) {
@@ -105,6 +127,14 @@ class OpenAiAdapterTest {
         return new OpenAiAdapter.OpenAiChatRequest()
                 .setModel("gpt-5")
                 .setSystemPrompt("be concise")
+                .setMaxCompletionTokens(512L)
+                .setMaxTokens(1024L)
+                .setTemperature(0.3)
+                .setTopP(0.8)
+                .setToolChoice(new LinkedHashMap<>(java.util.Map.of(
+                        "type", "function",
+                        "function", java.util.Map.of("name", "weather"))))
+                .setReasoning(java.util.Map.of("effort", "medium", "max_output_tokens", 1024))
                 .setMessages(List.of(
                         new OpenAiAdapter.OpenAiMessage().setRole("system").setContent("system"),
                         new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hello"),

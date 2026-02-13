@@ -22,6 +22,8 @@ from sigil_sdk import (
     ToolDefinition,
 )
 
+_thinking_budget_metadata_key = "sigil.gen_ai.request.thinking.budget_tokens"
+
 
 @dataclass(slots=True)
 class GeminiMessage:
@@ -39,6 +41,11 @@ class GeminiRequest:
     model: str
     messages: list[GeminiMessage]
     system_prompt: str = ""
+    max_output_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    function_calling_mode: Any = None
+    thinking_config: Any = None
     tools: list[ToolDefinition] = field(default_factory=list)
 
 
@@ -180,6 +187,7 @@ def from_request_response(
     """Maps Gemini request/response payloads into a normalized generation."""
 
     opts = options or GeminiOptions()
+    metadata = _metadata_with_thinking_budget(opts.metadata, _gemini_thinking_budget(request.thinking_config))
     generation = Generation(
         conversation_id=opts.conversation_id,
         agent_name=opts.agent_name,
@@ -189,13 +197,18 @@ def from_request_response(
         response_id=response.id,
         response_model=response.model or request.model,
         system_prompt=request.system_prompt,
+        max_tokens=request.max_output_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        tool_choice=_canonical_tool_choice(request.function_calling_mode),
+        thinking_enabled=_gemini_thinking_enabled(request.thinking_config),
         input=_map_input_messages(request.messages),
         output=[_assistant_text_message(response.output_text)],
         tools=copy.deepcopy(request.tools),
         usage=copy.deepcopy(response.usage),
         stop_reason=response.stop_reason,
         tags=dict(opts.tags),
-        metadata=dict(opts.metadata),
+        metadata=metadata,
     )
 
     if opts.raw_artifacts:
@@ -234,6 +247,7 @@ def from_stream(
     """Maps Gemini stream summary into a normalized generation."""
 
     opts = options or GeminiOptions()
+    metadata = _metadata_with_thinking_budget(opts.metadata, _gemini_thinking_budget(request.thinking_config))
     if summary.final_response is not None:
         generation = from_request_response(request, summary.final_response, opts)
         generation.mode = GenerationMode.STREAM
@@ -246,11 +260,16 @@ def from_stream(
             model=ModelRef(provider=opts.provider_name, name=request.model),
             response_model=request.model,
             system_prompt=request.system_prompt,
+            max_tokens=request.max_output_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            tool_choice=_canonical_tool_choice(request.function_calling_mode),
+            thinking_enabled=_gemini_thinking_enabled(request.thinking_config),
             input=_map_input_messages(request.messages),
             output=[_assistant_text_message(summary.output_text)],
             tools=copy.deepcopy(request.tools),
             tags=dict(opts.tags),
-            metadata=dict(opts.metadata),
+            metadata=metadata,
         )
 
     if generation.output:
@@ -312,6 +331,7 @@ def _start_payload(
     options: GeminiOptions,
     mode: GenerationMode,
 ) -> GenerationStart:
+    metadata = _metadata_with_thinking_budget(options.metadata, _gemini_thinking_budget(request.thinking_config))
     return GenerationStart(
         conversation_id=options.conversation_id,
         agent_name=options.agent_name,
@@ -319,11 +339,93 @@ def _start_payload(
         mode=mode,
         model=ModelRef(provider=options.provider_name, name=request.model),
         system_prompt=request.system_prompt,
+        max_tokens=request.max_output_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        tool_choice=_canonical_tool_choice(request.function_calling_mode),
+        thinking_enabled=_gemini_thinking_enabled(request.thinking_config),
         tools=copy.deepcopy(request.tools),
         tags=dict(options.tags),
-        metadata=dict(options.metadata),
+        metadata=metadata,
     )
 
 
 def _json_bytes(payload: Any) -> bytes:
     return json.dumps(payload, default=str, separators=(",", ":")).encode("utf-8")
+
+
+def _gemini_thinking_enabled(thinking_config: Any) -> bool | None:
+    if thinking_config is None:
+        return None
+    if isinstance(thinking_config, dict):
+        include_thoughts = thinking_config.get("include_thoughts")
+        if isinstance(include_thoughts, bool):
+            return include_thoughts
+        return None
+
+    include_thoughts = getattr(thinking_config, "include_thoughts", None)
+    if isinstance(include_thoughts, bool):
+        return include_thoughts
+    return None
+
+
+def _gemini_thinking_budget(thinking_config: Any) -> int | None:
+    if thinking_config is None:
+        return None
+    if isinstance(thinking_config, dict):
+        for key in ("thinking_budget", "thinkingBudget"):
+            resolved = _coerce_int(thinking_config.get(key))
+            if resolved is not None:
+                return resolved
+        return None
+
+    for attr in ("thinking_budget", "thinkingBudget"):
+        resolved = _coerce_int(getattr(thinking_config, attr, None))
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def _canonical_tool_choice(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized or None
+    if hasattr(value, "value"):
+        normalized = str(value.value).strip().lower()
+        return normalized or None
+    try:
+        encoded = json.dumps(value, default=str, separators=(",", ":"), sort_keys=True)
+    except Exception:  # noqa: BLE001
+        normalized = str(value).strip().lower()
+        return normalized or None
+    return encoded if encoded != "" else None
+
+
+def _metadata_with_thinking_budget(metadata: dict[str, Any], thinking_budget: int | None) -> dict[str, Any]:
+    out = dict(metadata)
+    if thinking_budget is not None:
+        out[_thinking_budget_metadata_key] = thinking_budget
+    return out
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        integer = int(value)
+        if float(integer) == value:
+            return integer
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text == "":
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+    return None

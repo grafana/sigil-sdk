@@ -20,6 +20,12 @@ Cross-language parity tracks are available for:
 - `ModelRef` bundles `provider + model`.
 - `AgentName` and `AgentVersion` are optional generation/tool identity fields.
 - `SystemPrompt` is separate from messages.
+- Request controls are optional first-class fields:
+  - `MaxTokens`
+  - `Temperature`
+  - `TopP`
+  - `ToolChoice`
+  - `ThinkingEnabled`
 - `Message` contains typed parts: `text`, `thinking`, `tool_call`, `tool_result`.
 - `TokenUsage` includes token/cache/reasoning fields.
 - Raw provider `Artifacts` are optional debug payloads.
@@ -33,6 +39,14 @@ Cross-language parity tracks are available for:
 - `rec.End()` is defer-safe and idempotent.
 - `rec.Err()` reports local validation/enqueue failures only.
 - Background export failures are retried and logged.
+- Generation spans emit request controls using GenAI keys where standardized:
+  - `gen_ai.request.max_tokens`
+  - `gen_ai.request.temperature`
+  - `gen_ai.request.top_p`
+  - `sigil.gen_ai.request.tool_choice`
+  - `sigil.gen_ai.request.thinking.enabled`
+  - `sigil.gen_ai.request.thinking.budget_tokens` (provider-specific)
+  - `gen_ai.response.finish_reasons` is emitted as a string array.
 - Context helpers are available for defaults:
   - `WithConversationID(ctx, id)`
   - `WithAgentName(ctx, name)`

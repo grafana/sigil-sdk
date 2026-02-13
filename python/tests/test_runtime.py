@@ -203,6 +203,60 @@ def test_call_error_sets_span_error_and_does_not_set_local_error() -> None:
         provider.shutdown()
 
 
+def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
+    exporter = CapturingGenerationExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+
+    client = _new_client(exporter, tracer=tracer)
+    try:
+        rec = client.start_generation(
+            GenerationStart(
+                conversation_id="conv-controls",
+                model=ModelRef(provider="openai", name="gpt-5"),
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.9,
+                tool_choice="auto",
+                thinking_enabled=True,
+            )
+        )
+        rec.set_result(
+            max_tokens=256,
+            temperature=0.2,
+            top_p=0.8,
+            tool_choice="required",
+            thinking_enabled=False,
+            metadata={"sigil.gen_ai.request.thinking.budget_tokens": 4096},
+            stop_reason="end_turn",
+            output=_assistant_output("ok"),
+        )
+        rec.end()
+
+        assert rec.err() is None
+        assert rec.last_generation is not None
+        assert rec.last_generation.max_tokens == 256
+        assert rec.last_generation.temperature == 0.2
+        assert rec.last_generation.top_p == 0.8
+        assert rec.last_generation.tool_choice == "required"
+        assert rec.last_generation.thinking_enabled is False
+        assert rec.last_generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 4096
+
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.attributes.get("gen_ai.request.max_tokens") == 256
+        assert span.attributes.get("gen_ai.request.temperature") == 0.2
+        assert span.attributes.get("gen_ai.request.top_p") == 0.8
+        assert span.attributes.get("sigil.gen_ai.request.tool_choice") == "required"
+        assert span.attributes.get("sigil.gen_ai.request.thinking.enabled") is False
+        assert span.attributes.get("sigil.gen_ai.request.thinking.budget_tokens") == 4096
+        assert span.attributes.get("gen_ai.response.finish_reasons") == ("end_turn",)
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
 def test_validation_error_sets_local_error() -> None:
     exporter = CapturingGenerationExporter()
     client = _new_client(exporter)

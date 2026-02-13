@@ -148,7 +148,7 @@ class SigilClientTraceTransportTest {
         Span span = findSpanByName(request, SigilClient.generationSpanName(generation.getOperationName(), generation.getModel().getName()));
         assertThat(span).isNotNull();
 
-        Map<String, String> attrs = stringAttributes(span);
+        Map<String, Object> attrs = valueAttributes(span);
         assertThat(attrs.get(SigilClient.SPAN_ATTR_GENERATION_ID)).isEqualTo(generation.getId());
         assertThat(attrs.get(SigilClient.SPAN_ATTR_CONVERSATION_ID)).isEqualTo(generation.getConversationId());
         assertThat(attrs.get(SigilClient.SPAN_ATTR_AGENT_NAME)).isEqualTo(generation.getAgentName());
@@ -156,6 +156,14 @@ class SigilClientTraceTransportTest {
         assertThat(attrs.get(SigilClient.SPAN_ATTR_PROVIDER_NAME)).isEqualTo(generation.getModel().getProvider());
         assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_MODEL)).isEqualTo(generation.getModel().getName());
         assertThat(attrs.get(SigilClient.SPAN_ATTR_OPERATION_NAME)).isEqualTo(generation.getOperationName());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_MAX_TOKENS)).isEqualTo(generation.getMaxTokens());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_TEMPERATURE)).isEqualTo(generation.getTemperature());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_TOP_P)).isEqualTo(generation.getTopP());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_TOOL_CHOICE)).isEqualTo(generation.getToolChoice());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_THINKING_ENABLED)).isEqualTo(generation.getThinkingEnabled());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_REQUEST_THINKING_BUDGET))
+                .isEqualTo(((Number) generation.getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).longValue());
+        assertThat(attrs.get(SigilClient.SPAN_ATTR_FINISH_REASONS)).isEqualTo(java.util.List.of(generation.getStopReason()));
     }
 
     private static Span findSpanByName(ExportTraceServiceRequest request, String name) {
@@ -171,14 +179,34 @@ class SigilClientTraceTransportTest {
         return null;
     }
 
-    private static Map<String, String> stringAttributes(Span span) {
-        Map<String, String> out = new LinkedHashMap<>();
+    private static Map<String, Object> valueAttributes(Span span) {
+        Map<String, Object> out = new LinkedHashMap<>();
         for (KeyValue kv : span.getAttributesList()) {
-            AnyValue value = kv.getValue();
-            if (value.hasStringValue()) {
-                out.put(kv.getKey(), value.getStringValue());
-            }
+            out.put(kv.getKey(), decodeAnyValue(kv.getValue()));
         }
         return out;
+    }
+
+    private static Object decodeAnyValue(AnyValue value) {
+        if (value.hasStringValue()) {
+            return value.getStringValue();
+        }
+        if (value.hasIntValue()) {
+            return value.getIntValue();
+        }
+        if (value.hasDoubleValue()) {
+            return value.getDoubleValue();
+        }
+        if (value.hasBoolValue()) {
+            return value.getBoolValue();
+        }
+        if (value.hasArrayValue()) {
+            java.util.List<Object> out = new java.util.ArrayList<>();
+            for (AnyValue item : value.getArrayValue().getValuesList()) {
+                out.add(decodeAnyValue(item));
+            }
+            return out;
+        }
+        return null;
     }
 }

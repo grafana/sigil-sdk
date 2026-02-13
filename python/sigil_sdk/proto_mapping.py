@@ -68,6 +68,17 @@ def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:
         metadata.update(generation.metadata)
         message.metadata.CopyFrom(metadata)
 
+    if generation.max_tokens is not None:
+        message.max_tokens = generation.max_tokens
+    if generation.temperature is not None:
+        message.temperature = generation.temperature
+    if generation.top_p is not None:
+        message.top_p = generation.top_p
+    if generation.tool_choice is not None:
+        message.tool_choice = generation.tool_choice
+    if generation.thinking_enabled is not None:
+        message.thinking_enabled = generation.thinking_enabled
+
     return message
 
 

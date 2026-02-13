@@ -18,6 +18,11 @@ public class GenerationResult {
     private String responseId = "";
     private String responseModel = "";
     private String systemPrompt = "";
+    private Long maxTokens;
+    private Double temperature;
+    private Double topP;
+    private String toolChoice = "";
+    private Boolean thinkingEnabled;
     private final List<Message> input = new ArrayList<>();
     private final List<Message> output = new ArrayList<>();
     private final List<ToolDefinition> tools = new ArrayList<>();
@@ -117,6 +122,51 @@ public class GenerationResult {
 
     public GenerationResult setSystemPrompt(String systemPrompt) {
         this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
+        return this;
+    }
+
+    public Long getMaxTokens() {
+        return maxTokens;
+    }
+
+    public GenerationResult setMaxTokens(Long maxTokens) {
+        this.maxTokens = maxTokens;
+        return this;
+    }
+
+    public Double getTemperature() {
+        return temperature;
+    }
+
+    public GenerationResult setTemperature(Double temperature) {
+        this.temperature = temperature;
+        return this;
+    }
+
+    public Double getTopP() {
+        return topP;
+    }
+
+    public GenerationResult setTopP(Double topP) {
+        this.topP = topP;
+        return this;
+    }
+
+    public String getToolChoice() {
+        return toolChoice;
+    }
+
+    public GenerationResult setToolChoice(String toolChoice) {
+        this.toolChoice = toolChoice == null ? "" : toolChoice;
+        return this;
+    }
+
+    public Boolean getThinkingEnabled() {
+        return thinkingEnabled;
+    }
+
+    public GenerationResult setThinkingEnabled(Boolean thinkingEnabled) {
+        this.thinkingEnabled = thinkingEnabled;
         return this;
     }
 
@@ -249,6 +299,11 @@ public class GenerationResult {
                 .setResponseId(responseId)
                 .setResponseModel(responseModel)
                 .setSystemPrompt(systemPrompt)
+                .setMaxTokens(maxTokens)
+                .setTemperature(temperature)
+                .setTopP(topP)
+                .setToolChoice(toolChoice)
+                .setThinkingEnabled(thinkingEnabled)
                 .setUsage(usage == null ? new TokenUsage() : usage.copy())
                 .setStopReason(stopReason)
                 .setStartedAt(startedAt)

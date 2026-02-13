@@ -12,7 +12,7 @@ final class TestFixtures {
     }
 
     static GenerationStart startFixture() {
-        return new GenerationStart()
+        GenerationStart start = new GenerationStart()
                 .setId("gen-fixture-1")
                 .setConversationId("conv-fixture-1")
                 .setAgentName("agent-fixture")
@@ -20,8 +20,15 @@ final class TestFixtures {
                 .setMode(GenerationMode.STREAM)
                 .setOperationName("streamText")
                 .setModel(new ModelRef().setProvider("anthropic").setName("claude-sonnet-4-5"))
+                .setMaxTokens(1024L)
+                .setTemperature(0.7)
+                .setTopP(0.9)
+                .setToolChoice("auto")
+                .setThinkingEnabled(true)
                 .setSystemPrompt("be concise")
                 .setStartedAt(Instant.parse("2026-02-11T12:00:00Z"));
+        start.getMetadata().put("sigil.gen_ai.request.thinking.budget_tokens", 4096L);
+        return start;
     }
 
     static GenerationResult resultFixture() {
@@ -36,9 +43,15 @@ final class TestFixtures {
                 .setResponseId("resp-fixture")
                 .setResponseModel("claude-sonnet-4-5-20260201")
                 .setSystemPrompt("be concise")
+                .setMaxTokens(256L)
+                .setTemperature(0.25)
+                .setTopP(0.85)
+                .setToolChoice("required")
+                .setThinkingEnabled(false)
                 .setUsage(new TokenUsage().setInputTokens(120).setOutputTokens(80))
                 .setStopReason("stop")
                 .setCompletedAt(Instant.parse("2026-02-11T12:00:01Z"));
+        result.getMetadata().put("sigil.gen_ai.request.thinking.budget_tokens", 2048L);
 
         result.getInput().add(new Message()
                 .setRole(MessageRole.USER)

@@ -109,6 +109,11 @@ public final class Generation extends GenerationResult {
         out.setResponseId(getResponseId());
         out.setResponseModel(getResponseModel());
         out.setSystemPrompt(getSystemPrompt());
+        out.setMaxTokens(getMaxTokens());
+        out.setTemperature(getTemperature());
+        out.setTopP(getTopP());
+        out.setToolChoice(getToolChoice());
+        out.setThinkingEnabled(getThinkingEnabled());
         out.setUsage(getUsage().copy());
         out.setStopReason(getStopReason());
         out.setStartedAt(getStartedAt());

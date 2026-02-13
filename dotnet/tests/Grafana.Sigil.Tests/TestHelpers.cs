@@ -46,6 +46,11 @@ internal static class TestHelpers
                 Name = "gpt-5",
             },
             SystemPrompt = "be concise",
+            MaxTokens = 1024,
+            Temperature = 0.7,
+            TopP = 0.9,
+            ToolChoice = "auto",
+            ThinkingEnabled = true,
             Tools =
             {
                 new ToolDefinition
@@ -63,6 +68,7 @@ internal static class TestHelpers
             Metadata =
             {
                 ["seed"] = 42,
+                ["sigil.gen_ai.request.thinking.budget_tokens"] = 4096L,
             },
             StartedAt = new DateTimeOffset(2026, 02, 13, 10, 00, 00, TimeSpan.Zero),
         };
@@ -86,6 +92,11 @@ internal static class TestHelpers
             ResponseId = "resp-seed",
             ResponseModel = "gpt-5-2026",
             SystemPrompt = "be concise",
+            MaxTokens = 256,
+            Temperature = 0.25,
+            TopP = 0.85,
+            ToolChoice = "required",
+            ThinkingEnabled = false,
             Input =
             {
                 new Message
@@ -158,6 +169,7 @@ internal static class TestHelpers
             Metadata =
             {
                 ["seed"] = 42,
+                ["sigil.gen_ai.request.thinking.budget_tokens"] = 2048L,
             },
             Artifacts =
             {
@@ -451,6 +463,11 @@ internal static class GenerationAssertions
         Xunit.Assert.Equal(expected.ResponseId, actual.ResponseId);
         Xunit.Assert.Equal(expected.ResponseModel, actual.ResponseModel);
         Xunit.Assert.Equal(expected.SystemPrompt, actual.SystemPrompt);
+        Xunit.Assert.Equal(expected.MaxTokens, actual.HasMaxTokens ? actual.MaxTokens : null);
+        Xunit.Assert.Equal(expected.Temperature, actual.HasTemperature ? actual.Temperature : null);
+        Xunit.Assert.Equal(expected.TopP, actual.HasTopP ? actual.TopP : null);
+        Xunit.Assert.Equal(expected.ToolChoice ?? string.Empty, actual.HasToolChoice ? actual.ToolChoice : string.Empty);
+        Xunit.Assert.Equal(expected.ThinkingEnabled, actual.HasThinkingEnabled ? actual.ThinkingEnabled : null);
         Xunit.Assert.Equal(expected.StopReason, actual.StopReason);
         Xunit.Assert.Equal(expected.Usage.InputTokens, actual.Usage.InputTokens);
         Xunit.Assert.Equal(expected.Usage.OutputTokens, actual.Usage.OutputTokens);
@@ -469,18 +486,44 @@ internal static class GenerationAssertions
 
 internal static class TraceAssertions
 {
-    public static Dictionary<string, string> AttributeStringMap(IEnumerable<OpenTelemetry.Proto.Common.V1.KeyValue> attributes)
+    public static Dictionary<string, object?> AttributeValueMap(IEnumerable<OpenTelemetry.Proto.Common.V1.KeyValue> attributes)
     {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        var map = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var attribute in attributes)
         {
-            if (attribute?.Value?.ValueCase == OpenTelemetry.Proto.Common.V1.AnyValue.ValueOneofCase.StringValue)
+            if (attribute?.Value == null)
             {
-                map[attribute.Key] = attribute.Value.StringValue;
+                continue;
             }
+
+            map[attribute.Key] = DecodeAnyValue(attribute.Value);
         }
 
         return map;
+    }
+
+    private static object? DecodeAnyValue(OpenTelemetry.Proto.Common.V1.AnyValue value)
+    {
+        return value.ValueCase switch
+        {
+            OpenTelemetry.Proto.Common.V1.AnyValue.ValueOneofCase.StringValue => value.StringValue,
+            OpenTelemetry.Proto.Common.V1.AnyValue.ValueOneofCase.IntValue => value.IntValue,
+            OpenTelemetry.Proto.Common.V1.AnyValue.ValueOneofCase.DoubleValue => value.DoubleValue,
+            OpenTelemetry.Proto.Common.V1.AnyValue.ValueOneofCase.BoolValue => value.BoolValue,
+            OpenTelemetry.Proto.Common.V1.AnyValue.ValueOneofCase.ArrayValue => DecodeArray(value.ArrayValue.Values),
+            _ => null,
+        };
+    }
+
+    private static List<object?> DecodeArray(IEnumerable<OpenTelemetry.Proto.Common.V1.AnyValue> values)
+    {
+        var decoded = new List<object?>();
+        foreach (var value in values)
+        {
+            decoded.Add(DecodeAnyValue(value));
+        }
+
+        return decoded;
     }
 
     public static OpenTelemetry.Proto.Trace.V1.Span FindFirstSpan(OpenTelemetry.Proto.Collector.Trace.V1.ExportTraceServiceRequest request)

@@ -47,6 +47,12 @@ const spanAttrErrorType = 'error.type';
 const spanAttrOperationName = 'gen_ai.operation.name';
 const spanAttrProviderName = 'gen_ai.provider.name';
 const spanAttrRequestModel = 'gen_ai.request.model';
+const spanAttrRequestMaxTokens = 'gen_ai.request.max_tokens';
+const spanAttrRequestTemperature = 'gen_ai.request.temperature';
+const spanAttrRequestTopP = 'gen_ai.request.top_p';
+const spanAttrRequestToolChoice = 'sigil.gen_ai.request.tool_choice';
+const spanAttrRequestThinkingEnabled = 'sigil.gen_ai.request.thinking.enabled';
+const spanAttrRequestThinkingBudget = 'sigil.gen_ai.request.thinking.budget_tokens';
 const spanAttrResponseID = 'gen_ai.response.id';
 const spanAttrResponseModel = 'gen_ai.response.model';
 const spanAttrFinishReasons = 'gen_ai.response.finish_reasons';
@@ -286,6 +292,12 @@ export class SigilClient {
       agentVersion: seed.agentVersion,
       operationName,
       model: seed.model,
+      maxTokens: seed.maxTokens,
+      temperature: seed.temperature,
+      topP: seed.topP,
+      toolChoice: seed.toolChoice,
+      thinkingEnabled: seed.thinkingEnabled,
+      metadata: seed.metadata,
     });
 
     return span;
@@ -538,6 +550,11 @@ class GenerationRecorderImpl implements GenerationRecorder {
       systemPrompt: this.seed.systemPrompt,
       responseId: this.result?.responseId,
       responseModel: this.result?.responseModel,
+      maxTokens: this.result?.maxTokens ?? this.seed.maxTokens,
+      temperature: this.result?.temperature ?? this.seed.temperature,
+      topP: this.result?.topP ?? this.seed.topP,
+      toolChoice: this.result?.toolChoice ?? this.seed.toolChoice,
+      thinkingEnabled: this.result?.thinkingEnabled ?? this.seed.thinkingEnabled,
       input: this.result?.input?.map(cloneMessage),
       output: this.result?.output?.map(cloneMessage),
       tools: this.result?.tools?.map(cloneToolDefinition) ?? this.seed.tools?.map(cloneToolDefinition),
@@ -714,6 +731,12 @@ function setGenerationSpanAttributes(
     agentVersion?: string;
     operationName: string;
     model: { provider: string; name: string };
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+    toolChoice?: string;
+    thinkingEnabled?: boolean;
+    metadata?: Record<string, unknown>;
     responseId?: string;
     responseModel?: string;
     stopReason?: string;
@@ -744,6 +767,25 @@ function setGenerationSpanAttributes(
   }
   if (notEmpty(generation.model.name)) {
     span.setAttribute(spanAttrRequestModel, generation.model.name);
+  }
+  if (generation.maxTokens !== undefined) {
+    span.setAttribute(spanAttrRequestMaxTokens, generation.maxTokens);
+  }
+  if (generation.temperature !== undefined) {
+    span.setAttribute(spanAttrRequestTemperature, generation.temperature);
+  }
+  if (generation.topP !== undefined) {
+    span.setAttribute(spanAttrRequestTopP, generation.topP);
+  }
+  if (notEmpty(generation.toolChoice)) {
+    span.setAttribute(spanAttrRequestToolChoice, generation.toolChoice);
+  }
+  if (generation.thinkingEnabled !== undefined) {
+    span.setAttribute(spanAttrRequestThinkingEnabled, generation.thinkingEnabled);
+  }
+  const thinkingBudget = thinkingBudgetFromMetadata(generation.metadata);
+  if (thinkingBudget !== undefined) {
+    span.setAttribute(spanAttrRequestThinkingBudget, thinkingBudget);
   }
   if (notEmpty(generation.responseId)) {
     span.setAttribute(spanAttrResponseID, generation.responseId);
@@ -838,6 +880,34 @@ function serializeToolContent(value: unknown): { value?: string; error?: Error }
   } catch (error) {
     return { error: asError(error) };
   }
+}
+
+function thinkingBudgetFromMetadata(metadata: Record<string, unknown> | undefined): number | undefined {
+  if (metadata === undefined) {
+    return undefined;
+  }
+  const raw = metadata[spanAttrRequestThinkingBudget];
+  if (raw === undefined || raw === null || typeof raw === 'boolean') {
+    return undefined;
+  }
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw)) {
+      return undefined;
+    }
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(parsed)) {
+      return undefined;
+    }
+    return parsed;
+  }
+  return undefined;
 }
 
 function isJSON(value: string): boolean {

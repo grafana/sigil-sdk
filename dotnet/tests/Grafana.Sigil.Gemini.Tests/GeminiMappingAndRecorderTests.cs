@@ -28,6 +28,12 @@ public sealed class GeminiMappingAndRecorderTests
         Assert.Equal("resp_1", generation.ResponseId);
         Assert.Equal("gemini-2.5-pro-001", generation.ResponseModel);
         Assert.Equal("STOP", generation.StopReason);
+        Assert.Equal(444, generation.MaxTokens);
+        Assert.InRange(generation.Temperature ?? 0, 0.149, 0.151);
+        Assert.InRange(generation.TopP ?? 0, 0.799, 0.801);
+        Assert.Contains("any", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(generation.ThinkingEnabled);
+        Assert.Equal(1536L, ReadThinkingBudget(generation));
         Assert.Equal(170, generation.Usage.TotalTokens);
         Assert.Equal(12, generation.Usage.CacheReadInputTokens);
         Assert.Equal(10, generation.Usage.ReasoningTokens);
@@ -105,6 +111,12 @@ public sealed class GeminiMappingAndRecorderTests
         Assert.Equal(GenerationMode.Stream, generation.Mode);
         Assert.Equal("resp_stream_2", generation.ResponseId);
         Assert.Equal("STOP", generation.StopReason);
+        Assert.Equal(444, generation.MaxTokens);
+        Assert.InRange(generation.Temperature ?? 0, 0.149, 0.151);
+        Assert.InRange(generation.TopP ?? 0, 0.799, 0.801);
+        Assert.Contains("any", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(generation.ThinkingEnabled);
+        Assert.Equal(1536L, ReadThinkingBudget(generation));
         Assert.Equal(26, generation.Usage.TotalTokens);
         Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent);
     }
@@ -161,6 +173,19 @@ public sealed class GeminiMappingAndRecorderTests
         Assert.Contains(generations, generation => generation.Mode == GenerationMode.Stream);
     }
 
+    [Fact]
+    public void FromRequestResponse_MapsThinkingDisabled()
+    {
+        var request = CreateRequest();
+        request.Config!.ThinkingConfig = new ThinkingConfig
+        {
+            IncludeThoughts = false,
+        };
+
+        var generation = GeminiGenerationMapper.FromRequestResponse(request, CreateResponse());
+        Assert.False(generation.ThinkingEnabled);
+    }
+
     private static GenerateContentRequest CreateRequest()
     {
         return new GenerateContentRequest
@@ -201,6 +226,21 @@ public sealed class GeminiMappingAndRecorderTests
             },
             Config = new GenerateContentConfig
             {
+                MaxOutputTokens = 444,
+                Temperature = 0.15f,
+                TopP = 0.8f,
+                ToolConfig = new ToolConfig
+                {
+                    FunctionCallingConfig = new FunctionCallingConfig
+                    {
+                        Mode = FunctionCallingConfigMode.Any,
+                    },
+                },
+                ThinkingConfig = new ThinkingConfig
+                {
+                    IncludeThoughts = true,
+                    ThinkingBudget = 1536,
+                },
                 SystemInstruction = new Content
                 {
                     Role = "user",
@@ -278,6 +318,18 @@ public sealed class GeminiMappingAndRecorderTests
                 CachedContentTokenCount = 12,
                 ThoughtsTokenCount = 10,
             },
+        };
+    }
+
+    private static long ReadThinkingBudget(Generation generation)
+    {
+        var raw = generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"];
+        return raw switch
+        {
+            System.Text.Json.JsonElement json
+                when json.ValueKind == System.Text.Json.JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,
+            IConvertible convertible => Convert.ToInt64(convertible),
+            _ => throw new InvalidOperationException("unexpected thinking budget metadata type"),
         };
     }
 

@@ -37,6 +37,12 @@ _span_attr_error_type = "error.type"
 _span_attr_operation_name = "gen_ai.operation.name"
 _span_attr_provider_name = "gen_ai.provider.name"
 _span_attr_request_model = "gen_ai.request.model"
+_span_attr_request_max_tokens = "gen_ai.request.max_tokens"
+_span_attr_request_temperature = "gen_ai.request.temperature"
+_span_attr_request_top_p = "gen_ai.request.top_p"
+_span_attr_request_tool_choice = "sigil.gen_ai.request.tool_choice"
+_span_attr_request_thinking_enabled = "sigil.gen_ai.request.thinking.enabled"
+_span_attr_request_thinking_budget = "sigil.gen_ai.request.thinking.budget_tokens"
 _span_attr_response_id = "gen_ai.response.id"
 _span_attr_response_model = "gen_ai.response.model"
 _span_attr_finish_reasons = "gen_ai.response.finish_reasons"
@@ -228,6 +234,11 @@ class Client:
                 mode=seed.mode,
                 operation_name=seed.operation_name,
                 model=copy.deepcopy(seed.model),
+                max_tokens=seed.max_tokens,
+                temperature=seed.temperature,
+                top_p=seed.top_p,
+                tool_choice=seed.tool_choice,
+                thinking_enabled=seed.thinking_enabled,
             ),
         )
 
@@ -484,6 +495,17 @@ class GenerationRecorder:
         if generation.system_prompt == "":
             generation.system_prompt = self.seed.system_prompt
 
+        if generation.max_tokens is None:
+            generation.max_tokens = self.seed.max_tokens
+        if generation.temperature is None:
+            generation.temperature = self.seed.temperature
+        if generation.top_p is None:
+            generation.top_p = self.seed.top_p
+        if generation.tool_choice is None:
+            generation.tool_choice = self.seed.tool_choice
+        if generation.thinking_enabled is None:
+            generation.thinking_enabled = self.seed.thinking_enabled
+
         if len(generation.tools) == 0:
             generation.tools = copy.deepcopy(self.seed.tools)
 
@@ -672,6 +694,21 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
         span.set_attribute(_span_attr_provider_name, generation.model.provider)
     if generation.model.name:
         span.set_attribute(_span_attr_request_model, generation.model.name)
+    if generation.max_tokens is not None:
+        span.set_attribute(_span_attr_request_max_tokens, generation.max_tokens)
+    if generation.temperature is not None:
+        span.set_attribute(_span_attr_request_temperature, generation.temperature)
+    if generation.top_p is not None:
+        span.set_attribute(_span_attr_request_top_p, generation.top_p)
+    if generation.tool_choice is not None:
+        tool_choice = generation.tool_choice.strip()
+        if tool_choice != "":
+            span.set_attribute(_span_attr_request_tool_choice, tool_choice)
+    if generation.thinking_enabled is not None:
+        span.set_attribute(_span_attr_request_thinking_enabled, generation.thinking_enabled)
+    thinking_budget = _thinking_budget_from_metadata(generation.metadata)
+    if thinking_budget is not None:
+        span.set_attribute(_span_attr_request_thinking_budget, thinking_budget)
     if generation.response_id:
         span.set_attribute(_span_attr_response_id, generation.response_id)
     if generation.response_model:
@@ -706,6 +743,35 @@ def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
         span.set_attribute(_span_attr_agent_name, start.agent_name)
     if start.agent_version:
         span.set_attribute(_span_attr_agent_version, start.agent_version)
+
+
+def _thinking_budget_from_metadata(metadata: dict[str, Any]) -> int | None:
+    if not metadata:
+        return None
+
+    raw = metadata.get(_span_attr_request_thinking_budget)
+    if raw is None or isinstance(raw, bool):
+        return None
+
+    if isinstance(raw, int):
+        return raw
+
+    if isinstance(raw, float):
+        integer = int(raw)
+        if float(integer) == raw:
+            return integer
+        return None
+
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text == "":
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+
+    return None
 
 
 def _default_operation_name(mode: GenerationMode | None) -> str:

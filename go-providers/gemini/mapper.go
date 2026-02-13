@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
+const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
+
 // GenerateContentRequest wraps Gemini generate-content arguments in one mapper input type.
 type GenerateContentRequest struct {
 	Model    string                       `json:"model"`
@@ -29,6 +31,7 @@ func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContent
 	options := applyOptions(opts)
 	input := mapContents(req.Contents)
 	output, stopReason := mapCandidates(resp.Candidates)
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req.Config)
 
 	artifacts := make([]sigil.Artifact, 0, 3)
 	if options.includeRequestArtifact {
@@ -62,21 +65,26 @@ func FromRequestResponse(req GenerateContentRequest, resp *genai.GenerateContent
 	}
 
 	generation := sigil.Generation{
-		ConversationID: options.conversationID,
-		AgentName:      options.agentName,
-		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
-		ResponseID:     resp.ResponseID,
-		ResponseModel:  resp.ModelVersion,
-		SystemPrompt:   extractSystemPrompt(req.Config),
-		Input:          input,
-		Output:         output,
-		Tools:          mapTools(req.Config),
-		Usage:          mapUsage(resp.UsageMetadata),
-		StopReason:     stopReason,
-		Tags:           cloneStringMap(options.tags),
-		Metadata:       metadata,
-		Artifacts:      artifacts,
+		ConversationID:  options.conversationID,
+		AgentName:       options.agentName,
+		AgentVersion:    options.agentVersion,
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: req.Model},
+		ResponseID:      resp.ResponseID,
+		ResponseModel:   resp.ModelVersion,
+		SystemPrompt:    extractSystemPrompt(req.Config),
+		Input:           input,
+		Output:          output,
+		Tools:           mapTools(req.Config),
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		TopP:            topP,
+		ToolChoice:      toolChoice,
+		ThinkingEnabled: thinkingEnabled,
+		Usage:           mapUsage(resp.UsageMetadata),
+		StopReason:      stopReason,
+		Tags:            cloneStringMap(options.tags),
+		Metadata:        mergeThinkingBudgetMetadata(metadata, thinkingBudget),
+		Artifacts:       artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {
@@ -265,6 +273,51 @@ func hasFunctionTools(config *genai.GenerateContentConfig) bool {
 	return false
 }
 
+func mapRequestControls(config *genai.GenerateContentConfig) (*int64, *float64, *float64, *string, *bool, *int64) {
+	if config == nil {
+		return nil, nil, nil, nil, nil, nil
+	}
+
+	var maxTokens *int64
+	if config.MaxOutputTokens > 0 {
+		value := int64(config.MaxOutputTokens)
+		maxTokens = &value
+	}
+
+	var temperature *float64
+	if config.Temperature != nil {
+		value := float64(*config.Temperature)
+		temperature = &value
+	}
+
+	var topP *float64
+	if config.TopP != nil {
+		value := float64(*config.TopP)
+		topP = &value
+	}
+
+	var toolChoice *string
+	if config.ToolConfig != nil && config.ToolConfig.FunctionCallingConfig != nil {
+		mode := strings.ToLower(strings.TrimSpace(string(config.ToolConfig.FunctionCallingConfig.Mode)))
+		if mode != "" && mode != "mode_unspecified" {
+			toolChoice = &mode
+		}
+	}
+
+	var thinkingEnabled *bool
+	var thinkingBudget *int64
+	if config.ThinkingConfig != nil {
+		value := config.ThinkingConfig.IncludeThoughts
+		thinkingEnabled = &value
+		if config.ThinkingConfig.ThinkingBudget != nil {
+			budget := int64(*config.ThinkingConfig.ThinkingBudget)
+			thinkingBudget = &budget
+		}
+	}
+
+	return maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget
+}
+
 func marshalAny(value any) []byte {
 	if value == nil {
 		return nil
@@ -297,5 +350,17 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	for key, value := range in {
 		out[key] = value
 	}
+	return out
+}
+
+func mergeThinkingBudgetMetadata(metadata map[string]any, thinkingBudget *int64) map[string]any {
+	out := cloneAnyMap(metadata)
+	if thinkingBudget == nil {
+		return out
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	out[thinkingBudgetMetadataKey] = *thinkingBudget
 	return out
 }

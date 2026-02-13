@@ -1,6 +1,7 @@
 package com.grafana.sigil.sdk;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.Tracer;
@@ -32,6 +33,12 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_OPERATION_NAME = "gen_ai.operation.name";
     static final String SPAN_ATTR_PROVIDER_NAME = "gen_ai.provider.name";
     static final String SPAN_ATTR_REQUEST_MODEL = "gen_ai.request.model";
+    static final String SPAN_ATTR_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
+    static final String SPAN_ATTR_REQUEST_TEMPERATURE = "gen_ai.request.temperature";
+    static final String SPAN_ATTR_REQUEST_TOP_P = "gen_ai.request.top_p";
+    static final String SPAN_ATTR_REQUEST_TOOL_CHOICE = "sigil.gen_ai.request.tool_choice";
+    static final String SPAN_ATTR_REQUEST_THINKING_ENABLED = "sigil.gen_ai.request.thinking.enabled";
+    static final String SPAN_ATTR_REQUEST_THINKING_BUDGET = "sigil.gen_ai.request.thinking.budget_tokens";
     static final String SPAN_ATTR_RESPONSE_ID = "gen_ai.response.id";
     static final String SPAN_ATTR_RESPONSE_MODEL = "gen_ai.response.model";
     static final String SPAN_ATTR_FINISH_REASONS = "gen_ai.response.finish_reasons";
@@ -397,14 +404,19 @@ public final class SigilClient implements AutoCloseable {
                 .setStartTimestamp(startedAt)
                 .startSpan();
 
-        Generation initial = new Generation()
-                .setId(seed.getId())
-                .setConversationId(seed.getConversationId())
-                .setAgentName(seed.getAgentName())
-                .setAgentVersion(seed.getAgentVersion())
-                .setMode(seed.getMode())
-                .setOperationName(seed.getOperationName())
-                .setModel(seed.getModel().copy());
+        Generation initial = new Generation();
+        initial.setId(seed.getId());
+        initial.setConversationId(seed.getConversationId());
+        initial.setAgentName(seed.getAgentName());
+        initial.setAgentVersion(seed.getAgentVersion());
+        initial.setMode(seed.getMode());
+        initial.setOperationName(seed.getOperationName());
+        initial.setModel(seed.getModel().copy());
+        initial.setMaxTokens(seed.getMaxTokens());
+        initial.setTemperature(seed.getTemperature());
+        initial.setTopP(seed.getTopP());
+        initial.setToolChoice(seed.getToolChoice());
+        initial.setThinkingEnabled(seed.getThinkingEnabled());
         setGenerationSpanAttributes(span, initial);
 
         return new GenerationRecorder(this, seed, span, startedAt);
@@ -538,6 +550,25 @@ public final class SigilClient implements AutoCloseable {
         if (!generation.getModel().getName().isBlank()) {
             span.setAttribute(SPAN_ATTR_REQUEST_MODEL, generation.getModel().getName());
         }
+        if (generation.getMaxTokens() != null) {
+            span.setAttribute(SPAN_ATTR_REQUEST_MAX_TOKENS, generation.getMaxTokens());
+        }
+        if (generation.getTemperature() != null) {
+            span.setAttribute(SPAN_ATTR_REQUEST_TEMPERATURE, generation.getTemperature());
+        }
+        if (generation.getTopP() != null) {
+            span.setAttribute(SPAN_ATTR_REQUEST_TOP_P, generation.getTopP());
+        }
+        if (!generation.getToolChoice().isBlank()) {
+            span.setAttribute(SPAN_ATTR_REQUEST_TOOL_CHOICE, generation.getToolChoice());
+        }
+        if (generation.getThinkingEnabled() != null) {
+            span.setAttribute(SPAN_ATTR_REQUEST_THINKING_ENABLED, generation.getThinkingEnabled());
+        }
+        Long thinkingBudget = thinkingBudgetFromMetadata(generation.getMetadata());
+        if (thinkingBudget != null) {
+            span.setAttribute(SPAN_ATTR_REQUEST_THINKING_BUDGET, thinkingBudget);
+        }
         if (!generation.getResponseId().isBlank()) {
             span.setAttribute(SPAN_ATTR_RESPONSE_ID, generation.getResponseId());
         }
@@ -545,7 +576,7 @@ public final class SigilClient implements AutoCloseable {
             span.setAttribute(SPAN_ATTR_RESPONSE_MODEL, generation.getResponseModel());
         }
         if (!generation.getStopReason().isBlank()) {
-            span.setAttribute(SPAN_ATTR_FINISH_REASONS, generation.getStopReason());
+            span.setAttribute(AttributeKey.stringArrayKey(SPAN_ATTR_FINISH_REASONS), List.of(generation.getStopReason()));
         }
         TokenUsage usage = generation.getUsage();
         if (usage != null) {
@@ -578,5 +609,26 @@ public final class SigilClient implements AutoCloseable {
         if (!seed.getToolDescription().isBlank()) {
             span.setAttribute(SPAN_ATTR_TOOL_DESCRIPTION, seed.getToolDescription());
         }
+    }
+
+    private static Long thinkingBudgetFromMetadata(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        Object raw = metadata.get(SPAN_ATTR_REQUEST_THINKING_BUDGET);
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof Number number) {
+            return number.longValue();
+        }
+        if (raw instanceof String text) {
+            try {
+                return Long.parseLong(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 }

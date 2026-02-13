@@ -7,6 +7,8 @@ namespace Grafana.Sigil.OpenAI;
 
 public static class OpenAIGenerationMapper
 {
+    private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
+
     public static Generation FromRequestResponse(
         string modelName,
         IReadOnlyList<ChatMessage> messages,
@@ -26,6 +28,7 @@ public static class OpenAIGenerationMapper
         var (input, systemPrompt) = MapRequestMessages(requestMessages);
         var output = MapResponseMessages(response);
         var tools = MapTools(requestOptions);
+        var thinkingBudget = ResolveThinkingBudget(requestOptions);
 
         var responseModel = string.IsNullOrWhiteSpace(response.Model) ? modelName : response.Model;
 
@@ -42,13 +45,18 @@ public static class OpenAIGenerationMapper
             ResponseId = response.Id,
             ResponseModel = responseModel,
             SystemPrompt = systemPrompt,
+            MaxTokens = ResolveRequestMaxTokens(requestOptions),
+            Temperature = ReadNullableDoubleProperty(requestOptions, "Temperature"),
+            TopP = ReadNullableDoubleProperty(requestOptions, "TopP"),
+            ToolChoice = CanonicalToolChoice(ReadProperty(requestOptions, "ToolChoice")),
+            ThinkingEnabled = ResolveThinkingEnabled(requestOptions),
             Input = input,
             Output = output,
             Tools = tools,
             Usage = MapUsage(response.Usage),
             StopReason = OpenAIJsonHelpers.NormalizeStopReason(response.FinishReason.ToString()),
             Tags = new Dictionary<string, string>(effective.Tags, StringComparer.Ordinal),
-            Metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal),
+            Metadata = MetadataWithThinkingBudget(effective.Metadata, thinkingBudget),
             Artifacts = BuildArtifactsForRequestResponse(
                 effective,
                 modelName,
@@ -200,6 +208,7 @@ public static class OpenAIGenerationMapper
         }
 
         var tools = MapTools(requestOptions);
+        var thinkingBudget = ResolveThinkingBudget(requestOptions);
 
         var generation = new Generation
         {
@@ -214,13 +223,18 @@ public static class OpenAIGenerationMapper
             ResponseId = responseId,
             ResponseModel = responseModel,
             SystemPrompt = systemPrompt,
+            MaxTokens = ResolveRequestMaxTokens(requestOptions),
+            Temperature = ReadNullableDoubleProperty(requestOptions, "Temperature"),
+            TopP = ReadNullableDoubleProperty(requestOptions, "TopP"),
+            ToolChoice = CanonicalToolChoice(ReadProperty(requestOptions, "ToolChoice")),
+            ThinkingEnabled = ResolveThinkingEnabled(requestOptions),
             Input = input,
             Output = output,
             Tools = tools,
             Usage = usage,
             StopReason = stopReason,
             Tags = new Dictionary<string, string>(effective.Tags, StringComparer.Ordinal),
-            Metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal),
+            Metadata = MetadataWithThinkingBudget(effective.Metadata, thinkingBudget),
             Artifacts = BuildArtifactsForStream(
                 effective,
                 modelName,
@@ -584,5 +598,302 @@ public static class OpenAIGenerationMapper
         public string Name { get; set; } = string.Empty;
 
         public StringBuilder Arguments { get; } = new();
+    }
+
+    private static long? ResolveRequestMaxTokens(ChatCompletionOptions? requestOptions)
+    {
+        return ReadNullableLongProperty(requestOptions, "MaxCompletionTokens", "MaxTokens", "MaxOutputTokenCount");
+    }
+
+    private static bool? ResolveThinkingEnabled(ChatCompletionOptions? requestOptions)
+    {
+        if (requestOptions == null)
+        {
+            return null;
+        }
+
+        var reasoning = ReadProperty(requestOptions, "Reasoning")
+            ?? ReadProperty(requestOptions, "ReasoningEffortLevel")
+            ?? ReadProperty(requestOptions, "ReasoningOptions");
+        return reasoning == null ? null : true;
+    }
+
+    private static long? ResolveThinkingBudget(ChatCompletionOptions? requestOptions)
+    {
+        if (requestOptions == null)
+        {
+            return null;
+        }
+
+        var reasoning = ReadProperty(requestOptions, "Reasoning")
+            ?? ReadProperty(requestOptions, "ReasoningOptions");
+        if (reasoning == null)
+        {
+            return null;
+        }
+
+        return ReadNullableLongProperty(
+            reasoning,
+            "BudgetTokens",
+            "ThinkingBudget",
+            "MaxOutputTokens",
+            "MaxCompletionTokens",
+            "budget_tokens",
+            "thinking_budget",
+            "max_output_tokens"
+        );
+    }
+
+    private static object? ReadProperty(object? instance, params string[] names)
+    {
+        if (instance == null)
+        {
+            return null;
+        }
+
+        if (instance is IReadOnlyDictionary<string, object?> readOnlyMap)
+        {
+            foreach (var name in names)
+            {
+                if (readOnlyMap.TryGetValue(name, out var mappedValue) && mappedValue != null)
+                {
+                    return mappedValue;
+                }
+            }
+        }
+
+        if (instance is IDictionary<string, object?> map)
+        {
+            foreach (var name in names)
+            {
+                if (map.TryGetValue(name, out var mappedValue) && mappedValue != null)
+                {
+                    return mappedValue;
+                }
+            }
+        }
+
+        if (instance is JsonElement json && json.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in names)
+            {
+                if (json.TryGetProperty(name, out var value))
+                {
+                    return value;
+                }
+            }
+        }
+
+        var flags = System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.Public
+            | System.Reflection.BindingFlags.NonPublic
+            | System.Reflection.BindingFlags.IgnoreCase;
+
+        foreach (var name in names)
+        {
+            var property = instance.GetType().GetProperty(name, flags);
+            if (property == null)
+            {
+                var field = instance.GetType().GetField(name, flags);
+                if (field == null)
+                {
+                    continue;
+                }
+
+                var fieldValue = field.GetValue(instance);
+                if (fieldValue != null)
+                {
+                    return fieldValue;
+                }
+
+                continue;
+            }
+
+            var value = property.GetValue(instance);
+            if (value != null)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static Dictionary<string, object?> MetadataWithThinkingBudget(
+        IReadOnlyDictionary<string, object?> metadata,
+        long? thinkingBudget
+    )
+    {
+        var outMetadata = new Dictionary<string, object?>(metadata, StringComparer.Ordinal);
+        if (thinkingBudget.HasValue)
+        {
+            outMetadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
+        }
+        return outMetadata;
+    }
+
+    private static long? ReadNullableLongProperty(object? instance, params string[] names)
+    {
+        var value = ReadProperty(instance, names);
+        if (value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            long v => v,
+            int v => v,
+            short v => v,
+            uint v => v,
+            ulong v => (long)v,
+            float v => (long)v,
+            double v => (long)v,
+            decimal v => (long)v,
+            _ when long.TryParse(value.ToString(), out var parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static double? ReadNullableDoubleProperty(object? instance, params string[] names)
+    {
+        var value = ReadProperty(instance, names);
+        if (value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            double v => v,
+            float v => v,
+            decimal v => (double)v,
+            long v => v,
+            int v => v,
+            _ when double.TryParse(value.ToString(), out var parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static string? CanonicalToolChoice(object? value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        if (value is string text)
+        {
+            var normalized = text.Trim().ToLowerInvariant();
+            return normalized.Length == 0 ? null : normalized;
+        }
+
+        if (value is Enum enumValue)
+        {
+            var normalized = enumValue.ToString().Trim().ToLowerInvariant();
+            return normalized.Length == 0 ? null : normalized;
+        }
+
+        var structured = TryMapStructuredToolChoice(value);
+        if (!string.IsNullOrWhiteSpace(structured))
+        {
+            return structured;
+        }
+
+        try
+        {
+            var element = JsonSerializer.SerializeToElement(value);
+            var canonical = CanonicalJson(element);
+            if (canonical == "{}")
+            {
+                var normalized = value.ToString()?.Trim().ToLowerInvariant();
+                return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+            }
+
+            return canonical;
+        }
+        catch
+        {
+            var normalized = value.ToString()?.Trim().ToLowerInvariant();
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        }
+    }
+
+    private static string? TryMapStructuredToolChoice(object value)
+    {
+        var kind = ReadProperty(value, "Kind", "Type", "Mode", "_type", "_predefinedValue")?.ToString()?.Trim();
+        var functionName = ReadProperty(value, "FunctionName", "Name")?.ToString()?.Trim();
+
+        if (string.IsNullOrWhiteSpace(functionName))
+        {
+            var function = ReadProperty(value, "Function", "_function");
+            functionName = ReadProperty(function, "Name", "<Name>k__BackingField")?.ToString()?.Trim();
+        }
+
+        var normalizedKind = kind?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(functionName)
+            && (normalizedKind == "none" || normalizedKind == "auto" || normalizedKind == "required"))
+        {
+            return normalizedKind;
+        }
+
+        if (string.IsNullOrWhiteSpace(kind) && string.IsNullOrWhiteSpace(functionName))
+        {
+            return null;
+        }
+
+        var toolChoice = new SortedDictionary<string, object?>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
+            toolChoice["type"] = normalizedKind;
+        }
+
+        if (!string.IsNullOrWhiteSpace(functionName))
+        {
+            toolChoice["function"] = new SortedDictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["name"] = functionName,
+            };
+        }
+
+        return JsonSerializer.Serialize(toolChoice);
+    }
+
+    private static string CanonicalJson(JsonElement element)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        WriteCanonicalElement(writer, element);
+        writer.Flush();
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteCanonicalElement(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject().OrderBy(property => property.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalElement(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteCanonicalElement(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 }

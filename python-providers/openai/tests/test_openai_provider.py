@@ -123,6 +123,12 @@ def test_openai_wrapper_propagates_provider_error_and_sets_call_error() -> None:
 def test_openai_mappers_filter_system_messages_and_support_raw_artifacts() -> None:
     request = OpenAIChatRequest(
         model="gpt-5",
+        max_completion_tokens=320,
+        max_tokens=999,
+        temperature=0.2,
+        top_p=0.85,
+        tool_choice={"type": "function", "name": "weather"},
+        reasoning={"effort": "high", "max_output_tokens": 2048},
         messages=[
             OpenAIMessage(role="system", content="system"),
             OpenAIMessage(role="user", content="hello"),
@@ -136,6 +142,12 @@ def test_openai_mappers_filter_system_messages_and_support_raw_artifacts() -> No
     assert len(mapped_default.input) == 2
     assert mapped_default.input[0].role.value == "user"
     assert mapped_default.input[1].role.value == "tool"
+    assert mapped_default.max_tokens == 320
+    assert mapped_default.temperature == 0.2
+    assert mapped_default.top_p == 0.85
+    assert mapped_default.tool_choice == '{"name":"weather","type":"function"}'
+    assert mapped_default.thinking_enabled is True
+    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
     assert mapped_default.artifacts == []
 
     mapped_with_artifacts = from_request_response(request, response, OpenAIOptions(raw_artifacts=True))
@@ -148,4 +160,21 @@ def test_openai_mappers_filter_system_messages_and_support_raw_artifacts() -> No
     )
     assert stream_mapped.response_model == "gpt-5"
     assert stream_mapped.output[0].parts[0].text == "stream-output"
+    assert stream_mapped.max_tokens == 320
+    assert stream_mapped.tool_choice == '{"name":"weather","type":"function"}'
+    assert stream_mapped.thinking_enabled is True
+    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
     assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "provider_event"]
+
+
+def test_openai_mapper_max_tokens_fallback_and_thinking_unset() -> None:
+    request = OpenAIChatRequest(
+        model="gpt-5",
+        max_tokens=111,
+        messages=[OpenAIMessage(role="user", content="hello")],
+    )
+    response = OpenAIChatResponse(id="resp-openai", output_text="ok")
+    mapped = from_request_response(request, response)
+
+    assert mapped.max_tokens == 111
+    assert mapped.thinking_enabled is None

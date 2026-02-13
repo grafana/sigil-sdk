@@ -8,6 +8,8 @@ namespace Grafana.Sigil.Anthropic;
 
 public static class AnthropicGenerationMapper
 {
+    private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
+
     public static Generation FromRequestResponse(
         MessageCreateParams request,
         AnthropicMessage response,
@@ -31,11 +33,19 @@ public static class AnthropicGenerationMapper
         var requestModel = ResolveModelName(requestJson, effective);
         var responseModel = FirstNonEmpty(ReadString(responseJson, "model"), requestModel);
         var stopReason = ReadString(responseJson, "stop_reason");
+        var requestMaxTokens = ReadNullableLong(requestJson, "max_tokens");
+        var requestTemperature = ReadNullableDouble(requestJson, "temperature");
+        var requestTopP = ReadNullableDouble(requestJson, "top_p");
+        var requestToolChoice = CanonicalToolChoice(ReadObject(requestJson, "tool_choice"));
+        var requestThinking = ReadObject(requestJson, "thinking");
+        var requestThinkingEnabled = ResolveThinkingEnabled(requestThinking);
+        var requestThinkingBudget = ResolveThinkingBudget(requestThinking);
 
         var input = MapRequestMessages(requestJson);
         var output = MapResponseContent(responseJson);
         var systemPrompt = ExtractSystemPrompt(requestJson);
         var tools = MapTools(requestJson);
+        var metadata = MetadataWithThinkingBudget(effective.Metadata, requestThinkingBudget);
 
         var generation = new Generation
         {
@@ -50,13 +60,18 @@ public static class AnthropicGenerationMapper
             ResponseId = ReadString(responseJson, "id"),
             ResponseModel = responseModel,
             SystemPrompt = systemPrompt,
+            MaxTokens = requestMaxTokens,
+            Temperature = requestTemperature,
+            TopP = requestTopP,
+            ToolChoice = requestToolChoice,
+            ThinkingEnabled = requestThinkingEnabled,
             Input = input,
             Output = output,
             Tools = tools,
             Usage = MapUsage(ReadObject(responseJson, "usage")),
             StopReason = stopReason,
             Tags = new Dictionary<string, string>(effective.Tags, StringComparer.Ordinal),
-            Metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal),
+            Metadata = metadata,
             Artifacts = BuildRequestResponseArtifacts(effective, requestJson, responseJson, tools),
             Mode = GenerationMode.Sync,
         };
@@ -96,10 +111,18 @@ public static class AnthropicGenerationMapper
         var effective = options ?? new AnthropicSigilOptions();
         var requestJson = NormalizeRequestJson(SerializeJson(request));
         var requestModel = ResolveModelName(requestJson, effective);
+        var requestMaxTokens = ReadNullableLong(requestJson, "max_tokens");
+        var requestTemperature = ReadNullableDouble(requestJson, "temperature");
+        var requestTopP = ReadNullableDouble(requestJson, "top_p");
+        var requestToolChoice = CanonicalToolChoice(ReadObject(requestJson, "tool_choice"));
+        var requestThinking = ReadObject(requestJson, "thinking");
+        var requestThinkingEnabled = ResolveThinkingEnabled(requestThinking);
+        var requestThinkingBudget = ResolveThinkingBudget(requestThinking);
 
         var input = MapRequestMessages(requestJson);
         var systemPrompt = ExtractSystemPrompt(requestJson);
         var tools = MapTools(requestJson);
+        var metadata = MetadataWithThinkingBudget(effective.Metadata, requestThinkingBudget);
 
         var responseId = string.Empty;
         var responseModel = requestModel;
@@ -242,13 +265,18 @@ public static class AnthropicGenerationMapper
             ResponseId = responseId,
             ResponseModel = responseModel,
             SystemPrompt = systemPrompt,
+            MaxTokens = requestMaxTokens,
+            Temperature = requestTemperature,
+            TopP = requestTopP,
+            ToolChoice = requestToolChoice,
+            ThinkingEnabled = requestThinkingEnabled,
             Input = input,
             Output = output,
             Tools = tools,
             Usage = usage,
             StopReason = stopReason,
             Tags = new Dictionary<string, string>(effective.Tags, StringComparer.Ordinal),
-            Metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal),
+            Metadata = metadata,
             Artifacts = BuildStreamArtifacts(effective, requestJson, tools, summary),
             Mode = GenerationMode.Stream,
         };
@@ -751,6 +779,56 @@ public static class AnthropicGenerationMapper
         return 0;
     }
 
+    private static long? ReadNullableLong(JsonElement element, string name)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Null || value.ValueKind == JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var parsed))
+        {
+            return parsed;
+        }
+
+        if (value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), out var parsedString))
+        {
+            return parsedString;
+        }
+
+        return null;
+    }
+
+    private static double? ReadNullableDouble(JsonElement element, string name)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Null || value.ValueKind == JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var parsed))
+        {
+            return parsed;
+        }
+
+        if (value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), out var parsedString))
+        {
+            return parsedString;
+        }
+
+        return null;
+    }
+
     private static bool ReadBool(JsonElement element, string name)
     {
         if (element.ValueKind == JsonValueKind.Object
@@ -761,6 +839,132 @@ public static class AnthropicGenerationMapper
         }
 
         return false;
+    }
+
+    private static string? CanonicalToolChoice(JsonElement toolChoice)
+    {
+        if (toolChoice.ValueKind == JsonValueKind.Undefined || toolChoice.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (toolChoice.ValueKind == JsonValueKind.String)
+        {
+            var normalized = (toolChoice.GetString() ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized.Length == 0 ? null : normalized;
+        }
+
+        if (toolChoice.ValueKind == JsonValueKind.Object || toolChoice.ValueKind == JsonValueKind.Array)
+        {
+            return CanonicalJson(toolChoice);
+        }
+
+        var fallback = toolChoice.ToString().Trim().ToLowerInvariant();
+        return fallback.Length == 0 ? null : fallback;
+    }
+
+    private static bool? ResolveThinkingEnabled(JsonElement thinking)
+    {
+        if (thinking.ValueKind == JsonValueKind.Undefined || thinking.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (thinking.ValueKind == JsonValueKind.True || thinking.ValueKind == JsonValueKind.False)
+        {
+            return thinking.GetBoolean();
+        }
+
+        if (thinking.ValueKind == JsonValueKind.String)
+        {
+            var normalized = (thinking.GetString() ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized switch
+            {
+                "enabled" or "adaptive" => true,
+                "disabled" => false,
+                _ => null,
+            };
+        }
+
+        if (thinking.ValueKind == JsonValueKind.Object)
+        {
+            if (thinking.TryGetProperty("enabled", out var enabled)
+                && (enabled.ValueKind == JsonValueKind.True || enabled.ValueKind == JsonValueKind.False))
+            {
+                return enabled.GetBoolean();
+            }
+
+            var mode = FirstNonEmpty(ReadString(thinking, "type"), ReadString(thinking, "mode"));
+            return mode.Trim().ToLowerInvariant() switch
+            {
+                "enabled" or "adaptive" => true,
+                "disabled" => false,
+                _ => null,
+            };
+        }
+
+        return null;
+    }
+
+    private static long? ResolveThinkingBudget(JsonElement thinking)
+    {
+        if (thinking.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return ReadNullableLong(thinking, "budget_tokens");
+    }
+
+    private static Dictionary<string, object?> MetadataWithThinkingBudget(
+        IReadOnlyDictionary<string, object?> metadata,
+        long? thinkingBudget
+    )
+    {
+        var outMetadata = new Dictionary<string, object?>(metadata, StringComparer.Ordinal);
+        if (thinkingBudget.HasValue)
+        {
+            outMetadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
+        }
+        return outMetadata;
+    }
+
+    private static string CanonicalJson(JsonElement element)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        WriteCanonicalElement(writer, element);
+        writer.Flush();
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteCanonicalElement(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject().OrderBy(property => property.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalElement(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteCanonicalElement(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 
     private static MessageRole ParseRole(string role)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Threading;
 
@@ -17,6 +18,12 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrOperationName = "gen_ai.operation.name";
     internal const string SpanAttrProviderName = "gen_ai.provider.name";
     internal const string SpanAttrRequestModel = "gen_ai.request.model";
+    internal const string SpanAttrRequestMaxTokens = "gen_ai.request.max_tokens";
+    internal const string SpanAttrRequestTemperature = "gen_ai.request.temperature";
+    internal const string SpanAttrRequestTopP = "gen_ai.request.top_p";
+    internal const string SpanAttrRequestToolChoice = "sigil.gen_ai.request.tool_choice";
+    internal const string SpanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled";
+    internal const string SpanAttrRequestThinkingBudget = "sigil.gen_ai.request.thinking.budget_tokens";
     internal const string SpanAttrResponseId = "gen_ai.response.id";
     internal const string SpanAttrResponseModel = "gen_ai.response.model";
     internal const string SpanAttrFinishReasons = "gen_ai.response.finish_reasons";
@@ -243,6 +250,11 @@ public sealed class SigilClient : IAsyncDisposable
                 Mode = seed.Mode,
                 OperationName = seed.OperationName,
                 Model = InternalUtils.DeepClone(seed.Model),
+                MaxTokens = seed.MaxTokens,
+                Temperature = seed.Temperature,
+                TopP = seed.TopP,
+                ToolChoice = seed.ToolChoice,
+                ThinkingEnabled = seed.ThinkingEnabled,
             });
         }
 
@@ -475,6 +487,35 @@ public sealed class SigilClient : IAsyncDisposable
             activity.SetTag(SpanAttrRequestModel, generation.Model.Name);
         }
 
+        if (generation.MaxTokens.HasValue)
+        {
+            activity.SetTag(SpanAttrRequestMaxTokens, generation.MaxTokens.Value);
+        }
+
+        if (generation.Temperature.HasValue)
+        {
+            activity.SetTag(SpanAttrRequestTemperature, generation.Temperature.Value);
+        }
+
+        if (generation.TopP.HasValue)
+        {
+            activity.SetTag(SpanAttrRequestTopP, generation.TopP.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(generation.ToolChoice))
+        {
+            activity.SetTag(SpanAttrRequestToolChoice, generation.ToolChoice);
+        }
+
+        if (generation.ThinkingEnabled.HasValue)
+        {
+            activity.SetTag(SpanAttrRequestThinkingEnabled, generation.ThinkingEnabled.Value);
+        }
+        if (TryGetThinkingBudgetFromMetadata(generation.Metadata, out var thinkingBudget))
+        {
+            activity.SetTag(SpanAttrRequestThinkingBudget, thinkingBudget);
+        }
+
         if (!string.IsNullOrWhiteSpace(generation.ResponseId))
         {
             activity.SetTag(SpanAttrResponseId, generation.ResponseId);
@@ -487,7 +528,7 @@ public sealed class SigilClient : IAsyncDisposable
 
         if (!string.IsNullOrWhiteSpace(generation.StopReason))
         {
-            activity.SetTag(SpanAttrFinishReasons, "[\"" + generation.StopReason + "\"]");
+            activity.SetTag(SpanAttrFinishReasons, new[] { generation.StopReason });
         }
 
         if (generation.Usage.InputTokens != 0)
@@ -555,6 +596,72 @@ public sealed class SigilClient : IAsyncDisposable
         }
 
         return DefaultOperationNameForMode(generation.Mode ?? GenerationMode.Sync);
+    }
+
+    private static bool TryGetThinkingBudgetFromMetadata(
+        IReadOnlyDictionary<string, object?> metadata,
+        out long thinkingBudget
+    )
+    {
+        thinkingBudget = 0;
+        if (!metadata.TryGetValue(SpanAttrRequestThinkingBudget, out var raw) || raw == null)
+        {
+            return false;
+        }
+
+        switch (raw)
+        {
+            case long value:
+                thinkingBudget = value;
+                return true;
+            case int value:
+                thinkingBudget = value;
+                return true;
+            case short value:
+                thinkingBudget = value;
+                return true;
+            case byte value:
+                thinkingBudget = value;
+                return true;
+            case ulong value when value <= long.MaxValue:
+                thinkingBudget = (long)value;
+                return true;
+            case uint value:
+                thinkingBudget = value;
+                return true;
+            case ushort value:
+                thinkingBudget = value;
+                return true;
+            case sbyte value:
+                thinkingBudget = value;
+                return true;
+            case double value when value % 1 == 0 && value >= long.MinValue && value <= long.MaxValue:
+                thinkingBudget = (long)value;
+                return true;
+            case float value when value % 1 == 0 && value >= long.MinValue && value <= long.MaxValue:
+                thinkingBudget = (long)value;
+                return true;
+            case decimal value when decimal.Truncate(value) == value && value >= long.MinValue && value <= long.MaxValue:
+                thinkingBudget = (long)value;
+                return true;
+            case JsonElement json:
+                if (json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out var jsonInt))
+                {
+                    thinkingBudget = jsonInt;
+                    return true;
+                }
+                if (json.ValueKind == JsonValueKind.String
+                    && long.TryParse(json.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var jsonParsed))
+                {
+                    thinkingBudget = jsonParsed;
+                    return true;
+                }
+                return false;
+            case string text:
+                return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out thinkingBudget);
+            default:
+                return false;
+        }
     }
 
     internal static void RecordException(Activity activity, Exception error)
@@ -751,6 +858,11 @@ public sealed class GenerationRecorder
         generation.Model.Provider = FirstNonEmpty(generation.Model.Provider, _seed.Model.Provider);
         generation.Model.Name = FirstNonEmpty(generation.Model.Name, _seed.Model.Name);
         generation.SystemPrompt = FirstNonEmpty(generation.SystemPrompt, _seed.SystemPrompt);
+        generation.MaxTokens ??= _seed.MaxTokens;
+        generation.Temperature ??= _seed.Temperature;
+        generation.TopP ??= _seed.TopP;
+        generation.ToolChoice = FirstNonEmpty(generation.ToolChoice ?? string.Empty, _seed.ToolChoice ?? string.Empty);
+        generation.ThinkingEnabled ??= _seed.ThinkingEnabled;
 
         if (generation.Tools.Count == 0)
         {

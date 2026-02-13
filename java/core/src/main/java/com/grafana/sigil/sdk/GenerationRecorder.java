@@ -163,6 +163,11 @@ public class GenerationRecorder implements AutoCloseable {
         generation.setResponseId(result.getResponseId());
         generation.setResponseModel(result.getResponseModel());
         generation.setSystemPrompt(firstNonBlank(result.getSystemPrompt(), seed.getSystemPrompt()));
+        generation.setMaxTokens(result.getMaxTokens() == null ? seed.getMaxTokens() : result.getMaxTokens());
+        generation.setTemperature(result.getTemperature() == null ? seed.getTemperature() : result.getTemperature());
+        generation.setTopP(result.getTopP() == null ? seed.getTopP() : result.getTopP());
+        generation.setToolChoice(firstNonBlank(result.getToolChoice(), seed.getToolChoice()));
+        generation.setThinkingEnabled(result.getThinkingEnabled() == null ? seed.getThinkingEnabled() : result.getThinkingEnabled());
 
         for (Message message : result.getInput()) {
             generation.getInput().add(message == null ? new Message() : message.copy());

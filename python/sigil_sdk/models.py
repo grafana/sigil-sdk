@@ -160,6 +160,11 @@ class GenerationStart:
     mode: Optional[GenerationMode] = None
     operation_name: str = ""
     system_prompt: str = ""
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    tool_choice: Optional[str] = None
+    thinking_enabled: Optional[bool] = None
     tools: list[ToolDefinition] = field(default_factory=list)
     tags: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -182,6 +187,11 @@ class Generation:
     response_id: str = ""
     response_model: str = ""
     system_prompt: str = ""
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    tool_choice: Optional[str] = None
+    thinking_enabled: Optional[bool] = None
     input: list[Message] = field(default_factory=list)
     output: list[Message] = field(default_factory=list)
     tools: list[ToolDefinition] = field(default_factory=list)

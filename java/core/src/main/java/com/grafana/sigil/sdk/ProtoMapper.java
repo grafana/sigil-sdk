@@ -52,6 +52,22 @@ final class ProtoMapper {
             builder.setCompletedAt(toTimestamp(generation.getCompletedAt()));
         }
 
+        if (generation.getMaxTokens() != null) {
+            builder.setMaxTokens(generation.getMaxTokens());
+        }
+        if (generation.getTemperature() != null) {
+            builder.setTemperature(generation.getTemperature());
+        }
+        if (generation.getTopP() != null) {
+            builder.setTopP(generation.getTopP());
+        }
+        if (!generation.getToolChoice().isBlank()) {
+            builder.setToolChoice(generation.getToolChoice());
+        }
+        if (generation.getThinkingEnabled() != null) {
+            builder.setThinkingEnabled(generation.getThinkingEnabled());
+        }
+
         builder.putAllTags(generation.getTags());
         if (!generation.getMetadata().isEmpty()) {
             builder.setMetadata(toStruct(generation.getMetadata()));

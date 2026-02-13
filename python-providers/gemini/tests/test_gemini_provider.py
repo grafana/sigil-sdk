@@ -115,6 +115,11 @@ def test_gemini_wrapper_propagates_provider_error_and_sets_call_error() -> None:
 def test_gemini_mappers_filter_system_messages_and_support_raw_artifacts() -> None:
     request = GeminiRequest(
         model="gemini-2.5-pro",
+        max_output_tokens=444,
+        temperature=0.15,
+        top_p=0.8,
+        function_calling_mode={"mode": "ANY"},
+        thinking_config={"include_thoughts": True, "thinking_budget": 1536},
         messages=[
             GeminiMessage(role="system", content="system"),
             GeminiMessage(role="user", content="hello"),
@@ -128,6 +133,12 @@ def test_gemini_mappers_filter_system_messages_and_support_raw_artifacts() -> No
     assert len(mapped_default.input) == 2
     assert mapped_default.input[0].role.value == "user"
     assert mapped_default.input[1].role.value == "tool"
+    assert mapped_default.max_tokens == 444
+    assert mapped_default.temperature == 0.15
+    assert mapped_default.top_p == 0.8
+    assert mapped_default.tool_choice == '{"mode":"ANY"}'
+    assert mapped_default.thinking_enabled is True
+    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1536
     assert mapped_default.artifacts == []
 
     mapped_with_artifacts = from_request_response(request, response, GeminiOptions(raw_artifacts=True))
@@ -140,4 +151,20 @@ def test_gemini_mappers_filter_system_messages_and_support_raw_artifacts() -> No
     )
     assert stream_mapped.response_model == "gemini-2.5-pro"
     assert stream_mapped.output[0].parts[0].text == "stream-output"
+    assert stream_mapped.max_tokens == 444
+    assert stream_mapped.tool_choice == '{"mode":"ANY"}'
+    assert stream_mapped.thinking_enabled is True
+    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1536
     assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "provider_event"]
+
+
+def test_gemini_mapper_maps_thinking_disabled() -> None:
+    request = GeminiRequest(
+        model="gemini-2.5-pro",
+        thinking_config={"include_thoughts": False},
+        messages=[GeminiMessage(role="user", content="hello")],
+    )
+    response = GeminiResponse(id="resp-1", output_text="ok")
+    mapped = from_request_response(request, response)
+
+    assert mapped.thinking_enabled is False

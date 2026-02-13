@@ -7,6 +7,8 @@ namespace Grafana.Sigil.Gemini;
 
 public static class GeminiGenerationMapper
 {
+    private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
+
     public static Generation FromRequestResponse(
         GenerateContentRequest request,
         GenerateContentResponse response,
@@ -30,8 +32,18 @@ public static class GeminiGenerationMapper
         var stopReason = ResolveStopReason(response.Candidates, preferLast: false);
         var usage = MapUsage(response.UsageMetadata);
         var tools = MapTools(request.Config);
+        var maxTokens = ReadNullableLongProperty(request.Config, "MaxOutputTokens");
+        var temperature = ReadNullableDoubleProperty(request.Config, "Temperature");
+        var topP = ReadNullableDoubleProperty(request.Config, "TopP");
+        var toolChoice = CanonicalToolChoice(ReadNestedProperty(request.Config, "ToolConfig", "FunctionCallingConfig", "Mode"));
+        var thinkingEnabled = ReadNestedBool(request.Config, "ThinkingConfig", "IncludeThoughts");
+        var thinkingBudget = ReadNullableLongProperty(request.Config, "ThinkingConfig", "ThinkingBudget");
 
         var metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal);
+        if (thinkingBudget.HasValue)
+        {
+            metadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
+        }
         if (!string.IsNullOrWhiteSpace(response.ModelVersion))
         {
             metadata["model_version"] = response.ModelVersion;
@@ -50,6 +62,11 @@ public static class GeminiGenerationMapper
             ResponseId = response.ResponseId ?? string.Empty,
             ResponseModel = response.ModelVersion ?? string.Empty,
             SystemPrompt = ExtractSystemPrompt(request.Config),
+            MaxTokens = maxTokens,
+            Temperature = temperature,
+            TopP = topP,
+            ToolChoice = toolChoice,
+            ThinkingEnabled = thinkingEnabled,
             Input = MapContents(request.Contents),
             Output = output,
             Tools = tools,
@@ -89,6 +106,12 @@ public static class GeminiGenerationMapper
         var effective = options ?? new GeminiSigilOptions();
         var modelName = ResolveModelName(request, effective);
         var tools = MapTools(request.Config);
+        var maxTokens = ReadNullableLongProperty(request.Config, "MaxOutputTokens");
+        var temperature = ReadNullableDoubleProperty(request.Config, "Temperature");
+        var topP = ReadNullableDoubleProperty(request.Config, "TopP");
+        var toolChoice = CanonicalToolChoice(ReadNestedProperty(request.Config, "ToolConfig", "FunctionCallingConfig", "Mode"));
+        var thinkingEnabled = ReadNestedBool(request.Config, "ThinkingConfig", "IncludeThoughts");
+        var thinkingBudget = ReadNullableLongProperty(request.Config, "ThinkingConfig", "ThinkingBudget");
 
         var output = new List<Message>();
         var responseId = string.Empty;
@@ -127,6 +150,12 @@ public static class GeminiGenerationMapper
             output.AddRange(MapCandidates(response.Candidates, preferLastStopReason: true));
         }
 
+        var metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal);
+        if (thinkingBudget.HasValue)
+        {
+            metadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
+        }
+
         var generation = new Generation
         {
             ConversationId = effective.ConversationId,
@@ -140,13 +169,18 @@ public static class GeminiGenerationMapper
             ResponseId = responseId,
             ResponseModel = responseModel,
             SystemPrompt = ExtractSystemPrompt(request.Config),
+            MaxTokens = maxTokens,
+            Temperature = temperature,
+            TopP = topP,
+            ToolChoice = toolChoice,
+            ThinkingEnabled = thinkingEnabled,
             Input = MapContents(request.Contents),
             Output = output,
             Tools = tools,
             Usage = usage,
             StopReason = stopReason,
             Tags = new Dictionary<string, string>(effective.Tags, StringComparer.Ordinal),
-            Metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal),
+            Metadata = metadata,
             Artifacts = BuildStreamArtifacts(effective, request, summary, tools),
             Mode = GenerationMode.Stream,
         };
@@ -516,5 +550,142 @@ public static class GeminiGenerationMapper
         }
 
         return JsonSerializer.SerializeToUtf8Bytes(value);
+    }
+
+    private static object? ReadNestedProperty(object? source, params string[] path)
+    {
+        object? current = source;
+        foreach (var segment in path)
+        {
+            if (current == null)
+            {
+                return null;
+            }
+
+            var property = current.GetType().GetProperty(segment);
+            if (property == null)
+            {
+                return null;
+            }
+
+            current = property.GetValue(current);
+        }
+
+        return current;
+    }
+
+    private static long? ReadNullableLongProperty(object? source, params string[] path)
+    {
+        var value = ReadNestedProperty(source, path);
+        if (value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            long v => v,
+            int v => v,
+            short v => v,
+            uint v => v,
+            ulong v => (long)v,
+            _ when long.TryParse(value.ToString(), out var parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static double? ReadNullableDoubleProperty(object? source, params string[] path)
+    {
+        var value = ReadNestedProperty(source, path);
+        if (value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            double v => v,
+            float v => v,
+            decimal v => (double)v,
+            long v => v,
+            int v => v,
+            _ when double.TryParse(value.ToString(), out var parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static bool? ReadNestedBool(object? source, params string[] path)
+    {
+        var value = ReadNestedProperty(source, path);
+        return value is bool boolValue ? boolValue : null;
+    }
+
+    private static string? CanonicalToolChoice(object? value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        if (value is string text)
+        {
+            var normalized = text.Trim().ToLowerInvariant();
+            return normalized.Length == 0 ? null : normalized;
+        }
+
+        if (value is Enum enumValue)
+        {
+            var normalized = enumValue.ToString().Trim().ToLowerInvariant();
+            return normalized.Length == 0 ? null : normalized;
+        }
+
+        try
+        {
+            var element = JsonSerializer.SerializeToElement(value);
+            return CanonicalJson(element);
+        }
+        catch
+        {
+            var normalized = value.ToString()?.Trim().ToLowerInvariant();
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        }
+    }
+
+    private static string CanonicalJson(JsonElement element)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream);
+        WriteCanonicalElement(writer, element);
+        writer.Flush();
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void WriteCanonicalElement(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject().OrderBy(property => property.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalElement(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteCanonicalElement(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 }

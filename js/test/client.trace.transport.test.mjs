@@ -53,12 +53,24 @@ test('trace export over HTTP includes generation span attributes', async () => {
       conversationId: 'conv-trace-http',
       agentName: 'trace-agent-http',
       agentVersion: 'trace-v-http',
+      maxTokens: 512,
+      temperature: 0.7,
+      topP: 0.9,
+      toolChoice: 'auto',
+      thinkingEnabled: true,
       model: {
         provider: 'openai',
         name: 'gpt-5',
       },
     });
     recorder.setResult({
+      stopReason: 'end_turn',
+      maxTokens: 256,
+      temperature: 0.2,
+      topP: 0.85,
+      toolChoice: 'required',
+      thinkingEnabled: false,
+      metadata: { 'sigil.gen_ai.request.thinking.budget_tokens': 2048 },
       input: [{ role: 'user', content: 'hello' }],
       output: [{ role: 'assistant', content: 'hi' }],
     });
@@ -94,12 +106,19 @@ test('trace export over gRPC includes generation span attributes', async () => {
       conversationId: 'conv-trace-grpc',
       agentName: 'trace-agent-grpc',
       agentVersion: 'trace-v-grpc',
+      maxTokens: 1024,
+      temperature: 0.6,
+      topP: 0.8,
+      toolChoice: 'auto',
+      thinkingEnabled: true,
       model: {
         provider: 'anthropic',
         name: 'claude-sonnet-4-5',
       },
     });
     recorder.setResult({
+      stopReason: 'stop',
+      metadata: { 'sigil.gen_ai.request.thinking.budget_tokens': 1024 },
       input: [{ role: 'user', content: 'hello' }],
       output: [{ role: 'assistant', content: 'hi' }],
     });
@@ -214,7 +233,7 @@ function singleGeneration(client) {
 }
 
 function assertSpanForGeneration(span, generation) {
-  const attrs = attributeStringMap(span.attributes ?? []);
+  const attrs = attributeValueMap(span.attributes ?? []);
 
   assert.equal(attrs['sigil.generation.id'], generation.id);
   assert.equal(attrs['gen_ai.conversation.id'], generation.conversationId);
@@ -223,6 +242,30 @@ function assertSpanForGeneration(span, generation) {
   assert.equal(attrs['gen_ai.provider.name'], generation.model.provider);
   assert.equal(attrs['gen_ai.request.model'], generation.model.name);
   assert.equal(attrs['gen_ai.operation.name'], generation.operationName);
+  if (generation.maxTokens !== undefined) {
+    assert.equal(attrs['gen_ai.request.max_tokens'], generation.maxTokens);
+  }
+  if (generation.temperature !== undefined) {
+    assert.equal(attrs['gen_ai.request.temperature'], generation.temperature);
+  }
+  if (generation.topP !== undefined) {
+    assert.equal(attrs['gen_ai.request.top_p'], generation.topP);
+  }
+  if (generation.toolChoice !== undefined) {
+    assert.equal(attrs['sigil.gen_ai.request.tool_choice'], generation.toolChoice);
+  }
+  if (generation.thinkingEnabled !== undefined) {
+    assert.equal(attrs['sigil.gen_ai.request.thinking.enabled'], generation.thinkingEnabled);
+  }
+  if (isRecord(generation.metadata) && generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'] !== undefined) {
+    assert.equal(
+      attrs['sigil.gen_ai.request.thinking.budget_tokens'],
+      generation.metadata['sigil.gen_ai.request.thinking.budget_tokens']
+    );
+  }
+  if (generation.stopReason !== undefined) {
+    assert.deepEqual(attrs['gen_ai.response.finish_reasons'], [generation.stopReason]);
+  }
 
   assert.equal(normalizeHexID(span.traceId, 32), generation.traceId);
   assert.equal(normalizeHexID(span.spanId, 16), generation.spanId);
@@ -241,19 +284,38 @@ function findSpanByName(request, expectedName) {
   throw new Error(`span ${expectedName} not found in trace export`);
 }
 
-function attributeStringMap(attributes) {
+function attributeValueMap(attributes) {
   const output = {};
   for (const attr of attributes) {
     if (!isRecord(attr) || typeof attr.key !== 'string' || !isRecord(attr.value)) {
       continue;
     }
 
-    const value = attr.value;
-    if (typeof value.stringValue === 'string') {
-      output[attr.key] = value.stringValue;
-    }
+    output[attr.key] = decodeAnyValue(attr.value);
   }
   return output;
+}
+
+function decodeAnyValue(value) {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (typeof value.stringValue === 'string') {
+    return value.stringValue;
+  }
+  if (typeof value.intValue === 'number' || typeof value.intValue === 'string') {
+    return Number(value.intValue);
+  }
+  if (typeof value.doubleValue === 'number') {
+    return value.doubleValue;
+  }
+  if (typeof value.boolValue === 'boolean') {
+    return value.boolValue;
+  }
+  if (isRecord(value.arrayValue) && Array.isArray(value.arrayValue.values)) {
+    return value.arrayValue.values.map((entry) => decodeAnyValue(entry));
+  }
+  return undefined;
 }
 
 function normalizeHexID(id, expectedLength) {

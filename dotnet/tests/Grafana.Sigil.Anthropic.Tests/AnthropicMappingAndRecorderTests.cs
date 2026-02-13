@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Reflection;
 using Anthropic.Models.Messages;
 using Xunit;
 using AnthropicMessage = Anthropic.Models.Messages.Message;
@@ -29,6 +30,12 @@ public sealed class AnthropicMappingAndRecorderTests
         Assert.Equal("Be precise.", generation.SystemPrompt);
         Assert.Equal("msg_1", generation.ResponseId);
         Assert.Equal("end_turn", generation.StopReason);
+        Assert.Equal(512, generation.MaxTokens);
+        Assert.Equal(0.3, generation.Temperature);
+        Assert.Equal(0.8, generation.TopP);
+        Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(generation.ThinkingEnabled);
+        Assert.Equal(2048L, ReadThinkingBudget(generation));
         Assert.Equal(162, generation.Usage.TotalTokens);
         Assert.Equal(30, generation.Usage.CacheReadInputTokens);
         Assert.Equal(10, generation.Usage.CacheCreationInputTokens);
@@ -48,6 +55,12 @@ public sealed class AnthropicMappingAndRecorderTests
         Assert.Equal(GenerationMode.Stream, generation.Mode);
         Assert.Equal("msg_stream_1", generation.ResponseId);
         Assert.Equal("end_turn", generation.StopReason);
+        Assert.Equal(512, generation.MaxTokens);
+        Assert.Equal(0.3, generation.Temperature);
+        Assert.Equal(0.8, generation.TopP);
+        Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(generation.ThinkingEnabled);
+        Assert.Equal(2048L, ReadThinkingBudget(generation));
         Assert.Equal(105, generation.Usage.TotalTokens);
         Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent);
     }
@@ -106,7 +119,7 @@ public sealed class AnthropicMappingAndRecorderTests
 
     private static MessageCreateParams CreateRequest()
     {
-        return new MessageCreateParams
+        var request = new MessageCreateParams
         {
             MaxTokens = 512,
             Model = Model.ClaudeSonnet4_5,
@@ -119,6 +132,42 @@ public sealed class AnthropicMappingAndRecorderTests
                     Content = "What's the weather in Paris?",
                 },
             },
+        };
+
+        SetIfPresent(request, "Temperature", 0.3);
+        SetIfPresent(request, "TopP", 0.8);
+
+        var toolChoice = CreateType(
+            request.GetType().Assembly,
+            "Anthropic.Models.Messages.ToolChoiceTool",
+            instance => SetIfPresent(instance, "Name", "weather")
+        );
+        if (toolChoice != null)
+        {
+            SetIfPresent(request, "ToolChoice", toolChoice);
+        }
+
+        var thinking = CreateType(
+            request.GetType().Assembly,
+            "Anthropic.Models.Messages.ThinkingConfigEnabled",
+            instance => SetIfPresent(instance, "BudgetTokens", 2048L)
+        );
+        if (thinking != null)
+        {
+            SetIfPresent(request, "Thinking", thinking);
+        }
+
+        return request;
+    }
+
+    private static long ReadThinkingBudget(Generation generation)
+    {
+        var raw = generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"];
+        return raw switch
+        {
+            JsonElement json when json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,
+            IConvertible convertible => Convert.ToInt64(convertible),
+            _ => throw new InvalidOperationException("unexpected thinking budget metadata type"),
         };
     }
 
@@ -223,6 +272,94 @@ public sealed class AnthropicMappingAndRecorderTests
                 ServerToolUse = null,
             },
         });
+    }
+
+    private static object? CreateType(Assembly assembly, string typeName, Action<object>? configure = null)
+    {
+        var type = assembly.GetType(typeName);
+        if (type == null)
+        {
+            return null;
+        }
+
+        var instance = Activator.CreateInstance(type);
+        if (instance == null)
+        {
+            return null;
+        }
+
+        configure?.Invoke(instance);
+        return instance;
+    }
+
+    private static void SetIfPresent(object target, string propertyName, object? value)
+    {
+        var property = target.GetType().GetProperty(propertyName);
+        if (property == null || !property.CanWrite)
+        {
+            return;
+        }
+
+        var converted = ConvertIfNeeded(value, property.PropertyType);
+        if (converted != null || !property.PropertyType.IsValueType || Nullable.GetUnderlyingType(property.PropertyType) != null)
+        {
+            property.SetValue(target, converted);
+        }
+    }
+
+    private static object? ConvertIfNeeded(object? value, System.Type destinationType)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        var targetType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
+        if (targetType.IsInstanceOfType(value))
+        {
+            return value;
+        }
+
+        if (targetType.IsEnum)
+        {
+            if (value is string text)
+            {
+                return Enum.Parse(targetType, text, ignoreCase: true);
+            }
+
+            return Enum.ToObject(targetType, value);
+        }
+
+        var implicitOperator = targetType
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(method =>
+                method.Name == "op_Implicit"
+                && method.ReturnType == targetType
+                && method.GetParameters().Length == 1
+                && method.GetParameters()[0].ParameterType.IsInstanceOfType(value));
+        if (implicitOperator != null)
+        {
+            return implicitOperator.Invoke(null, new[] { value });
+        }
+
+        var convertingCtor = targetType
+            .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .FirstOrDefault(ctor =>
+                ctor.GetParameters().Length == 1
+                && ctor.GetParameters()[0].ParameterType.IsInstanceOfType(value));
+        if (convertingCtor != null)
+        {
+            return convertingCtor.Invoke(new[] { value });
+        }
+
+        try
+        {
+            return Convert.ChangeType(value, targetType);
+        }
+        catch
+        {
+            return value;
+        }
     }
 
     private sealed class CapturingExporter : IGenerationExporter

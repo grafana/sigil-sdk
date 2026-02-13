@@ -1,6 +1,8 @@
 package com.grafana.sigil.sdk.providers.openai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.grafana.sigil.sdk.Artifact;
 import com.grafana.sigil.sdk.ArtifactKind;
 import com.grafana.sigil.sdk.GenerationResult;
@@ -21,7 +23,11 @@ import java.util.Map;
 
 /** OpenAI provider adapter helpers for sync and streaming calls. */
 public final class OpenAiAdapter {
+    private static final String THINKING_BUDGET_METADATA_KEY = "sigil.gen_ai.request.thinking.budget_tokens";
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper CANONICAL_JSON = new ObjectMapper()
+            .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
+            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     private OpenAiAdapter() {
     }
@@ -67,6 +73,11 @@ public final class OpenAiAdapter {
         GenerationResult result = new GenerationResult()
                 .setResponseId(response.getId())
                 .setResponseModel(firstNonBlank(response.getModel(), request.getModel()))
+                .setMaxTokens(resolveOpenAiMaxTokens(request))
+                .setTemperature(request.getTemperature())
+                .setTopP(request.getTopP())
+                .setToolChoice(canonicalToolChoice(request.getToolChoice()))
+                .setThinkingEnabled(resolveOpenAiThinkingEnabled(request))
                 .setStopReason(response.getStopReason())
                 .setUsage(response.getUsage() == null ? new TokenUsage() : response.getUsage().copy());
 
@@ -87,7 +98,7 @@ public final class OpenAiAdapter {
         for (ToolDefinition tool : request.getTools()) {
             result.getTools().add(tool == null ? new ToolDefinition() : tool.copy());
         }
-        result.getMetadata().putAll(options.getMetadata());
+        result.getMetadata().putAll(metadataWithThinkingBudget(options.getMetadata(), resolveOpenAiThinkingBudget(request.getReasoning())));
         result.getTags().putAll(options.getTags());
 
         if (options.isRawArtifacts()) {
@@ -104,6 +115,11 @@ public final class OpenAiAdapter {
         GenerationResult result = new GenerationResult()
                 .setResponseId(finalResponse == null ? "" : finalResponse.getId())
                 .setResponseModel(finalResponse == null ? request.getModel() : firstNonBlank(finalResponse.getModel(), request.getModel()))
+                .setMaxTokens(resolveOpenAiMaxTokens(request))
+                .setTemperature(request.getTemperature())
+                .setTopP(request.getTopP())
+                .setToolChoice(canonicalToolChoice(request.getToolChoice()))
+                .setThinkingEnabled(resolveOpenAiThinkingEnabled(request))
                 .setStopReason(finalResponse == null ? "" : finalResponse.getStopReason())
                 .setUsage(finalResponse == null || finalResponse.getUsage() == null ? new TokenUsage() : finalResponse.getUsage().copy());
 
@@ -124,7 +140,7 @@ public final class OpenAiAdapter {
         for (ToolDefinition tool : request.getTools()) {
             result.getTools().add(tool == null ? new ToolDefinition() : tool.copy());
         }
-        result.getMetadata().putAll(options.getMetadata());
+        result.getMetadata().putAll(metadataWithThinkingBudget(options.getMetadata(), resolveOpenAiThinkingBudget(request.getReasoning())));
         result.getTags().putAll(options.getTags());
 
         if (options.isRawArtifacts()) {
@@ -143,7 +159,12 @@ public final class OpenAiAdapter {
                 .setModel(new ModelRef().setProvider(providerName).setName(request.getModel()))
                 .setSystemPrompt(request.getSystemPrompt())
                 .setTools(request.getTools())
-                .setMetadata(new LinkedHashMap<>(options.getMetadata()))
+                .setMaxTokens(resolveOpenAiMaxTokens(request))
+                .setTemperature(request.getTemperature())
+                .setTopP(request.getTopP())
+                .setToolChoice(canonicalToolChoice(request.getToolChoice()))
+                .setThinkingEnabled(resolveOpenAiThinkingEnabled(request))
+                .setMetadata(metadataWithThinkingBudget(options.getMetadata(), resolveOpenAiThinkingBudget(request.getReasoning())))
                 .setTags(new LinkedHashMap<>(options.getTags()));
     }
 
@@ -182,6 +203,73 @@ public final class OpenAiAdapter {
         return "";
     }
 
+    private static Long resolveOpenAiMaxTokens(OpenAiChatRequest request) {
+        if (request.getMaxCompletionTokens() != null) {
+            return request.getMaxCompletionTokens();
+        }
+        return request.getMaxTokens();
+    }
+
+    private static String canonicalToolChoice(Object value) {
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof String text) {
+            String normalized = text.trim().toLowerCase();
+            return normalized.isEmpty() ? null : normalized;
+        }
+
+        try {
+            return CANONICAL_JSON.writeValueAsString(value);
+        } catch (Exception ignored) {
+            String fallback = String.valueOf(value).trim();
+            return fallback.isEmpty() ? null : fallback;
+        }
+    }
+
+    private static Boolean resolveOpenAiThinkingEnabled(OpenAiChatRequest request) {
+        return request.getReasoning() == null ? null : Boolean.TRUE;
+    }
+
+    private static Long resolveOpenAiThinkingBudget(Object reasoning) {
+        if (!(reasoning instanceof Map<?, ?> map)) {
+            return null;
+        }
+        for (String key : List.of("budget_tokens", "thinking_budget", "thinkingBudget", "max_output_tokens")) {
+            Long resolved = coerceLong(map.get(key));
+            if (resolved != null) {
+                return resolved;
+            }
+        }
+        return null;
+    }
+
+    private static LinkedHashMap<String, Object> metadataWithThinkingBudget(Map<String, Object> metadata, Long thinkingBudget) {
+        LinkedHashMap<String, Object> out = new LinkedHashMap<>(metadata);
+        if (thinkingBudget != null) {
+            out.put(THINKING_BUDGET_METADATA_KEY, thinkingBudget);
+        }
+        return out;
+    }
+
+    private static Long coerceLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Long.parseLong(text.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public static final class OpenAiMessage {
         private String role = "user";
         private String content = "";
@@ -218,6 +306,16 @@ public final class OpenAiAdapter {
     public static final class OpenAiChatRequest {
         private String model = "";
         private String systemPrompt = "";
+        private Long maxCompletionTokens;
+        private Long maxTokens;
+        private Double temperature;
+        private Double topP;
+        private Object toolChoice;
+        private Object reasoning;
+        private Object thinking;
+        private Long maxOutputTokens;
+        private Object functionCallingMode;
+        private Object thinkingConfig;
         private final List<OpenAiMessage> messages = new ArrayList<>();
         private final List<ToolDefinition> tools = new ArrayList<>();
 
@@ -236,6 +334,96 @@ public final class OpenAiAdapter {
 
         public OpenAiChatRequest setSystemPrompt(String systemPrompt) {
             this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
+            return this;
+        }
+
+        public Long getMaxCompletionTokens() {
+            return maxCompletionTokens;
+        }
+
+        public OpenAiChatRequest setMaxCompletionTokens(Long maxCompletionTokens) {
+            this.maxCompletionTokens = maxCompletionTokens;
+            return this;
+        }
+
+        public Long getMaxTokens() {
+            return maxTokens;
+        }
+
+        public OpenAiChatRequest setMaxTokens(Long maxTokens) {
+            this.maxTokens = maxTokens;
+            return this;
+        }
+
+        public Double getTemperature() {
+            return temperature;
+        }
+
+        public OpenAiChatRequest setTemperature(Double temperature) {
+            this.temperature = temperature;
+            return this;
+        }
+
+        public Double getTopP() {
+            return topP;
+        }
+
+        public OpenAiChatRequest setTopP(Double topP) {
+            this.topP = topP;
+            return this;
+        }
+
+        public Object getToolChoice() {
+            return toolChoice;
+        }
+
+        public OpenAiChatRequest setToolChoice(Object toolChoice) {
+            this.toolChoice = toolChoice;
+            return this;
+        }
+
+        public Object getReasoning() {
+            return reasoning;
+        }
+
+        public OpenAiChatRequest setReasoning(Object reasoning) {
+            this.reasoning = reasoning;
+            return this;
+        }
+
+        public Object getThinking() {
+            return thinking;
+        }
+
+        public OpenAiChatRequest setThinking(Object thinking) {
+            this.thinking = thinking;
+            return this;
+        }
+
+        public Long getMaxOutputTokens() {
+            return maxOutputTokens;
+        }
+
+        public OpenAiChatRequest setMaxOutputTokens(Long maxOutputTokens) {
+            this.maxOutputTokens = maxOutputTokens;
+            return this;
+        }
+
+        public Object getFunctionCallingMode() {
+            return functionCallingMode;
+        }
+
+        public OpenAiChatRequest setFunctionCallingMode(Object functionCallingMode) {
+            this.functionCallingMode = functionCallingMode;
+            return this;
+        }
+
+        public Object getThinkingConfig() {
+            return thinkingConfig;
+        }
+
+        public OpenAiChatRequest setThinkingConfig(Object thinkingConfig) {
+            this.thinkingConfig = thinkingConfig;
             return this;
         }
 

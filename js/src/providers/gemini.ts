@@ -1,6 +1,8 @@
 import type { SigilClient } from '../client.js';
 import type { GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 
+const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
+
 /** Simplified Gemini message shape consumed by the helper. */
 export interface GeminiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -12,6 +14,11 @@ export interface GeminiMessage {
 export interface GeminiRequest {
   model: string;
   systemPrompt?: string;
+  maxOutputTokens?: number;
+  temperature?: number;
+  topP?: number;
+  functionCallingMode?: unknown;
+  thinkingConfig?: unknown;
   messages: GeminiMessage[];
   tools?: ToolDefinition[];
 }
@@ -64,9 +71,14 @@ export async function completion(
         name: request.model,
       },
       systemPrompt: request.systemPrompt,
+      maxTokens: request.maxOutputTokens,
+      temperature: request.temperature,
+      topP: request.topP,
+      toolChoice: canonicalToolChoice(request.functionCallingMode),
+      thinkingEnabled: geminiThinkingEnabled(request.thinkingConfig),
       tools: request.tools,
       tags: options.tags,
-      metadata: options.metadata,
+      metadata: metadataWithThinkingBudget(options.metadata, geminiThinkingBudget(request.thinkingConfig)),
     },
     async (recorder) => {
       const response = await providerCall(request);
@@ -97,9 +109,14 @@ export async function completionStream(
         name: request.model,
       },
       systemPrompt: request.systemPrompt,
+      maxTokens: request.maxOutputTokens,
+      temperature: request.temperature,
+      topP: request.topP,
+      toolChoice: canonicalToolChoice(request.functionCallingMode),
+      thinkingEnabled: geminiThinkingEnabled(request.thinkingConfig),
       tools: request.tools,
       tags: options.tags,
-      metadata: options.metadata,
+      metadata: metadataWithThinkingBudget(options.metadata, geminiThinkingBudget(request.thinkingConfig)),
     },
     async (recorder) => {
       const summary = await providerCall(request);
@@ -118,6 +135,11 @@ export function fromRequestResponse(
   const result: GenerationResult = {
     responseId: response.id,
     responseModel: response.model ?? request.model,
+    maxTokens: request.maxOutputTokens,
+    temperature: request.temperature,
+    topP: request.topP,
+    toolChoice: canonicalToolChoice(request.functionCallingMode),
+    thinkingEnabled: geminiThinkingEnabled(request.thinkingConfig),
     input: request.messages
       .filter((message) => message.role !== 'system')
       .map((message) => ({
@@ -134,7 +156,7 @@ export function fromRequestResponse(
     tools: request.tools,
     usage: response.usage,
     stopReason: response.stopReason,
-    metadata: options.metadata ? { ...options.metadata } : undefined,
+    metadata: metadataWithThinkingBudget(options.metadata, geminiThinkingBudget(request.thinkingConfig)),
     tags: options.tags ? { ...options.tags } : undefined,
   };
 
@@ -166,6 +188,11 @@ export function fromStream(
   const result: GenerationResult = {
     responseId: finalResponse?.id,
     responseModel: finalResponse?.model ?? request.model,
+    maxTokens: request.maxOutputTokens,
+    temperature: request.temperature,
+    topP: request.topP,
+    toolChoice: canonicalToolChoice(request.functionCallingMode),
+    thinkingEnabled: geminiThinkingEnabled(request.thinkingConfig),
     input: request.messages
       .filter((message) => message.role !== 'system')
       .map((message) => ({
@@ -182,7 +209,7 @@ export function fromStream(
     tools: request.tools,
     usage: finalResponse?.usage,
     stopReason: finalResponse?.stopReason,
-    metadata: options.metadata ? { ...options.metadata } : undefined,
+    metadata: metadataWithThinkingBudget(options.metadata, geminiThinkingBudget(request.thinkingConfig)),
     tags: options.tags ? { ...options.tags } : undefined,
   };
 
@@ -209,4 +236,97 @@ function normalizeRole(role: GeminiMessage['role']): Message['role'] {
     return role;
   }
   return 'user';
+}
+
+function geminiThinkingEnabled(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (isRecord(value) && typeof value.includeThoughts === 'boolean') {
+    return value.includeThoughts;
+  }
+  return undefined;
+}
+
+function geminiThinkingBudget(value: unknown): number | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const snakeCase = coerceInteger(value.thinking_budget);
+  if (snakeCase !== undefined) {
+    return snakeCase;
+  }
+  return coerceInteger(value.thinkingBudget);
+}
+
+function canonicalToolChoice(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+  if (isRecord(value) && 'value' in value) {
+    const normalized = String((value as { value: unknown }).value ?? '').trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+  try {
+    const encoded = JSON.stringify(value, objectKeySorter);
+    return encoded.length > 0 ? encoded : undefined;
+  } catch {
+    const normalized = String(value).trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+}
+
+function objectKeySorter(_key: string, value: unknown): unknown {
+  if (!isRecord(value) || Array.isArray(value)) {
+    return value;
+  }
+  const sorted = {} as Record<string, unknown>;
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = value[key];
+  }
+  return sorted;
+}
+
+function metadataWithThinkingBudget(
+  metadata: Record<string, unknown> | undefined,
+  thinkingBudget: number | undefined
+): Record<string, unknown> | undefined {
+  if (thinkingBudget === undefined) {
+    return metadata ? { ...metadata } : undefined;
+  }
+  const out = metadata ? { ...metadata } : {};
+  out[thinkingBudgetMetadataKey] = thinkingBudget;
+  return out;
+}
+
+function coerceInteger(value: unknown): number | undefined {
+  if (value === undefined || value === null || typeof value === 'boolean') {
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      return undefined;
+    }
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (normalized.length === 0) {
+      return undefined;
+    }
+    const parsed = Number.parseInt(normalized, 10);
+    if (Number.isNaN(parsed)) {
+      return undefined;
+    }
+    return parsed;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

@@ -18,6 +18,9 @@ public sealed class OpenAIMappingAndRecorderTests
         };
 
         var options = new ChatCompletionOptions();
+        options.MaxOutputTokenCount = 512;
+        options.ToolChoice = ChatToolChoice.CreateFunctionChoice("weather");
+        options.ReasoningEffortLevel = ChatReasoningEffortLevel.High;
         options.Tools.Add(ChatTool.CreateFunctionTool(
             "weather",
             "Get weather",
@@ -64,6 +67,9 @@ public sealed class OpenAIMappingAndRecorderTests
         Assert.Equal("You are concise.", generation.SystemPrompt);
         Assert.Equal("chatcmpl_1", generation.ResponseId);
         Assert.Equal("tool_calls", generation.StopReason);
+        Assert.Equal(512, generation.MaxTokens);
+        Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(generation.ThinkingEnabled);
         Assert.Equal(162, generation.Usage.TotalTokens);
         Assert.Equal(8, generation.Usage.CacheReadInputTokens);
         Assert.Equal(5, generation.Usage.ReasoningTokens);
@@ -81,6 +87,9 @@ public sealed class OpenAIMappingAndRecorderTests
         };
 
         var options = new ChatCompletionOptions();
+        options.MaxOutputTokenCount = 256;
+        options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
+        options.ReasoningEffortLevel = ChatReasoningEffortLevel.Medium;
         options.Tools.Add(ChatTool.CreateFunctionTool("weather"));
 
         var response = OpenAIChatModelFactory.ChatCompletion(
@@ -112,6 +121,9 @@ public sealed class OpenAIMappingAndRecorderTests
         };
 
         var options = new ChatCompletionOptions();
+        options.MaxOutputTokenCount = 256;
+        options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
+        options.ReasoningEffortLevel = ChatReasoningEffortLevel.Medium;
         options.Tools.Add(ChatTool.CreateFunctionTool("weather"));
 
         var summary = new OpenAIStreamSummary();
@@ -148,6 +160,9 @@ public sealed class OpenAIMappingAndRecorderTests
         Assert.Equal(GenerationMode.Stream, generation.Mode);
         Assert.Equal("chatcmpl_stream_1", generation.ResponseId);
         Assert.Equal("tool_calls", generation.StopReason);
+        Assert.Equal(256, generation.MaxTokens);
+        Assert.Contains("required", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(generation.ThinkingEnabled);
         Assert.Equal(25, generation.Usage.TotalTokens);
     }
 

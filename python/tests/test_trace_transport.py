@@ -102,9 +102,21 @@ def test_sdk_trace_export_over_http() -> None:
                 agent_name="trace-agent-http",
                 agent_version="trace-v-http",
                 model=ModelRef(provider="openai", name="gpt-5"),
+                max_tokens=512,
+                temperature=0.6,
+                top_p=0.9,
+                tool_choice="auto",
+                thinking_enabled=True,
             )
         )
         rec.set_result(
+            stop_reason="end_turn",
+            max_tokens=256,
+            temperature=0.25,
+            top_p=0.95,
+            tool_choice="required",
+            thinking_enabled=False,
+            metadata={"sigil.gen_ai.request.thinking.budget_tokens": 2048},
             output=[
                 Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="hi")]),
             ]
@@ -154,9 +166,16 @@ def test_sdk_trace_export_over_grpc() -> None:
                 agent_name="trace-agent-grpc",
                 agent_version="trace-v-grpc",
                 model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.85,
+                tool_choice="auto",
+                thinking_enabled=True,
             )
         )
         rec.set_result(
+            stop_reason="stop",
+            metadata={"sigil.gen_ai.request.thinking.budget_tokens": 1024},
             output=[
                 Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="hi")]),
             ]
@@ -273,7 +292,7 @@ def _assert_trace_request_for_generation(request, generation) -> None:
 
     assert span is not None
 
-    attrs = _attr_string_map(span.attributes)
+    attrs = _attr_value_map(span.attributes)
     assert attrs.get("sigil.generation.id") == generation.id
     assert attrs.get("gen_ai.conversation.id") == generation.conversation_id
     assert attrs.get("gen_ai.agent.name") == generation.agent_name
@@ -281,11 +300,38 @@ def _assert_trace_request_for_generation(request, generation) -> None:
     assert attrs.get("gen_ai.provider.name") == generation.model.provider
     assert attrs.get("gen_ai.request.model") == generation.model.name
     assert attrs.get("gen_ai.operation.name") == generation.operation_name
+    if generation.max_tokens is not None:
+        assert attrs.get("gen_ai.request.max_tokens") == generation.max_tokens
+    if generation.temperature is not None:
+        assert attrs.get("gen_ai.request.temperature") == generation.temperature
+    if generation.top_p is not None:
+        assert attrs.get("gen_ai.request.top_p") == generation.top_p
+    if generation.tool_choice:
+        assert attrs.get("sigil.gen_ai.request.tool_choice") == generation.tool_choice
+    if generation.thinking_enabled is not None:
+        assert attrs.get("sigil.gen_ai.request.thinking.enabled") == generation.thinking_enabled
+    if generation.metadata and "sigil.gen_ai.request.thinking.budget_tokens" in generation.metadata:
+        assert attrs.get("sigil.gen_ai.request.thinking.budget_tokens") == generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"]
+    if generation.stop_reason:
+        assert attrs.get("gen_ai.response.finish_reasons") == [generation.stop_reason]
 
 
-def _attr_string_map(attrs) -> dict[str, str]:
-    out = {}
+def _attr_value_map(attrs) -> dict[str, object]:
+    out: dict[str, object] = {}
     for kv in attrs:
-        if kv.value.HasField("string_value"):
-            out[kv.key] = kv.value.string_value
+        out[kv.key] = _any_value(kv.value)
     return out
+
+
+def _any_value(value):
+    if value.HasField("string_value"):
+        return value.string_value
+    if value.HasField("int_value"):
+        return value.int_value
+    if value.HasField("double_value"):
+        return value.double_value
+    if value.HasField("bool_value"):
+        return value.bool_value
+    if value.HasField("array_value"):
+        return [_any_value(item) for item in value.array_value.values]
+    return None

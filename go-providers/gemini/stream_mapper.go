@@ -25,6 +25,7 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 
 	options := applyOptions(opts)
 	input := mapContents(req.Contents)
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req.Config)
 	output := make([]sigil.Message, 0, len(summary.Responses))
 	stopReason := ""
 	usage := sigil.TokenUsage{}
@@ -76,21 +77,26 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 	}
 
 	generation := sigil.Generation{
-		ConversationID: options.conversationID,
-		AgentName:      options.agentName,
-		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
-		ResponseID:     responseID,
-		ResponseModel:  responseModel,
-		SystemPrompt:   extractSystemPrompt(req.Config),
-		Input:          input,
-		Output:         output,
-		Tools:          mapTools(req.Config),
-		Usage:          usage,
-		StopReason:     stopReason,
-		Tags:           cloneStringMap(options.tags),
-		Metadata:       cloneAnyMap(options.metadata),
-		Artifacts:      artifacts,
+		ConversationID:  options.conversationID,
+		AgentName:       options.agentName,
+		AgentVersion:    options.agentVersion,
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: req.Model},
+		ResponseID:      responseID,
+		ResponseModel:   responseModel,
+		SystemPrompt:    extractSystemPrompt(req.Config),
+		Input:           input,
+		Output:          output,
+		Tools:           mapTools(req.Config),
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		TopP:            topP,
+		ToolChoice:      toolChoice,
+		ThinkingEnabled: thinkingEnabled,
+		Usage:           usage,
+		StopReason:      stopReason,
+		Tags:            cloneStringMap(options.tags),
+		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Artifacts:       artifacts,
 	}
 
 	if err := generation.Validate(); err != nil {

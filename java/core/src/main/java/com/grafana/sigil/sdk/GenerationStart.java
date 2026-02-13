@@ -16,6 +16,11 @@ public final class GenerationStart {
     private String operationName = "";
     private ModelRef model = new ModelRef();
     private String systemPrompt = "";
+    private Long maxTokens;
+    private Double temperature;
+    private Double topP;
+    private String toolChoice = "";
+    private Boolean thinkingEnabled;
     private final List<ToolDefinition> tools = new ArrayList<>();
     private final Map<String, String> tags = new LinkedHashMap<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
@@ -93,6 +98,51 @@ public final class GenerationStart {
         return this;
     }
 
+    public Long getMaxTokens() {
+        return maxTokens;
+    }
+
+    public GenerationStart setMaxTokens(Long maxTokens) {
+        this.maxTokens = maxTokens;
+        return this;
+    }
+
+    public Double getTemperature() {
+        return temperature;
+    }
+
+    public GenerationStart setTemperature(Double temperature) {
+        this.temperature = temperature;
+        return this;
+    }
+
+    public Double getTopP() {
+        return topP;
+    }
+
+    public GenerationStart setTopP(Double topP) {
+        this.topP = topP;
+        return this;
+    }
+
+    public String getToolChoice() {
+        return toolChoice;
+    }
+
+    public GenerationStart setToolChoice(String toolChoice) {
+        this.toolChoice = toolChoice == null ? "" : toolChoice;
+        return this;
+    }
+
+    public Boolean getThinkingEnabled() {
+        return thinkingEnabled;
+    }
+
+    public GenerationStart setThinkingEnabled(Boolean thinkingEnabled) {
+        this.thinkingEnabled = thinkingEnabled;
+        return this;
+    }
+
     public List<ToolDefinition> getTools() {
         return tools;
     }
@@ -148,6 +198,11 @@ public final class GenerationStart {
                 .setOperationName(operationName)
                 .setModel(model.copy())
                 .setSystemPrompt(systemPrompt)
+                .setMaxTokens(maxTokens)
+                .setTemperature(temperature)
+                .setTopP(topP)
+                .setToolChoice(toolChoice)
+                .setThinkingEnabled(thinkingEnabled)
                 .setStartedAt(startedAt);
         for (ToolDefinition tool : tools) {
             out.getTools().add(tool == null ? new ToolDefinition() : tool.copy());

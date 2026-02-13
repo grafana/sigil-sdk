@@ -135,4 +135,9 @@ message Generation {
   string call_error = 21;
   string agent_name = 22;
   string agent_version = 23;
+  optional int64 max_tokens = 24;
+  optional double temperature = 25;
+  optional double top_p = 26;
+  optional string tool_choice = 27;
+  optional bool thinking_enabled = 28;
 }

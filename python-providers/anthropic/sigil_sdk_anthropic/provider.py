@@ -22,6 +22,8 @@ from sigil_sdk import (
     ToolDefinition,
 )
 
+_thinking_budget_metadata_key = "sigil.gen_ai.request.thinking.budget_tokens"
+
 
 @dataclass(slots=True)
 class AnthropicMessage:
@@ -39,6 +41,11 @@ class AnthropicRequest:
     model: str
     messages: list[AnthropicMessage]
     system_prompt: str = ""
+    max_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    tool_choice: Any = None
+    thinking: Any = None
     tools: list[ToolDefinition] = field(default_factory=list)
 
 
@@ -180,6 +187,7 @@ def from_request_response(
     """Maps Anthropic request/response payloads into a normalized generation."""
 
     opts = options or AnthropicOptions()
+    metadata = _metadata_with_thinking_budget(opts.metadata, _anthropic_thinking_budget(request.thinking))
     generation = Generation(
         conversation_id=opts.conversation_id,
         agent_name=opts.agent_name,
@@ -189,13 +197,18 @@ def from_request_response(
         response_id=response.id,
         response_model=response.model or request.model,
         system_prompt=request.system_prompt,
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        tool_choice=_canonical_tool_choice(request.tool_choice),
+        thinking_enabled=_anthropic_thinking_enabled(request.thinking),
         input=_map_input_messages(request.messages),
         output=[_assistant_text_message(response.output_text)],
         tools=copy.deepcopy(request.tools),
         usage=copy.deepcopy(response.usage),
         stop_reason=response.stop_reason,
         tags=dict(opts.tags),
-        metadata=dict(opts.metadata),
+        metadata=metadata,
     )
 
     if opts.raw_artifacts:
@@ -234,6 +247,7 @@ def from_stream(
     """Maps Anthropic stream summary into a normalized generation."""
 
     opts = options or AnthropicOptions()
+    metadata = _metadata_with_thinking_budget(opts.metadata, _anthropic_thinking_budget(request.thinking))
     if summary.final_response is not None:
         generation = from_request_response(request, summary.final_response, opts)
         generation.mode = GenerationMode.STREAM
@@ -246,11 +260,16 @@ def from_stream(
             model=ModelRef(provider=opts.provider_name, name=request.model),
             response_model=request.model,
             system_prompt=request.system_prompt,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            tool_choice=_canonical_tool_choice(request.tool_choice),
+            thinking_enabled=_anthropic_thinking_enabled(request.thinking),
             input=_map_input_messages(request.messages),
             output=[_assistant_text_message(summary.output_text)],
             tools=copy.deepcopy(request.tools),
             tags=dict(opts.tags),
-            metadata=dict(opts.metadata),
+            metadata=metadata,
         )
 
     if generation.output:
@@ -312,6 +331,7 @@ def _start_payload(
     options: AnthropicOptions,
     mode: GenerationMode,
 ) -> GenerationStart:
+    metadata = _metadata_with_thinking_budget(options.metadata, _anthropic_thinking_budget(request.thinking))
     return GenerationStart(
         conversation_id=options.conversation_id,
         agent_name=options.agent_name,
@@ -319,11 +339,91 @@ def _start_payload(
         mode=mode,
         model=ModelRef(provider=options.provider_name, name=request.model),
         system_prompt=request.system_prompt,
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        tool_choice=_canonical_tool_choice(request.tool_choice),
+        thinking_enabled=_anthropic_thinking_enabled(request.thinking),
         tools=copy.deepcopy(request.tools),
         tags=dict(options.tags),
-        metadata=dict(options.metadata),
+        metadata=metadata,
     )
 
 
 def _json_bytes(payload: Any) -> bytes:
     return json.dumps(payload, default=str, separators=(",", ":")).encode("utf-8")
+
+
+def _anthropic_thinking_enabled(thinking: Any) -> bool | None:
+    if thinking is None:
+        return None
+    if isinstance(thinking, bool):
+        return thinking
+    if isinstance(thinking, dict):
+        if "enabled" in thinking and isinstance(thinking["enabled"], bool):
+            return thinking["enabled"]
+        candidate = thinking.get("type") or thinking.get("mode")
+        if isinstance(candidate, str):
+            normalized = candidate.strip().lower()
+            if normalized in {"enabled", "adaptive"}:
+                return True
+            if normalized == "disabled":
+                return False
+        return None
+    normalized = str(thinking).strip().lower()
+    if normalized in {"enabled", "adaptive"}:
+        return True
+    if normalized == "disabled":
+        return False
+    return None
+
+
+def _anthropic_thinking_budget(thinking: Any) -> int | None:
+    if not isinstance(thinking, dict):
+        return None
+    return _coerce_int(thinking.get("budget_tokens"))
+
+
+def _canonical_tool_choice(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized or None
+    if hasattr(value, "value"):
+        normalized = str(value.value).strip().lower()
+        return normalized or None
+    try:
+        encoded = json.dumps(value, default=str, separators=(",", ":"), sort_keys=True)
+    except Exception:  # noqa: BLE001
+        normalized = str(value).strip().lower()
+        return normalized or None
+    return encoded if encoded != "" else None
+
+
+def _metadata_with_thinking_budget(metadata: dict[str, Any], thinking_budget: int | None) -> dict[str, Any]:
+    out = dict(metadata)
+    if thinking_budget is not None:
+        out[_thinking_budget_metadata_key] = thinking_budget
+    return out
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        integer = int(value)
+        if float(integer) == value:
+            return integer
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text == "":
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+    return None

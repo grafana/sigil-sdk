@@ -195,6 +195,11 @@ export interface GenerationStart {
   operationName?: string;
   model: ModelRef;
   systemPrompt?: string;
+  maxTokens?: number;
+  temperature?: number;
+  topP?: number;
+  toolChoice?: string;
+  thinkingEnabled?: boolean;
   tools?: ToolDefinition[];
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
@@ -209,6 +214,11 @@ export interface GenerationResult {
   operationName?: string;
   responseId?: string;
   responseModel?: string;
+  maxTokens?: number;
+  temperature?: number;
+  topP?: number;
+  toolChoice?: string;
+  thinkingEnabled?: boolean;
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];
@@ -234,6 +244,11 @@ export interface Generation {
   systemPrompt?: string;
   responseId?: string;
   responseModel?: string;
+  maxTokens?: number;
+  temperature?: number;
+  topP?: number;
+  toolChoice?: string;
+  thinkingEnabled?: boolean;
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];

@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Builder;
@@ -121,23 +123,39 @@ public sealed class TraceTransportTests
             .Select(item => new
             {
                 Span = item,
-                Attributes = TraceAssertions.AttributeStringMap(item.Attributes),
+                Attributes = TraceAssertions.AttributeValueMap(item.Attributes),
             })
             .FirstOrDefault(item =>
                 item.Attributes.TryGetValue("sigil.generation.id", out var generationId)
-                && string.Equals(generationId, generation.Id, StringComparison.Ordinal)
+                && string.Equals(generationId as string, generation.Id, StringComparison.Ordinal)
             );
 
         Assert.NotNull(span);
         var attrs = span!.Attributes;
 
-        Assert.Equal(generation.Id, attrs["sigil.generation.id"]);
-        Assert.Equal(generation.ConversationId, attrs["gen_ai.conversation.id"]);
-        Assert.Equal(generation.AgentName, attrs["gen_ai.agent.name"]);
-        Assert.Equal(generation.AgentVersion, attrs["gen_ai.agent.version"]);
-        Assert.Equal(generation.Model.Provider, attrs["gen_ai.provider.name"]);
-        Assert.Equal(generation.Model.Name, attrs["gen_ai.request.model"]);
-        Assert.Equal(generation.OperationName, attrs["gen_ai.operation.name"]);
+        Assert.Equal(generation.Id, attrs["sigil.generation.id"] as string);
+        Assert.Equal(generation.ConversationId, attrs["gen_ai.conversation.id"] as string);
+        Assert.Equal(generation.AgentName, attrs["gen_ai.agent.name"] as string);
+        Assert.Equal(generation.AgentVersion, attrs["gen_ai.agent.version"] as string);
+        Assert.Equal(generation.Model.Provider, attrs["gen_ai.provider.name"] as string);
+        Assert.Equal(generation.Model.Name, attrs["gen_ai.request.model"] as string);
+        Assert.Equal(generation.OperationName, attrs["gen_ai.operation.name"] as string);
+        Assert.Equal(generation.MaxTokens, attrs["gen_ai.request.max_tokens"] as long?);
+        Assert.Equal(generation.Temperature, attrs["gen_ai.request.temperature"] as double?);
+        Assert.Equal(generation.TopP, attrs["gen_ai.request.top_p"] as double?);
+        Assert.Equal(generation.ToolChoice, attrs["sigil.gen_ai.request.tool_choice"] as string);
+        Assert.Equal(generation.ThinkingEnabled, attrs["sigil.gen_ai.request.thinking.enabled"] as bool?);
+        if (generation.Metadata.TryGetValue("sigil.gen_ai.request.thinking.budget_tokens", out var thinkingBudget))
+        {
+            var expectedThinkingBudget = thinkingBudget switch
+            {
+                JsonElement json when json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,
+                IConvertible convertible => Convert.ToInt64(convertible, CultureInfo.InvariantCulture),
+                _ => throw new InvalidOperationException("unexpected thinking budget metadata type"),
+            };
+            Assert.Equal(expectedThinkingBudget, attrs["sigil.gen_ai.request.thinking.budget_tokens"] as long?);
+        }
+        Assert.Equal(new List<object?> { generation.StopReason }, attrs["gen_ai.response.finish_reasons"] as List<object?>);
 
         Assert.DoesNotContain("sigil.generation.mode", attrs.Keys);
 

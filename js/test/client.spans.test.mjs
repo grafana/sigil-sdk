@@ -26,6 +26,11 @@ test('generation result fields override seed and update span operation name', as
       conversationId: 'conv-seed',
       agentName: 'agent-seed',
       agentVersion: 'v-seed',
+      maxTokens: 512,
+      temperature: 0.7,
+      topP: 0.9,
+      toolChoice: 'auto',
+      thinkingEnabled: true,
       model: { provider: 'openai', name: 'gpt-5' },
     });
     recorder.setResult({
@@ -33,6 +38,13 @@ test('generation result fields override seed and update span operation name', as
       agentName: 'agent-result',
       agentVersion: 'v-result',
       operationName: 'text_completion',
+      maxTokens: 256,
+      temperature: 0.2,
+      topP: 0.85,
+      toolChoice: 'required',
+      thinkingEnabled: false,
+      metadata: { 'sigil.gen_ai.request.thinking.budget_tokens': 4096 },
+      stopReason: 'end_turn',
       output: [{ role: 'assistant', content: 'ok' }],
     });
     recorder.end();
@@ -43,6 +55,11 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(generation.agentName, 'agent-result');
     assert.equal(generation.agentVersion, 'v-result');
     assert.equal(generation.operationName, 'text_completion');
+    assert.equal(generation.maxTokens, 256);
+    assert.equal(generation.temperature, 0.2);
+    assert.equal(generation.topP, 0.85);
+    assert.equal(generation.toolChoice, 'required');
+    assert.equal(generation.thinkingEnabled, false);
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(span.name, 'text_completion gpt-5');
@@ -50,6 +67,13 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(span.attributes['gen_ai.conversation.id'], 'conv-result');
     assert.equal(span.attributes['gen_ai.agent.name'], 'agent-result');
     assert.equal(span.attributes['gen_ai.agent.version'], 'v-result');
+    assert.equal(span.attributes['gen_ai.request.max_tokens'], 256);
+    assert.equal(span.attributes['gen_ai.request.temperature'], 0.2);
+    assert.equal(span.attributes['gen_ai.request.top_p'], 0.85);
+    assert.equal(span.attributes['sigil.gen_ai.request.tool_choice'], 'required');
+    assert.equal(span.attributes['sigil.gen_ai.request.thinking.enabled'], false);
+    assert.equal(span.attributes['sigil.gen_ai.request.thinking.budget_tokens'], 4096);
+    assert.deepEqual(span.attributes['gen_ai.response.finish_reasons'], ['end_turn']);
   } finally {
     await shutdownHarness(harness);
   }
