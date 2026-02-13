@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	osdk "github.com/openai/openai-go"
-	"github.com/openai/openai-go/shared"
+	osdk "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
@@ -188,10 +188,14 @@ func mapAssistantParamParts(message *osdk.ChatCompletionAssistantMessageParam) [
 		}
 	}
 	for _, call := range message.ToolCalls {
+		function := call.GetFunction()
+		if function == nil {
+			continue
+		}
 		part := sigil.ToolCallPart(sigil.ToolCall{
-			ID:        call.ID,
-			Name:      call.Function.Name,
-			InputJSON: parseJSONOrString(call.Function.Arguments),
+			ID:        strings.TrimSpace(derefString(call.GetID())),
+			Name:      function.Name,
+			InputJSON: parseJSONOrString(function.Arguments),
 		})
 		part.Metadata.ProviderType = "tool_call"
 		parts = append(parts, part)
@@ -243,26 +247,32 @@ func mapFunctionMessage(message *osdk.ChatCompletionFunctionMessageParam) *sigil
 	return &part
 }
 
-func mapTools(tools []osdk.ChatCompletionToolParam) []sigil.ToolDefinition {
+func mapTools(tools []osdk.ChatCompletionToolUnionParam) []sigil.ToolDefinition {
 	if len(tools) == 0 {
 		return nil
 	}
 
 	out := make([]sigil.ToolDefinition, 0, len(tools))
 	for i := range tools {
-		name := tools[i].Function.Name
+		function := tools[i].GetFunction()
+		if function == nil {
+			continue
+		}
+		name := function.Name
 		if strings.TrimSpace(name) == "" {
 			continue
 		}
 
 		definition := sigil.ToolDefinition{
 			Name: name,
-			Type: string(tools[i].Type),
 		}
-		if tools[i].Function.Description.Valid() {
-			definition.Description = tools[i].Function.Description.Value
+		if toolType := tools[i].GetType(); toolType != nil {
+			definition.Type = *toolType
 		}
-		if schema := marshalFunctionSchema(tools[i].Function); len(schema) > 0 {
+		if function.Description.Valid() {
+			definition.Description = function.Description.Value
+		}
+		if schema := marshalFunctionSchema(*function); len(schema) > 0 {
 			definition.InputSchema = schema
 		}
 		out = append(out, definition)
