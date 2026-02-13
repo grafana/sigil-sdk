@@ -1,0 +1,86 @@
+package com.grafana.sigil.sdk;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import java.time.Duration;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class SigilClientSpansTest {
+    @Test
+    void generationSpanHasRequiredAttributesAndErrorTyping() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        SdkTracerProvider provider = SdkTracerProvider.builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                .build();
+
+        TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(provider.get("test"))
+                .setGenerationExporter(exporter)
+                .setGenerationExport(new GenerationExportConfig()
+                        .setBatchSize(1)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            GenerationRecorder recorder = client.startGeneration(TestFixtures.startFixture());
+            recorder.setResult(TestFixtures.resultFixture());
+            recorder.setCallError(new RuntimeException("provider exploded"));
+            recorder.end();
+        }
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans).hasSize(1);
+        SpanData span = spans.get(0);
+        assertThat(span.getName()).startsWith("streamText ");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_PROVIDER_NAME))).isEqualTo("anthropic");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_REQUEST_MODEL))).isEqualTo("claude-sonnet-4-5");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_ERROR_TYPE))).isEqualTo("provider_call_error");
+        assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+
+        provider.shutdown();
+    }
+
+    @Test
+    void toolSpanNameAndAttributesMatchContract() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        SdkTracerProvider provider = SdkTracerProvider.builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                .build();
+
+        TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(provider.get("test"))
+                .setGenerationExporter(exporter)
+                .setGenerationExport(new GenerationExportConfig()
+                        .setBatchSize(100)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            ToolExecutionRecorder recorder = client.startToolExecution(new ToolExecutionStart()
+                    .setToolName("weather")
+                    .setToolCallId("call-1")
+                    .setToolType("function")
+                    .setToolDescription("Get weather"));
+            recorder.setResult(new ToolExecutionResult().setArguments(java.util.Map.of("city", "Paris")).setResult("18C"));
+            recorder.end();
+        }
+
+        List<SpanData> spans = spanExporter.getFinishedSpanItems();
+        assertThat(spans).hasSize(1);
+        SpanData span = spans.get(0);
+        assertThat(span.getName()).isEqualTo("execute_tool weather");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_NAME))).isEqualTo("weather");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_CALL_ID))).isEqualTo("call-1");
+
+        provider.shutdown();
+    }
+}

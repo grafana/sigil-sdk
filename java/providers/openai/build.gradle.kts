@@ -1,0 +1,12 @@
+plugins {
+    `java-library`
+}
+
+dependencies {
+    api(project(":core"))
+    compileOnly(libs.openai.java)
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+}
