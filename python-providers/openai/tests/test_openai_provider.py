@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -9,15 +10,11 @@ import pytest
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig, TraceConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_openai import (
-    OpenAIChatRequest,
-    OpenAIChatResponse,
-    OpenAIMessage,
+    ChatCompletionsStreamSummary,
     OpenAIOptions,
-    OpenAIStreamSummary,
-    chat_completion,
-    chat_completion_stream,
-    from_request_response,
-    from_stream,
+    ResponsesStreamSummary,
+    chat,
+    responses,
 )
 
 
@@ -48,46 +45,80 @@ def _new_client(exporter):
     )
 
 
-def test_openai_sync_wrapper_sets_sync_mode_and_raw_artifacts_default_off() -> None:
+def test_chat_sync_wrapper_sets_sync_mode_and_raw_artifacts_default_off() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
 
     try:
-        response = chat_completion(
+        response = chat.completions.create(
             client,
-            OpenAIChatRequest(
-                model="gpt-5",
-                system_prompt="you are concise",
-                messages=[
-                    OpenAIMessage(role="system", content="system"),
-                    OpenAIMessage(role="user", content="hello"),
+            {
+                "model": "gpt-5",
+                "max_completion_tokens": 320,
+                "reasoning": {"effort": "high", "max_output_tokens": 1024},
+                "messages": [
+                    {"role": "system", "content": "system"},
+                    {"role": "user", "content": "hello"},
                 ],
-            ),
-            lambda _request: OpenAIChatResponse(id="resp-1", output_text="world"),
+            },
+            lambda _request: {
+                "id": "resp-1",
+                "model": "gpt-5",
+                "object": "chat.completion",
+                "created": 0,
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "world"},
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15,
+                    "prompt_tokens_details": {"cached_tokens": 1},
+                    "completion_tokens_details": {"reasoning_tokens": 2},
+                },
+            },
         )
-        assert response.output_text == "world"
+        assert response["id"] == "resp-1"
 
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.mode.value == "SYNC"
         assert generation.model.provider == "openai"
+        assert generation.max_tokens == 320
+        assert generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1024
         assert generation.artifacts == []
     finally:
         client.shutdown()
 
 
-def test_openai_stream_wrapper_sets_stream_mode_and_opt_in_artifacts() -> None:
+def test_chat_stream_wrapper_sets_stream_mode_and_opt_in_artifacts() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
 
     try:
-        summary = chat_completion_stream(
+        summary = chat.completions.stream(
             client,
-            OpenAIChatRequest(
-                model="gpt-5",
-                messages=[OpenAIMessage(role="user", content="hello")],
+            {
+                "model": "gpt-5",
+                "stream": True,
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            lambda _request: ChatCompletionsStreamSummary(
+                output_text="stream-output",
+                events=[
+                    {
+                        "id": "chunk-1",
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": "gpt-5",
+                        "choices": [{"index": 0, "delta": {"content": "stream-output"}}],
+                    }
+                ],
             ),
-            lambda _request: OpenAIStreamSummary(output_text="stream-output", chunks=[{"delta": "x"}]),
             OpenAIOptions(raw_artifacts=True),
         )
         assert summary.output_text == "stream-output"
@@ -100,44 +131,201 @@ def test_openai_stream_wrapper_sets_stream_mode_and_opt_in_artifacts() -> None:
         client.shutdown()
 
 
-def test_openai_wrapper_propagates_provider_error_and_sets_call_error() -> None:
+def test_responses_sync_wrapper_sets_sync_mode_and_maps_contract_fields() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
 
     try:
-        with pytest.raises(RuntimeError, match="provider failure"):
-            chat_completion(
-                client,
-                OpenAIChatRequest(model="gpt-5", messages=[OpenAIMessage(role="user", content="hello")]),
-                lambda _request: (_ for _ in ()).throw(RuntimeError("provider failure")),
-            )
+        response = responses.create(
+            client,
+            {
+                "model": "gpt-5",
+                "instructions": "be concise",
+                "input": [
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "hello"}],
+                    }
+                ],
+                "max_output_tokens": 256,
+                "temperature": 0.2,
+                "top_p": 0.8,
+                "tool_choice": {"type": "function", "name": "weather"},
+                "reasoning": {"effort": "high", "max_output_tokens": 512},
+            },
+            lambda _request: {
+                "id": "resp-sync",
+                "object": "response",
+                "model": "gpt-5",
+                "status": "completed",
+                "output": [
+                    {
+                        "id": "msg-1",
+                        "type": "message",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": "world", "annotations": []}],
+                    }
+                ],
+                "parallel_tool_calls": False,
+                "temperature": 1,
+                "top_p": 1,
+                "tools": [],
+                "created_at": 0,
+                "incomplete_details": None,
+                "metadata": {},
+                "error": None,
+                "usage": {
+                    "input_tokens": 20,
+                    "output_tokens": 5,
+                    "total_tokens": 25,
+                    "input_tokens_details": {"cached_tokens": 2},
+                    "output_tokens_details": {"reasoning_tokens": 3},
+                },
+            },
+        )
 
+        assert response["id"] == "resp-sync"
         client.flush()
         generation = exporter.requests[0].generations[0]
+        assert generation.mode.value == "SYNC"
         assert generation.model.provider == "openai"
-        assert generation.call_error == "provider failure"
+        assert generation.max_tokens == 256
+        assert generation.temperature == 0.2
+        assert generation.top_p == 0.8
+        assert generation.stop_reason == "stop"
+        assert generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 512
+        assert generation.artifacts == []
     finally:
         client.shutdown()
 
 
-def test_openai_mappers_filter_system_messages_and_support_raw_artifacts() -> None:
-    request = OpenAIChatRequest(
-        model="gpt-5",
-        max_completion_tokens=320,
-        max_tokens=999,
-        temperature=0.2,
-        top_p=0.85,
-        tool_choice={"type": "function", "name": "weather"},
-        reasoning={"effort": "high", "max_output_tokens": 2048},
-        messages=[
-            OpenAIMessage(role="system", content="system"),
-            OpenAIMessage(role="user", content="hello"),
-            OpenAIMessage(role="tool", content='{"ok":true}', name="tool-weather"),
-        ],
-    )
-    response = OpenAIChatResponse(id="resp-openai", output_text="world", stop_reason="stop")
+def test_responses_stream_wrapper_maps_events_and_opt_in_artifacts() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
 
-    mapped_default = from_request_response(request, response)
+    try:
+        summary = responses.stream(
+            client,
+            {
+                "model": "gpt-5",
+                "stream": True,
+                "input": "stream this",
+                "max_output_tokens": 128,
+            },
+            lambda _request: ResponsesStreamSummary(
+                events=[
+                    {
+                        "type": "response.output_text.delta",
+                        "sequence_number": 1,
+                        "output_index": 0,
+                        "item_id": "msg-1",
+                        "content_index": 0,
+                        "delta": "hello",
+                    },
+                    {
+                        "type": "response.output_text.delta",
+                        "sequence_number": 2,
+                        "output_index": 0,
+                        "item_id": "msg-1",
+                        "content_index": 0,
+                        "delta": " world",
+                    },
+                ]
+            ),
+            OpenAIOptions(raw_artifacts=True),
+        )
+
+        assert len(summary.events) == 2
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.mode.value == "STREAM"
+        assert generation.output[0].parts[0].text == "hello world"
+        assert [artifact.kind.value for artifact in generation.artifacts] == ["request", "provider_event"]
+    finally:
+        client.shutdown()
+
+
+def test_openai_wrappers_propagate_provider_error_and_set_call_error() -> None:
+    for run in (
+        lambda client: chat.completions.create(
+            client,
+            {"model": "gpt-5", "messages": [{"role": "user", "content": "hello"}]},
+            lambda _request: (_ for _ in ()).throw(RuntimeError("provider failure chat")),
+        ),
+        lambda client: responses.create(
+            client,
+            {"model": "gpt-5", "input": "hello"},
+            lambda _request: (_ for _ in ()).throw(RuntimeError("provider failure responses")),
+        ),
+    ):
+        exporter = _CapturingExporter()
+        client = _new_client(exporter)
+
+        try:
+            with pytest.raises(RuntimeError, match="provider failure"):
+                run(client)
+
+            client.flush()
+            generation = exporter.requests[0].generations[0]
+            assert generation.model.provider == "openai"
+            assert "provider failure" in generation.call_error
+        finally:
+            client.shutdown()
+
+
+def test_chat_mapper_filters_system_messages_and_supports_raw_artifacts() -> None:
+    request = {
+        "model": "gpt-5",
+        "max_completion_tokens": 320,
+        "max_tokens": 999,
+        "temperature": 0.2,
+        "top_p": 0.85,
+        "tool_choice": {"type": "function", "function": {"name": "weather"}},
+        "reasoning": {"effort": "high", "max_output_tokens": 2048},
+        "messages": [
+            {"role": "system", "content": "system"},
+            {"role": "developer", "content": "developer"},
+            {"role": "user", "content": "hello"},
+            {"role": "tool", "content": '{"ok":true}', "name": "tool-weather"},
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "weather",
+                    "description": "lookup weather",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+    }
+    response = {
+        "id": "resp-openai",
+        "model": "gpt-5",
+        "object": "chat.completion",
+        "created": 0,
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": "world",
+                    "tool_calls": [
+                        {
+                            "id": "call_weather",
+                            "type": "function",
+                            "function": {"name": "weather", "arguments": '{"city":"Paris"}'},
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+    mapped_default = chat.completions.from_request_response(request, response)
     assert mapped_default.response_model == "gpt-5"
     assert len(mapped_default.input) == 2
     assert mapped_default.input[0].role.value == "user"
@@ -145,36 +333,163 @@ def test_openai_mappers_filter_system_messages_and_support_raw_artifacts() -> No
     assert mapped_default.max_tokens == 320
     assert mapped_default.temperature == 0.2
     assert mapped_default.top_p == 0.85
-    assert mapped_default.tool_choice == '{"name":"weather","type":"function"}'
     assert mapped_default.thinking_enabled is True
     assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
     assert mapped_default.artifacts == []
 
-    mapped_with_artifacts = from_request_response(request, response, OpenAIOptions(raw_artifacts=True))
-    assert [artifact.kind.value for artifact in mapped_with_artifacts.artifacts] == ["request", "response"]
-
-    stream_mapped = from_stream(
+    mapped_with_artifacts = chat.completions.from_request_response(
         request,
-        OpenAIStreamSummary(output_text="stream-output", chunks=[{"token": "x"}]),
+        response,
         OpenAIOptions(raw_artifacts=True),
     )
-    assert stream_mapped.response_model == "gpt-5"
-    assert stream_mapped.output[0].parts[0].text == "stream-output"
-    assert stream_mapped.max_tokens == 320
-    assert stream_mapped.tool_choice == '{"name":"weather","type":"function"}'
-    assert stream_mapped.thinking_enabled is True
-    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
-    assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "provider_event"]
+    assert [artifact.kind.value for artifact in mapped_with_artifacts.artifacts] == ["request", "response", "tools"]
 
 
-def test_openai_mapper_max_tokens_fallback_and_thinking_unset() -> None:
-    request = OpenAIChatRequest(
-        model="gpt-5",
-        max_tokens=111,
-        messages=[OpenAIMessage(role="user", content="hello")],
+def test_responses_mapper_maps_output_and_stream_fallback() -> None:
+    request = {
+        "model": "gpt-5",
+        "instructions": "Be concise",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hello"}],
+            }
+        ],
+        "max_output_tokens": 300,
+        "reasoning": {"effort": "medium", "max_output_tokens": 640},
+    }
+    response = {
+        "id": "resp-1",
+        "object": "response",
+        "model": "gpt-5",
+        "status": "completed",
+        "output": [
+            {
+                "id": "msg-1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": "world", "annotations": []}],
+            },
+            {
+                "id": "call-1",
+                "type": "function_call",
+                "call_id": "call_weather",
+                "name": "weather",
+                "arguments": '{"city":"Paris"}',
+            },
+        ],
+        "parallel_tool_calls": False,
+        "temperature": 1,
+        "top_p": 1,
+        "tools": [],
+        "created_at": 0,
+        "incomplete_details": None,
+        "metadata": {},
+        "error": None,
+        "usage": {
+            "input_tokens": 80,
+            "output_tokens": 20,
+            "total_tokens": 100,
+            "input_tokens_details": {"cached_tokens": 2},
+            "output_tokens_details": {"reasoning_tokens": 3},
+        },
+    }
+
+    mapped = responses.from_request_response(request, response)
+    assert mapped.response_model == "gpt-5"
+    assert mapped.max_tokens == 300
+    assert mapped.stop_reason == "stop"
+    assert mapped.thinking_enabled is True
+    assert mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 640
+    assert mapped.usage.total_tokens == 100
+    assert mapped.output
+
+    streamed = responses.from_stream(
+        {**request, "stream": True},
+        ResponsesStreamSummary(
+            events=[
+                {
+                    "type": "response.output_text.delta",
+                    "sequence_number": 1,
+                    "output_index": 0,
+                    "item_id": "msg-1",
+                    "content_index": 0,
+                    "delta": "delta-one",
+                },
+                {
+                    "type": "response.output_text.delta",
+                    "sequence_number": 2,
+                    "output_index": 0,
+                    "item_id": "msg-1",
+                    "content_index": 0,
+                    "delta": " delta-two",
+                },
+            ]
+        ),
+        OpenAIOptions(raw_artifacts=True),
     )
-    response = OpenAIChatResponse(id="resp-openai", output_text="ok")
-    mapped = from_request_response(request, response)
 
-    assert mapped.max_tokens == 111
-    assert mapped.thinking_enabled is None
+    assert streamed.response_model == "gpt-5"
+    assert streamed.output[0].parts[0].text == "delta-one delta-two"
+    assert [artifact.kind.value for artifact in streamed.artifacts] == ["request", "provider_event"]
+
+
+def test_async_wrappers_record_generation() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    async def run() -> None:
+        await chat.completions.create_async(
+            client,
+            {"model": "gpt-5", "messages": [{"role": "user", "content": "hello"}]},
+            lambda _request: _async_value(
+                {
+                    "id": "async-chat",
+                    "model": "gpt-5",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "finish_reason": "stop",
+                            "message": {"role": "assistant", "content": "ok"},
+                        }
+                    ],
+                }
+            ),
+        )
+
+        await responses.stream_async(
+            client,
+            {"model": "gpt-5", "stream": True, "input": "hello"},
+            lambda _request: _async_value(
+                ResponsesStreamSummary(
+                    events=[
+                        {
+                            "type": "response.output_text.delta",
+                            "sequence_number": 1,
+                            "output_index": 0,
+                            "item_id": "msg-1",
+                            "content_index": 0,
+                            "delta": "ok",
+                        }
+                    ]
+                )
+            ),
+        )
+
+    try:
+        asyncio.run(run())
+        client.flush()
+        generations = exporter.requests[0].generations
+        assert len(generations) == 2
+        assert generations[0].mode.value == "SYNC"
+        assert generations[1].mode.value == "STREAM"
+    finally:
+        client.shutdown()
+
+
+async def _async_value(value):
+    return value

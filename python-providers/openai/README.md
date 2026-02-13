@@ -1,8 +1,6 @@
 # Sigil Python Provider Helper: OpenAI
 
-`sigil-sdk-openai` provides wrapper-first helpers and explicit mappers for OpenAI request/response flows.
-
-It is designed to keep your application code simple while producing normalized Sigil generations.
+`sigil-sdk-openai` exposes strict OpenAI-shaped wrappers and mappers for both Chat Completions and Responses.
 
 ## Installation
 
@@ -10,82 +8,114 @@ It is designed to keep your application code simple while producing normalized S
 pip install sigil-sdk sigil-sdk-openai
 ```
 
-## Quick Start (Sync)
+## Public API
+
+- Chat Completions namespace:
+  - `chat.completions.create(...)`
+  - `chat.completions.create_async(...)`
+  - `chat.completions.stream(...)`
+  - `chat.completions.stream_async(...)`
+  - `chat.completions.from_request_response(...)`
+  - `chat.completions.from_stream(...)`
+
+- Responses namespace:
+  - `responses.create(...)`
+  - `responses.create_async(...)`
+  - `responses.stream(...)`
+  - `responses.stream_async(...)`
+  - `responses.from_request_response(...)`
+  - `responses.from_stream(...)`
+
+## Integration styles
+
+- Strict wrappers: call OpenAI and record in one step.
+- Manual instrumentation: call OpenAI directly, then map strict OpenAI request/response payloads with `from_request_response` or `from_stream`.
+
+## Responses-first wrapper example
 
 ```python
+from openai import OpenAI
 from sigil_sdk import Client, ClientConfig
-from sigil_sdk_openai import (
-    OpenAIChatRequest,
-    OpenAIChatResponse,
-    OpenAIMessage,
-    OpenAIOptions,
-    chat_completion,
-)
+from sigil_sdk_openai import OpenAIOptions, responses
 
-client = Client(ClientConfig())
+sigil = Client(ClientConfig())
+provider = OpenAI()
 
-request = OpenAIChatRequest(
-    model="gpt-5",
-    system_prompt="Be concise",
-    messages=[OpenAIMessage(role="user", content="Hello")],
-)
-
-def provider_call(req: OpenAIChatRequest) -> OpenAIChatResponse:
-    # Replace this with your OpenAI SDK call.
-    return OpenAIChatResponse(id="resp-1", model=req.model, output_text="Hi there")
-
-response = chat_completion(
-    client,
-    request,
-    provider_call,
-    OpenAIOptions(conversation_id="conv-1", agent_name="my-agent", agent_version="1.0.0"),
+response = responses.create(
+    sigil,
+    {
+        "model": "gpt-5",
+        "instructions": "Be concise",
+        "input": "Summarize rollout status in 3 bullets",
+        "max_output_tokens": 300,
+    },
+    lambda request: provider.responses.create(**request),
+    OpenAIOptions(conversation_id="conv-1", agent_name="assistant", agent_version="1.0.0"),
 )
 ```
 
-## Streaming Wrapper
+## Chat Completions stream example
 
 ```python
-from sigil_sdk_openai import OpenAIStreamSummary, chat_completion_stream
+from sigil_sdk_openai import ChatCompletionsStreamSummary, chat
 
-summary = chat_completion_stream(
-    client,
-    request,
-    lambda req: OpenAIStreamSummary(
-        output_text="streamed final text",
-        chunks=[{"delta": "stream"}],
-    ),
+summary = chat.completions.stream(
+    sigil,
+    {
+        "model": "gpt-5",
+        "stream": True,
+        "messages": [{"role": "user", "content": "Stream a short status update"}],
+    },
+    lambda request: ChatCompletionsStreamSummary(events=[]),
 )
 ```
 
-Call `client.shutdown()` during process teardown to flush buffered telemetry.
-
-## Mapper-Only Usage
-
-If you manage lifecycle yourself, map directly and call `recorder.set_result(...)`.
+## Manual instrumentation example (strict mapper)
 
 ```python
-from sigil_sdk_openai import from_request_response
+from sigil_sdk import GenerationStart, ModelRef
+from sigil_sdk_openai import OpenAIOptions, responses
 
-generation = from_request_response(request, response)
+request = {
+    "model": "gpt-5",
+    "instructions": "Be concise",
+    "input": "Summarize rollout status in 3 bullets",
+}
+opts = OpenAIOptions(
+    conversation_id="conv-1",
+    agent_name="assistant",
+    agent_version="1.0.0",
+)
+
+with sigil.start_generation(
+    GenerationStart(
+        conversation_id=opts.conversation_id,
+        agent_name=opts.agent_name,
+        agent_version=opts.agent_version,
+        model=ModelRef(provider=opts.provider_name, name=request["model"]),
+    )
+) as rec:
+    try:
+        response = provider.responses.create(**request)
+        rec.set_result(responses.from_request_response(request, response, opts))
+    except Exception as exc:
+        rec.set_call_error(exc)
+        raise
 ```
 
-## Raw Provider Artifacts (Opt-In)
+## Raw artifacts (debug opt-in)
 
 Raw artifacts are off by default.
 
-```python
-from sigil_sdk_openai import OpenAIOptions
+Enable with:
 
-options = OpenAIOptions(raw_artifacts=True)
+```python
+OpenAIOptions(raw_artifacts=True)
 ```
 
-When enabled, wrappers include request/response payload artifacts (and stream chunk artifacts for streaming paths).
+Artifact names:
 
-## Public Functions
+- Chat: `openai.chat.request`, `openai.chat.response`, `openai.chat.tools`, `openai.chat.stream_events`
+- Responses: `openai.responses.request`, `openai.responses.response`, `openai.responses.tools`, `openai.responses.stream_events`
 
-- `chat_completion(...)`
-- `chat_completion_async(...)`
-- `chat_completion_stream(...)`
-- `chat_completion_stream_async(...)`
-- `from_request_response(...)`
-- `from_stream(...)`
+Call `client.shutdown()` during teardown to flush buffered telemetry.

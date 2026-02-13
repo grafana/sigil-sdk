@@ -51,10 +51,10 @@ export function sourceTagFor(source) {
   return source === 'mistral' ? 'core_custom' : 'provider_wrapper';
 }
 
-export function providerShapeFor(source) {
+export function providerShapeFor(source, turn = 0) {
   switch (source) {
     case 'openai':
-      return 'chat_completion';
+      return turn % 2 === 0 ? 'openai_chat_completions' : 'openai_responses';
     case 'anthropic':
       return 'messages';
     case 'gemini':
@@ -125,7 +125,7 @@ export function buildTagsAndMetadata(source, mode, turn, slot) {
       conversation_slot: slot,
       agent_persona: agentPersona,
       emitter: 'sdk-traffic',
-      provider_shape: providerShapeFor(source),
+      provider_shape: providerShapeFor(source, turn),
     },
   };
 }
@@ -133,27 +133,38 @@ export function buildTagsAndMetadata(source, mode, turn, slot) {
 async function emitOpenAISync(sdk, client, context) {
   const request = {
     model: 'gpt-5',
-    systemPrompt: 'Return compact project-planning bullets.',
+    max_completion_tokens: 320,
+    temperature: 0.2,
+    top_p: 0.9,
+    reasoning: { effort: 'medium', max_output_tokens: 768 },
     messages: [
+      { role: 'system', content: 'Return compact project-planning bullets.' },
       { role: 'user', content: `Draft release checkpoint plan #${context.turn}.` },
     ],
   };
 
-  await sdk.openai.chatCompletion(
+  await sdk.openai.chat.completions.create(
     client,
     request,
     async () => ({
       id: `js-openai-sync-${context.turn}`,
       model: 'gpt-5',
-      outputText: `Plan ${context.turn}: validate rollout, assign owner, publish timeline.`,
-      stopReason: 'stop',
+      object: 'chat.completion',
+      created: 0,
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'stop',
+          message: {
+            role: 'assistant',
+            content: `Plan ${context.turn}: validate rollout, assign owner, publish timeline.`,
+          },
+        },
+      ],
       usage: {
-        inputTokens: 88 + (context.turn % 9),
-        outputTokens: 26 + (context.turn % 7),
-        totalTokens: 114 + (context.turn % 13),
-      },
-      raw: {
-        shape: 'openai.sync',
+        prompt_tokens: 88 + (context.turn % 9),
+        completion_tokens: 26 + (context.turn % 7),
+        total_tokens: 114 + (context.turn % 13),
       },
     }),
     {
@@ -169,31 +180,142 @@ async function emitOpenAISync(sdk, client, context) {
 async function emitOpenAIStream(sdk, client, context) {
   const request = {
     model: 'gpt-5',
-    systemPrompt: 'Stream incident status updates in short clauses.',
+    stream: true,
+    max_completion_tokens: 220,
+    reasoning: { effort: 'medium', max_output_tokens: 640 },
     messages: [
+      { role: 'system', content: 'Stream incident status updates in short clauses.' },
       { role: 'user', content: `Stream checkpoint status for ticket ${context.turn}.` },
     ],
   };
 
-  await sdk.openai.chatCompletionStream(
+  await sdk.openai.chat.completions.stream(
     client,
     request,
     async () => ({
-      outputText: `Ticket ${context.turn}: canary healthy; promote gate passed.`,
-      finalResponse: {
-        id: `js-openai-stream-${context.turn}`,
-        model: 'gpt-5',
-        outputText: `Ticket ${context.turn}: canary healthy; promote gate passed.`,
-        stopReason: 'stop',
-        usage: {
-          inputTokens: 51 + (context.turn % 5),
-          outputTokens: 17 + (context.turn % 4),
-          totalTokens: 68 + (context.turn % 7),
+      events: [
+        {
+          id: `js-openai-stream-${context.turn}`,
+          model: 'gpt-5',
+          created: 0,
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'Ticket update: canary healthy' } }],
         },
+        {
+          id: `js-openai-stream-${context.turn}`,
+          model: 'gpt-5',
+          created: 0,
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: '; promote gate passed.' }, finish_reason: 'stop' }],
+        },
+      ],
+    }),
+    {
+      conversationId: context.conversationId,
+      agentName: context.agentName,
+      agentVersion: context.agentVersion,
+      tags: context.tags,
+      metadata: context.metadata,
+    }
+  );
+}
+
+async function emitOpenAIResponsesSync(sdk, client, context) {
+  const request = {
+    model: 'gpt-5',
+    instructions: 'Return concise plan bullets with one action per line.',
+    input: [
+      {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: `Draft release checkpoint plan #${context.turn}.` }],
       },
-      chunks: [
-        { delta: 'Ticket update: canary healthy' },
-        { delta: '; promote gate passed.' },
+    ],
+    max_output_tokens: 320,
+    temperature: 0.2,
+    top_p: 0.9,
+    reasoning: { effort: 'medium', max_output_tokens: 768 },
+  };
+
+  await sdk.openai.responses.create(
+    client,
+    request,
+    async () => ({
+      id: `js-openai-responses-sync-${context.turn}`,
+      object: 'response',
+      model: 'gpt-5',
+      output: [
+        {
+          id: `js-openai-responses-sync-msg-${context.turn}`,
+          type: 'message',
+          role: 'assistant',
+          status: 'completed',
+          content: [
+            {
+              type: 'output_text',
+              text: `Plan ${context.turn}: validate rollout, assign owner, publish timeline.`,
+              annotations: [],
+            },
+          ],
+        },
+      ],
+      status: 'completed',
+      parallel_tool_calls: false,
+      temperature: 0.2,
+      top_p: 0.9,
+      tools: [],
+      created_at: 0,
+      incomplete_details: null,
+      metadata: {},
+      error: null,
+      usage: {
+        input_tokens: 88 + (context.turn % 9),
+        output_tokens: 26 + (context.turn % 7),
+        total_tokens: 114 + (context.turn % 13),
+        input_tokens_details: { cached_tokens: 3 },
+        output_tokens_details: { reasoning_tokens: 4 },
+      },
+    }),
+    {
+      conversationId: context.conversationId,
+      agentName: context.agentName,
+      agentVersion: context.agentVersion,
+      tags: context.tags,
+      metadata: context.metadata,
+    }
+  );
+}
+
+async function emitOpenAIResponsesStream(sdk, client, context) {
+  const request = {
+    model: 'gpt-5',
+    stream: true,
+    instructions: 'Stream concise incident status deltas.',
+    input: `Stream checkpoint status for ticket ${context.turn}.`,
+    max_output_tokens: 220,
+  };
+
+  await sdk.openai.responses.stream(
+    client,
+    request,
+    async () => ({
+      events: [
+        {
+          type: 'response.output_text.delta',
+          sequence_number: 1,
+          output_index: 0,
+          item_id: `js-openai-responses-stream-msg-${context.turn}`,
+          content_index: 0,
+          delta: 'Ticket update: canary healthy',
+        },
+        {
+          type: 'response.output_text.delta',
+          sequence_number: 2,
+          output_index: 0,
+          item_id: `js-openai-responses-stream-msg-${context.turn}`,
+          content_index: 0,
+          delta: '; promote gate passed.',
+        },
       ],
     }),
     {
@@ -428,8 +550,19 @@ async function emitCustomStream(client, cfg, context) {
 
 export async function emitSource(sdk, client, cfg, source, mode, context) {
   if (source === 'openai') {
+    const shape = providerShapeFor('openai', context.turn);
+    const useResponses = shape === 'openai_responses';
+
     if (mode === 'STREAM') {
+      if (useResponses) {
+        await emitOpenAIResponsesStream(sdk, client, context);
+        return;
+      }
       await emitOpenAIStream(sdk, client, context);
+      return;
+    }
+    if (useResponses) {
+      await emitOpenAIResponsesSync(sdk, client, context);
       return;
     }
     await emitOpenAISync(sdk, client, context);

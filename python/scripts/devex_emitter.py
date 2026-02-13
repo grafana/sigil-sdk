@@ -24,33 +24,71 @@ from sigil_sdk import (
     thinking_part,
     user_text_message,
 )
-from sigil_sdk_anthropic import (
-    AnthropicMessage,
-    AnthropicOptions,
-    AnthropicRequest,
-    AnthropicResponse,
-    AnthropicStreamSummary,
-    completion,
-    completion_stream,
-)
-from sigil_sdk_gemini import (
-    GeminiMessage,
-    GeminiOptions,
-    GeminiRequest,
-    GeminiResponse,
-    GeminiStreamSummary,
-    completion as gemini_completion,
-    completion_stream as gemini_completion_stream,
-)
-from sigil_sdk_openai import (
-    OpenAIChatRequest,
-    OpenAIChatResponse,
-    OpenAIMessage,
-    OpenAIOptions,
-    OpenAIStreamSummary,
-    chat_completion,
-    chat_completion_stream,
-)
+try:
+    from sigil_sdk_anthropic import (
+        AnthropicMessage,
+        AnthropicOptions,
+        AnthropicRequest,
+        AnthropicResponse,
+        AnthropicStreamSummary,
+        completion,
+        completion_stream,
+    )
+except ModuleNotFoundError as anthropic_import_error:  # pragma: no cover - exercised by sdk-core tests
+    AnthropicMessage = AnthropicOptions = AnthropicRequest = AnthropicResponse = AnthropicStreamSummary = object  # type: ignore[assignment]
+
+    def completion(*_args, **_kwargs):
+        raise ModuleNotFoundError(
+            "sigil_sdk_anthropic is required to run anthropic devex emitter paths"
+        ) from anthropic_import_error
+
+    def completion_stream(*_args, **_kwargs):
+        raise ModuleNotFoundError(
+            "sigil_sdk_anthropic is required to run anthropic devex emitter paths"
+        ) from anthropic_import_error
+
+try:
+    from sigil_sdk_gemini import (
+        GeminiMessage,
+        GeminiOptions,
+        GeminiRequest,
+        GeminiResponse,
+        GeminiStreamSummary,
+        completion as gemini_completion,
+        completion_stream as gemini_completion_stream,
+    )
+except ModuleNotFoundError as gemini_import_error:  # pragma: no cover - exercised by sdk-core tests
+    GeminiMessage = GeminiOptions = GeminiRequest = GeminiResponse = GeminiStreamSummary = object  # type: ignore[assignment]
+
+    def gemini_completion(*_args, **_kwargs):
+        raise ModuleNotFoundError(
+            "sigil_sdk_gemini is required to run gemini devex emitter paths"
+        ) from gemini_import_error
+
+    def gemini_completion_stream(*_args, **_kwargs):
+        raise ModuleNotFoundError(
+            "sigil_sdk_gemini is required to run gemini devex emitter paths"
+        ) from gemini_import_error
+
+try:
+    from sigil_sdk_openai import (
+        ChatCompletionsStreamSummary,
+        OpenAIOptions,
+        ResponsesStreamSummary,
+        chat,
+        responses,
+    )
+except ModuleNotFoundError as openai_import_error:  # pragma: no cover - exercised by sdk-core tests
+    ChatCompletionsStreamSummary = OpenAIOptions = ResponsesStreamSummary = object  # type: ignore[assignment]
+
+    class _MissingProviderNamespace:
+        def __getattr__(self, _name: str):
+            raise ModuleNotFoundError(
+                "sigil_sdk_openai is required to run openai devex emitter paths"
+            ) from openai_import_error
+
+    chat = _MissingProviderNamespace()
+    responses = _MissingProviderNamespace()
 
 LANGUAGE = "python"
 SOURCES = ("openai", "anthropic", "gemini", "mistral")
@@ -135,9 +173,9 @@ def source_tag_for(source: str) -> str:
     return "core_custom" if source == "mistral" else "provider_wrapper"
 
 
-def provider_shape_for(source: str) -> str:
+def provider_shape_for(source: str, turn: int = 0) -> str:
     if source == "openai":
-        return "chat_completion"
+        return "openai_chat_completions" if (turn % 2) == 0 else "openai_responses"
     if source == "anthropic":
         return "messages"
     if source == "gemini":
@@ -190,35 +228,48 @@ def build_tags_metadata(source: str, mode: str, turn: int, slot: int) -> tuple[s
         "conversation_slot": slot,
         "agent_persona": persona,
         "emitter": "sdk-traffic",
-        "provider_shape": provider_shape_for(source),
+        "provider_shape": provider_shape_for(source, turn),
     }
     return persona, tags, metadata
 
 
 def emit_openai_sync(client: Client, context: EmitContext) -> None:
-    request = OpenAIChatRequest(
-        model="gpt-5",
-        system_prompt="Respond with concise action bullets.",
-        messages=[
-            OpenAIMessage(role="user", content=f"Draft rollout checklist {context.turn}."),
+    request = {
+        "model": "gpt-5",
+        "max_completion_tokens": 320,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "reasoning": {"effort": "medium", "max_output_tokens": 768},
+        "messages": [
+            {"role": "system", "content": "Respond with concise action bullets."},
+            {"role": "user", "content": f"Draft rollout checklist {context.turn}."},
         ],
-    )
+    }
 
-    def provider_call(_request: OpenAIChatRequest) -> OpenAIChatResponse:
-        return OpenAIChatResponse(
-            id=f"py-openai-sync-{context.turn}",
-            model="gpt-5",
-            output_text=f"Checklist {context.turn}: verify canary, rotate owner, publish notes.",
-            stop_reason="stop",
-            usage=TokenUsage(
-                input_tokens=79 + (context.turn % 9),
-                output_tokens=24 + (context.turn % 6),
-                total_tokens=103 + (context.turn % 11),
-            ),
-            raw={"shape": "openai.sync"},
-        )
+    def provider_call(_request):
+        return {
+            "id": f"py-openai-sync-{context.turn}",
+            "model": "gpt-5",
+            "object": "chat.completion",
+            "created": 0,
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": f"Checklist {context.turn}: verify canary, rotate owner, publish notes.",
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 79 + (context.turn % 9),
+                "completion_tokens": 24 + (context.turn % 6),
+                "total_tokens": 103 + (context.turn % 11),
+            },
+        }
 
-    chat_completion(
+    chat.completions.create(
         client,
         request,
         provider_call,
@@ -233,33 +284,152 @@ def emit_openai_sync(client: Client, context: EmitContext) -> None:
 
 
 def emit_openai_stream(client: Client, context: EmitContext) -> None:
-    request = OpenAIChatRequest(
-        model="gpt-5",
-        system_prompt="Emit short streaming status deltas.",
-        messages=[
-            OpenAIMessage(role="user", content=f"Stream ticket state {context.turn}."),
+    request = {
+        "model": "gpt-5",
+        "stream": True,
+        "max_completion_tokens": 220,
+        "reasoning": {"effort": "medium", "max_output_tokens": 640},
+        "messages": [
+            {"role": "system", "content": "Emit short streaming status deltas."},
+            {"role": "user", "content": f"Stream ticket state {context.turn}."},
         ],
+    }
+
+    def provider_call(_request):
+        return ChatCompletionsStreamSummary(
+            events=[
+                {
+                    "id": f"py-openai-stream-{context.turn}",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "gpt-5",
+                    "choices": [{"index": 0, "delta": {"content": "canary passed"}}],
+                },
+                {
+                    "id": f"py-openai-stream-{context.turn}",
+                    "object": "chat.completion.chunk",
+                    "created": 0,
+                    "model": "gpt-5",
+                    "choices": [{"index": 0, "delta": {"content": " traffic fully shifted"}, "finish_reason": "stop"}],
+                },
+            ]
+        )
+
+    chat.completions.stream(
+        client,
+        request,
+        provider_call,
+        OpenAIOptions(
+            conversation_id=context.conversation_id,
+            agent_name=context.agent_name,
+            agent_version=context.agent_version,
+            tags=context.tags,
+            metadata=context.metadata,
+        ),
     )
 
-    def provider_call(_request: OpenAIChatRequest) -> OpenAIStreamSummary:
-        final_response = OpenAIChatResponse(
-            id=f"py-openai-stream-{context.turn}",
-            model="gpt-5",
-            output_text=f"Ticket {context.turn}: canary passed; traffic fully shifted.",
-            stop_reason="stop",
-            usage=TokenUsage(
-                input_tokens=48 + (context.turn % 5),
-                output_tokens=15 + (context.turn % 4),
-                total_tokens=63 + (context.turn % 7),
-            ),
-        )
-        return OpenAIStreamSummary(
-            output_text=f"Ticket {context.turn}: canary passed; traffic fully shifted.",
-            final_response=final_response,
-            chunks=[{"delta": "canary passed"}, {"delta": "traffic fully shifted"}],
+
+def emit_openai_responses_sync(client: Client, context: EmitContext) -> None:
+    request = {
+        "model": "gpt-5",
+        "instructions": "Respond with concise action bullets.",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": f"Draft rollout checklist {context.turn}."}],
+            }
+        ],
+        "max_output_tokens": 320,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "reasoning": {"effort": "medium", "max_output_tokens": 768},
+    }
+
+    def provider_call(_request):
+        return {
+            "id": f"py-openai-responses-sync-{context.turn}",
+            "object": "response",
+            "model": "gpt-5",
+            "output": [
+                {
+                    "id": f"py-openai-responses-sync-msg-{context.turn}",
+                    "type": "message",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": f"Checklist {context.turn}: verify canary, rotate owner, publish notes.",
+                            "annotations": [],
+                        }
+                    ],
+                }
+            ],
+            "status": "completed",
+            "parallel_tool_calls": False,
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "tools": [],
+            "created_at": 0,
+            "incomplete_details": None,
+            "metadata": {},
+            "error": None,
+            "usage": {
+                "input_tokens": 79 + (context.turn % 9),
+                "output_tokens": 24 + (context.turn % 6),
+                "total_tokens": 103 + (context.turn % 11),
+                "input_tokens_details": {"cached_tokens": 2},
+                "output_tokens_details": {"reasoning_tokens": 3},
+            },
+        }
+
+    responses.create(
+        client,
+        request,
+        provider_call,
+        OpenAIOptions(
+            conversation_id=context.conversation_id,
+            agent_name=context.agent_name,
+            agent_version=context.agent_version,
+            tags=context.tags,
+            metadata=context.metadata,
+        ),
+    )
+
+
+def emit_openai_responses_stream(client: Client, context: EmitContext) -> None:
+    request = {
+        "model": "gpt-5",
+        "stream": True,
+        "instructions": "Emit short streaming status deltas.",
+        "input": f"Stream ticket state {context.turn}.",
+        "max_output_tokens": 220,
+    }
+
+    def provider_call(_request):
+        return ResponsesStreamSummary(
+            events=[
+                {
+                    "type": "response.output_text.delta",
+                    "sequence_number": 1,
+                    "output_index": 0,
+                    "item_id": f"py-openai-responses-stream-msg-{context.turn}",
+                    "content_index": 0,
+                    "delta": "canary passed",
+                },
+                {
+                    "type": "response.output_text.delta",
+                    "sequence_number": 2,
+                    "output_index": 0,
+                    "item_id": f"py-openai-responses-stream-msg-{context.turn}",
+                    "content_index": 0,
+                    "delta": " traffic fully shifted",
+                },
+            ]
         )
 
-    chat_completion_stream(
+    responses.stream(
         client,
         request,
         provider_call,
@@ -512,8 +682,16 @@ def emit_custom_stream(client: Client, cfg: RuntimeConfig, context: EmitContext)
 
 def emit_for_source(client: Client, cfg: RuntimeConfig, source: str, mode: str, context: EmitContext) -> None:
     if source == "openai":
+        shape = provider_shape_for("openai", context.turn)
+        use_responses = shape == "openai_responses"
         if mode == "STREAM":
+            if use_responses:
+                emit_openai_responses_stream(client, context)
+                return
             emit_openai_stream(client, context)
+            return
+        if use_responses:
+            emit_openai_responses_sync(client, context)
             return
         emit_openai_sync(client, context)
         return

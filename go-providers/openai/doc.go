@@ -1,5 +1,5 @@
-// Package openai maps OpenAI chat completion payloads to sigil.Generation.
+// Package openai maps OpenAI Chat Completions and Responses payloads to sigil.Generation.
 //
-// Use FromRequestResponse for non-streaming calls and FromStream for streaming calls.
-// The resulting generation keeps request content in Input and model output in Output.
+// Use ChatCompletionsFromRequestResponse / ChatCompletionsFromStream for chat-completions,
+// and ResponsesFromRequestResponse / ResponsesFromStream for responses.
 package openai

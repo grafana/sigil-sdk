@@ -18,7 +18,20 @@ import com.grafana.sigil.sdk.TraceConfig;
 import com.grafana.sigil.sdk.TraceProtocol;
 import com.grafana.sigil.sdk.providers.anthropic.AnthropicAdapter;
 import com.grafana.sigil.sdk.providers.gemini.GeminiAdapter;
-import com.grafana.sigil.sdk.providers.openai.OpenAiAdapter;
+import com.grafana.sigil.sdk.providers.openai.OpenAiChatCompletions;
+import com.grafana.sigil.sdk.providers.openai.OpenAiOptions;
+import com.grafana.sigil.sdk.providers.openai.OpenAiResponses;
+import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
+import com.openai.core.ObjectMappers;
+import com.openai.core.http.StreamResponse;
+import com.openai.models.ReasoningEffort;
+import com.openai.models.chat.completions.ChatCompletion;
+import com.openai.models.chat.completions.ChatCompletionChunk;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseCreateParams;
+import com.openai.models.responses.ResponseStreamEvent;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 /** Continuously emits synthetic multi-provider SDK traffic for compose devex flows. */
 public final class DevexEmitter {
@@ -148,9 +162,9 @@ public final class DevexEmitter {
         return "mistral".equals(source) ? "core_custom" : "provider_wrapper";
     }
 
-    static String providerShapeFor(String source) {
+    static String providerShapeFor(String source, int turn) {
         return switch (source) {
-            case "openai" -> "chat_completion";
+            case "openai" -> turn % 2 == 0 ? "openai_chat_completions" : "openai_responses";
             case "anthropic" -> "messages";
             case "gemini" -> "generate_content";
             default -> "core_generation";
@@ -199,7 +213,7 @@ public final class DevexEmitter {
         metadata.put("conversation_slot", slot);
         metadata.put("agent_persona", agentPersona);
         metadata.put("emitter", "sdk-traffic");
-        metadata.put("provider_shape", providerShapeFor(source));
+        metadata.put("provider_shape", providerShapeFor(source, turn));
 
         return new TagEnvelope(agentPersona, tags, metadata);
     }
@@ -211,11 +225,22 @@ public final class DevexEmitter {
     static void emitForSource(SigilClient client, RuntimeConfig config, String source, GenerationMode mode, EmitContext context)
             throws Exception {
         if ("openai".equals(source)) {
+            String shape = providerShapeFor(source, context.turn);
+            boolean useResponses = "openai_responses".equals(shape);
             if (mode == GenerationMode.STREAM) {
-                emitOpenAiStream(client, context);
+                if (useResponses) {
+                    emitOpenAiResponsesStream(client, context);
+                    return;
+                }
+                emitOpenAiChatStream(client, context);
                 return;
             }
-            emitOpenAiSync(client, context);
+
+            if (useResponses) {
+                emitOpenAiResponsesSync(client, context);
+                return;
+            }
+            emitOpenAiChatSync(client, context);
             return;
         }
 
@@ -244,66 +269,86 @@ public final class DevexEmitter {
         emitCustomSync(client, config, context);
     }
 
-    static void emitOpenAiSync(SigilClient client, EmitContext context) throws Exception {
-        OpenAiAdapter.OpenAiChatRequest request = new OpenAiAdapter.OpenAiChatRequest()
-                .setModel("gpt-5")
-                .setSystemPrompt("Return concise rollout plans with three bullets.")
-                .setMessages(List.of(
-                        new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("Draft rollout plan " + context.turn + ".")));
+    static void emitOpenAiChatSync(SigilClient client, EmitContext context) throws Exception {
+        ChatCompletionCreateParams request = ChatCompletionCreateParams.builder()
+                .model("gpt-5")
+                .addSystemMessage("Return concise rollout plans with three bullets.")
+                .addUserMessage("Draft rollout plan " + context.turn + ".")
+                .maxCompletionTokens(320L)
+                .temperature(0.2)
+                .topP(0.9)
+                .reasoningEffort(ReasoningEffort.MEDIUM)
+                .build();
 
-        OpenAiAdapter.chatCompletion(
+        OpenAiChatCompletions.create(
                 client,
                 request,
-                ignored -> new OpenAiAdapter.OpenAiChatResponse()
-                        .setId("java-openai-sync-" + context.turn)
-                        .setModel("gpt-5")
-                        .setOutputText("Plan " + context.turn + ": verify canary, assign owner, publish summary.")
-                        .setStopReason("stop")
-                        .setUsage(new TokenUsage()
-                                .setInputTokens(84 + (context.turn % 9))
-                                .setOutputTokens(24 + (context.turn % 6))
-                                .setTotalTokens(108 + (context.turn % 12))),
+                ignored -> chatResponseFixture(context.turn),
                 openAiOptions(context));
     }
 
-    static void emitOpenAiStream(SigilClient client, EmitContext context) throws Exception {
-        OpenAiAdapter.OpenAiChatRequest request = new OpenAiAdapter.OpenAiChatRequest()
-                .setModel("gpt-5")
-                .setSystemPrompt("Stream short operational deltas.")
-                .setMessages(List.of(
-                        new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("Stream ticket status " + context.turn + ".")));
+    static void emitOpenAiChatStream(SigilClient client, EmitContext context) throws Exception {
+        ChatCompletionCreateParams request = ChatCompletionCreateParams.builder()
+                .model("gpt-5")
+                .addSystemMessage("Stream short operational deltas.")
+                .addUserMessage("Stream ticket status " + context.turn + ".")
+                .maxCompletionTokens(220L)
+                .reasoningEffort(ReasoningEffort.MEDIUM)
+                .build();
 
-        OpenAiAdapter.chatCompletionStream(
+        OpenAiChatCompletions.createStreaming(
                 client,
                 request,
-                ignored -> new OpenAiAdapter.OpenAiStreamSummary()
-                        .setOutputText("Ticket " + context.turn + ": canary healthy; production gate passed.")
-                        .setFinalResponse(new OpenAiAdapter.OpenAiChatResponse()
-                                .setId("java-openai-stream-" + context.turn)
-                                .setModel("gpt-5")
-                                .setOutputText("Ticket " + context.turn + ": canary healthy; production gate passed.")
-                                .setStopReason("stop")
-                                .setUsage(new TokenUsage()
-                                        .setInputTokens(49 + (context.turn % 5))
-                                        .setOutputTokens(16 + (context.turn % 4))
-                                        .setTotalTokens(65 + (context.turn % 7))))
-                        .setChunks(List.of(
-                                Map.of("delta", "canary healthy"),
-                                Map.of("delta", "production gate passed"))),
+                ignored -> new FixedStreamResponse<>(List.of(chatChunkOne(context.turn), chatChunkTwo(context.turn))),
+                openAiOptions(context));
+    }
+
+    static void emitOpenAiResponsesSync(SigilClient client, EmitContext context) throws Exception {
+        ResponseCreateParams request = ResponseCreateParams.builder()
+                .model("gpt-5")
+                .instructions("Return concise rollout plans with three bullets.")
+                .input("Draft rollout plan " + context.turn + ".")
+                .maxOutputTokens(320L)
+                .temperature(0.2)
+                .topP(0.9)
+                .build();
+
+        OpenAiResponses.create(
+                client,
+                request,
+                ignored -> responsesResponseFixture(context.turn),
+                openAiOptions(context));
+    }
+
+    static void emitOpenAiResponsesStream(SigilClient client, EmitContext context) throws Exception {
+        ResponseCreateParams request = ResponseCreateParams.builder()
+                .model("gpt-5")
+                .instructions("Stream short operational deltas.")
+                .input("Stream ticket status " + context.turn + ".")
+                .maxOutputTokens(220L)
+                .build();
+
+        OpenAiResponses.createStreaming(
+                client,
+                request,
+                ignored -> new FixedStreamResponse<>(List.of(
+                        responseTextDeltaEvent("Ticket " + context.turn + ": canary healthy", 1),
+                        responseTextDeltaEvent("; production gate passed.", 2),
+                        responseCompletedEvent(context.turn))),
                 openAiOptions(context));
     }
 
     static void emitAnthropicSync(SigilClient client, EmitContext context) throws Exception {
-        OpenAiAdapter.OpenAiChatRequest request = new OpenAiAdapter.OpenAiChatRequest()
+        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("claude-sonnet-4-5")
                 .setSystemPrompt("Summarize with diagnosis and recommendation.")
                 .setMessages(List.of(
-                        new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("Summarize reliability drift " + context.turn + ".")));
+                        new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("Summarize reliability drift " + context.turn + ".")));
 
         AnthropicAdapter.completion(
                 client,
                 request,
-                ignored -> new OpenAiAdapter.OpenAiChatResponse()
+                ignored -> new ProviderAdapterSupport.OpenAiChatResponse()
                         .setId("java-anthropic-sync-" + context.turn)
                         .setModel("claude-sonnet-4-5")
                         .setOutputText("Diagnosis " + context.turn + ": retry storms in eu-west; rebalance queues.")
@@ -313,22 +358,22 @@ public final class DevexEmitter {
                                 .setOutputTokens(30 + (context.turn % 5))
                                 .setTotalTokens(102 + (context.turn % 10))
                                 .setCacheReadInputTokens(10)),
-                openAiOptions(context));
+                providerAdapterOptions(context));
     }
 
     static void emitAnthropicStream(SigilClient client, EmitContext context) throws Exception {
-        OpenAiAdapter.OpenAiChatRequest request = new OpenAiAdapter.OpenAiChatRequest()
+        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("claude-sonnet-4-5")
                 .setSystemPrompt("Emit mitigation status deltas.")
                 .setMessages(List.of(
-                        new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("Stream mitigation deltas " + context.turn + ".")));
+                        new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("Stream mitigation deltas " + context.turn + ".")));
 
         AnthropicAdapter.completionStream(
                 client,
                 request,
-                ignored -> new OpenAiAdapter.OpenAiStreamSummary()
+                ignored -> new ProviderAdapterSupport.OpenAiStreamSummary()
                         .setOutputText("Change " + context.turn + ": guard enabled; verification done.")
-                        .setFinalResponse(new OpenAiAdapter.OpenAiChatResponse()
+                        .setFinalResponse(new ProviderAdapterSupport.OpenAiChatResponse()
                                 .setId("java-anthropic-stream-" + context.turn)
                                 .setModel("claude-sonnet-4-5")
                                 .setOutputText("Change " + context.turn + ": guard enabled; verification done.")
@@ -341,16 +386,16 @@ public final class DevexEmitter {
                                 Map.of("event", "message_start"),
                                 Map.of("event", "delta", "text", "guard enabled"),
                                 Map.of("event", "message_delta", "stop_reason", "end_turn"))),
-                openAiOptions(context));
+                providerAdapterOptions(context));
     }
 
     static void emitGeminiSync(SigilClient client, EmitContext context) throws Exception {
-        OpenAiAdapter.OpenAiChatRequest request = new OpenAiAdapter.OpenAiChatRequest()
+        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("gemini-2.5-pro")
                 .setSystemPrompt("Use structured release-note style.")
                 .setMessages(List.of(
-                        new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("Generate launch summary " + context.turn + "."),
-                        new OpenAiAdapter.OpenAiMessage()
+                        new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("Generate launch summary " + context.turn + "."),
+                        new ProviderAdapterSupport.OpenAiMessage()
                                 .setRole("tool")
                                 .setName("release_metrics")
                                 .setContent("{\"status\":\"green\"}")));
@@ -358,7 +403,7 @@ public final class DevexEmitter {
         GeminiAdapter.completion(
                 client,
                 request,
-                ignored -> new OpenAiAdapter.OpenAiChatResponse()
+                ignored -> new ProviderAdapterSupport.OpenAiChatResponse()
                         .setId("java-gemini-sync-" + context.turn)
                         .setModel("gemini-2.5-pro-001")
                         .setOutputText("Launch " + context.turn + ": all gates green; metrics stable.")
@@ -368,23 +413,23 @@ public final class DevexEmitter {
                                 .setOutputTokens(19 + (context.turn % 5))
                                 .setTotalTokens(79 + (context.turn % 8))
                                 .setReasoningTokens(6)),
-                openAiOptions(context));
+                providerAdapterOptions(context));
     }
 
     static void emitGeminiStream(SigilClient client, EmitContext context) throws Exception {
-        OpenAiAdapter.OpenAiChatRequest request = new OpenAiAdapter.OpenAiChatRequest()
+        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("gemini-2.5-pro")
                 .setSystemPrompt("Emit staged migration stream language.")
-                .setMessages(List.of(new OpenAiAdapter.OpenAiMessage()
+                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage()
                         .setRole("user")
                         .setContent("Stream migration status " + context.turn + ".")));
 
         GeminiAdapter.completionStream(
                 client,
                 request,
-                ignored -> new OpenAiAdapter.OpenAiStreamSummary()
+                ignored -> new ProviderAdapterSupport.OpenAiStreamSummary()
                         .setOutputText("Wave " + context.turn + ": shard sync complete; promotion done.")
-                        .setFinalResponse(new OpenAiAdapter.OpenAiChatResponse()
+                        .setFinalResponse(new ProviderAdapterSupport.OpenAiChatResponse()
                                 .setId("java-gemini-stream-" + context.turn)
                                 .setModel("gemini-2.5-pro-001")
                                 .setOutputText("Wave " + context.turn + ": shard sync complete; promotion done.")
@@ -396,7 +441,7 @@ public final class DevexEmitter {
                         .setChunks(List.of(
                                 Map.of("delta", "shard sync complete"),
                                 Map.of("delta", "promotion done"))),
-                openAiOptions(context));
+                providerAdapterOptions(context));
     }
 
     static void emitCustomSync(SigilClient client, RuntimeConfig config, EmitContext context) throws Exception {
@@ -452,14 +497,213 @@ public final class DevexEmitter {
                 });
     }
 
-    static OpenAiAdapter.OpenAiOptions openAiOptions(EmitContext context) {
-        return new OpenAiAdapter.OpenAiOptions()
+    static OpenAiOptions openAiOptions(EmitContext context) {
+        return new OpenAiOptions()
                 .setConversationId(context.conversationId)
                 .setAgentName(context.agentName)
                 .setAgentVersion(context.agentVersion)
                 .setTags(context.tags)
                 .setMetadata(context.metadata)
                 .setRawArtifacts(false);
+    }
+
+    static ProviderAdapterSupport.OpenAiOptions providerAdapterOptions(EmitContext context) {
+        return new ProviderAdapterSupport.OpenAiOptions()
+                .setConversationId(context.conversationId)
+                .setAgentName(context.agentName)
+                .setAgentVersion(context.agentVersion)
+                .setTags(context.tags)
+                .setMetadata(context.metadata)
+                .setRawArtifacts(false);
+    }
+
+    static ChatCompletion chatResponseFixture(int turn) throws IOException {
+        return json(
+                """
+                {
+                  "id": "java-openai-sync-%d",
+                  "choices": [
+                    {
+                      "finish_reason": "stop",
+                      "index": 0,
+                      "message": {
+                        "role": "assistant",
+                        "content": "Plan %d: verify canary, assign owner, publish summary."
+                      }
+                    }
+                  ],
+                  "created": 1,
+                  "model": "gpt-5",
+                  "object": "chat.completion",
+                  "usage": {
+                    "prompt_tokens": %d,
+                    "completion_tokens": %d,
+                    "total_tokens": %d
+                  }
+                }
+                """.formatted(
+                        turn,
+                        turn,
+                        84 + (turn % 9),
+                        24 + (turn % 6),
+                        108 + (turn % 12)),
+                ChatCompletion.class);
+    }
+
+    static ChatCompletionChunk chatChunkOne(int turn) throws IOException {
+        return json(
+                """
+                {
+                  "id": "java-openai-stream-%d",
+                  "choices": [
+                    {
+                      "delta": {
+                        "content": "Ticket %d: canary healthy"
+                      },
+                      "index": 0
+                    }
+                  ],
+                  "created": 1,
+                  "model": "gpt-5",
+                  "object": "chat.completion.chunk"
+                }
+                """.formatted(turn, turn),
+                ChatCompletionChunk.class);
+    }
+
+    static ChatCompletionChunk chatChunkTwo(int turn) throws IOException {
+        return json(
+                """
+                {
+                  "id": "java-openai-stream-%d",
+                  "choices": [
+                    {
+                      "delta": {
+                        "content": "; production gate passed."
+                      },
+                      "finish_reason": "stop",
+                      "index": 0
+                    }
+                  ],
+                  "created": 1,
+                  "model": "gpt-5",
+                  "object": "chat.completion.chunk",
+                  "usage": {
+                    "prompt_tokens": %d,
+                    "completion_tokens": %d,
+                    "total_tokens": %d
+                  }
+                }
+                """.formatted(
+                        turn,
+                        49 + (turn % 5),
+                        16 + (turn % 4),
+                        65 + (turn % 7)),
+                ChatCompletionChunk.class);
+    }
+
+    static Response responsesResponseFixture(int turn) throws IOException {
+        return json(
+                """
+                {
+                  "id": "java-openai-responses-sync-%d",
+                  "created_at": 1,
+                  "model": "gpt-5",
+                  "object": "response",
+                  "output": [
+                    {
+                      "id": "java-openai-responses-sync-msg-%d",
+                      "type": "message",
+                      "role": "assistant",
+                      "status": "completed",
+                      "content": [{"type": "output_text", "text": "Plan %d: verify canary, assign owner, publish summary."}]
+                    }
+                  ],
+                  "parallel_tool_calls": false,
+                  "tool_choice": "auto",
+                  "tools": [],
+                  "status": "completed",
+                  "usage": {
+                    "input_tokens": %d,
+                    "output_tokens": %d,
+                    "total_tokens": %d
+                  }
+                }
+                """.formatted(
+                        turn,
+                        turn,
+                        turn,
+                        84 + (turn % 9),
+                        24 + (turn % 6),
+                        108 + (turn % 12)),
+                Response.class);
+    }
+
+    static ResponseStreamEvent responseTextDeltaEvent(String delta, long sequenceNumber) throws IOException {
+        return json(
+                """
+                {
+                  "type": "response.output_text.delta",
+                  "content_index": 0,
+                  "delta": "%s",
+                  "item_id": "java-openai-responses-stream-msg",
+                  "output_index": 0,
+                  "sequence_number": %d
+                }
+                """.formatted(delta, sequenceNumber),
+                ResponseStreamEvent.class);
+    }
+
+    static ResponseStreamEvent responseCompletedEvent(int turn) throws IOException {
+        return json(
+                """
+                {
+                  "type": "response.completed",
+                  "sequence_number": 3,
+                  "response": {
+                    "id": "java-openai-responses-stream-%d",
+                    "created_at": 1,
+                    "model": "gpt-5",
+                    "object": "response",
+                    "output": [],
+                    "parallel_tool_calls": false,
+                    "tool_choice": "auto",
+                    "tools": [],
+                    "status": "completed",
+                    "usage": {
+                      "input_tokens": %d,
+                      "output_tokens": %d,
+                      "total_tokens": %d
+                    }
+                  }
+                }
+                """.formatted(
+                        turn,
+                        49 + (turn % 5),
+                        16 + (turn % 4),
+                        65 + (turn % 7)),
+                ResponseStreamEvent.class);
+    }
+
+    static <T> T json(String value, Class<T> type) throws IOException {
+        return ObjectMappers.jsonMapper().readValue(value, type);
+    }
+
+    static final class FixedStreamResponse<T> implements StreamResponse<T> {
+        private final List<T> values;
+
+        FixedStreamResponse(List<T> values) {
+            this.values = values;
+        }
+
+        @Override
+        public Stream<T> stream() {
+            return values.stream();
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
     record RuntimeConfig(

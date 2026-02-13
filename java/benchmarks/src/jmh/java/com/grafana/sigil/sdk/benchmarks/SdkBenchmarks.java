@@ -12,7 +12,7 @@ import com.grafana.sigil.sdk.MessageRole;
 import com.grafana.sigil.sdk.ModelRef;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
-import com.grafana.sigil.sdk.providers.openai.OpenAiAdapter;
+import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -29,16 +29,16 @@ import org.openjdk.jmh.annotations.State;
 
 @State(Scope.Benchmark)
 public class SdkBenchmarks {
-    private OpenAiAdapter.OpenAiChatRequest request;
-    private OpenAiAdapter.OpenAiChatResponse response;
+    private ProviderAdapterSupport.OpenAiChatRequest request;
+    private ProviderAdapterSupport.OpenAiChatResponse response;
     private SigilClient client;
 
     @Setup(Level.Trial)
     public void setup() {
-        request = new OpenAiAdapter.OpenAiChatRequest()
+        request = new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("gpt-5")
-                .setMessages(List.of(new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hello")));
-        response = new OpenAiAdapter.OpenAiChatResponse().setOutputText("hello");
+                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("hello")));
+        response = new ProviderAdapterSupport.OpenAiChatResponse().setOutputText("hello");
 
         client = new SigilClient(new SigilClientConfig()
                 .setTracer(GlobalOpenTelemetry.getTracer("bench"))
@@ -54,7 +54,7 @@ public class SdkBenchmarks {
     @BenchmarkMode(Mode.Throughput)
     @OutputTimeUnit(TimeUnit.SECONDS)
     public Object mapOpenAiSync() {
-        return OpenAiAdapter.fromRequestResponse(request, response, new OpenAiAdapter.OpenAiOptions());
+        return ProviderAdapterSupport.fromRequestResponse(request, response, new ProviderAdapterSupport.OpenAiOptions());
     }
 
     @Benchmark

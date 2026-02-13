@@ -5,6 +5,7 @@ import (
 
 	osdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/packages/param"
+	oresponses "github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
@@ -72,7 +73,7 @@ func TestFromRequestResponse(t *testing.T) {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp,
+	generation, err := ChatCompletionsFromRequestResponse(req, resp,
 		WithConversationID("conv-9b2f"),
 		WithAgentName("agent-openai"),
 		WithAgentVersion("v-openai"),
@@ -176,7 +177,7 @@ func TestFromStream(t *testing.T) {
 		ReasoningEffort:     shared.ReasoningEffortMedium,
 	}
 
-	summary := StreamSummary{
+	summary := ChatCompletionsStreamSummary{
 		Chunks: []osdk.ChatCompletionChunk{
 			{
 				ID:    "chatcmpl_stream_1",
@@ -225,7 +226,7 @@ func TestFromStream(t *testing.T) {
 		},
 	}
 
-	generation, err := FromStream(req, summary,
+	generation, err := ChatCompletionsFromStream(req, summary,
 		WithConversationID("conv-stream"),
 		WithAgentName("agent-openai-stream"),
 		WithAgentVersion("v-openai-stream"),
@@ -302,7 +303,7 @@ func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp, WithRawArtifacts())
+	generation, err := ChatCompletionsFromRequestResponse(req, resp, WithRawArtifacts())
 	if err != nil {
 		t.Fatalf("from request/response: %v", err)
 	}
@@ -332,12 +333,159 @@ func TestFromRequestResponseLeavesThinkingUnsetWithoutReasoningConfig(t *testing
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp)
+	generation, err := ChatCompletionsFromRequestResponse(req, resp)
 	if err != nil {
 		t.Fatalf("from request/response: %v", err)
 	}
 
 	if generation.ThinkingEnabled != nil {
 		t.Fatalf("expected thinking_enabled unset, got %v", generation.ThinkingEnabled)
+	}
+}
+
+func TestResponsesFromRequestResponse(t *testing.T) {
+	req := oresponses.ResponseNewParams{
+		Model:           shared.ResponsesModel("gpt-5"),
+		Instructions:    param.NewOpt("Be concise."),
+		Input:           oresponses.ResponseNewParamsInputUnion{OfString: param.NewOpt("hello")},
+		MaxOutputTokens: param.NewOpt(int64(320)),
+		Temperature:     param.NewOpt(0.2),
+		TopP:            param.NewOpt(0.85),
+		Reasoning: shared.ReasoningParam{
+			Effort: shared.ReasoningEffortMedium,
+		},
+	}
+
+	resp := &oresponses.Response{
+		ID:     "resp_1",
+		Model:  shared.ResponsesModel("gpt-5"),
+		Status: oresponses.ResponseStatusCompleted,
+		Output: []oresponses.ResponseOutputItemUnion{
+			{
+				Type: "message",
+				Content: []oresponses.ResponseOutputMessageContentUnion{
+					{Type: "output_text", Text: "world"},
+				},
+			},
+			{
+				Type:      "function_call",
+				CallID:    "call_weather",
+				Name:      "weather",
+				Arguments: `{"city":"Paris"}`,
+			},
+		},
+		Usage: oresponses.ResponseUsage{
+			InputTokens:  80,
+			OutputTokens: 20,
+			TotalTokens:  100,
+			InputTokensDetails: oresponses.ResponseUsageInputTokensDetails{
+				CachedTokens: 2,
+			},
+			OutputTokensDetails: oresponses.ResponseUsageOutputTokensDetails{
+				ReasoningTokens: 3,
+			},
+		},
+	}
+
+	generation, err := ResponsesFromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("responses from request/response: %v", err)
+	}
+
+	if generation.Model.Provider != "openai" {
+		t.Fatalf("expected provider openai, got %q", generation.Model.Provider)
+	}
+	if generation.Model.Name != "gpt-5" {
+		t.Fatalf("expected model gpt-5, got %q", generation.Model.Name)
+	}
+	if generation.ResponseID != "resp_1" {
+		t.Fatalf("expected response id resp_1, got %q", generation.ResponseID)
+	}
+	if generation.ResponseModel != "gpt-5" {
+		t.Fatalf("expected response model gpt-5, got %q", generation.ResponseModel)
+	}
+	if generation.SystemPrompt != "Be concise." {
+		t.Fatalf("expected system prompt, got %q", generation.SystemPrompt)
+	}
+	if generation.StopReason != "stop" {
+		t.Fatalf("expected stop reason stop, got %q", generation.StopReason)
+	}
+	if generation.MaxTokens == nil || *generation.MaxTokens != 320 {
+		t.Fatalf("expected max tokens 320, got %v", generation.MaxTokens)
+	}
+	if generation.Temperature == nil || *generation.Temperature != 0.2 {
+		t.Fatalf("expected temperature 0.2, got %v", generation.Temperature)
+	}
+	if generation.TopP == nil || *generation.TopP != 0.85 {
+		t.Fatalf("expected top_p 0.85, got %v", generation.TopP)
+	}
+	if generation.ThinkingEnabled == nil || !*generation.ThinkingEnabled {
+		t.Fatalf("expected thinking enabled true, got %v", generation.ThinkingEnabled)
+	}
+	if generation.Usage.TotalTokens != 100 {
+		t.Fatalf("expected total tokens 100, got %d", generation.Usage.TotalTokens)
+	}
+	if generation.Usage.CacheReadInputTokens != 2 {
+		t.Fatalf("expected cached tokens 2, got %d", generation.Usage.CacheReadInputTokens)
+	}
+	if generation.Usage.ReasoningTokens != 3 {
+		t.Fatalf("expected reasoning tokens 3, got %d", generation.Usage.ReasoningTokens)
+	}
+	if len(generation.Output) != 2 {
+		t.Fatalf("expected two output messages, got %d", len(generation.Output))
+	}
+}
+
+func TestResponsesFromStream(t *testing.T) {
+	req := oresponses.ResponseNewParams{
+		Model:           shared.ResponsesModel("gpt-5"),
+		Input:           oresponses.ResponseNewParamsInputUnion{OfString: param.NewOpt("hello")},
+		MaxOutputTokens: param.NewOpt(int64(128)),
+	}
+
+	summary := ResponsesStreamSummary{
+		Events: []oresponses.ResponseStreamEventUnion{
+			{
+				Type:  "response.output_text.delta",
+				Delta: "hello",
+			},
+			{
+				Type:  "response.output_text.delta",
+				Delta: " world",
+			},
+			{
+				Type: "response.completed",
+			},
+		},
+	}
+
+	generation, err := ResponsesFromStream(req, summary, WithRawArtifacts())
+	if err != nil {
+		t.Fatalf("responses from stream: %v", err)
+	}
+
+	if generation.Model.Provider != "openai" {
+		t.Fatalf("expected provider openai, got %q", generation.Model.Provider)
+	}
+	if generation.ResponseModel != "gpt-5" {
+		t.Fatalf("expected response model gpt-5, got %q", generation.ResponseModel)
+	}
+	if generation.StopReason != "stop" {
+		t.Fatalf("expected stop reason stop, got %q", generation.StopReason)
+	}
+	if generation.MaxTokens == nil || *generation.MaxTokens != 128 {
+		t.Fatalf("expected max tokens 128, got %v", generation.MaxTokens)
+	}
+	if len(generation.Output) != 1 {
+		t.Fatalf("expected one output message, got %d", len(generation.Output))
+	}
+	if generation.Output[0].Parts[0].Text != "hello world" {
+		t.Fatalf("expected merged stream output, got %q", generation.Output[0].Parts[0].Text)
+	}
+	if len(generation.Artifacts) != 2 {
+		t.Fatalf("expected request and provider_event artifacts, got %d", len(generation.Artifacts))
+	}
+	if generation.Artifacts[0].Kind != sigil.ArtifactKindRequest || generation.Artifacts[1].Kind != sigil.ArtifactKindProviderEvent {
+		t.Fatalf("unexpected artifact kinds: %#v", generation.Artifacts)
 	}
 }

@@ -2,7 +2,7 @@ using OpenAI.Chat;
 
 namespace Grafana.Sigil.OpenAI;
 
-public sealed class OpenAIStreamSummary
+public sealed class OpenAIChatCompletionsStreamSummary
 {
     public List<StreamingChatCompletionUpdate> Updates { get; } = new();
 

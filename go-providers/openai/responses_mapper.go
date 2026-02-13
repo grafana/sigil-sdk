@@ -1,0 +1,527 @@
+package openai
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/grafana/sigil/sdks/go/sigil"
+)
+
+// ResponsesStreamSummary captures Responses API stream events and an optional final response.
+type ResponsesStreamSummary struct {
+	Events        []responses.ResponseStreamEventUnion
+	FinalResponse *responses.Response
+}
+
+// ResponsesFromRequestResponse maps an OpenAI responses request/response pair to sigil.Generation.
+func ResponsesFromRequestResponse(req responses.ResponseNewParams, resp *responses.Response, opts ...Option) (sigil.Generation, error) {
+	if resp == nil {
+		return sigil.Generation{}, errors.New("response is required")
+	}
+
+	options := applyOptions(opts)
+	requestPayload := marshalAny(req)
+	input, systemPrompt := mapResponsesRequestInput(requestPayload)
+	output := mapResponsesOutput(resp.Output)
+	tools := mapResponsesTools(requestPayload["tools"])
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapResponsesRequestControls(requestPayload)
+
+	requestModel := string(req.Model)
+	responseModel := strings.TrimSpace(string(resp.Model))
+	if responseModel == "" {
+		responseModel = requestModel
+	}
+
+	artifacts := make([]sigil.Artifact, 0, 3)
+	if options.includeRequestArtifact {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindRequest, "openai.responses.request", req)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if options.includeResponseArtifact {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindResponse, "openai.responses.response", resp)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if options.includeToolsArtifact && len(tools) > 0 {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindTools, "openai.responses.tools", tools)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	generation := sigil.Generation{
+		ConversationID:  options.conversationID,
+		AgentName:       options.agentName,
+		AgentVersion:    options.agentVersion,
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: requestModel},
+		ResponseID:      resp.ID,
+		ResponseModel:   responseModel,
+		SystemPrompt:    systemPrompt,
+		Input:           input,
+		Output:          output,
+		Tools:           tools,
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		TopP:            topP,
+		ToolChoice:      toolChoice,
+		ThinkingEnabled: thinkingEnabled,
+		Usage:           mapResponsesUsage(resp.Usage),
+		StopReason:      normalizeResponsesStopReason(resp),
+		Tags:            cloneStringMap(options.tags),
+		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Artifacts:       artifacts,
+	}
+
+	if err := generation.Validate(); err != nil {
+		return sigil.Generation{}, err
+	}
+
+	return generation, nil
+}
+
+// ResponsesFromStream maps OpenAI responses streaming output to sigil.Generation.
+func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStreamSummary, opts ...Option) (sigil.Generation, error) {
+	if summary.FinalResponse != nil {
+		generation, err := ResponsesFromRequestResponse(req, summary.FinalResponse, opts...)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		return appendResponsesStreamEventsArtifact(generation, summary.Events, opts)
+	}
+
+	if len(summary.Events) == 0 {
+		return sigil.Generation{}, errors.New("stream summary has no events and no final response")
+	}
+
+	requestPayload := marshalAny(req)
+	input, systemPrompt := mapResponsesRequestInput(requestPayload)
+	tools := mapResponsesTools(requestPayload["tools"])
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapResponsesRequestControls(requestPayload)
+	options := applyOptions(opts)
+
+	responseID := ""
+	responseModel := string(req.Model)
+	usage := sigil.TokenUsage{}
+	stopReason := ""
+	text := strings.Builder{}
+
+	for i := range summary.Events {
+		event := summary.Events[i]
+		eventType := strings.TrimSpace(event.Type)
+
+		if event.Response.ID != "" {
+			responseID = event.Response.ID
+			if model := strings.TrimSpace(string(event.Response.Model)); model != "" {
+				responseModel = model
+			}
+			usage = mapResponsesUsage(event.Response.Usage)
+			if reason := normalizeResponsesStopReason(&event.Response); reason != "" {
+				stopReason = reason
+			}
+		}
+
+		switch eventType {
+		case "response.output_text.delta", "response.refusal.delta":
+			if event.Delta != "" {
+				text.WriteString(event.Delta)
+			}
+		case "response.output_text.done":
+			if text.Len() == 0 && event.Text != "" {
+				text.WriteString(event.Text)
+			}
+		case "response.refusal.done":
+			if text.Len() == 0 && event.Refusal != "" {
+				text.WriteString(event.Refusal)
+			}
+		case "response.completed":
+			if stopReason == "" {
+				stopReason = "stop"
+			}
+		case "response.incomplete":
+			if stopReason == "" {
+				reason := strings.TrimSpace(event.Response.IncompleteDetails.Reason)
+				if reason != "" {
+					stopReason = reason
+				} else {
+					stopReason = "incomplete"
+				}
+			}
+		case "response.failed":
+			if stopReason == "" {
+				stopReason = "failed"
+			}
+		case "response.cancelled":
+			if stopReason == "" {
+				stopReason = "cancelled"
+			}
+		}
+	}
+
+	output := []sigil.Message{}
+	if generated := strings.TrimSpace(text.String()); generated != "" {
+		output = append(output, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(generated)}})
+	}
+
+	artifacts := make([]sigil.Artifact, 0, 3)
+	if options.includeRequestArtifact {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindRequest, "openai.responses.request", req)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if options.includeToolsArtifact && len(tools) > 0 {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindTools, "openai.responses.tools", tools)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if options.includeEventsArtifact {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindProviderEvent, "openai.responses.stream_events", summary.Events)
+		if err != nil {
+			return sigil.Generation{}, err
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	generation := sigil.Generation{
+		ConversationID:  options.conversationID,
+		AgentName:       options.agentName,
+		AgentVersion:    options.agentVersion,
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
+		ResponseID:      responseID,
+		ResponseModel:   responseModel,
+		SystemPrompt:    systemPrompt,
+		Input:           input,
+		Output:          output,
+		Tools:           tools,
+		MaxTokens:       maxTokens,
+		Temperature:     temperature,
+		TopP:            topP,
+		ToolChoice:      toolChoice,
+		ThinkingEnabled: thinkingEnabled,
+		Usage:           usage,
+		StopReason:      stopReason,
+		Tags:            cloneStringMap(options.tags),
+		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Artifacts:       artifacts,
+	}
+
+	if err := generation.Validate(); err != nil {
+		return sigil.Generation{}, err
+	}
+
+	return generation, nil
+}
+
+func appendResponsesStreamEventsArtifact(generation sigil.Generation, events []responses.ResponseStreamEventUnion, opts []Option) (sigil.Generation, error) {
+	if len(events) == 0 {
+		return generation, nil
+	}
+
+	options := applyOptions(opts)
+	if !options.includeEventsArtifact {
+		return generation, nil
+	}
+
+	artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindProviderEvent, "openai.responses.stream_events", events)
+	if err != nil {
+		return sigil.Generation{}, err
+	}
+	generation.Artifacts = append(generation.Artifacts, artifact)
+	return generation, nil
+}
+
+func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) {
+	input := make([]sigil.Message, 0, 4)
+	systemPrompts := make([]string, 0, 2)
+
+	if instructions, ok := payload["instructions"].(string); ok {
+		systemPrompts = appendNonEmpty(systemPrompts, instructions)
+	}
+
+	rawInput, hasInput := payload["input"]
+	if !hasInput {
+		return input, strings.Join(systemPrompts, "\n\n")
+	}
+
+	switch typed := rawInput.(type) {
+	case string:
+		if text := strings.TrimSpace(typed); text != "" {
+			input = append(input, sigil.Message{Role: sigil.RoleUser, Parts: []sigil.Part{sigil.TextPart(text)}})
+		}
+	case []any:
+		for i := range typed {
+			item, ok := typed[i].(map[string]any)
+			if !ok {
+				continue
+			}
+
+			itemType := strings.TrimSpace(fmt.Sprintf("%v", item["type"]))
+			role := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", item["role"])))
+
+			if itemType == "message" && (role == "system" || role == "developer") {
+				systemPrompts = appendNonEmpty(systemPrompts, extractResponsesText(item["content"]))
+				continue
+			}
+
+			if itemType == "function_call_output" {
+				content := extractResponsesText(item["output"])
+				if content == "" {
+					content = jsonValueText(item["output"])
+				}
+				if strings.TrimSpace(content) == "" {
+					continue
+				}
+				part := sigil.ToolResultPart(sigil.ToolResult{
+					ToolCallID: strings.TrimSpace(fmt.Sprintf("%v", item["call_id"])),
+					Content:    content,
+					ContentJSON: parseJSONOrString(content),
+				})
+				part.Metadata.ProviderType = "tool_result"
+				input = append(input, sigil.Message{Role: sigil.RoleTool, Parts: []sigil.Part{part}})
+				continue
+			}
+
+			if itemType == "message" || role != "" {
+				content := extractResponsesText(item["content"])
+				if strings.TrimSpace(content) == "" {
+					continue
+				}
+
+				mappedRole := sigil.RoleUser
+				switch role {
+				case "assistant":
+					mappedRole = sigil.RoleAssistant
+				case "tool":
+					mappedRole = sigil.RoleTool
+				}
+
+				input = append(input, sigil.Message{Role: mappedRole, Parts: []sigil.Part{sigil.TextPart(content)}})
+			}
+		}
+	}
+
+	return input, strings.Join(systemPrompts, "\n\n")
+}
+
+func mapResponsesOutput(items []responses.ResponseOutputItemUnion) []sigil.Message {
+	if len(items) == 0 {
+		return nil
+	}
+
+	out := make([]sigil.Message, 0, len(items))
+	for i := range items {
+		item := items[i]
+		switch item.Type {
+		case "message":
+			text := extractResponsesOutputMessageText(item.Content)
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(text)}})
+		case "function_call":
+			if strings.TrimSpace(item.Name) == "" {
+				continue
+			}
+			part := sigil.ToolCallPart(sigil.ToolCall{
+				ID:        item.CallID,
+				Name:      item.Name,
+				InputJSON: parseJSONOrString(item.Arguments),
+			})
+			part.Metadata.ProviderType = "tool_call"
+			out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{part}})
+		default:
+			fallback := strings.TrimSpace(extractResponsesOutputFallback(item))
+			if fallback != "" {
+				out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(fallback)}})
+			}
+		}
+	}
+
+	return out
+}
+
+func mapResponsesTools(value any) []sigil.ToolDefinition {
+	tools, ok := value.([]any)
+	if !ok || len(tools) == 0 {
+		return nil
+	}
+
+	out := make([]sigil.ToolDefinition, 0, len(tools))
+	for i := range tools {
+		tool, ok := tools[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		toolType := strings.TrimSpace(fmt.Sprintf("%v", tool["type"]))
+		if toolType == "function" {
+			name := strings.TrimSpace(fmt.Sprintf("%v", tool["name"]))
+			if name == "" {
+				continue
+			}
+			definition := sigil.ToolDefinition{
+				Name:        name,
+				Description: strings.TrimSpace(fmt.Sprintf("%v", tool["description"])),
+				Type:        "function",
+			}
+			if parameters, exists := tool["parameters"]; exists {
+				definition.InputSchema = jsonValueBytes(parameters)
+			}
+			out = append(out, definition)
+			continue
+		}
+
+		name := strings.TrimSpace(fmt.Sprintf("%v", tool["name"]))
+		if toolType != "" && name != "" {
+			out = append(out, sigil.ToolDefinition{Name: name, Type: toolType})
+		}
+	}
+
+	return out
+}
+
+func mapResponsesUsage(usage responses.ResponseUsage) sigil.TokenUsage {
+	return sigil.TokenUsage{
+		InputTokens:          usage.InputTokens,
+		OutputTokens:         usage.OutputTokens,
+		TotalTokens:          usage.TotalTokens,
+		CacheReadInputTokens: usage.InputTokensDetails.CachedTokens,
+		ReasoningTokens:      usage.OutputTokensDetails.ReasoningTokens,
+	}
+}
+
+func normalizeResponsesStopReason(resp *responses.Response) string {
+	if resp == nil {
+		return ""
+	}
+
+	status := strings.TrimSpace(string(resp.Status))
+	statusLower := strings.ToLower(status)
+	if statusLower == "incomplete" {
+		reason := strings.TrimSpace(resp.IncompleteDetails.Reason)
+		if reason != "" {
+			return reason
+		}
+		return "incomplete"
+	}
+	if statusLower == "completed" {
+		return "stop"
+	}
+	return statusLower
+}
+
+func mapResponsesRequestControls(payload map[string]any) (*int64, *float64, *float64, *string, *bool, *int64) {
+	maxTokens := readInt64(payload, "max_output_tokens")
+	temperature := readFloat64(payload, "temperature")
+	topP := readFloat64(payload, "top_p")
+	toolChoice := canonicalToolChoice(payload["tool_choice"])
+
+	var thinkingEnabled *bool
+	if _, ok := payload["reasoning"]; ok {
+		thinkingEnabled = boolPtr(true)
+	}
+	thinkingBudget := resolveThinkingBudget(payload["reasoning"])
+
+	return maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget
+}
+
+func extractResponsesText(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for i := range typed {
+			if text := extractResponsesText(typed[i]); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		if text, ok := typed["text"].(string); ok {
+			return strings.TrimSpace(text)
+		}
+		if text, ok := typed["content"].(string); ok {
+			return strings.TrimSpace(text)
+		}
+		if refusal, ok := typed["refusal"].(string); ok {
+			return strings.TrimSpace(refusal)
+		}
+	}
+	return ""
+}
+
+func extractResponsesOutputMessageText(content []responses.ResponseOutputMessageContentUnion) string {
+	parts := make([]string, 0, len(content))
+	for i := range content {
+		item := content[i]
+		switch item.Type {
+		case "output_text":
+			if text := strings.TrimSpace(item.Text); text != "" {
+				parts = append(parts, text)
+			}
+		case "refusal":
+			if refusal := strings.TrimSpace(item.Refusal); refusal != "" {
+				parts = append(parts, refusal)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func extractResponsesOutputFallback(item responses.ResponseOutputItemUnion) string {
+	if item.Input != "" {
+		return item.Input
+	}
+	if item.Result != "" {
+		return item.Result
+	}
+	if item.Error != "" {
+		return item.Error
+	}
+	if item.Name != "" && item.Arguments != "" {
+		return fmt.Sprintf("%s(%s)", item.Name, item.Arguments)
+	}
+	return ""
+}
+
+func marshalAny(value any) map[string]any {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return map[string]any{}
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return map[string]any{}
+	}
+	return payload
+}
+
+func jsonValueBytes(value any) []byte {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func jsonValueText(value any) string {
+	data := jsonValueBytes(value)
+	if len(data) == 0 {
+		return ""
+	}
+	return string(data)
+}

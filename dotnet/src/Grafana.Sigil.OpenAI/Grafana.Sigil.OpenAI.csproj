@@ -4,6 +4,7 @@
     <AssemblyName>Grafana.Sigil.OpenAI</AssemblyName>
     <RootNamespace>Grafana.Sigil.OpenAI</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);OPENAI001</NoWarn>
     <PackageId>Grafana.Sigil.OpenAI</PackageId>
     <Description>Grafana Sigil OpenAI provider helpers for .NET.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>

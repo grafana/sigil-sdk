@@ -32,11 +32,23 @@ func TestBuildTagEnvelopeIncludesRequiredContractFields(t *testing.T) {
 	if envelope.metadata["emitter"] != "sdk-traffic" {
 		t.Fatalf("expected emitter metadata sdk-traffic, got %#v", envelope.metadata["emitter"])
 	}
-	if envelope.metadata["provider_shape"] == "" {
-		t.Fatalf("expected provider_shape metadata to be set")
+	if envelope.metadata["provider_shape"] != "openai_chat_completions" {
+		t.Fatalf("expected provider_shape openai_chat_completions, got %#v", envelope.metadata["provider_shape"])
 	}
 	if envelope.agentPersona == "" {
 		t.Fatalf("expected non-empty agent persona")
+	}
+}
+
+func TestBuildTagEnvelopeOpenAIAlternatesProviderShape(t *testing.T) {
+	chatEnvelope := buildTagEnvelope(sourceOpenAI, sigil.GenerationModeSync, 0, 0)
+	if chatEnvelope.metadata["provider_shape"] != "openai_chat_completions" {
+		t.Fatalf("expected openai_chat_completions, got %#v", chatEnvelope.metadata["provider_shape"])
+	}
+
+	responsesEnvelope := buildTagEnvelope(sourceOpenAI, sigil.GenerationModeSync, 1, 0)
+	if responsesEnvelope.metadata["provider_shape"] != "openai_responses" {
+		t.Fatalf("expected openai_responses, got %#v", responsesEnvelope.metadata["provider_shape"])
 	}
 }
 

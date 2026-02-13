@@ -25,7 +25,7 @@ func Example_withSigilWrapper() {
 	providerClient := osdk.NewClient(osdkoption.WithAPIKey(apiKey))
 	req := exampleOpenAIRequest()
 
-	resp, err := ChatCompletion(context.Background(), client, providerClient, req,
+	resp, err := ChatCompletionsNew(context.Background(), client, providerClient, req,
 		WithConversationID("conv-openai-1"),
 		WithAgentName("assistant-openai"),
 		WithAgentVersion("1.0.0"),
@@ -66,7 +66,7 @@ func Example_withSigilDefer() {
 		return
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp,
+	rec.SetResult(ChatCompletionsFromRequestResponse(req, resp,
 		WithConversationID("conv-openai-2"),
 		WithAgentName("assistant-openai"),
 		WithAgentVersion("1.0.0"),
@@ -89,7 +89,7 @@ func Example_withSigilStreamingWrapper() {
 	providerClient := osdk.NewClient(osdkoption.WithAPIKey(apiKey))
 	req := exampleOpenAIRequest()
 
-	_, _, err := ChatCompletionStream(context.Background(), client, providerClient, req,
+	_, _, err := ChatCompletionsNewStreaming(context.Background(), client, providerClient, req,
 		WithConversationID("conv-openai-3"),
 		WithAgentName("assistant-openai"),
 		WithAgentVersion("1.0.0"),
@@ -130,7 +130,7 @@ func Example_withSigilStreamingDefer() {
 		}
 	}()
 
-	summary := StreamSummary{}
+	summary := ChatCompletionsStreamSummary{}
 	for stream.Next() {
 		chunk := stream.Current()
 		summary.Chunks = append(summary.Chunks, chunk)
@@ -141,7 +141,7 @@ func Example_withSigilStreamingDefer() {
 		return
 	}
 
-	rec.SetResult(FromStream(req, summary,
+	rec.SetResult(ChatCompletionsFromStream(req, summary,
 		WithConversationID("conv-openai-4"),
 		WithAgentName("assistant-openai"),
 		WithAgentVersion("1.0.0"),

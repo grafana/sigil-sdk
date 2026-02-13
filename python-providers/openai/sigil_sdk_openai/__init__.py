@@ -1,29 +1,17 @@
-"""OpenAI helper wrappers for Sigil Python SDK."""
+"""OpenAI strict wrapper namespaces for Sigil Python SDK."""
 
 from .provider import (
-    OpenAIChatRequest,
-    OpenAIChatResponse,
-    OpenAIMessage,
+    ChatCompletionsStreamSummary,
     OpenAIOptions,
-    OpenAIStreamSummary,
-    chat_completion,
-    chat_completion_async,
-    chat_completion_stream,
-    chat_completion_stream_async,
-    from_request_response,
-    from_stream,
+    ResponsesStreamSummary,
+    chat,
+    responses,
 )
 
 __all__ = [
-    "OpenAIChatRequest",
-    "OpenAIChatResponse",
-    "OpenAIMessage",
+    "ChatCompletionsStreamSummary",
     "OpenAIOptions",
-    "OpenAIStreamSummary",
-    "chat_completion",
-    "chat_completion_async",
-    "chat_completion_stream",
-    "chat_completion_stream_async",
-    "from_request_response",
-    "from_stream",
+    "ResponsesStreamSummary",
+    "chat",
+    "responses",
 ]

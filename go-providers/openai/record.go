@@ -4,14 +4,15 @@ import (
 	"context"
 
 	osdk "github.com/openai/openai-go/v3"
+	oresponses "github.com/openai/openai-go/v3/responses"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
-// ChatCompletion calls the OpenAI chat completion API and records the generation.
+// ChatCompletionsNew calls the OpenAI chat-completions API and records the generation.
 // It mirrors providerClient.Chat.Completions.New but adds Sigil recording.
 // The native *osdk.ChatCompletion response is returned unchanged.
-func ChatCompletion(
+func ChatCompletionsNew(
 	ctx context.Context,
 	client *sigil.Client,
 	provider osdk.Client,
@@ -34,21 +35,21 @@ func ChatCompletion(
 		return nil, err
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp, opts...))
+	rec.SetResult(ChatCompletionsFromRequestResponse(req, resp, opts...))
 	return resp, rec.Err()
 }
 
-// ChatCompletionStream calls the OpenAI streaming chat completion API and records the generation.
+// ChatCompletionsNewStreaming calls the OpenAI streaming chat-completions API and records the generation.
 // It mirrors providerClient.Chat.Completions.NewStreaming but adds Sigil recording.
-// All chunks are collected into StreamSummary; for per-chunk processing use the
+// All chunks are collected into ChatCompletionsStreamSummary; for per-chunk processing use the
 // defer pattern directly with StartStreamingGeneration.
-func ChatCompletionStream(
+func ChatCompletionsNewStreaming(
 	ctx context.Context,
 	client *sigil.Client,
 	provider osdk.Client,
 	req osdk.ChatCompletionNewParams,
 	opts ...Option,
-) (*osdk.ChatCompletion, StreamSummary, error) {
+) (*osdk.ChatCompletion, ChatCompletionsStreamSummary, error) {
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
@@ -67,7 +68,7 @@ func ChatCompletionStream(
 		}
 	}()
 
-	summary := StreamSummary{}
+	summary := ChatCompletionsStreamSummary{}
 	for stream.Next() {
 		summary.Chunks = append(summary.Chunks, stream.Current())
 	}
@@ -76,9 +77,87 @@ func ChatCompletionStream(
 		return nil, summary, err
 	}
 
-	rec.SetResult(FromStream(req, summary, opts...))
+	rec.SetResult(ChatCompletionsFromStream(req, summary, opts...))
 
 	// If there's a final response with choices, return it.
+	if summary.FinalResponse != nil {
+		return summary.FinalResponse, summary, rec.Err()
+	}
+	return nil, summary, rec.Err()
+}
+
+// ResponsesNew calls the OpenAI responses API and records the generation.
+// It mirrors providerClient.Responses.New but adds Sigil recording.
+func ResponsesNew(
+	ctx context.Context,
+	client *sigil.Client,
+	provider osdk.Client,
+	req oresponses.ResponseNewParams,
+	opts ...Option,
+) (*oresponses.Response, error) {
+	options := applyOptions(opts)
+
+	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
+		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
+	})
+	defer rec.End()
+
+	resp, err := provider.Responses.New(ctx, req)
+	if err != nil {
+		rec.SetCallError(err)
+		return nil, err
+	}
+
+	rec.SetResult(ResponsesFromRequestResponse(req, resp, opts...))
+	return resp, rec.Err()
+}
+
+// ResponsesNewStreaming calls the OpenAI streaming responses API and records the generation.
+// It mirrors providerClient.Responses.NewStreaming but adds Sigil recording.
+func ResponsesNewStreaming(
+	ctx context.Context,
+	client *sigil.Client,
+	provider osdk.Client,
+	req oresponses.ResponseNewParams,
+	opts ...Option,
+) (*oresponses.Response, ResponsesStreamSummary, error) {
+	options := applyOptions(opts)
+
+	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
+		ConversationID: options.conversationID,
+		AgentName:      options.agentName,
+		AgentVersion:   options.agentVersion,
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
+	})
+	defer rec.End()
+
+	stream := provider.Responses.NewStreaming(ctx, req)
+	defer func() {
+		if closeErr := stream.Close(); closeErr != nil {
+			// Best-effort close on stream teardown.
+			_ = closeErr
+		}
+	}()
+
+	summary := ResponsesStreamSummary{}
+	for stream.Next() {
+		event := stream.Current()
+		summary.Events = append(summary.Events, event)
+		if event.Response.ID != "" {
+			final := event.Response
+			summary.FinalResponse = &final
+		}
+	}
+	if err := stream.Err(); err != nil {
+		rec.SetCallError(err)
+		return nil, summary, err
+	}
+
+	rec.SetResult(ResponsesFromStream(req, summary, opts...))
+
 	if summary.FinalResponse != nil {
 		return summary.FinalResponse, summary, rec.Err()
 	}

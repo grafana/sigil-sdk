@@ -6,7 +6,7 @@ The .NET SDK follows the same generation-first contract and provider parity targ
 ## Packages
 
 - `Grafana.Sigil`: core runtime (`SigilClient`, generation/tool recorders, generation export, OTLP trace export)
-- `Grafana.Sigil.OpenAI`: OpenAI Chat Completions wrappers and mappers
+- `Grafana.Sigil.OpenAI`: OpenAI Responses + Chat Completions wrappers and mappers
 - `Grafana.Sigil.Anthropic`: Anthropic Messages wrappers and mappers
 - `Grafana.Sigil.Gemini`: Gemini GenerateContent wrappers and mappers
 
@@ -30,12 +30,12 @@ dotnet add package Grafana.Sigil.OpenAI
 # or: Grafana.Sigil.Anthropic / Grafana.Sigil.Gemini
 ```
 
-## Quickstart (OpenAI wrapper)
+## Quickstart (OpenAI Responses wrapper)
 
 ```csharp
 using Grafana.Sigil;
 using Grafana.Sigil.OpenAI;
-using OpenAI.Chat;
+using OpenAI.Responses;
 
 var sigil = new SigilClient(new SigilClientConfig
 {
@@ -60,22 +60,27 @@ var sigil = new SigilClient(new SigilClientConfig
     },
 });
 
-var openAI = new ChatClient(
+var openAI = new OpenAIResponseClient(
     "gpt-5",
     Environment.GetEnvironmentVariable("OPENAI_API_KEY")!
 );
 
-var messages = new List<ChatMessage>
+var inputItems = new List<ResponseItem>
 {
-    new SystemChatMessage("You are concise."),
-    new UserChatMessage("Give me a short weather summary for Paris."),
+    ResponseItem.CreateUserMessageItem("Give me a short weather summary for Paris."),
 };
 
-var response = await OpenAIRecorder.ChatCompletionAsync(
+var requestOptions = new ResponseCreationOptions
+{
+    Instructions = "You are concise.",
+    MaxOutputTokenCount = 320,
+};
+
+var response = await OpenAIRecorder.CreateResponseAsync(
     sigil,
     openAI,
-    messages,
-    requestOptions: null,
+    inputItems,
+    requestOptions: requestOptions,
     options: new OpenAISigilOptions
     {
         ConversationId = "conv-9b2f",

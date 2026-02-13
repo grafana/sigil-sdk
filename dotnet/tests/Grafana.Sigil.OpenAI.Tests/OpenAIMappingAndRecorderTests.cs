@@ -1,6 +1,7 @@
-using System.ClientModel;
-using System.Text;
+using System.ClientModel.Primitives;
+using System.Reflection;
 using OpenAI.Chat;
+using OpenAI.Responses;
 using Xunit;
 
 namespace Grafana.Sigil.OpenAI.Tests;
@@ -8,7 +9,7 @@ namespace Grafana.Sigil.OpenAI.Tests;
 public sealed class OpenAIMappingAndRecorderTests
 {
     [Fact]
-    public void FromRequestResponse_MapsSyncModeAndDefaultsRawArtifactsOff()
+    public void ChatCompletionsFromRequestResponse_MapsSyncModeAndDefaultsRawArtifactsOff()
     {
         var messages = new List<ChatMessage>
         {
@@ -50,7 +51,7 @@ public sealed class OpenAIMappingAndRecorderTests
             )
         );
 
-        var generation = OpenAIGenerationMapper.FromRequestResponse(
+        var generation = OpenAIGenerationMapper.ChatCompletionsFromRequestResponse(
             "gpt-5",
             messages,
             options,
@@ -78,7 +79,7 @@ public sealed class OpenAIMappingAndRecorderTests
     }
 
     [Fact]
-    public void FromRequestResponse_WithRawArtifactsOptIn_IncludesRequestResponseAndToolsArtifacts()
+    public void ChatCompletionsFromRequestResponse_WithRawArtifactsOptIn_IncludesRequestResponseAndToolsArtifacts()
     {
         var messages = new List<ChatMessage>
         {
@@ -100,7 +101,7 @@ public sealed class OpenAIMappingAndRecorderTests
             model: "gpt-5"
         );
 
-        var generation = OpenAIGenerationMapper.FromRequestResponse(
+        var generation = OpenAIGenerationMapper.ChatCompletionsFromRequestResponse(
             "gpt-5",
             messages,
             options,
@@ -112,62 +113,215 @@ public sealed class OpenAIMappingAndRecorderTests
     }
 
     [Fact]
-    public void FromStream_MapsStreamMode()
+    public void ResponsesFromRequestResponse_MapsSyncModeAndDefaultsRawArtifactsOff()
     {
-        var messages = new List<ChatMessage>
+        var inputItems = new List<ResponseItem>
         {
-            new SystemChatMessage("You are concise."),
-            new UserChatMessage("What is the weather in Paris?"),
+            ResponseItem.CreateUserMessageItem("What is the weather in Paris?"),
+            ResponseItem.CreateFunctionCallOutputItem("call_weather", "{\"temp_c\":18}"),
         };
 
-        var options = new ChatCompletionOptions();
-        options.MaxOutputTokenCount = 256;
-        options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
-        options.ReasoningEffortLevel = ChatReasoningEffortLevel.Medium;
-        options.Tools.Add(ChatTool.CreateFunctionTool("weather"));
-
-        var summary = new OpenAIStreamSummary();
-        summary.Updates.Add(OpenAIChatModelFactory.StreamingChatCompletionUpdate(
-            completionId: "chatcmpl_stream_1",
-            contentUpdate: new ChatMessageContent("Calling tool"),
-            toolCallUpdates: new[]
+        var requestOptions = new ResponseCreationOptions
+        {
+            Instructions = "You are concise.",
+            MaxOutputTokenCount = 320,
+            Temperature = 0.2f,
+            TopP = 0.9f,
+            ToolChoice = ResponseToolChoice.CreateFunctionChoice("weather"),
+            ReasoningOptions = new ResponseReasoningOptions
             {
-                OpenAIChatModelFactory.StreamingChatToolCallUpdate(
-                    index: 0,
-                    toolCallId: "call_weather",
-                    kind: ChatToolCallKind.Function,
-                    functionName: "weather",
-                    functionArgumentsUpdate: BinaryData.FromString("{\"city\":\"Pa")
-                ),
+                ReasoningEffortLevel = ResponseReasoningEffortLevel.Medium,
             },
-            model: "gpt-5"
-        ));
-        summary.Updates.Add(OpenAIChatModelFactory.StreamingChatCompletionUpdate(
-            toolCallUpdates: new[]
-            {
-                OpenAIChatModelFactory.StreamingChatToolCallUpdate(
-                    index: 0,
-                    kind: ChatToolCallKind.Function,
-                    functionArgumentsUpdate: BinaryData.FromString("ris\"}")
-                ),
-            },
-            finishReason: ChatFinishReason.ToolCalls,
-            usage: OpenAIChatModelFactory.ChatTokenUsage(outputTokenCount: 5, inputTokenCount: 20, totalTokenCount: 25)
+        };
+        requestOptions.Tools.Add(ResponseTool.CreateFunctionTool(
+            "weather",
+            BinaryData.FromString("{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}"),
+            strictModeEnabled: true,
+            functionDescription: "Get weather"
         ));
 
-        var generation = OpenAIGenerationMapper.FromStream("gpt-5", messages, options, summary);
+        var response = ReadResponse(
+            """
+            {
+              "id": "resp_1",
+              "created_at": 1,
+              "model": "gpt-5",
+              "object": "response",
+              "output": [
+                {
+                  "id": "msg_1",
+                  "type": "message",
+                  "role": "assistant",
+                  "status": "completed",
+                  "content": [{"type": "output_text", "text": "Weather is clear."}]
+                },
+                {
+                  "id": "fc_1",
+                  "type": "function_call",
+                  "call_id": "call_weather",
+                  "name": "weather",
+                  "arguments": "{\"city\":\"Paris\"}"
+                }
+              ],
+              "parallel_tool_calls": false,
+              "tool_choice": "auto",
+              "tools": [],
+              "status": "completed",
+              "usage": {
+                "input_tokens": 80,
+                "output_tokens": 20,
+                "total_tokens": 100,
+                "input_tokens_details": {"cached_tokens": 2},
+                "output_tokens_details": {"reasoning_tokens": 3}
+              }
+            }
+            """
+        );
 
-        Assert.Equal(GenerationMode.Stream, generation.Mode);
-        Assert.Equal("chatcmpl_stream_1", generation.ResponseId);
-        Assert.Equal("tool_calls", generation.StopReason);
-        Assert.Equal(256, generation.MaxTokens);
-        Assert.Contains("required", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        var generation = OpenAIGenerationMapper.ResponsesFromRequestResponse(
+            "gpt-5",
+            inputItems,
+            requestOptions,
+            response,
+            new OpenAISigilOptions
+            {
+                ConversationId = "conv-resp-1",
+                AgentName = "agent-openai",
+                AgentVersion = "v-openai",
+            }
+        );
+
+        Assert.Equal(GenerationMode.Sync, generation.Mode);
+        Assert.Equal("resp_1", generation.ResponseId);
+        Assert.Equal("You are concise.", generation.SystemPrompt);
+        Assert.Equal("stop", generation.StopReason);
+        Assert.Equal(320, generation.MaxTokens);
+        Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
-        Assert.Equal(25, generation.Usage.TotalTokens);
+        Assert.Equal(100, generation.Usage.TotalTokens);
+        Assert.Equal(2, generation.Usage.CacheReadInputTokens);
+        Assert.Equal(3, generation.Usage.ReasoningTokens);
+        Assert.Empty(generation.Artifacts);
+        Assert.Contains(generation.Input, message => message.Role == MessageRole.Tool);
     }
 
     [Fact]
-    public async Task Recorder_SyncAndStreamModes_AreRecordedWithProviderErrorPropagation()
+    public void ResponsesFromRequestResponse_WithRawArtifactsOptIn_IncludesRequestResponseAndToolsArtifacts()
+    {
+        var inputItems = new List<ResponseItem>
+        {
+            ResponseItem.CreateUserMessageItem("hello"),
+        };
+
+        var requestOptions = new ResponseCreationOptions
+        {
+            Instructions = "Be concise.",
+            ToolChoice = ResponseToolChoice.CreateRequiredChoice(),
+        };
+        requestOptions.Tools.Add(ResponseTool.CreateFunctionTool("weather", BinaryData.FromString("{\"type\":\"object\"}"), null, null));
+
+        var response = ReadResponse(
+            """
+            {
+              "id": "resp_2",
+              "created_at": 1,
+              "model": "gpt-5",
+              "object": "response",
+              "output": [
+                {
+                  "id": "msg_1",
+                  "type": "message",
+                  "role": "assistant",
+                  "status": "completed",
+                  "content": [{"type": "output_text", "text": "hi"}]
+                }
+              ],
+              "parallel_tool_calls": false,
+              "tool_choice": "required",
+              "tools": [],
+              "status": "completed",
+              "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+            }
+            """
+        );
+
+        var generation = OpenAIGenerationMapper.ResponsesFromRequestResponse(
+            "gpt-5",
+            inputItems,
+            requestOptions,
+            response,
+            new OpenAISigilOptions().WithRawArtifacts()
+        );
+
+        Assert.Equal(3, generation.Artifacts.Count);
+    }
+
+    [Fact]
+    public void ResponsesFromStream_MapsStreamModeWhenOnlyEventsPresent()
+    {
+        var inputItems = new List<ResponseItem>
+        {
+            ResponseItem.CreateUserMessageItem("hello"),
+        };
+        var requestOptions = new ResponseCreationOptions
+        {
+            Instructions = "Be concise.",
+        };
+
+        var summary = new OpenAIResponsesStreamSummary();
+        summary.Events.Add(ReadStreamingEvent(
+            """
+            {
+              "type": "response.output_text.delta",
+              "content_index": 0,
+              "delta": "hello",
+              "item_id": "msg_1",
+              "output_index": 0,
+              "sequence_number": 1
+            }
+            """
+        ));
+        summary.Events.Add(ReadStreamingEvent(
+            """
+            {
+              "type": "response.output_text.done",
+              "content_index": 0,
+              "text": " world",
+              "item_id": "msg_1",
+              "output_index": 0,
+              "sequence_number": 2
+            }
+            """
+        ));
+        summary.Events.Add(ReadStreamingEvent(
+            """
+            {
+              "type": "response.error",
+              "code": "server_error",
+              "message": "stream broke after final chunk",
+              "param": null,
+              "sequence_number": 3
+            }
+            """
+        ));
+
+        var generation = OpenAIGenerationMapper.ResponsesFromStream(
+            "gpt-5",
+            inputItems,
+            requestOptions,
+            summary,
+            new OpenAISigilOptions().WithRawArtifacts()
+        );
+
+        Assert.Equal(GenerationMode.Stream, generation.Mode);
+        Assert.Equal(string.Empty, generation.StopReason);
+        Assert.Null(summary.FinalResponse);
+        Assert.Contains(generation.Output, message => message.Parts.Any(part => (part.Text ?? string.Empty).Contains("hello world", StringComparison.Ordinal)));
+        Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent && artifact.Name == "openai.responses.stream_events");
+    }
+
+    [Fact]
+    public async Task Recorder_RecordsChatAndResponsesModesAndPropagatesProviderErrors()
     {
         var exporter = new CapturingExporter();
         var config = new SigilClientConfig
@@ -187,15 +341,19 @@ public sealed class OpenAIMappingAndRecorderTests
 
         await using var client = new SigilClient(config);
 
-        var syncMessages = new List<ChatMessage>
+        var chatMessages = new List<ChatMessage>
         {
             new UserChatMessage("hello"),
         };
+        var responseItems = new List<ResponseItem>
+        {
+            ResponseItem.CreateUserMessageItem("hello"),
+        };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => OpenAIRecorder.ChatCompletionAsync(
+        await Assert.ThrowsAsync<InvalidOperationException>(() => OpenAIRecorder.CompleteChatAsync(
             client,
-            syncMessages,
-            (_, _, _) => throw new InvalidOperationException("provider failed"),
+            chatMessages,
+            (_, _, _) => throw new InvalidOperationException("chat provider failed"),
             requestOptions: null,
             options: new OpenAISigilOptions
             {
@@ -203,10 +361,10 @@ public sealed class OpenAIMappingAndRecorderTests
             }
         ));
 
-        var streamSummary = await OpenAIRecorder.ChatCompletionStreamAsync(
+        var chatStreamSummary = await OpenAIRecorder.CompleteChatStreamingAsync(
             client,
-            syncMessages,
-            (_, _, _) => StreamUpdates(),
+            chatMessages,
+            (_, _, _) => StreamChatUpdates(),
             requestOptions: null,
             options: new OpenAISigilOptions
             {
@@ -214,18 +372,67 @@ public sealed class OpenAIMappingAndRecorderTests
             }
         );
 
-        Assert.NotEmpty(streamSummary.Updates);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => OpenAIRecorder.CreateResponseAsync(
+            client,
+            responseItems,
+            (_, _, _) => throw new InvalidOperationException("responses provider failed"),
+            requestOptions: null,
+            options: new OpenAISigilOptions
+            {
+                ModelName = "gpt-5",
+            }
+        ));
+
+        var responsesStreamSummary = await OpenAIRecorder.CreateResponseStreamingAsync(
+            client,
+            responseItems,
+            (_, _, _) => StreamResponsesUpdates(),
+            requestOptions: new ResponseCreationOptions
+            {
+                Instructions = "Be concise.",
+            },
+            options: new OpenAISigilOptions
+            {
+                ModelName = "gpt-5",
+            }
+        );
+
+        Assert.NotEmpty(chatStreamSummary.Updates);
+        Assert.NotEmpty(responsesStreamSummary.Events);
 
         await client.FlushAsync();
         await client.ShutdownAsync();
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
 
-        Assert.Contains(generations, generation => generation.Mode == GenerationMode.Sync && generation.CallError.Contains("provider failed", StringComparison.Ordinal));
-        Assert.Contains(generations, generation => generation.Mode == GenerationMode.Stream);
+        Assert.Contains(generations, generation => generation.Mode == GenerationMode.Sync && generation.CallError.Contains("chat provider failed", StringComparison.Ordinal));
+        Assert.Contains(generations, generation => generation.Mode == GenerationMode.Sync && generation.CallError.Contains("responses provider failed", StringComparison.Ordinal));
+        Assert.True(generations.Count(generation => generation.Mode == GenerationMode.Stream) >= 2);
     }
 
-    private static async IAsyncEnumerable<StreamingChatCompletionUpdate> StreamUpdates()
+    [Fact]
+    public void RemovedRecorderApis_AreNotExposed()
+    {
+        var publicStaticMethods = typeof(OpenAIRecorder)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Select(method => method.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.DoesNotContain("ChatCompletionAsync", publicStaticMethods);
+        Assert.DoesNotContain("ChatCompletionStreamAsync", publicStaticMethods);
+    }
+
+    private static OpenAIResponse ReadResponse(string json)
+    {
+        return ModelReaderWriter.Read<OpenAIResponse>(BinaryData.FromString(json));
+    }
+
+    private static StreamingResponseUpdate ReadStreamingEvent(string json)
+    {
+        return ModelReaderWriter.Read<StreamingResponseUpdate>(BinaryData.FromString(json));
+    }
+
+    private static async IAsyncEnumerable<StreamingChatCompletionUpdate> StreamChatUpdates()
     {
         yield return OpenAIChatModelFactory.StreamingChatCompletionUpdate(
             completionId: "chatcmpl_stream_recorder",
@@ -233,6 +440,36 @@ public sealed class OpenAIMappingAndRecorderTests
             finishReason: ChatFinishReason.Stop,
             usage: OpenAIChatModelFactory.ChatTokenUsage(outputTokenCount: 1, inputTokenCount: 1, totalTokenCount: 2),
             model: "gpt-5"
+        );
+
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<StreamingResponseUpdate> StreamResponsesUpdates()
+    {
+        yield return ReadStreamingEvent(
+            """
+            {
+              "type": "response.output_text.delta",
+              "content_index": 0,
+              "delta": "hello",
+              "item_id": "msg_1",
+              "output_index": 0,
+              "sequence_number": 1
+            }
+            """
+        );
+        yield return ReadStreamingEvent(
+            """
+            {
+              "type": "response.output_text.done",
+              "content_index": 0,
+              "text": " world",
+              "item_id": "msg_1",
+              "output_index": 0,
+              "sequence_number": 2
+            }
+            """
         );
 
         await Task.CompletedTask;

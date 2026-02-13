@@ -1,93 +1,105 @@
-# Grafana Sigil Java Provider Adapter: OpenAI
+# Grafana Sigil Java OpenAI Provider Helpers
 
-This module maps OpenAI request/response and stream events into Sigil normalized generation models.
+This module provides strict wrappers around official OpenAI Java SDK request/response types for both:
 
-## Scope
+- Chat Completions
+- Responses
 
-- One-liner wrappers:
-  - `OpenAiAdapter.chatCompletion(...)`
-  - `OpenAiAdapter.chatCompletionStream(...)`
-- Explicit mapper APIs:
-  - `OpenAiAdapter.fromRequestResponse(...)`
-  - `OpenAiAdapter.fromStream(...)`
+No simplified OpenAI DTO layer is exposed.
 
-## Official SDK
+## Public API
 
-Designed to pair with the official OpenAI Java SDK:
+- Chat Completions:
+  - `OpenAiChatCompletions.create(...)`
+  - `OpenAiChatCompletions.createStreaming(...)`
+  - `OpenAiChatCompletions.fromRequestResponse(...)`
+  - `OpenAiChatCompletions.fromStream(...)`
+- Responses:
+  - `OpenAiResponses.create(...)`
+  - `OpenAiResponses.createStreaming(...)`
+  - `OpenAiResponses.fromRequestResponse(...)`
+  - `OpenAiResponses.fromStream(...)`
 
-- `com.openai:openai-java`
+## Integration styles
 
-## Wrapper Example (sync)
+- Strict wrappers: call OpenAI and record in one step.
+- Manual instrumentation: call OpenAI directly, then map strict OpenAI request/response payloads with `fromRequestResponse` or `fromStream`.
+
+## Official SDK Types
+
+These wrappers accept and return official types from `com.openai:openai-java`:
+
+- Chat: `ChatCompletionCreateParams`, `ChatCompletion`, `ChatCompletionChunk`
+- Responses: `ResponseCreateParams`, `Response`, `ResponseStreamEvent`
+
+## Chat Completions Example
 
 ```java
-OpenAiAdapter.OpenAiChatResponse response = OpenAiAdapter.chatCompletion(
+ChatCompletionCreateParams request = ChatCompletionCreateParams.builder()
+    .model("gpt-5")
+    .addSystemMessage("Be concise.")
+    .addUserMessage("Summarize this run.")
+    .build();
+
+ChatCompletion response = OpenAiChatCompletions.create(
     sigilClient,
-    new OpenAiAdapter.OpenAiChatRequest()
-        .setModel("gpt-5")
-        .setMessages(java.util.List.of(
-            new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hello"))),
-    request -> {
-        // call official SDK here
-        return new OpenAiAdapter.OpenAiChatResponse().setOutputText("hello");
-    },
-    new OpenAiAdapter.OpenAiOptions()
+    request,
+    params -> openAI.chat().completions().create(params),
+    new OpenAiOptions()
         .setConversationId("conv-1")
         .setAgentName("assistant-openai")
         .setAgentVersion("1.0.0")
 );
 ```
 
-## Wrapper Example (stream)
+## Responses Example
 
 ```java
-OpenAiAdapter.OpenAiStreamSummary summary = OpenAiAdapter.chatCompletionStream(
+ResponseCreateParams request = ResponseCreateParams.builder()
+    .model("gpt-5")
+    .instructions("Be concise.")
+    .input("Summarize this run.")
+    .build();
+
+Response response = OpenAiResponses.create(
     sigilClient,
     request,
-    r -> {
-        // collect stream events from official SDK
-        return new OpenAiAdapter.OpenAiStreamSummary()
-            .setOutputText("stitched output")
-            .setChunks(java.util.List.of(/* events */));
-    },
-    new OpenAiAdapter.OpenAiOptions()
+    params -> openAI.responses().create(params),
+    new OpenAiOptions()
+        .setConversationId("conv-1")
+        .setAgentName("assistant-openai")
+        .setAgentVersion("1.0.0")
 );
 ```
 
-## Explicit Recorder Pattern
-
-Use explicit start/end when you want full manual control:
+## Manual instrumentation example (strict mapper)
 
 ```java
-GenerationRecorder rec = sigilClient.startGeneration(new GenerationStart()
+OpenAiOptions options = new OpenAiOptions()
+    .setConversationId("conv-1")
+    .setAgentName("assistant-openai")
+    .setAgentVersion("1.0.0");
+
+var recorder = sigilClient.startGeneration(new GenerationStart()
+    .setConversationId(options.getConversationId())
+    .setAgentName(options.getAgentName())
+    .setAgentVersion(options.getAgentVersion())
     .setModel(new ModelRef().setProvider("openai").setName("gpt-5")));
+
 try {
-    var mapped = OpenAiAdapter.fromRequestResponse(request, response, new OpenAiAdapter.OpenAiOptions());
-    rec.setResult(mapped);
+    Response response = openAI.responses().create(request);
+    recorder.setResult(OpenAiResponses.fromRequestResponse(request, response, options));
 } catch (Exception ex) {
-    rec.setCallError(ex);
+    recorder.setCallError(ex);
     throw ex;
 } finally {
-    rec.end();
+    recorder.end();
 }
 ```
 
-## Raw Artifact Policy
+## Raw Artifacts
 
-- Default: OFF
-- Opt-in: `OpenAiOptions#setRawArtifacts(true)`
+- Default: `false` (off)
+- Opt-in: `new OpenAiOptions().setRawArtifacts(true)`
 
-When enabled:
-
-- sync flow adds `request` + `response`
-- stream flow adds `request` + `provider_event`
-
-## Best Practices
-
-- Keep `rawArtifacts=false` in production paths.
-- Filter/trim provider events before storing them as artifacts.
-- Keep mapper logic deterministic so parity tests remain stable.
-- Set explicit `agentName` and `agentVersion` for better fleet attribution.
-
-## Optional Typed Adapter Layer
-
-If you need a strict compile-time bridge to official SDK object models, add a typed adapter interface in your app module and delegate into `fromRequestResponse(...)` / `fromStream(...)`.
+When enabled, provider request/response/tools/events artifacts are attached with OpenAI-specific keys.

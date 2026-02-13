@@ -14,8 +14,8 @@ import (
 
 const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
 
-// FromRequestResponse maps an OpenAI chat completion request/response pair to sigil.Generation.
-func FromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatCompletion, opts ...Option) (sigil.Generation, error) {
+// ChatCompletionsFromRequestResponse maps an OpenAI chat-completions request/response pair to sigil.Generation.
+func ChatCompletionsFromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatCompletion, opts ...Option) (sigil.Generation, error) {
 	if resp == nil {
 		return sigil.Generation{}, errors.New("response is required")
 	}

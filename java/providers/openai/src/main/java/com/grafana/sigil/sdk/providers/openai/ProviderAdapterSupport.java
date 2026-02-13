@@ -22,14 +22,14 @@ import java.util.List;
 import java.util.Map;
 
 /** OpenAI provider adapter helpers for sync and streaming calls. */
-public final class OpenAiAdapter {
+public final class ProviderAdapterSupport {
     private static final String THINKING_BUDGET_METADATA_KEY = "sigil.gen_ai.request.thinking.budget_tokens";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final ObjectMapper CANONICAL_JSON = new ObjectMapper()
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
             .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
-    private OpenAiAdapter() {
+    private ProviderAdapterSupport() {
     }
 
     /**

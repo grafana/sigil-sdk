@@ -8,7 +8,7 @@ import com.grafana.sigil.sdk.GenerationStart;
 import com.grafana.sigil.sdk.ModelRef;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.ThrowingFunction;
-import com.grafana.sigil.sdk.providers.openai.OpenAiAdapter;
+import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -23,12 +23,12 @@ public final class AnthropicAdapter {
     }
 
     /** Executes a non-stream Anthropic call and records a {@code SYNC} generation. */
-    public static OpenAiAdapter.OpenAiChatResponse completion(
+    public static ProviderAdapterSupport.OpenAiChatResponse completion(
             SigilClient client,
-            OpenAiAdapter.OpenAiChatRequest request,
-            ThrowingFunction<OpenAiAdapter.OpenAiChatRequest, OpenAiAdapter.OpenAiChatResponse> providerCall,
-            OpenAiAdapter.OpenAiOptions options) throws Exception {
-        OpenAiAdapter.OpenAiOptions resolved = options == null ? new OpenAiAdapter.OpenAiOptions() : options;
+            ProviderAdapterSupport.OpenAiChatRequest request,
+            ThrowingFunction<ProviderAdapterSupport.OpenAiChatRequest, ProviderAdapterSupport.OpenAiChatResponse> providerCall,
+            ProviderAdapterSupport.OpenAiOptions options) throws Exception {
+        ProviderAdapterSupport.OpenAiOptions resolved = options == null ? new ProviderAdapterSupport.OpenAiOptions() : options;
         return client.withGeneration(new GenerationStart()
                         .setConversationId(resolved.getConversationId())
                         .setAgentName(resolved.getAgentName())
@@ -44,19 +44,19 @@ public final class AnthropicAdapter {
                         .setMetadata(metadataWithThinkingBudget(resolved.getMetadata(), resolveAnthropicThinkingBudget(request.getThinking())))
                         .setTags(new LinkedHashMap<>(resolved.getTags())),
                 recorder -> {
-                    OpenAiAdapter.OpenAiChatResponse response = providerCall.apply(request);
-                    recorder.setResult(applyAnthropicRequestControls(OpenAiAdapter.fromRequestResponse(request, response, resolved), request));
+                    ProviderAdapterSupport.OpenAiChatResponse response = providerCall.apply(request);
+                    recorder.setResult(applyAnthropicRequestControls(ProviderAdapterSupport.fromRequestResponse(request, response, resolved), request));
                     return response;
                 });
     }
 
     /** Executes a stream Anthropic call and records a {@code STREAM} generation. */
-    public static OpenAiAdapter.OpenAiStreamSummary completionStream(
+    public static ProviderAdapterSupport.OpenAiStreamSummary completionStream(
             SigilClient client,
-            OpenAiAdapter.OpenAiChatRequest request,
-            ThrowingFunction<OpenAiAdapter.OpenAiChatRequest, OpenAiAdapter.OpenAiStreamSummary> providerCall,
-            OpenAiAdapter.OpenAiOptions options) throws Exception {
-        OpenAiAdapter.OpenAiOptions resolved = options == null ? new OpenAiAdapter.OpenAiOptions() : options;
+            ProviderAdapterSupport.OpenAiChatRequest request,
+            ThrowingFunction<ProviderAdapterSupport.OpenAiChatRequest, ProviderAdapterSupport.OpenAiStreamSummary> providerCall,
+            ProviderAdapterSupport.OpenAiOptions options) throws Exception {
+        ProviderAdapterSupport.OpenAiOptions resolved = options == null ? new ProviderAdapterSupport.OpenAiOptions() : options;
         return client.withStreamingGeneration(new GenerationStart()
                         .setConversationId(resolved.getConversationId())
                         .setAgentName(resolved.getAgentName())
@@ -72,31 +72,31 @@ public final class AnthropicAdapter {
                         .setMetadata(metadataWithThinkingBudget(resolved.getMetadata(), resolveAnthropicThinkingBudget(request.getThinking())))
                         .setTags(new LinkedHashMap<>(resolved.getTags())),
                 recorder -> {
-                    OpenAiAdapter.OpenAiStreamSummary summary = providerCall.apply(request);
-                    recorder.setResult(applyAnthropicRequestControls(OpenAiAdapter.fromStream(request, summary, resolved), request));
+                    ProviderAdapterSupport.OpenAiStreamSummary summary = providerCall.apply(request);
+                    recorder.setResult(applyAnthropicRequestControls(ProviderAdapterSupport.fromStream(request, summary, resolved), request));
                     return summary;
                 });
     }
 
     /** Maps non-stream Anthropic payloads to a normalized Sigil generation result. */
     public static GenerationResult fromRequestResponse(
-            OpenAiAdapter.OpenAiChatRequest request,
-            OpenAiAdapter.OpenAiChatResponse response,
-            OpenAiAdapter.OpenAiOptions options) {
-        return applyAnthropicRequestControls(OpenAiAdapter.fromRequestResponse(request, response, options), request);
+            ProviderAdapterSupport.OpenAiChatRequest request,
+            ProviderAdapterSupport.OpenAiChatResponse response,
+            ProviderAdapterSupport.OpenAiOptions options) {
+        return applyAnthropicRequestControls(ProviderAdapterSupport.fromRequestResponse(request, response, options), request);
     }
 
     /** Maps stream Anthropic payloads to a normalized Sigil generation result. */
     public static GenerationResult fromStream(
-            OpenAiAdapter.OpenAiChatRequest request,
-            OpenAiAdapter.OpenAiStreamSummary summary,
-            OpenAiAdapter.OpenAiOptions options) {
-        return applyAnthropicRequestControls(OpenAiAdapter.fromStream(request, summary, options), request);
+            ProviderAdapterSupport.OpenAiChatRequest request,
+            ProviderAdapterSupport.OpenAiStreamSummary summary,
+            ProviderAdapterSupport.OpenAiOptions options) {
+        return applyAnthropicRequestControls(ProviderAdapterSupport.fromStream(request, summary, options), request);
     }
 
     private static GenerationResult applyAnthropicRequestControls(
             GenerationResult result,
-            OpenAiAdapter.OpenAiChatRequest request) {
+            ProviderAdapterSupport.OpenAiChatRequest request) {
         return result
                 .setMaxTokens(request.getMaxTokens())
                 .setTemperature(request.getTemperature())

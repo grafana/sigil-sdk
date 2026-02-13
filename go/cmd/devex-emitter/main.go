@@ -16,6 +16,8 @@ import (
 	goopenai "github.com/grafana/sigil/sdks/go-providers/openai"
 	"github.com/grafana/sigil/sdks/go/sigil"
 	osdk "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/param"
+	oresponses "github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"google.golang.org/genai"
 )
@@ -122,9 +124,15 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 	switch src {
 	case sourceOpenAI:
 		if mode == sigil.GenerationModeStream {
-			return emitOpenAIStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+			if openAIUsesResponses(thread.turn) {
+				return emitOpenAIResponsesStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+			}
+			return emitOpenAIChatCompletionsStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 		}
-		return emitOpenAISync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+		if openAIUsesResponses(thread.turn) {
+			return emitOpenAIResponsesSync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+		}
+		return emitOpenAIChatCompletionsSync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 	case sourceAnthropic:
 		if mode == sigil.GenerationModeStream {
 			return emitAnthropicStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
@@ -149,7 +157,7 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 	}
 }
 
-func emitOpenAISync(
+func emitOpenAIChatCompletionsSync(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
@@ -184,7 +192,7 @@ func emitOpenAISync(
 		},
 	}
 
-	mapped, err := goopenai.FromRequestResponse(req, resp,
+	mapped, err := goopenai.ChatCompletionsFromRequestResponse(req, resp,
 		goopenai.WithConversationID(conversationID),
 		goopenai.WithAgentName(agentName),
 		goopenai.WithAgentVersion(agentVersion),
@@ -201,7 +209,7 @@ func emitOpenAISync(
 	return rec.Err()
 }
 
-func emitOpenAIStream(
+func emitOpenAIChatCompletionsStream(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
@@ -217,7 +225,7 @@ func emitOpenAIStream(
 			osdk.UserMessage(fmt.Sprintf("Stream an execution status update for ticket %d.", turn)),
 		},
 	}
-	summary := goopenai.StreamSummary{
+	summary := goopenai.ChatCompletionsStreamSummary{
 		Chunks: []osdk.ChatCompletionChunk{
 			{
 				ID:    fmt.Sprintf("go-openai-stream-%d", turn),
@@ -240,7 +248,120 @@ func emitOpenAIStream(
 		},
 	}
 
-	mapped, err := goopenai.FromStream(req, summary,
+	mapped, err := goopenai.ChatCompletionsFromStream(req, summary,
+		goopenai.WithConversationID(conversationID),
+		goopenai.WithAgentName(agentName),
+		goopenai.WithAgentVersion(agentVersion),
+		goopenai.WithTags(tags),
+		goopenai.WithMetadata(metadata),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"}})
+	rec.SetResult(mapped, nil)
+	rec.End()
+	return rec.Err()
+}
+
+func emitOpenAIResponsesSync(
+	ctx context.Context,
+	client *sigil.Client,
+	conversationID string,
+	agentName string,
+	agentVersion string,
+	tags map[string]string,
+	metadata map[string]any,
+	turn int,
+) error {
+	req := oresponses.ResponseNewParams{
+		Model:           shared.ResponsesModel("gpt-5"),
+		Instructions:    param.NewOpt("You are a concise planner that always returns action bullets."),
+		Input:           oresponses.ResponseNewParamsInputUnion{OfString: param.NewOpt(fmt.Sprintf("Plan run %d for shipping issue triage.", turn))},
+		MaxOutputTokens: param.NewOpt(int64(256)),
+	}
+	resp := &oresponses.Response{
+		ID:     fmt.Sprintf("go-openai-responses-sync-%d", turn),
+		Model:  shared.ResponsesModel("gpt-5"),
+		Status: oresponses.ResponseStatusCompleted,
+		Output: []oresponses.ResponseOutputItemUnion{
+			{
+				Type: "message",
+				Content: []oresponses.ResponseOutputMessageContentUnion{
+					{Type: "output_text", Text: "1. Pull recent incidents\n2. Group by owner\n3. Draft next action"},
+				},
+			},
+		},
+		Usage: oresponses.ResponseUsage{
+			InputTokens:  int64(80 + turn%15),
+			OutputTokens: int64(28 + turn%9),
+			TotalTokens:  int64(108 + turn%24),
+		},
+	}
+
+	mapped, err := goopenai.ResponsesFromRequestResponse(req, resp,
+		goopenai.WithConversationID(conversationID),
+		goopenai.WithAgentName(agentName),
+		goopenai.WithAgentVersion(agentVersion),
+		goopenai.WithTags(tags),
+		goopenai.WithMetadata(metadata),
+	)
+	if err != nil {
+		return err
+	}
+
+	_, rec := client.StartGeneration(ctx, sigil.GenerationStart{Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"}})
+	rec.SetResult(mapped, nil)
+	rec.End()
+	return rec.Err()
+}
+
+func emitOpenAIResponsesStream(
+	ctx context.Context,
+	client *sigil.Client,
+	conversationID string,
+	agentName string,
+	agentVersion string,
+	tags map[string]string,
+	metadata map[string]any,
+	turn int,
+) error {
+	req := oresponses.ResponseNewParams{
+		Model: shared.ResponsesModel("gpt-5"),
+		Input: oresponses.ResponseNewParamsInputUnion{
+			OfString: param.NewOpt(fmt.Sprintf("Stream an execution status update for ticket %d.", turn)),
+		},
+		MaxOutputTokens: param.NewOpt(int64(128)),
+	}
+
+	summary := goopenai.ResponsesStreamSummary{
+		Events: []oresponses.ResponseStreamEventUnion{
+			{
+				Type:  "response.output_text.delta",
+				Delta: "Starting rollout checks...",
+			},
+			{
+				Type:  "response.output_text.delta",
+				Delta: " completed.",
+			},
+			{
+				Type: "response.completed",
+				Response: oresponses.Response{
+					ID:     fmt.Sprintf("go-openai-responses-stream-%d", turn),
+					Model:  shared.ResponsesModel("gpt-5"),
+					Status: oresponses.ResponseStatusCompleted,
+					Usage: oresponses.ResponseUsage{
+						InputTokens:  42,
+						OutputTokens: 14,
+						TotalTokens:  56,
+					},
+				},
+			},
+		},
+	}
+
+	mapped, err := goopenai.ResponsesFromStream(req, summary,
 		goopenai.WithConversationID(conversationID),
 		goopenai.WithAgentName(agentName),
 		goopenai.WithAgentVersion(agentVersion),
@@ -610,7 +731,7 @@ func buildTagEnvelope(src source, mode sigil.GenerationMode, turn int, slot int)
 			"conversation_slot": slot,
 			"agent_persona":     agentPersona,
 			"emitter":           "sdk-traffic",
-			"provider_shape":    providerShapeFor(src),
+			"provider_shape":    providerShapeFor(src, turn),
 		},
 	}
 }
@@ -640,10 +761,13 @@ func scenarioFor(src source, turn int) string {
 	}
 }
 
-func providerShapeFor(src source) string {
+func providerShapeFor(src source, turn int) string {
 	switch src {
 	case sourceOpenAI:
-		return "chat_completion"
+		if openAIUsesResponses(turn) {
+			return "openai_responses"
+		}
+		return "openai_chat_completions"
 	case sourceAnthropic:
 		return "messages"
 	case sourceGemini:
@@ -651,6 +775,10 @@ func providerShapeFor(src source) string {
 	default:
 		return "core_generation"
 	}
+}
+
+func openAIUsesResponses(turn int) bool {
+	return turn%2 != 0
 }
 
 func personaForTurn(turn int) string {

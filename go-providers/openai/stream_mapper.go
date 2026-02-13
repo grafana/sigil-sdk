@@ -9,8 +9,8 @@ import (
 	"github.com/grafana/sigil/sdks/go/sigil"
 )
 
-// StreamSummary captures OpenAI stream chunks and an optional final response.
-type StreamSummary struct {
+// ChatCompletionsStreamSummary captures chat-completions stream chunks and an optional final response.
+type ChatCompletionsStreamSummary struct {
 	Chunks        []osdk.ChatCompletionChunk
 	FinalResponse *osdk.ChatCompletion
 }
@@ -21,14 +21,14 @@ type streamToolCall struct {
 	arguments strings.Builder
 }
 
-// FromStream maps OpenAI streaming output to sigil.Generation.
-func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ...Option) (sigil.Generation, error) {
+// ChatCompletionsFromStream maps OpenAI chat-completions streaming output to sigil.Generation.
+func ChatCompletionsFromStream(req osdk.ChatCompletionNewParams, summary ChatCompletionsStreamSummary, opts ...Option) (sigil.Generation, error) {
 	if summary.FinalResponse != nil {
-		generation, err := FromRequestResponse(req, summary.FinalResponse, opts...)
+		generation, err := ChatCompletionsFromRequestResponse(req, summary.FinalResponse, opts...)
 		if err != nil {
 			return sigil.Generation{}, err
 		}
-		return appendStreamEventsArtifact(generation, summary.Chunks, opts)
+		return appendChatCompletionsStreamEventsArtifact(generation, summary.Chunks, opts)
 	}
 
 	if len(summary.Chunks) == 0 {
@@ -131,7 +131,7 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 		artifacts = append(artifacts, artifact)
 	}
 	if options.includeEventsArtifact {
-		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindProviderEvent, "openai.chat.stream_chunks", summary.Chunks)
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindProviderEvent, "openai.chat.stream_events", summary.Chunks)
 		if err != nil {
 			return sigil.Generation{}, err
 		}
@@ -168,7 +168,7 @@ func FromStream(req osdk.ChatCompletionNewParams, summary StreamSummary, opts ..
 	return generation, nil
 }
 
-func appendStreamEventsArtifact(generation sigil.Generation, chunks []osdk.ChatCompletionChunk, opts []Option) (sigil.Generation, error) {
+func appendChatCompletionsStreamEventsArtifact(generation sigil.Generation, chunks []osdk.ChatCompletionChunk, opts []Option) (sigil.Generation, error) {
 	if len(chunks) == 0 {
 		return generation, nil
 	}
@@ -178,7 +178,7 @@ func appendStreamEventsArtifact(generation sigil.Generation, chunks []osdk.ChatC
 		return generation, nil
 	}
 
-	artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindProviderEvent, "openai.chat.stream_chunks", chunks)
+	artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindProviderEvent, "openai.chat.stream_events", chunks)
 	if err != nil {
 		return sigil.Generation{}, err
 	}

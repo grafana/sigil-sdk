@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":providers:openai"))
     implementation(project(":providers:anthropic"))
     implementation(project(":providers:gemini"))
+    implementation(libs.openai.java)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

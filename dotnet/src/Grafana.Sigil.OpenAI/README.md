@@ -1,6 +1,27 @@
 # Grafana.Sigil.OpenAI
 
-OpenAI Chat Completions instrumentation helpers for `Grafana.Sigil`.
+OpenAI instrumentation helpers for `Grafana.Sigil` with strict official OpenAI .NET SDK types for both:
+
+- Chat Completions
+- Responses
+
+## Integration styles
+
+- Strict wrappers: call OpenAI and record in one step.
+- Manual instrumentation: call OpenAI directly, then map strict OpenAI request/response payloads with `OpenAIGenerationMapper`.
+
+## Public API
+
+- Wrappers:
+  - `OpenAIRecorder.CompleteChatAsync(...)`
+  - `OpenAIRecorder.CompleteChatStreamingAsync(...)`
+  - `OpenAIRecorder.CreateResponseAsync(...)`
+  - `OpenAIRecorder.CreateResponseStreamingAsync(...)`
+- Mappers:
+  - `OpenAIGenerationMapper.ChatCompletionsFromRequestResponse(...)`
+  - `OpenAIGenerationMapper.ChatCompletionsFromStream(...)`
+  - `OpenAIGenerationMapper.ResponsesFromRequestResponse(...)`
+  - `OpenAIGenerationMapper.ResponsesFromStream(...)`
 
 ## Install
 
@@ -10,16 +31,75 @@ dotnet add package Grafana.Sigil.OpenAI
 dotnet add package OpenAI
 ```
 
-## Sync wrapper (`ChatCompletionAsync`)
+## Responses Wrapper (Sync)
 
 ```csharp
 using Grafana.Sigil;
 using Grafana.Sigil.OpenAI;
-using OpenAI.Chat;
+using OpenAI.Responses;
 
 var sigil = new SigilClient(config);
 
-var openAI = new ChatClient(
+var responsesClient = new OpenAIResponseClient(
+    "gpt-5",
+    Environment.GetEnvironmentVariable("OPENAI_API_KEY")!
+);
+
+var inputItems = new List<ResponseItem>
+{
+    ResponseItem.CreateUserMessageItem("What's the weather in Paris?"),
+};
+
+var requestOptions = new ResponseCreationOptions
+{
+    Instructions = "You are concise.",
+    MaxOutputTokenCount = 320,
+};
+
+OpenAIResponse response = await OpenAIRecorder.CreateResponseAsync(
+    sigil,
+    responsesClient,
+    inputItems,
+    requestOptions: requestOptions,
+    options: new OpenAISigilOptions
+    {
+        ConversationId = "conv-openai-responses-1",
+        AgentName = "assistant-core",
+        AgentVersion = "1.0.0",
+    },
+    cancellationToken: CancellationToken.None
+);
+```
+
+## Responses Wrapper (Stream)
+
+```csharp
+OpenAIResponsesStreamSummary summary = await OpenAIRecorder.CreateResponseStreamingAsync(
+    sigil,
+    responsesClient,
+    inputItems,
+    requestOptions: requestOptions,
+    options: new OpenAISigilOptions
+    {
+        ConversationId = "conv-openai-responses-stream-1",
+        AgentName = "assistant-core",
+        AgentVersion = "1.0.0",
+    },
+    cancellationToken: CancellationToken.None
+);
+
+foreach (var evt in summary.Events)
+{
+    // Inspect raw stream events if needed.
+}
+```
+
+## Chat Completions Wrapper (Sync)
+
+```csharp
+using OpenAI.Chat;
+
+var chatClient = new ChatClient(
     "gpt-5",
     Environment.GetEnvironmentVariable("OPENAI_API_KEY")!
 );
@@ -30,21 +110,14 @@ var messages = new List<ChatMessage>
     new UserChatMessage("What's the weather in Paris?"),
 };
 
-var requestOptions = new ChatCompletionOptions();
-requestOptions.Tools.Add(ChatTool.CreateFunctionTool(
-    "weather",
-    "Get weather by city",
-    BinaryData.FromString("{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}")
-));
-
-ChatCompletion response = await OpenAIRecorder.ChatCompletionAsync(
+ChatCompletion chat = await OpenAIRecorder.CompleteChatAsync(
     sigil,
-    openAI,
+    chatClient,
     messages,
-    requestOptions: requestOptions,
+    requestOptions: null,
     options: new OpenAISigilOptions
     {
-        ConversationId = "conv-openai-1",
+        ConversationId = "conv-openai-chat-1",
         AgentName = "assistant-core",
         AgentVersion = "1.0.0",
     },
@@ -52,34 +125,72 @@ ChatCompletion response = await OpenAIRecorder.ChatCompletionAsync(
 );
 ```
 
-## Stream wrapper (`ChatCompletionStreamAsync`)
+## Chat Completions Wrapper (Stream)
 
 ```csharp
-OpenAIStreamSummary summary = await OpenAIRecorder.ChatCompletionStreamAsync(
+OpenAIChatCompletionsStreamSummary streamSummary = await OpenAIRecorder.CompleteChatStreamingAsync(
     sigil,
-    openAI,
+    chatClient,
     messages,
-    requestOptions: requestOptions,
+    requestOptions: null,
     options: new OpenAISigilOptions
     {
-        ConversationId = "conv-openai-stream-1",
+        ConversationId = "conv-openai-chat-stream-1",
         AgentName = "assistant-core",
         AgentVersion = "1.0.0",
     },
     cancellationToken: CancellationToken.None
 );
+```
 
-foreach (var update in summary.Updates)
+## Manual instrumentation example (strict mapper)
+
+```csharp
+var sigilOptions = new OpenAISigilOptions
 {
-    // Use streamed token/tool-call updates in real time if needed.
+    ConversationId = "conv-openai-manual-1",
+    AgentName = "assistant-core",
+    AgentVersion = "1.0.0",
+};
+
+var recorder = sigil.StartGeneration(new GenerationStart
+{
+    ConversationId = sigilOptions.ConversationId,
+    AgentName = sigilOptions.AgentName,
+    AgentVersion = sigilOptions.AgentVersion,
+    Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+});
+
+try
+{
+    OpenAIResponse response = await responsesClient.CreateResponseAsync(
+        inputItems,
+        requestOptions,
+        CancellationToken.None
+    );
+
+    recorder.SetResult(OpenAIGenerationMapper.ResponsesFromRequestResponse(
+        "gpt-5",
+        inputItems,
+        requestOptions,
+        response,
+        sigilOptions
+    ));
+}
+catch (Exception ex)
+{
+    recorder.SetCallError(ex);
+    throw;
+}
+finally
+{
+    recorder.End();
 }
 ```
 
-The wrapper records mode as `STREAM` and aggregates a normalized generation from stream updates.
+## Raw Artifacts (Debug Opt-In)
 
-## Raw artifacts (debug opt-in)
-
-Raw provider request/response/event artifacts are disabled by default.
+Raw provider request/response/tools/stream-events artifacts are disabled by default.
 
 ```csharp
 var sigilOptions = new OpenAISigilOptions
@@ -90,32 +201,6 @@ var sigilOptions = new OpenAISigilOptions
 }.WithRawArtifacts();
 ```
 
-Use this only for diagnostics because artifacts can be large.
+## Delegate Overloads
 
-## Delegate overload for custom call pipelines
-
-If you need custom retries, alternate transports, or test doubles:
-
-```csharp
-var response = await OpenAIRecorder.ChatCompletionAsync(
-    sigil,
-    messages,
-    async (requestMessages, opts, ct) =>
-    {
-        var result = await openAI.CompleteChatAsync(requestMessages, opts, ct);
-        return result.Value;
-    },
-    requestOptions: requestOptions,
-    options: new OpenAISigilOptions { ModelName = "gpt-5" },
-    cancellationToken: CancellationToken.None
-);
-```
-
-## Behavior notes
-
-- Wrapper sets generation mode automatically (`SYNC` for non-stream, `STREAM` for stream).
-- This package targets OpenAI Chat Completions in this parity pass.
-- System messages are normalized into `SystemPrompt` and not duplicated in generation input messages.
-- Provider exceptions are captured as generation `CallError` and then rethrown.
-- Recorder `Error` covers local SDK failures only.
-- Call `SigilClient.ShutdownAsync(...)` during application shutdown to flush pending exports.
+All wrappers also provide delegate overloads so you can inject custom retry/transport/test-double behavior while keeping Sigil recording intact.

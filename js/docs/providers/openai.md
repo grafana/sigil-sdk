@@ -1,54 +1,97 @@
 # Sigil JS Provider Helper: OpenAI
 
-This helper maps OpenAI request/response payloads into Sigil `Generation` records.
+This helper now mirrors official OpenAI SDK shapes for both Chat Completions and Responses.
 
-## Scope
+## Public API
 
-- Wrapper calls:
-  - `openai.chatCompletion(client, request, providerCall, options?)`
-  - `openai.chatCompletionStream(client, request, providerCall, options?)`
-- Mapper functions:
-  - `openai.fromRequestResponse(request, response, options?)`
-  - `openai.fromStream(request, summary, options?)`
-- Raw artifacts (debug opt-in):
-  - `request`
-  - `response` (sync)
-  - `provider_event` (stream)
+- Chat Completions wrappers:
+  - `openai.chat.completions.create(client, request, providerCall, options?)`
+  - `openai.chat.completions.stream(client, request, providerCall, options?)`
+- Chat Completions mappers:
+  - `openai.chat.completions.fromRequestResponse(request, response, options?)`
+  - `openai.chat.completions.fromStream(request, summary, options?)`
 
-## Wrapper-first example
+- Responses wrappers:
+  - `openai.responses.create(client, request, providerCall, options?)`
+  - `openai.responses.stream(client, request, providerCall, options?)`
+- Responses mappers:
+  - `openai.responses.fromRequestResponse(request, response, options?)`
+  - `openai.responses.fromStream(request, summary, options?)`
+
+## Integration styles
+
+- Strict wrappers: call OpenAI and record in one step.
+- Manual instrumentation: call OpenAI yourself, then map strict OpenAI request/response payloads with `fromRequestResponse` or `fromStream`.
+
+## Responses-first wrapper example
 
 ```ts
-import { SigilClient, openai } from "@grafana/sigil-sdk-js";
+import OpenAI from 'openai';
+import { SigilClient, openai } from '@grafana/sigil-sdk-js';
 
-const client = new SigilClient();
+const sigil = new SigilClient();
+const provider = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const response = await openai.chatCompletion(
-  client,
+const response = await openai.responses.create(
+  sigil,
   {
-    model: "gpt-5",
-    messages: [{ role: "user", content: "Hello" }],
+    model: 'gpt-5',
+    instructions: 'Be concise',
+    input: 'Summarize rollout status in 3 bullets',
+    max_output_tokens: 300,
+  },
+  async (request) => provider.responses.create(request)
+);
+
+console.log(response.output_text);
+```
+
+## Chat Completions stream example
+
+```ts
+const summary = await openai.chat.completions.stream(
+  sigil,
+  {
+    model: 'gpt-5',
+    stream: true,
+    messages: [{ role: 'user', content: 'Stream a short status update' }],
   },
   async (request) => {
-    const sdkResp = await provider.chat.completions.create(request);
-    return {
-      id: sdkResp.id,
-      model: sdkResp.model,
-      outputText: sdkResp.choices?.[0]?.message?.content ?? "",
-    };
+    const stream = await provider.chat.completions.create(request);
+    const events = [];
+    for await (const event of stream) {
+      events.push(event);
+    }
+    return { events };
   }
 );
 ```
 
-## Explicit flow example
+## Manual instrumentation example (strict mapper)
 
 ```ts
-const recorder = client.startGeneration({
-  model: { provider: "openai", name: "gpt-5" },
+const request = {
+  model: 'gpt-5',
+  instructions: 'Be concise',
+  input: 'Summarize rollout status in 3 bullets',
+};
+
+const options = {
+  conversationId: 'conv-1',
+  agentName: 'assistant',
+  agentVersion: '1.0.0',
+};
+
+const recorder = sigil.startGeneration({
+  conversationId: options.conversationId,
+  agentName: options.agentName,
+  agentVersion: options.agentVersion,
+  model: { provider: 'openai', name: request.model },
 });
 
 try {
-  const response = await provider.chat.completions.create(request);
-  recorder.setResult(openai.fromRequestResponse(request, response));
+  const response = await provider.responses.create(request);
+  recorder.setResult(openai.responses.fromRequestResponse(request, response, options));
 } catch (error) {
   recorder.setCallError(error);
   throw error;
@@ -59,5 +102,21 @@ try {
 
 ## Raw artifact policy
 
-- Default OFF.
-- Enable only for debug workflows with `{ rawArtifacts: true }`.
+Raw artifacts are OFF by default.
+
+- Chat artifact names:
+  - `openai.chat.request`
+  - `openai.chat.response`
+  - `openai.chat.tools`
+  - `openai.chat.stream_events`
+- Responses artifact names:
+  - `openai.responses.request`
+  - `openai.responses.response`
+  - `openai.responses.tools`
+  - `openai.responses.stream_events`
+
+Enable only for debugging:
+
+```ts
+{ rawArtifacts: true }
+```

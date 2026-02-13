@@ -5,7 +5,7 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func ExampleFromRequestResponse() {
+func ExampleChatCompletionsFromRequestResponse() {
 	req := osdk.ChatCompletionNewParams{
 		Model: shared.ChatModel("gpt-4o-mini"),
 		Messages: []osdk.ChatCompletionMessageParamUnion{
@@ -24,7 +24,7 @@ func ExampleFromRequestResponse() {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp,
+	generation, err := ChatCompletionsFromRequestResponse(req, resp,
 		WithConversationID("conv-1"),
 		WithAgentName("assistant-openai"),
 		WithAgentVersion("1.0.0"),
@@ -37,14 +37,14 @@ func ExampleFromRequestResponse() {
 	_ = generation.Output
 }
 
-func ExampleFromStream() {
+func ExampleChatCompletionsFromStream() {
 	req := osdk.ChatCompletionNewParams{
 		Model: shared.ChatModel("gpt-4o-mini"),
 		Messages: []osdk.ChatCompletionMessageParamUnion{
 			osdk.UserMessage("Hello"),
 		},
 	}
-	summary := StreamSummary{
+	summary := ChatCompletionsStreamSummary{
 		Chunks: []osdk.ChatCompletionChunk{
 			{
 				Model: "gpt-4o-mini",
@@ -60,7 +60,7 @@ func ExampleFromStream() {
 		},
 	}
 
-	generation, err := FromStream(req, summary,
+	generation, err := ChatCompletionsFromStream(req, summary,
 		WithConversationID("conv-2"),
 		WithAgentName("assistant-openai"),
 		WithAgentVersion("1.0.0"),

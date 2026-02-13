@@ -12,7 +12,7 @@ import com.grafana.sigil.sdk.GenerationExporter;
 import com.grafana.sigil.sdk.GenerationMode;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
-import com.grafana.sigil.sdk.providers.openai.OpenAiAdapter;
+import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -30,12 +30,12 @@ class GeminiAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            GeminiAdapter.completion(client, request(), _r -> response(), new OpenAiAdapter.OpenAiOptions());
+            GeminiAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
             GeminiAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new OpenAiAdapter.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new OpenAiAdapter.OpenAiOptions());
+                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
+                    new ProviderAdapterSupport.OpenAiOptions());
         }
 
         assertThat(exporter.generations).hasSize(2);
@@ -58,17 +58,17 @@ class GeminiAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            GeminiAdapter.completion(client, request(), _r -> response(), new OpenAiAdapter.OpenAiOptions());
+            GeminiAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
             GeminiAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new OpenAiAdapter.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new OpenAiAdapter.OpenAiOptions());
+                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
+                    new ProviderAdapterSupport.OpenAiOptions());
             GeminiAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new OpenAiAdapter.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()).setChunks(List.of("event")),
-                    new OpenAiAdapter.OpenAiOptions().setRawArtifacts(true));
+                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()).setChunks(List.of("event")),
+                    new ProviderAdapterSupport.OpenAiOptions().setRawArtifacts(true));
         }
 
         assertThat(exporter.generations).hasSize(3);
@@ -91,7 +91,7 @@ class GeminiAdapterTest {
                         _r -> {
                             throw new RuntimeException("gemini failed");
                         },
-                        new OpenAiAdapter.OpenAiOptions());
+                        new ProviderAdapterSupport.OpenAiOptions());
             }
         }).isInstanceOf(RuntimeException.class).hasMessageContaining("gemini failed");
 
@@ -104,23 +104,23 @@ class GeminiAdapterTest {
         var mapped = GeminiAdapter.fromRequestResponse(
                 request().setThinkingConfig(Map.of("include_thoughts", false)),
                 response(),
-                new OpenAiAdapter.OpenAiOptions());
+                new ProviderAdapterSupport.OpenAiOptions());
         assertThat(mapped.getThinkingEnabled()).isFalse();
     }
 
-    private static OpenAiAdapter.OpenAiChatRequest request() {
-        return new OpenAiAdapter.OpenAiChatRequest()
+    private static ProviderAdapterSupport.OpenAiChatRequest request() {
+        return new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("gemini-2.5")
                 .setMaxOutputTokens(512L)
                 .setTemperature(0.2)
                 .setTopP(0.75)
                 .setFunctionCallingMode(Map.of("mode", "auto"))
                 .setThinkingConfig(Map.of("include_thoughts", true, "thinking_budget", 1536))
-                .setMessages(List.of(new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hi")));
+                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("hi")));
     }
 
-    private static OpenAiAdapter.OpenAiChatResponse response() {
-        return new OpenAiAdapter.OpenAiChatResponse().setOutputText("ok");
+    private static ProviderAdapterSupport.OpenAiChatResponse response() {
+        return new ProviderAdapterSupport.OpenAiChatResponse().setOutputText("ok");
     }
 
     private static final class CapturingExporter implements GenerationExporter {

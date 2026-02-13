@@ -12,7 +12,7 @@ import com.grafana.sigil.sdk.GenerationExporter;
 import com.grafana.sigil.sdk.GenerationMode;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
-import com.grafana.sigil.sdk.providers.openai.OpenAiAdapter;
+import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -30,12 +30,12 @@ class AnthropicAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            AnthropicAdapter.completion(client, request(), _r -> response(), new OpenAiAdapter.OpenAiOptions());
+            AnthropicAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
             AnthropicAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new OpenAiAdapter.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new OpenAiAdapter.OpenAiOptions());
+                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
+                    new ProviderAdapterSupport.OpenAiOptions());
         }
 
         assertThat(exporter.generations).hasSize(2);
@@ -58,17 +58,17 @@ class AnthropicAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            AnthropicAdapter.completion(client, request(), _r -> response(), new OpenAiAdapter.OpenAiOptions());
+            AnthropicAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
             AnthropicAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new OpenAiAdapter.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new OpenAiAdapter.OpenAiOptions());
+                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
+                    new ProviderAdapterSupport.OpenAiOptions());
             AnthropicAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new OpenAiAdapter.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()).setChunks(List.of("event")),
-                    new OpenAiAdapter.OpenAiOptions().setRawArtifacts(true));
+                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()).setChunks(List.of("event")),
+                    new ProviderAdapterSupport.OpenAiOptions().setRawArtifacts(true));
         }
 
         assertThat(exporter.generations).hasSize(3);
@@ -91,7 +91,7 @@ class AnthropicAdapterTest {
                         _r -> {
                             throw new RuntimeException("anthropic failed");
                         },
-                        new OpenAiAdapter.OpenAiOptions());
+                        new ProviderAdapterSupport.OpenAiOptions());
             }
         }).isInstanceOf(RuntimeException.class).hasMessageContaining("anthropic failed");
 
@@ -104,23 +104,23 @@ class AnthropicAdapterTest {
         var mapped = AnthropicAdapter.fromRequestResponse(
                 request().setThinking(Map.of("type", "disabled")),
                 response(),
-                new OpenAiAdapter.OpenAiOptions());
+                new ProviderAdapterSupport.OpenAiOptions());
         assertThat(mapped.getThinkingEnabled()).isFalse();
     }
 
-    private static OpenAiAdapter.OpenAiChatRequest request() {
-        return new OpenAiAdapter.OpenAiChatRequest()
+    private static ProviderAdapterSupport.OpenAiChatRequest request() {
+        return new ProviderAdapterSupport.OpenAiChatRequest()
                 .setModel("claude-3")
                 .setMaxTokens(256L)
                 .setTemperature(0.25)
                 .setTopP(0.9)
                 .setToolChoice(Map.of("type", "tool", "name", "weather"))
                 .setThinking(Map.of("type", "adaptive", "budget_tokens", 2048))
-                .setMessages(List.of(new OpenAiAdapter.OpenAiMessage().setRole("user").setContent("hi")));
+                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("hi")));
     }
 
-    private static OpenAiAdapter.OpenAiChatResponse response() {
-        return new OpenAiAdapter.OpenAiChatResponse().setOutputText("ok");
+    private static ProviderAdapterSupport.OpenAiChatResponse response() {
+        return new ProviderAdapterSupport.OpenAiChatResponse().setOutputText("ok");
     }
 
     private static final class CapturingExporter implements GenerationExporter {

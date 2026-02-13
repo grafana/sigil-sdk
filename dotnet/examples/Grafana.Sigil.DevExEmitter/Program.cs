@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Text.Json;
 using AnthropicDelta = Anthropic.Models.Messages.Delta;
 using AnthropicMessage = Anthropic.Models.Messages.Message;
@@ -27,6 +28,7 @@ using Grafana.Sigil.Anthropic;
 using Grafana.Sigil.Gemini;
 using Grafana.Sigil.OpenAI;
 using OpenAI.Chat;
+using OpenAI.Responses;
 
 internal static class Program
 {
@@ -186,13 +188,28 @@ internal static class Program
     {
         if (source == "openai")
         {
+            var shape = ProviderShapeFor(source, context.Turn);
+            var useResponses = string.Equals(shape, "openai_responses", StringComparison.Ordinal);
+
             if (mode == GenerationMode.Stream)
             {
-                await EmitOpenAiStreamAsync(client, context, cancellationToken).ConfigureAwait(false);
+                if (useResponses)
+                {
+                    await EmitOpenAiResponsesStreamAsync(client, context, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                await EmitOpenAiChatStreamAsync(client, context, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
-            await EmitOpenAiSyncAsync(client, context, cancellationToken).ConfigureAwait(false);
+            if (useResponses)
+            {
+                await EmitOpenAiResponsesSyncAsync(client, context, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            await EmitOpenAiChatSyncAsync(client, context, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -229,7 +246,7 @@ internal static class Program
         EmitCustomSync(client, config, context);
     }
 
-    private static async Task EmitOpenAiSyncAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
+    private static async Task EmitOpenAiChatSyncAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
     {
         var messages = new List<ChatMessage>
         {
@@ -244,7 +261,7 @@ internal static class Program
             BinaryData.FromString("{\"type\":\"object\",\"properties\":{\"release\":{\"type\":\"string\"}}}")
         ));
 
-        await OpenAIRecorder.ChatCompletionAsync(
+        await OpenAIRecorder.CompleteChatAsync(
             client,
             messages,
             (_, _, _) => Task.FromResult(OpenAIChatModelFactory.ChatCompletion(
@@ -274,14 +291,14 @@ internal static class Program
         ).ConfigureAwait(false);
     }
 
-    private static async Task EmitOpenAiStreamAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
+    private static async Task EmitOpenAiChatStreamAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
     {
         var messages = new List<ChatMessage>
         {
             new UserChatMessage($"Stream ticket status {context.Turn}."),
         };
 
-        await OpenAIRecorder.ChatCompletionStreamAsync(
+        await OpenAIRecorder.CompleteChatStreamingAsync(
             client,
             messages,
             (_, _, ct) => StreamOpenAiUpdates(context.Turn, ct),
@@ -323,6 +340,167 @@ internal static class Program
                 totalTokenCount: 65 + (turn % 7)
             ),
             model: "gpt-5"
+        );
+
+        await Task.CompletedTask;
+    }
+
+    private static async Task EmitOpenAiResponsesSyncAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
+    {
+        var inputItems = new List<ResponseItem>
+        {
+            ResponseItem.CreateUserMessageItem($"Draft rollout plan {context.Turn}."),
+        };
+
+        var requestOptions = new ResponseCreationOptions
+        {
+            Instructions = "Return concise rollout planning bullets.",
+            MaxOutputTokenCount = 320,
+            Temperature = 0.2f,
+            TopP = 0.9f,
+            ToolChoice = ResponseToolChoice.CreateFunctionChoice("release_gate"),
+        };
+        requestOptions.Tools.Add(ResponseTool.CreateFunctionTool(
+            "release_gate",
+            BinaryData.FromString("{\"type\":\"object\",\"properties\":{\"release\":{\"type\":\"string\"}}}"),
+            strictModeEnabled: true,
+            functionDescription: "Check release gate"
+        ));
+
+        await OpenAIRecorder.CreateResponseAsync(
+            client,
+            inputItems,
+            (_, _, _) => Task.FromResult(ReadOpenAIResponse(
+                $$"""
+                {
+                  "id": "dotnet-openai-responses-sync-{{context.Turn}}",
+                  "created_at": 1,
+                  "model": "gpt-5",
+                  "object": "response",
+                  "output": [
+                    {
+                      "id": "dotnet-openai-responses-sync-msg-{{context.Turn}}",
+                      "type": "message",
+                      "role": "assistant",
+                      "status": "completed",
+                      "content": [{"type": "output_text", "text": "Plan {{context.Turn}}: validate canary, assign owner, publish summary."}]
+                    }
+                  ],
+                  "parallel_tool_calls": false,
+                  "tool_choice": "auto",
+                  "tools": [],
+                  "status": "completed",
+                  "usage": {
+                    "input_tokens": {{86 + (context.Turn % 9)}},
+                    "output_tokens": {{25 + (context.Turn % 6)}},
+                    "total_tokens": {{111 + (context.Turn % 11)}}
+                  }
+                }
+                """
+            )),
+            requestOptions: requestOptions,
+            options: new OpenAISigilOptions
+            {
+                ProviderName = "openai",
+                ModelName = "gpt-5",
+                ConversationId = context.ConversationId,
+                AgentName = context.AgentName,
+                AgentVersion = context.AgentVersion,
+                Tags = context.Tags,
+                Metadata = context.Metadata,
+            },
+            cancellationToken: cancellationToken
+        ).ConfigureAwait(false);
+    }
+
+    private static async Task EmitOpenAiResponsesStreamAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
+    {
+        var inputItems = new List<ResponseItem>
+        {
+            ResponseItem.CreateUserMessageItem($"Stream ticket status {context.Turn}."),
+        };
+
+        var requestOptions = new ResponseCreationOptions
+        {
+            Instructions = "Stream short operational deltas.",
+            MaxOutputTokenCount = 220,
+        };
+
+        await OpenAIRecorder.CreateResponseStreamingAsync(
+            client,
+            inputItems,
+            (_, _, ct) => StreamOpenAiResponseUpdates(context.Turn, ct),
+            requestOptions: requestOptions,
+            options: new OpenAISigilOptions
+            {
+                ProviderName = "openai",
+                ModelName = "gpt-5",
+                ConversationId = context.ConversationId,
+                AgentName = context.AgentName,
+                AgentVersion = context.AgentVersion,
+                Tags = context.Tags,
+                Metadata = context.Metadata,
+            },
+            cancellationToken: cancellationToken
+        ).ConfigureAwait(false);
+    }
+
+    private static async IAsyncEnumerable<StreamingResponseUpdate> StreamOpenAiResponseUpdates(
+        int turn,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        yield return ReadStreamingResponseUpdate(
+            $$"""
+            {
+              "type": "response.output_text.delta",
+              "content_index": 0,
+              "delta": "Ticket {{turn}}: canary healthy",
+              "item_id": "dotnet-openai-responses-stream-msg-{{turn}}",
+              "output_index": 0,
+              "sequence_number": 1
+            }
+            """
+        );
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        yield return ReadStreamingResponseUpdate(
+            $$"""
+            {
+              "type": "response.output_text.done",
+              "content_index": 0,
+              "text": "; production gate passed.",
+              "item_id": "dotnet-openai-responses-stream-msg-{{turn}}",
+              "output_index": 0,
+              "sequence_number": 2
+            }
+            """
+        );
+
+        yield return ReadStreamingResponseUpdate(
+            $$"""
+            {
+              "type": "response.completed",
+              "sequence_number": 3,
+              "response": {
+                "id": "dotnet-openai-responses-stream-{{turn}}",
+                "created_at": 1,
+                "model": "gpt-5",
+                "object": "response",
+                "output": [],
+                "parallel_tool_calls": false,
+                "tool_choice": "auto",
+                "tools": [],
+                "status": "completed",
+                "usage": {
+                  "input_tokens": {{49 + (turn % 5)}},
+                  "output_tokens": {{16 + (turn % 4)}},
+                  "total_tokens": {{65 + (turn % 7)}}
+                }
+              }
+            }
+            """
         );
 
         await Task.CompletedTask;
@@ -725,7 +903,7 @@ internal static class Program
                 [
                     new Message
                     {
-                        Role = MessageRole.Assistant,
+                        Role = Grafana.Sigil.MessageRole.Assistant,
                         Parts =
                         [
                             Part.ThinkingPart("assembling synthetic stream segments"),
@@ -772,7 +950,7 @@ internal static class Program
             ["conversation_slot"] = slot,
             ["agent_persona"] = persona,
             ["emitter"] = "sdk-traffic",
-            ["provider_shape"] = ProviderShapeFor(source),
+            ["provider_shape"] = ProviderShapeFor(source, turn),
         };
 
         return new TagEnvelope(persona, tags, metadata);
@@ -795,11 +973,11 @@ internal static class Program
         };
     }
 
-    private static string ProviderShapeFor(string source)
+    private static string ProviderShapeFor(string source, int turn)
     {
         return source switch
         {
-            "openai" => "chat_completion",
+            "openai" => turn % 2 == 0 ? "openai_chat_completions" : "openai_responses",
             "anthropic" => "messages",
             "gemini" => "generate_content",
             _ => "core_generation",
@@ -809,6 +987,16 @@ internal static class Program
     private static string SourceTagFor(string source)
     {
         return source == "mistral" ? "core_custom" : "provider_wrapper";
+    }
+
+    private static OpenAIResponse ReadOpenAIResponse(string json)
+    {
+        return ModelReaderWriter.Read<OpenAIResponse>(BinaryData.FromString(json));
+    }
+
+    private static StreamingResponseUpdate ReadStreamingResponseUpdate(string json)
+    {
+        return ModelReaderWriter.Read<StreamingResponseUpdate>(BinaryData.FromString(json));
     }
 
     private sealed record RuntimeConfig(
