@@ -1,6 +1,7 @@
 package com.grafana.sigil.sdk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.protobuf.util.JsonFormat;
@@ -186,6 +187,189 @@ class SigilClientTransportTest {
             client.flush();
             client.shutdown();
         }
+    }
+
+    @Test
+    void submitsConversationRatingOverHttpAndSetsAuthHeaders() throws Exception {
+        AtomicReference<String> path = new AtomicReference<>();
+        AtomicReference<Map<String, String>> headers = new AtomicReference<>();
+        AtomicReference<JsonNode> payload = new AtomicReference<>();
+
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/conversations/conv-1/ratings", exchange -> {
+            path.set(exchange.getRequestURI().getPath());
+
+            Map<String, String> requestHeaders = new LinkedHashMap<>();
+            exchange.getRequestHeaders().forEach((k, v) -> requestHeaders.put(k.toLowerCase(), String.join(",", v)));
+            headers.set(requestHeaders);
+
+            byte[] body = exchange.getRequestBody().readAllBytes();
+            payload.set(Json.MAPPER.readTree(body));
+
+            byte[] response = """
+                    {
+                      "rating":{
+                        "rating_id":"rat-1",
+                        "conversation_id":"conv-1",
+                        "rating":"CONVERSATION_RATING_VALUE_BAD",
+                        "created_at":"2026-02-13T12:00:00Z"
+                      },
+                      "summary":{
+                        "total_count":1,
+                        "good_count":0,
+                        "bad_count":1,
+                        "latest_rating":"CONVERSATION_RATING_VALUE_BAD",
+                        "latest_rated_at":"2026-02-13T12:00:00Z",
+                        "has_bad_rating":true
+                      }
+                    }
+                    """.getBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(response);
+            }
+        });
+        server.start();
+
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                .setApi(new ApiConfig().setEndpoint("http://127.0.0.1:" + server.getAddress().getPort()))
+                .setGenerationExport(new GenerationExportConfig()
+                        .setProtocol(GenerationExportProtocol.GRPC)
+                        .setEndpoint("localhost:4317")
+                        .setAuth(new AuthConfig().setMode(AuthMode.TENANT).setTenantId("tenant-a"))
+                        .setBatchSize(1)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            SubmitConversationRatingResponse response = client.submitConversationRating(
+                    "conv-1",
+                    new SubmitConversationRatingRequest()
+                            .setRatingId("rat-1")
+                            .setRating(ConversationRatingValue.BAD)
+                            .setComment("wrong answer")
+                            .setMetadata(Map.of("channel", "assistant")));
+
+            assertThat(response.getRating().getRatingId()).isEqualTo("rat-1");
+            assertThat(response.getSummary().isHasBadRating()).isTrue();
+        } finally {
+            server.stop(0);
+        }
+
+        assertThat(path.get()).isEqualTo("/api/v1/conversations/conv-1/ratings");
+        assertThat(headers.get().get("x-scope-orgid")).isEqualTo("tenant-a");
+        assertThat(payload.get().path("rating_id").asText()).isEqualTo("rat-1");
+        assertThat(payload.get().path("rating").asText()).isEqualTo("CONVERSATION_RATING_VALUE_BAD");
+        assertThat(payload.get().path("comment").asText()).isEqualTo("wrong answer");
+    }
+
+    @Test
+    void submitConversationRatingMapsConflictAndValidationErrors() {
+        com.sun.net.httpserver.HttpServer server;
+        try {
+            server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        } catch (IOException exception) {
+            throw new RuntimeException(exception);
+        }
+        server.createContext("/api/v1/conversations/conv-1/ratings", exchange -> {
+            byte[] response = "idempotency conflict".getBytes();
+            exchange.sendResponseHeaders(409, response.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(response);
+            }
+        });
+        server.start();
+
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                .setApi(new ApiConfig().setEndpoint("http://127.0.0.1:" + server.getAddress().getPort()))
+                .setGenerationExport(new GenerationExportConfig()
+                        .setProtocol(GenerationExportProtocol.HTTP)
+                        .setEndpoint("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1/generations:export")
+                        .setBatchSize(1)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            assertThatThrownBy(() -> client.submitConversationRating(
+                    "conv-1",
+                    new SubmitConversationRatingRequest()
+                            .setRatingId("rat-1")
+                            .setRating(ConversationRatingValue.GOOD)))
+                    .isInstanceOf(RatingConflictException.class);
+
+            assertThatThrownBy(() -> client.submitConversationRating(
+                    "conv-1",
+                    new SubmitConversationRatingRequest()
+                            .setRatingId("")
+                            .setRating(ConversationRatingValue.GOOD)))
+                    .isInstanceOf(ValidationException.class);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void submitConversationRatingAppliesBearerHeaderOverride() throws Exception {
+        AtomicReference<Map<String, String>> headers = new AtomicReference<>(new LinkedHashMap<>());
+
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/conversations/conv-1/ratings", exchange -> {
+            Map<String, String> requestHeaders = new LinkedHashMap<>();
+            exchange.getRequestHeaders().forEach((k, v) -> requestHeaders.put(k.toLowerCase(), String.join(",", v)));
+            headers.set(requestHeaders);
+
+            byte[] response = """
+                    {
+                      "rating":{
+                        "rating_id":"rat-1",
+                        "conversation_id":"conv-1",
+                        "rating":"CONVERSATION_RATING_VALUE_GOOD",
+                        "created_at":"2026-02-13T12:00:00Z"
+                      },
+                      "summary":{
+                        "total_count":1,
+                        "good_count":1,
+                        "bad_count":0,
+                        "latest_rating":"CONVERSATION_RATING_VALUE_GOOD",
+                        "latest_rated_at":"2026-02-13T12:00:00Z",
+                        "has_bad_rating":false
+                      }
+                    }
+                    """.getBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(response);
+            }
+        });
+        server.start();
+
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                .setApi(new ApiConfig().setEndpoint("127.0.0.1:" + server.getAddress().getPort()))
+                .setGenerationExport(new GenerationExportConfig()
+                        .setProtocol(GenerationExportProtocol.HTTP)
+                        .setEndpoint("127.0.0.1:" + server.getAddress().getPort() + "/api/v1/generations:export")
+                        .setInsecure(true)
+                        .setAuth(new AuthConfig().setMode(AuthMode.BEARER).setBearerToken("token-a"))
+                        .setBatchSize(1)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            client.submitConversationRating(
+                    "conv-1",
+                    new SubmitConversationRatingRequest()
+                            .setRatingId("rat-1")
+                            .setRating(ConversationRatingValue.GOOD));
+        } finally {
+            server.stop(0);
+        }
+
+        assertThat(headers.get().get("authorization")).isEqualTo("Bearer token-a");
     }
 
     @Test

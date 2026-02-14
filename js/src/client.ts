@@ -3,6 +3,10 @@ import { createDefaultGenerationExporter } from './exporters/default.js';
 import { SpanKind, SpanStatusCode, type Histogram, type Meter, type Span, type Tracer } from '@opentelemetry/api';
 import { createTraceRuntime, type TraceRuntime } from './tracing.js';
 import type {
+  ConversationRating,
+  ConversationRatingInput,
+  ConversationRatingSummary,
+  ConversationRatingValue,
   Generation,
   GenerationExporter,
   GenerationMode,
@@ -15,6 +19,7 @@ import type {
   SigilLogger,
   SigilSdkConfig,
   SigilSdkConfigInput,
+  SubmitConversationRatingResponse,
   ToolExecution,
   ToolExecutionRecorder,
   ToolExecutionResult,
@@ -70,6 +75,13 @@ const spanAttrToolType = 'gen_ai.tool.type';
 const spanAttrToolDescription = 'gen_ai.tool.description';
 const spanAttrToolCallArguments = 'gen_ai.tool.call.arguments';
 const spanAttrToolCallResult = 'gen_ai.tool.call.result';
+const maxRatingConversationIdLen = 255;
+const maxRatingIdLen = 128;
+const maxRatingGenerationIdLen = 255;
+const maxRatingActorIdLen = 255;
+const maxRatingSourceLen = 64;
+const maxRatingCommentBytes = 4096;
+const maxRatingMetadataBytes = 16 * 1024;
 
 const metricOperationDuration = 'gen_ai.client.operation.duration';
 const metricTokenUsage = 'gen_ai.client.token.usage';
@@ -207,6 +219,73 @@ export class SigilClient {
       return recorder;
     }
     return runWithRecorder(recorder, callback);
+  }
+
+  /** Submits a user-facing conversation rating through Sigil HTTP API. */
+  async submitConversationRating(
+    conversationId: string,
+    input: ConversationRatingInput
+  ): Promise<SubmitConversationRatingResponse> {
+    this.assertOpen();
+
+    const normalizedConversationId = conversationId.trim();
+    if (normalizedConversationId.length === 0) {
+      throw new Error('sigil conversation rating validation failed: conversationId is required');
+    }
+    if (normalizedConversationId.length > maxRatingConversationIdLen) {
+      throw new Error('sigil conversation rating validation failed: conversationId is too long');
+    }
+
+    const normalizedInput = normalizeConversationRatingInput(input);
+    const endpoint = buildConversationRatingEndpoint(
+      this.config.api.endpoint,
+      this.config.generationExport.insecure,
+      normalizedConversationId
+    );
+    const requestBody = {
+      rating_id: normalizedInput.ratingId,
+      rating: normalizedInput.rating,
+      comment: normalizedInput.comment,
+      metadata: normalizedInput.metadata,
+      generation_id: normalizedInput.generationId,
+      rater_id: normalizedInput.raterId,
+      source: normalizedInput.source,
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...this.config.generationExport.headers,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const responseText = (await response.text()).trim();
+    if (response.status === 400) {
+      throw new Error(`sigil conversation rating validation failed: ${ratingErrorText(responseText, response.status)}`);
+    }
+    if (response.status === 409) {
+      throw new Error(`sigil conversation rating conflict: ${ratingErrorText(responseText, response.status)}`);
+    }
+    if (!response.ok) {
+      throw new Error(
+        `sigil conversation rating transport failed: status ${response.status}: ${ratingErrorText(responseText, response.status)}`
+      );
+    }
+
+    if (responseText.length === 0) {
+      throw new Error('sigil conversation rating transport failed: empty response payload');
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      throw new Error(`sigil conversation rating transport failed: invalid JSON response: ${asError(error).message}`);
+    }
+
+    return parseSubmitConversationRatingResponse(payload);
   }
 
   /** Forces immediate drain of queued generation exports. */
@@ -1026,6 +1105,163 @@ function serializeToolContent(value: unknown): { value?: string; error?: Error }
   } catch (error) {
     return { error: asError(error) };
   }
+}
+
+function normalizeConversationRatingInput(input: ConversationRatingInput): ConversationRatingInput {
+  const normalized: ConversationRatingInput = {
+    ratingId: input.ratingId.trim(),
+    rating: input.rating.trim() as ConversationRatingValue,
+    comment: input.comment?.trim(),
+    metadata: input.metadata,
+    generationId: input.generationId?.trim(),
+    raterId: input.raterId?.trim(),
+    source: input.source?.trim(),
+  };
+
+  if (normalized.ratingId.length === 0) {
+    throw new Error('sigil conversation rating validation failed: ratingId is required');
+  }
+  if (normalized.ratingId.length > maxRatingIdLen) {
+    throw new Error('sigil conversation rating validation failed: ratingId is too long');
+  }
+  if (
+    normalized.rating !== 'CONVERSATION_RATING_VALUE_GOOD' &&
+    normalized.rating !== 'CONVERSATION_RATING_VALUE_BAD'
+  ) {
+    throw new Error(
+      'sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD'
+    );
+  }
+  if (normalized.comment !== undefined && encodedSizeBytes(normalized.comment) > maxRatingCommentBytes) {
+    throw new Error('sigil conversation rating validation failed: comment is too long');
+  }
+  if (normalized.generationId !== undefined && normalized.generationId.length > maxRatingGenerationIdLen) {
+    throw new Error('sigil conversation rating validation failed: generationId is too long');
+  }
+  if (normalized.raterId !== undefined && normalized.raterId.length > maxRatingActorIdLen) {
+    throw new Error('sigil conversation rating validation failed: raterId is too long');
+  }
+  if (normalized.source !== undefined && normalized.source.length > maxRatingSourceLen) {
+    throw new Error('sigil conversation rating validation failed: source is too long');
+  }
+  if (normalized.metadata !== undefined && encodedSizeBytes(normalized.metadata) > maxRatingMetadataBytes) {
+    throw new Error('sigil conversation rating validation failed: metadata is too large');
+  }
+
+  return normalized;
+}
+
+function buildConversationRatingEndpoint(endpoint: string, insecure: boolean, conversationId: string): string {
+  const baseURL = baseURLFromAPIEndpoint(endpoint, insecure);
+  return `${baseURL}/api/v1/conversations/${encodeURIComponent(conversationId)}/ratings`;
+}
+
+function baseURLFromAPIEndpoint(endpoint: string, insecure: boolean): string {
+  const trimmed = endpoint.trim();
+  if (trimmed.length === 0) {
+    throw new Error('sigil conversation rating transport failed: api endpoint is required');
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    const parsed = new URL(trimmed);
+    return `${parsed.protocol}//${parsed.host}`;
+  }
+
+  const withoutScheme = trimmed.startsWith('grpc://') ? trimmed.slice('grpc://'.length) : trimmed;
+  const host = withoutScheme.split('/')[0]?.trim();
+  if (host === undefined || host.length === 0) {
+    throw new Error('sigil conversation rating transport failed: api endpoint host is required');
+  }
+  return `${insecure ? 'http' : 'https'}://${host}`;
+}
+
+function parseSubmitConversationRatingResponse(payload: unknown): SubmitConversationRatingResponse {
+  if (!isObject(payload)) {
+    throw new Error('sigil conversation rating transport failed: invalid response payload');
+  }
+  if (!isObject(payload.rating) || !isObject(payload.summary)) {
+    throw new Error('sigil conversation rating transport failed: invalid response payload');
+  }
+
+  const rating = mapConversationRating(payload.rating);
+  const summary = mapConversationRatingSummary(payload.summary);
+  return { rating, summary };
+}
+
+function mapConversationRating(payload: Record<string, unknown>): ConversationRating {
+  const ratingId = asString(payload.rating_id);
+  const conversationId = asString(payload.conversation_id);
+  const rating = asString(payload.rating) as ConversationRatingValue;
+  const createdAt = asString(payload.created_at);
+  if (ratingId === undefined || conversationId === undefined || rating === undefined || createdAt === undefined) {
+    throw new Error('sigil conversation rating transport failed: invalid rating payload');
+  }
+
+  return {
+    ratingId,
+    conversationId,
+    generationId: asString(payload.generation_id),
+    rating,
+    comment: asString(payload.comment),
+    metadata: asRecordUnknown(payload.metadata),
+    raterId: asString(payload.rater_id),
+    source: asString(payload.source),
+    createdAt,
+  };
+}
+
+function mapConversationRatingSummary(payload: Record<string, unknown>): ConversationRatingSummary {
+  const totalCount = asNumber(payload.total_count);
+  const goodCount = asNumber(payload.good_count);
+  const badCount = asNumber(payload.bad_count);
+  const latestRatedAt = asString(payload.latest_rated_at);
+  const hasBadRating = asBoolean(payload.has_bad_rating);
+  if (
+    totalCount === undefined ||
+    goodCount === undefined ||
+    badCount === undefined ||
+    latestRatedAt === undefined ||
+    hasBadRating === undefined
+  ) {
+    throw new Error('sigil conversation rating transport failed: invalid rating summary payload');
+  }
+
+  return {
+    totalCount,
+    goodCount,
+    badCount,
+    latestRating: asString(payload.latest_rating) as ConversationRatingValue | undefined,
+    latestRatedAt,
+    latestBadAt: asString(payload.latest_bad_at),
+    hasBadRating,
+  };
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function asRecordUnknown(value: unknown): Record<string, unknown> | undefined {
+  return isObject(value) ? value : undefined;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function ratingErrorText(responseText: string, status: number): string {
+  if (responseText.length > 0) {
+    return responseText;
+  }
+  return `HTTP ${status}`;
 }
 
 function thinkingBudgetFromMetadata(metadata: Record<string, unknown> | undefined): number | undefined {

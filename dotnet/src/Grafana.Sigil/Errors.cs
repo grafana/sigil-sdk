@@ -62,3 +62,24 @@ public sealed class MappingException : SigilException
     {
     }
 }
+
+public sealed class RatingConflictException : SigilException
+{
+    public RatingConflictException(string message)
+        : base(message)
+    {
+    }
+}
+
+public sealed class RatingTransportException : SigilException
+{
+    public RatingTransportException(string message)
+        : base(message)
+    {
+    }
+
+    public RatingTransportException(string message, Exception inner)
+        : base(message, inner)
+    {
+    }
+}

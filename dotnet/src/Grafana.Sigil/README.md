@@ -40,10 +40,15 @@ var client = new SigilClient(new SigilClientConfig
         InitialBackoff = TimeSpan.FromMilliseconds(100),
         MaxBackoff = TimeSpan.FromSeconds(5),
     },
+    Api = new ApiConfig
+    {
+        Endpoint = "http://localhost:8080",
+    },
 });
 ```
 
 Trace and generation export are configured independently, including protocol and auth mode.
+`Api.Endpoint` configures helper API calls such as `SubmitConversationRatingAsync(...)`.
 
 Generation export transport protocols:
 

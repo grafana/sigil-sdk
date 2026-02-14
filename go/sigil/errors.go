@@ -24,4 +24,10 @@ var (
 	ErrClientShutdown = errors.New("sigil: client is shutting down")
 	// ErrMappingFailed wraps provider-to-generation mapping failures.
 	ErrMappingFailed = errors.New("sigil: generation mapping failed")
+	// ErrRatingValidationFailed wraps conversation rating input validation failures.
+	ErrRatingValidationFailed = errors.New("sigil: conversation rating validation failed")
+	// ErrRatingConflict wraps idempotency conflicts when submitting conversation ratings.
+	ErrRatingConflict = errors.New("sigil: conversation rating conflict")
+	// ErrRatingTransportFailed wraps conversation rating transport failures.
+	ErrRatingTransportFailed = errors.New("sigil: conversation rating transport failed")
 )

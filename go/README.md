@@ -75,6 +75,9 @@ cfg.GenerationExport.MaxRetries = 5
 cfg.GenerationExport.InitialBackoff = 100 * time.Millisecond
 cfg.GenerationExport.MaxBackoff = 5 * time.Second
 
+// Sigil API base used by helpers like SubmitConversationRating.
+cfg.API.Endpoint = "http://localhost:8080"
+
 client := sigil.NewClient(cfg)
 defer func() {
 	_ = client.Shutdown(context.Background())
@@ -143,6 +146,29 @@ Common topology:
 - Generations direct to Sigil: generation `tenant` mode.
 - Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
+
+## Conversation Ratings
+
+Use the SDK helper to submit user-facing ratings:
+
+```go
+rating, err := client.SubmitConversationRating(ctx, "conv-123", sigil.ConversationRatingInput{
+	RatingID: "rat-123",
+	Rating:   sigil.ConversationRatingValueBad,
+	Comment:  "Answer ignored user context",
+	Metadata: map[string]any{
+		"channel": "assistant-ui",
+	},
+	Source: "sdk-go",
+})
+if err != nil {
+	panic(err)
+}
+
+fmt.Printf("rating=%s has_bad=%v\n", rating.Rating.Rating, rating.Summary.HasBadRating)
+```
+
+`SubmitConversationRating` sends requests to `cfg.API.Endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) that your client config already resolves.
 
 ## Lifecycle requirement
 

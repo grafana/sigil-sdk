@@ -23,3 +23,11 @@ class ClientShutdownError(EnqueueError):
 
 class MappingError(SigilError):
     """Raised when provider mapper logic fails."""
+
+
+class RatingConflictError(SigilError):
+    """Raised when rating idempotency key conflicts with a different payload."""
+
+
+class RatingTransportError(SigilError):
+    """Raised when rating submission transport fails."""

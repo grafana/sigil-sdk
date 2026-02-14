@@ -10,21 +10,36 @@ import re
 import secrets
 import threading
 from typing import Any, Optional
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
 
 from opentelemetry.metrics import Histogram, Meter
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .config import ClientConfig, resolve_config
 from .context import agent_name_from_context, agent_version_from_context, conversation_id_from_context
-from .errors import ClientShutdownError, EnqueueError, QueueFullError, ValidationError
+from .errors import (
+    ClientShutdownError,
+    EnqueueError,
+    QueueFullError,
+    RatingConflictError,
+    RatingTransportError,
+    ValidationError,
+)
 from .exporters import GRPCGenerationExporter, HTTPGenerationExporter, NoopGenerationExporter
 from .models import (
+    ConversationRating,
+    ConversationRatingInput,
+    ConversationRatingSummary,
+    ConversationRatingValue,
     ExportGenerationsRequest,
     Generation,
     GenerationMode,
     GenerationStart,
     Message,
     PartKind,
+    SubmitConversationRatingResponse,
     ToolExecutionEnd,
     ToolExecutionStart,
 )
@@ -63,6 +78,13 @@ _span_attr_tool_type = "gen_ai.tool.type"
 _span_attr_tool_description = "gen_ai.tool.description"
 _span_attr_tool_call_arguments = "gen_ai.tool.call.arguments"
 _span_attr_tool_call_result = "gen_ai.tool.call.result"
+_max_rating_conversation_id_len = 255
+_max_rating_id_len = 128
+_max_rating_generation_id_len = 255
+_max_rating_actor_id_len = 255
+_max_rating_source_len = 64
+_max_rating_comment_bytes = 4096
+_max_rating_metadata_bytes = 16 * 1024
 
 _metric_operation_duration = "gen_ai.client.operation.duration"
 _metric_token_usage = "gen_ai.client.token.usage"
@@ -190,6 +212,89 @@ class Client:
             started_at=started_at,
             include_content=seed.include_content,
         )
+
+    def submit_conversation_rating(
+        self,
+        conversation_id: str,
+        rating: ConversationRatingInput,
+    ) -> SubmitConversationRatingResponse:
+        """Submits a user-facing conversation rating through Sigil HTTP API."""
+
+        self._assert_open()
+
+        normalized_conversation_id = conversation_id.strip()
+        if normalized_conversation_id == "":
+            raise ValidationError("sigil conversation rating validation failed: conversation_id is required")
+        if len(normalized_conversation_id) > _max_rating_conversation_id_len:
+            raise ValidationError("sigil conversation rating validation failed: conversation_id is too long")
+
+        normalized_rating = _normalize_conversation_rating_input(rating)
+        endpoint = _conversation_rating_endpoint(
+            self._config.api.endpoint,
+            self._config.generation_export.insecure,
+            normalized_conversation_id,
+        )
+
+        payload = {
+            "rating_id": normalized_rating.rating_id,
+            "rating": normalized_rating.rating.value,
+        }
+        if normalized_rating.comment != "":
+            payload["comment"] = normalized_rating.comment
+        if normalized_rating.metadata:
+            payload["metadata"] = normalized_rating.metadata
+        if normalized_rating.generation_id != "":
+            payload["generation_id"] = normalized_rating.generation_id
+        if normalized_rating.rater_id != "":
+            payload["rater_id"] = normalized_rating.rater_id
+        if normalized_rating.source != "":
+            payload["source"] = normalized_rating.source
+
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib_request.Request(
+            endpoint,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                **self._config.generation_export.headers,
+            },
+        )
+
+        raw: bytes
+        status: int
+        try:
+            with urllib_request.urlopen(req, timeout=10) as response:
+                status = response.getcode()
+                raw = response.read()
+        except urllib_error.HTTPError as exc:
+            raw_error = exc.read().decode("utf-8", errors="replace").strip()
+            if exc.code == 400:
+                raise ValidationError(
+                    f"sigil conversation rating validation failed: {_rating_error_text(raw_error, exc.code)}"
+                ) from exc
+            if exc.code == 409:
+                raise RatingConflictError(
+                    f"sigil conversation rating conflict: {_rating_error_text(raw_error, exc.code)}"
+                ) from exc
+            raise RatingTransportError(
+                f"sigil conversation rating transport failed: status {exc.code}: {_rating_error_text(raw_error, exc.code)}"
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise RatingTransportError(f"sigil conversation rating transport failed: {exc}") from exc
+
+        if status < 200 or status >= 300:
+            decoded = raw.decode("utf-8", errors="replace").strip()
+            raise RatingTransportError(
+                f"sigil conversation rating transport failed: status {status}: {_rating_error_text(decoded, status)}"
+            )
+
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise RatingTransportError(f"sigil conversation rating transport failed: invalid JSON response: {exc}") from exc
+
+        return _parse_submit_conversation_rating_response(parsed)
 
     def flush(self) -> None:
         """Flushes all queued generations immediately."""
@@ -973,7 +1078,6 @@ def _serialize_tool_content(value: Any) -> str:
             return json.dumps(trimmed)
     return json.dumps(value)
 
-
 def _count_tool_call_parts(messages: list[Message]) -> int:
     total = 0
     for message in messages:
@@ -1065,3 +1169,204 @@ def _as_status_code(value: Any) -> int | None:
     if 100 <= parsed <= 599:
         return parsed
     return None
+
+
+def _normalize_conversation_rating_input(input_value: ConversationRatingInput) -> ConversationRatingInput:
+    rating_id = input_value.rating_id.strip()
+    if rating_id == "":
+        raise ValidationError("sigil conversation rating validation failed: rating_id is required")
+    if len(rating_id) > _max_rating_id_len:
+        raise ValidationError("sigil conversation rating validation failed: rating_id is too long")
+
+    rating_value = (
+        input_value.rating.value if isinstance(input_value.rating, ConversationRatingValue) else str(input_value.rating)
+    ).strip()
+    if rating_value not in {
+        ConversationRatingValue.GOOD.value,
+        ConversationRatingValue.BAD.value,
+    }:
+        raise ValidationError(
+            "sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD"
+        )
+
+    comment = input_value.comment.strip()
+    if len(comment.encode("utf-8")) > _max_rating_comment_bytes:
+        raise ValidationError("sigil conversation rating validation failed: comment is too long")
+
+    generation_id = input_value.generation_id.strip()
+    if len(generation_id) > _max_rating_generation_id_len:
+        raise ValidationError("sigil conversation rating validation failed: generation_id is too long")
+
+    rater_id = input_value.rater_id.strip()
+    if len(rater_id) > _max_rating_actor_id_len:
+        raise ValidationError("sigil conversation rating validation failed: rater_id is too long")
+
+    source = input_value.source.strip()
+    if len(source) > _max_rating_source_len:
+        raise ValidationError("sigil conversation rating validation failed: source is too long")
+
+    metadata = dict(input_value.metadata or {})
+    if metadata:
+        encoded = json.dumps(metadata)
+        if len(encoded.encode("utf-8")) > _max_rating_metadata_bytes:
+            raise ValidationError("sigil conversation rating validation failed: metadata is too large")
+
+    return ConversationRatingInput(
+        rating_id=rating_id,
+        rating=ConversationRatingValue(rating_value),
+        comment=comment,
+        metadata=metadata,
+        generation_id=generation_id,
+        rater_id=rater_id,
+        source=source,
+    )
+
+
+def _conversation_rating_endpoint(endpoint: str, insecure: bool, conversation_id: str) -> str:
+    base_url = _base_url_from_api_endpoint(endpoint, insecure)
+    return f"{base_url}/api/v1/conversations/{urllib_parse.quote(conversation_id, safe='')}/ratings"
+
+
+def _base_url_from_api_endpoint(endpoint: str, insecure: bool) -> str:
+    trimmed = endpoint.strip()
+    if trimmed == "":
+        raise RatingTransportError("sigil conversation rating transport failed: api endpoint is required")
+
+    if trimmed.startswith("http://") or trimmed.startswith("https://"):
+        parsed = urllib_parse.urlparse(trimmed)
+        if parsed.scheme == "" or parsed.netloc == "":
+            raise RatingTransportError("sigil conversation rating transport failed: api endpoint host is required")
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    without_scheme = trimmed[7:] if trimmed.startswith("grpc://") else trimmed
+    host = without_scheme.split("/", 1)[0].strip()
+    if host == "":
+        raise RatingTransportError("sigil conversation rating transport failed: api endpoint host is required")
+    scheme = "http" if insecure else "https"
+    return f"{scheme}://{host}"
+
+
+def _parse_submit_conversation_rating_response(payload: Any) -> SubmitConversationRatingResponse:
+    if not isinstance(payload, dict):
+        raise RatingTransportError("sigil conversation rating transport failed: invalid response payload")
+
+    rating_payload = payload.get("rating")
+    summary_payload = payload.get("summary")
+    if not isinstance(rating_payload, dict) or not isinstance(summary_payload, dict):
+        raise RatingTransportError("sigil conversation rating transport failed: invalid response payload")
+
+    return SubmitConversationRatingResponse(
+        rating=_parse_conversation_rating(rating_payload),
+        summary=_parse_conversation_rating_summary(summary_payload),
+    )
+
+
+def _parse_conversation_rating(payload: dict[str, Any]) -> ConversationRating:
+    rating_id = _require_string(payload, "rating_id")
+    conversation_id = _require_string(payload, "conversation_id")
+    try:
+        rating = ConversationRatingValue(_require_string(payload, "rating"))
+    except ValueError as exc:
+        raise RatingTransportError("sigil conversation rating transport failed: invalid rating payload") from exc
+    created_at = _parse_utc_timestamp(_require_string(payload, "created_at"))
+
+    metadata = payload.get("metadata", {})
+    if metadata is None:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        raise RatingTransportError("sigil conversation rating transport failed: invalid rating payload")
+
+    generation_id = payload.get("generation_id", "")
+    rater_id = payload.get("rater_id", "")
+    source = payload.get("source", "")
+    comment = payload.get("comment", "")
+    if not isinstance(generation_id, str) or not isinstance(rater_id, str) or not isinstance(source, str) or not isinstance(comment, str):
+        raise RatingTransportError("sigil conversation rating transport failed: invalid rating payload")
+
+    return ConversationRating(
+        rating_id=rating_id,
+        conversation_id=conversation_id,
+        rating=rating,
+        created_at=created_at,
+        comment=comment,
+        metadata=metadata,
+        generation_id=generation_id,
+        rater_id=rater_id,
+        source=source,
+    )
+
+
+def _parse_conversation_rating_summary(payload: dict[str, Any]) -> ConversationRatingSummary:
+    total_count = _require_int(payload, "total_count")
+    good_count = _require_int(payload, "good_count")
+    bad_count = _require_int(payload, "bad_count")
+    latest_rated_at = _parse_utc_timestamp(_require_string(payload, "latest_rated_at"))
+    has_bad_rating = _require_bool(payload, "has_bad_rating")
+
+    latest_rating_raw = payload.get("latest_rating")
+    latest_rating: ConversationRatingValue | None = None
+    if latest_rating_raw is not None:
+        if not isinstance(latest_rating_raw, str) or latest_rating_raw.strip() == "":
+            raise RatingTransportError("sigil conversation rating transport failed: invalid rating summary payload")
+        try:
+            latest_rating = ConversationRatingValue(latest_rating_raw)
+        except ValueError as exc:
+            raise RatingTransportError(
+                "sigil conversation rating transport failed: invalid rating summary payload"
+            ) from exc
+
+    latest_bad_at_raw = payload.get("latest_bad_at")
+    latest_bad_at: datetime | None = None
+    if latest_bad_at_raw is not None:
+        if not isinstance(latest_bad_at_raw, str) or latest_bad_at_raw.strip() == "":
+            raise RatingTransportError("sigil conversation rating transport failed: invalid rating summary payload")
+        latest_bad_at = _parse_utc_timestamp(latest_bad_at_raw)
+
+    return ConversationRatingSummary(
+        total_count=total_count,
+        good_count=good_count,
+        bad_count=bad_count,
+        latest_rated_at=latest_rated_at,
+        has_bad_rating=has_bad_rating,
+        latest_rating=latest_rating,
+        latest_bad_at=latest_bad_at,
+    )
+
+
+def _parse_utc_timestamp(value: str) -> datetime:
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return _to_utc(datetime.fromisoformat(normalized))
+    except ValueError as exc:
+        raise RatingTransportError(
+            "sigil conversation rating transport failed: invalid timestamp in response payload"
+        ) from exc
+
+
+def _require_string(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or value.strip() == "":
+        raise RatingTransportError("sigil conversation rating transport failed: invalid response payload")
+    return value
+
+
+def _require_int(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if not isinstance(value, int):
+        raise RatingTransportError("sigil conversation rating transport failed: invalid response payload")
+    return value
+
+
+def _require_bool(payload: dict[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise RatingTransportError("sigil conversation rating transport failed: invalid response payload")
+    return value
+
+
+def _rating_error_text(body: str, status: int) -> str:
+    if body != "":
+        return body
+    return f"HTTP {status}"

@@ -58,6 +58,12 @@ export interface GenerationExportConfig {
   payloadMaxBytes: number;
 }
 
+/** Sigil HTTP API settings used by non-ingest helper endpoints. */
+export interface ApiConfig {
+  /** Sigil API base endpoint, for example `http://localhost:8080`. */
+  endpoint: string;
+}
+
 /** Optional logger hooks used by the SDK runtime. */
 export interface SigilLogger {
   debug?: (message: string, ...args: unknown[]) => void;
@@ -82,6 +88,50 @@ export interface ExportGenerationsResponse {
   results: ExportGenerationResult[];
 }
 
+/** Allowed conversation rating values. */
+export type ConversationRatingValue = 'CONVERSATION_RATING_VALUE_GOOD' | 'CONVERSATION_RATING_VALUE_BAD';
+
+/** SDK input for submitting a conversation rating. */
+export interface ConversationRatingInput {
+  ratingId: string;
+  rating: ConversationRatingValue;
+  comment?: string;
+  metadata?: Record<string, unknown>;
+  generationId?: string;
+  raterId?: string;
+  source?: string;
+}
+
+/** Conversation rating event returned by Sigil. */
+export interface ConversationRating {
+  ratingId: string;
+  conversationId: string;
+  generationId?: string;
+  rating: ConversationRatingValue;
+  comment?: string;
+  metadata?: Record<string, unknown>;
+  raterId?: string;
+  source?: string;
+  createdAt: string;
+}
+
+/** Aggregated rating summary returned by Sigil. */
+export interface ConversationRatingSummary {
+  totalCount: number;
+  goodCount: number;
+  badCount: number;
+  latestRating?: ConversationRatingValue;
+  latestRatedAt: string;
+  latestBadAt?: string;
+  hasBadRating: boolean;
+}
+
+/** Rating create response envelope returned by Sigil. */
+export interface SubmitConversationRatingResponse {
+  rating: ConversationRating;
+  summary: ConversationRatingSummary;
+}
+
 /** Pluggable generation exporter interface. */
 export interface GenerationExporter {
   exportGenerations(request: ExportGenerationsRequest): Promise<ExportGenerationsResponse>;
@@ -92,6 +142,7 @@ export interface GenerationExporter {
 export interface SigilSdkConfig {
   trace: TraceConfig;
   generationExport: GenerationExportConfig;
+  api: ApiConfig;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -104,6 +155,7 @@ export interface SigilSdkConfig {
 export interface SigilSdkConfigInput {
   trace?: Partial<TraceConfig>;
   generationExport?: Partial<GenerationExportConfig>;
+  api?: Partial<ApiConfig>;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;

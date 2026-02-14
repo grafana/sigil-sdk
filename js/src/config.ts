@@ -1,4 +1,5 @@
 import type {
+  ApiConfig,
   ExportAuthConfig,
   GenerationExportConfig,
   SigilLogger,
@@ -35,6 +36,10 @@ export const defaultGenerationExportConfig: GenerationExportConfig = {
   payloadMaxBytes: 4 << 20,
 };
 
+export const defaultAPIConfig: ApiConfig = {
+  endpoint: 'http://localhost:8080',
+};
+
 export const defaultLogger: SigilLogger = {
   debug(message: string, ...args: unknown[]) {
     console.debug(message, ...args);
@@ -51,6 +56,7 @@ export function defaultConfig(): SigilSdkConfig {
   return {
     trace: cloneTraceConfig(defaultTraceConfig),
     generationExport: cloneGenerationExportConfig(defaultGenerationExportConfig),
+    api: cloneAPIConfig(defaultAPIConfig),
   };
 }
 
@@ -58,6 +64,7 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
   return {
     trace: mergeTraceConfig(config.trace),
     generationExport: mergeGenerationExportConfig(config.generationExport),
+    api: mergeAPIConfig(config.api),
     generationExporter: config.generationExporter,
     tracer: config.tracer,
     meter: config.meter,
@@ -91,6 +98,13 @@ function mergeGenerationExportConfig(config: Partial<GenerationExportConfig> | u
   };
   merged.headers = resolveHeadersWithAuth(merged.headers, merged.auth, 'generation export');
   return merged;
+}
+
+function mergeAPIConfig(config: Partial<ApiConfig> | undefined): ApiConfig {
+  return {
+    ...defaultAPIConfig,
+    ...config,
+  };
 }
 
 function mergeAuthConfig(config: ExportAuthConfig | undefined): ExportAuthConfig {
@@ -181,5 +195,11 @@ function cloneGenerationExportConfig(config: GenerationExportConfig): Generation
     ...config,
     auth: { ...config.auth },
     headers: config.headers ? { ...config.headers } : undefined,
+  };
+}
+
+function cloneAPIConfig(config: ApiConfig): ApiConfig {
+  return {
+    ...config,
   };
 }

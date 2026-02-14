@@ -9,6 +9,7 @@ import java.util.logging.Logger;
 public final class SigilClientConfig {
     private TraceConfig trace = new TraceConfig();
     private GenerationExportConfig generationExport = new GenerationExportConfig();
+    private ApiConfig api = new ApiConfig();
     private GenerationExporter generationExporter;
     private Tracer tracer;
     private Meter meter;
@@ -30,6 +31,15 @@ public final class SigilClientConfig {
 
     public SigilClientConfig setGenerationExport(GenerationExportConfig generationExport) {
         this.generationExport = generationExport == null ? new GenerationExportConfig() : generationExport;
+        return this;
+    }
+
+    public ApiConfig getApi() {
+        return api;
+    }
+
+    public SigilClientConfig setApi(ApiConfig api) {
+        this.api = api == null ? new ApiConfig() : api;
         return this;
     }
 
@@ -82,6 +92,7 @@ public final class SigilClientConfig {
         return new SigilClientConfig()
                 .setTrace(trace.copy())
                 .setGenerationExport(generationExport.copy())
+                .setApi(api.copy())
                 .setGenerationExporter(generationExporter)
                 .setTracer(tracer)
                 .setMeter(meter)

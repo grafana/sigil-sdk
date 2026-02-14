@@ -1,5 +1,6 @@
 package com.grafana.sigil.sdk;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
@@ -11,6 +12,12 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -62,6 +69,13 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_TOOL_DESCRIPTION = "gen_ai.tool.description";
     static final String SPAN_ATTR_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments";
     static final String SPAN_ATTR_TOOL_CALL_RESULT = "gen_ai.tool.call.result";
+    private static final int MAX_RATING_CONVERSATION_ID_LEN = 255;
+    private static final int MAX_RATING_ID_LEN = 128;
+    private static final int MAX_RATING_GENERATION_ID_LEN = 255;
+    private static final int MAX_RATING_ACTOR_ID_LEN = 255;
+    private static final int MAX_RATING_SOURCE_LEN = 64;
+    private static final int MAX_RATING_COMMENT_BYTES = 4096;
+    private static final int MAX_RATING_METADATA_BYTES = 16 * 1024;
 
     static final String METRIC_OPERATION_DURATION = "gen_ai.client.operation.duration";
     static final String METRIC_TOKEN_USAGE = "gen_ai.client.token.usage";
@@ -88,6 +102,7 @@ public final class SigilClient implements AutoCloseable {
     private final DoubleHistogram toolCallsHistogram;
     private final Logger logger;
     private final Clock clock;
+    private final HttpClient ratingHttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     private final List<Generation> generations = new ArrayList<>();
     private final List<ToolExecution> toolExecutions = new ArrayList<>();
@@ -132,6 +147,10 @@ public final class SigilClient implements AutoCloseable {
 
         GenerationExportConfig exportConfig = config.getGenerationExport();
         exportConfig.setHeaders(AuthHeaders.resolve(exportConfig.getHeaders(), exportConfig.getAuth(), "generation export"));
+        ApiConfig apiConfig = config.getApi();
+        if (apiConfig.getEndpoint().trim().isEmpty()) {
+            apiConfig.setEndpoint("http://localhost:8080");
+        }
 
         TraceConfig traceConfig = config.getTrace();
         traceConfig.setHeaders(AuthHeaders.resolve(traceConfig.getHeaders(), traceConfig.getAuth(), "trace"));
@@ -323,6 +342,86 @@ public final class SigilClient implements AutoCloseable {
                 throw new RuntimeException(throwable);
             }
         }
+    }
+
+    /** Submits a user-facing conversation rating through Sigil HTTP API. */
+    public SubmitConversationRatingResponse submitConversationRating(
+            String conversationId,
+            SubmitConversationRatingRequest request) {
+        assertOpen();
+
+        String normalizedConversationId = conversationId == null ? "" : conversationId.trim();
+        if (normalizedConversationId.isBlank()) {
+            throw new ValidationException("sigil conversation rating validation failed: conversationId is required");
+        }
+        if (normalizedConversationId.length() > MAX_RATING_CONVERSATION_ID_LEN) {
+            throw new ValidationException("sigil conversation rating validation failed: conversationId is too long");
+        }
+
+        SubmitConversationRatingRequest normalizedRequest = normalizeConversationRatingRequest(request);
+        String endpoint = conversationRatingEndpoint(config.getApi(), config.getGenerationExport(), normalizedConversationId);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("rating_id", normalizedRequest.getRatingId());
+        payload.put("rating", normalizedRequest.getRating().wireValue());
+        if (!normalizedRequest.getComment().isBlank()) {
+            payload.put("comment", normalizedRequest.getComment());
+        }
+        if (!normalizedRequest.getMetadata().isEmpty()) {
+            payload.put("metadata", normalizedRequest.getMetadata());
+        }
+        if (!normalizedRequest.getGenerationId().isBlank()) {
+            payload.put("generation_id", normalizedRequest.getGenerationId());
+        }
+        if (!normalizedRequest.getRaterId().isBlank()) {
+            payload.put("rater_id", normalizedRequest.getRaterId());
+        }
+        if (!normalizedRequest.getSource().isBlank()) {
+            payload.put("source", normalizedRequest.getSource());
+        }
+
+        String body;
+        try {
+            body = Json.MAPPER.writeValueAsString(payload);
+        } catch (Exception exception) {
+            throw new RatingTransportException("sigil conversation rating transport failed: serialize request", exception);
+        }
+
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        for (Map.Entry<String, String> header : config.getGenerationExport().getHeaders().entrySet()) {
+            requestBuilder.header(header.getKey(), header.getValue());
+        }
+
+        HttpResponse<String> response;
+        try {
+            response = ratingHttpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (Exception exception) {
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new RatingTransportException("sigil conversation rating transport failed", exception);
+        }
+
+        String responseBody = response.body() == null ? "" : response.body().trim();
+        if (response.statusCode() == 400) {
+            throw new ValidationException("sigil conversation rating validation failed: " + ratingErrorText(responseBody, 400));
+        }
+        if (response.statusCode() == 409) {
+            throw new RatingConflictException("sigil conversation rating conflict: " + ratingErrorText(responseBody, 409));
+        }
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new RatingTransportException(
+                    "sigil conversation rating transport failed: status " + response.statusCode() + ": " + ratingErrorText(responseBody, response.statusCode()));
+        }
+        if (responseBody.isBlank()) {
+            throw new RatingTransportException("sigil conversation rating transport failed: empty response payload");
+        }
+
+        return parseSubmitConversationRatingResponse(responseBody);
     }
 
     /** Flushes queued generation payloads immediately. */
@@ -560,6 +659,227 @@ public final class SigilClient implements AutoCloseable {
             case HTTP -> new HttpGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders());
             case NONE -> new NoopGenerationExporter();
         };
+    }
+
+    private SubmitConversationRatingRequest normalizeConversationRatingRequest(SubmitConversationRatingRequest request) {
+        SubmitConversationRatingRequest normalized = request == null ? new SubmitConversationRatingRequest() : request;
+
+        String ratingId = normalized.getRatingId().trim();
+        if (ratingId.isBlank()) {
+            throw new ValidationException("sigil conversation rating validation failed: ratingId is required");
+        }
+        if (ratingId.length() > MAX_RATING_ID_LEN) {
+            throw new ValidationException("sigil conversation rating validation failed: ratingId is too long");
+        }
+
+        String comment = normalized.getComment().trim();
+        if (utf8ByteLength(comment) > MAX_RATING_COMMENT_BYTES) {
+            throw new ValidationException("sigil conversation rating validation failed: comment is too long");
+        }
+
+        String generationId = normalized.getGenerationId().trim();
+        if (generationId.length() > MAX_RATING_GENERATION_ID_LEN) {
+            throw new ValidationException("sigil conversation rating validation failed: generationId is too long");
+        }
+
+        String raterId = normalized.getRaterId().trim();
+        if (raterId.length() > MAX_RATING_ACTOR_ID_LEN) {
+            throw new ValidationException("sigil conversation rating validation failed: raterId is too long");
+        }
+
+        String source = normalized.getSource().trim();
+        if (source.length() > MAX_RATING_SOURCE_LEN) {
+            throw new ValidationException("sigil conversation rating validation failed: source is too long");
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>(normalized.getMetadata());
+        if (!metadata.isEmpty()) {
+            int metadataBytes;
+            try {
+                metadataBytes = utf8ByteLength(Json.MAPPER.writeValueAsString(metadata));
+            } catch (Exception exception) {
+                throw new ValidationException("sigil conversation rating validation failed: metadata must be valid JSON");
+            }
+            if (metadataBytes > MAX_RATING_METADATA_BYTES) {
+                throw new ValidationException("sigil conversation rating validation failed: metadata is too large");
+            }
+        }
+
+        ConversationRatingValue value = normalized.getRating();
+        if (value != ConversationRatingValue.GOOD && value != ConversationRatingValue.BAD) {
+            throw new ValidationException(
+                    "sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD");
+        }
+
+        return new SubmitConversationRatingRequest()
+                .setRatingId(ratingId)
+                .setRating(value)
+                .setComment(comment)
+                .setMetadata(metadata)
+                .setGenerationId(generationId)
+                .setRaterId(raterId)
+                .setSource(source);
+    }
+
+    private String conversationRatingEndpoint(ApiConfig apiConfig, GenerationExportConfig exportConfig, String conversationId) {
+        String baseUrl = baseUrlFromEndpoint(apiConfig.getEndpoint(), exportConfig.isInsecure());
+        return baseUrl + "/api/v1/conversations/" + encodePathSegment(conversationId) + "/ratings";
+    }
+
+    private String baseUrlFromEndpoint(String endpoint, boolean insecure) {
+        String trimmed = endpoint == null ? "" : endpoint.trim();
+        if (trimmed.isBlank()) {
+            throw new RatingTransportException("sigil conversation rating transport failed: api endpoint is required");
+        }
+
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            URI parsed = URI.create(trimmed);
+            if (parsed.getHost() == null || parsed.getHost().isBlank()) {
+                throw new RatingTransportException("sigil conversation rating transport failed: api endpoint host is required");
+            }
+            int port = parsed.getPort();
+            String host = parsed.getHost();
+            if (port > 0) {
+                host += ":" + port;
+            }
+            return parsed.getScheme() + "://" + host;
+        }
+
+        String withoutScheme = trimmed.startsWith("grpc://") ? trimmed.substring("grpc://".length()) : trimmed;
+        String host = withoutScheme.split("/", 2)[0].trim();
+        if (host.isBlank()) {
+            throw new RatingTransportException("sigil conversation rating transport failed: api endpoint host is required");
+        }
+        return (insecure ? "http://" : "https://") + host;
+    }
+
+    private SubmitConversationRatingResponse parseSubmitConversationRatingResponse(String responseBody) {
+        try {
+            JsonNode payload = Json.MAPPER.readTree(responseBody);
+            JsonNode ratingNode = payload.path("rating");
+            JsonNode summaryNode = payload.path("summary");
+            if (!ratingNode.isObject() || !summaryNode.isObject()) {
+                throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+            }
+
+            return new SubmitConversationRatingResponse()
+                    .setRating(parseConversationRating(ratingNode))
+                    .setSummary(parseConversationRatingSummary(summaryNode));
+        } catch (RatingTransportException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload", exception);
+        }
+    }
+
+    private ConversationRating parseConversationRating(JsonNode node) {
+        ConversationRatingValue ratingValue;
+        try {
+            ratingValue = ConversationRatingValue.fromWireValue(requiredString(node, "rating"));
+        } catch (IllegalArgumentException exception) {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid rating payload", exception);
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        JsonNode metadataNode = node.path("metadata");
+        if (!metadataNode.isMissingNode() && !metadataNode.isNull()) {
+            if (!metadataNode.isObject()) {
+                throw new RatingTransportException("sigil conversation rating transport failed: invalid rating payload");
+            }
+            metadata = Json.MAPPER.convertValue(metadataNode, Json.MAPPER.getTypeFactory().constructMapType(LinkedHashMap.class, String.class, Object.class));
+        }
+
+        return new ConversationRating()
+                .setRatingId(requiredString(node, "rating_id"))
+                .setConversationId(requiredString(node, "conversation_id"))
+                .setRating(ratingValue)
+                .setCreatedAt(requiredInstant(node, "created_at"))
+                .setComment(optionalString(node, "comment"))
+                .setMetadata(metadata)
+                .setGenerationId(optionalString(node, "generation_id"))
+                .setRaterId(optionalString(node, "rater_id"))
+                .setSource(optionalString(node, "source"));
+    }
+
+    private ConversationRatingSummary parseConversationRatingSummary(JsonNode node) {
+        ConversationRatingSummary summary = new ConversationRatingSummary()
+                .setTotalCount(requiredInt(node, "total_count"))
+                .setGoodCount(requiredInt(node, "good_count"))
+                .setBadCount(requiredInt(node, "bad_count"))
+                .setLatestRatedAt(requiredInstant(node, "latest_rated_at"))
+                .setHasBadRating(requiredBoolean(node, "has_bad_rating"));
+
+        String latestRating = optionalString(node, "latest_rating");
+        if (!latestRating.isBlank()) {
+            try {
+                summary.setLatestRating(ConversationRatingValue.fromWireValue(latestRating));
+            } catch (IllegalArgumentException exception) {
+                throw new RatingTransportException("sigil conversation rating transport failed: invalid rating summary payload", exception);
+            }
+        }
+
+        String latestBadAt = optionalString(node, "latest_bad_at");
+        if (!latestBadAt.isBlank()) {
+            summary.setLatestBadAt(parseInstant(latestBadAt));
+        }
+
+        return summary;
+    }
+
+    private static String requiredString(JsonNode node, String key) {
+        JsonNode value = node.path(key);
+        if (!value.isTextual() || value.asText().isBlank()) {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+        return value.asText();
+    }
+
+    private static String optionalString(JsonNode node, String key) {
+        JsonNode value = node.path(key);
+        if (!value.isTextual()) {
+            return "";
+        }
+        return value.asText();
+    }
+
+    private static int requiredInt(JsonNode node, String key) {
+        JsonNode value = node.path(key);
+        if (!value.isInt()) {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+        return value.asInt();
+    }
+
+    private static boolean requiredBoolean(JsonNode node, String key) {
+        JsonNode value = node.path(key);
+        if (!value.isBoolean()) {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+        return value.asBoolean();
+    }
+
+    private static Instant requiredInstant(JsonNode node, String key) {
+        return parseInstant(requiredString(node, key));
+    }
+
+    private static Instant parseInstant(String value) {
+        try {
+            return Instant.parse(value);
+        } catch (Exception exception) {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid timestamp in response payload", exception);
+        }
+    }
+
+    private static int utf8ByteLength(String value) {
+        return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static String encodePathSegment(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private static String ratingErrorText(String body, int statusCode) {
+        return body == null || body.isBlank() ? "HTTP " + statusCode : body;
     }
 
     private void logWarn(String message, Throwable error) {

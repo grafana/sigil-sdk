@@ -115,7 +115,7 @@ with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_ve
 ### HTTP generation + OTLP HTTP trace
 
 ```python
-from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
 
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
@@ -127,6 +127,7 @@ cfg = ClientConfig(
         protocol="http",
         endpoint="http://localhost:4318/v1/traces",
     ),
+    api=ApiConfig(endpoint="http://localhost:8080"),
 )
 ```
 
@@ -145,6 +146,7 @@ cfg = ClientConfig(
         endpoint="localhost:4317",
         insecure=True,
     ),
+    api=ApiConfig(endpoint="http://localhost:8080"),
 )
 ```
 
@@ -161,7 +163,7 @@ Invalid mode/field combinations fail fast in `resolve_config(...)`.
 If explicit `headers` already include `Authorization` or `X-Scope-OrgID`, explicit headers win.
 
 ```python
-from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
 
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
@@ -174,6 +176,7 @@ cfg = ClientConfig(
         endpoint="localhost:4317",
         auth=AuthConfig(mode="none"),
     ),
+    api=ApiConfig(endpoint="http://localhost:8080"),
 )
 ```
 
@@ -201,6 +204,29 @@ Common topology:
 - Generations direct to Sigil: generation `tenant` mode.
 - Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
+
+## Conversation Ratings
+
+Use the SDK helper to submit user-facing ratings:
+
+```python
+from sigil_sdk import ConversationRatingInput, ConversationRatingValue
+
+result = client.submit_conversation_rating(
+    "conv-123",
+    ConversationRatingInput(
+        rating_id="rat-123",
+        rating=ConversationRatingValue.BAD,
+        comment="Answer ignored user context",
+        metadata={"channel": "assistant-ui"},
+        source="sdk-python",
+    ),
+)
+
+print(result.rating.rating, result.summary.has_bad_rating)
+```
+
+`submit_conversation_rating(...)` sends requests to `ClientConfig.api.endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) already configured on the SDK client.
 
 ## Instrumentation-only mode (no generation send)
 

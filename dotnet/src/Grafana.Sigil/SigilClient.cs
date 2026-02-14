@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Reflection;
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -43,6 +45,13 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrToolDescription = "gen_ai.tool.description";
     internal const string SpanAttrToolCallArguments = "gen_ai.tool.call.arguments";
     internal const string SpanAttrToolCallResult = "gen_ai.tool.call.result";
+    private const int MaxRatingConversationIdLen = 255;
+    private const int MaxRatingIdLen = 128;
+    private const int MaxRatingGenerationIdLen = 255;
+    private const int MaxRatingActorIdLen = 255;
+    private const int MaxRatingSourceLen = 64;
+    private const int MaxRatingCommentBytes = 4096;
+    private const int MaxRatingMetadataBytes = 16 * 1024;
 
     internal const string MetricOperationDuration = "gen_ai.client.operation.duration";
     internal const string MetricTokenUsage = "gen_ai.client.token.usage";
@@ -67,6 +76,10 @@ public sealed class SigilClient : IAsyncDisposable
     private readonly Histogram<double> _ttftHistogram;
     private readonly Histogram<double> _toolCallsHistogram;
     private readonly Action<string> _log;
+    private readonly HttpClient _ratingHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(10),
+    };
 
     private readonly object _pendingLock = new();
     private readonly List<Generation> _pending = new();
@@ -170,6 +183,107 @@ public sealed class SigilClient : IAsyncDisposable
         return new ToolExecutionRecorder(this, seed, seed.StartedAt!.Value, seed.IncludeContent, activity);
     }
 
+    public async Task<SubmitConversationRatingResponse> SubmitConversationRatingAsync(
+        string conversationId,
+        SubmitConversationRatingRequest request,
+        CancellationToken cancellationToken = default
+    )
+    {
+        EnsureNotShutdown();
+
+        var normalizedConversationId = (conversationId ?? string.Empty).Trim();
+        if (normalizedConversationId.Length == 0)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: conversationId is required");
+        }
+
+        if (normalizedConversationId.Length > MaxRatingConversationIdLen)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: conversationId is too long");
+        }
+
+        var normalizedRequest = NormalizeConversationRatingRequest(request);
+        var endpoint = BuildConversationRatingEndpoint(
+            _config.Api.Endpoint,
+            _config.GenerationExport.Insecure,
+            normalizedConversationId
+        );
+
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["rating_id"] = normalizedRequest.RatingId,
+            ["rating"] = ToWireConversationRatingValue(normalizedRequest.Rating),
+        };
+        if (!string.IsNullOrWhiteSpace(normalizedRequest.Comment))
+        {
+            payload["comment"] = normalizedRequest.Comment;
+        }
+        if (normalizedRequest.Metadata.Count > 0)
+        {
+            payload["metadata"] = normalizedRequest.Metadata;
+        }
+        if (!string.IsNullOrWhiteSpace(normalizedRequest.GenerationId))
+        {
+            payload["generation_id"] = normalizedRequest.GenerationId;
+        }
+        if (!string.IsNullOrWhiteSpace(normalizedRequest.RaterId))
+        {
+            payload["rater_id"] = normalizedRequest.RaterId;
+        }
+        if (!string.IsNullOrWhiteSpace(normalizedRequest.Source))
+        {
+            payload["source"] = normalizedRequest.Source;
+        }
+
+        var body = JsonSerializer.Serialize(payload);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+        foreach (var header in _config.GenerationExport.Headers)
+        {
+            httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _ratingHttpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed", ex);
+        }
+        using (response)
+        {
+            var responseBody = (await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)).Trim();
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                throw new ValidationException(
+                    $"sigil conversation rating validation failed: {RatingErrorText(responseBody, (int)response.StatusCode)}"
+                );
+            }
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                throw new RatingConflictException(
+                    $"sigil conversation rating conflict: {RatingErrorText(responseBody, (int)response.StatusCode)}"
+                );
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new RatingTransportException(
+                    $"sigil conversation rating transport failed: status {(int)response.StatusCode}: {RatingErrorText(responseBody, (int)response.StatusCode)}"
+                );
+            }
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                throw new RatingTransportException("sigil conversation rating transport failed: empty response payload");
+            }
+
+            return ParseSubmitConversationRatingResponse(responseBody);
+        }
+    }
+
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         EnsureNotShutdown();
@@ -227,6 +341,7 @@ public sealed class SigilClient : IAsyncDisposable
         }
 
         _traceRuntime.Dispose();
+        _ratingHttpClient.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -472,6 +587,397 @@ public sealed class SigilClient : IAsyncDisposable
             {
                 throw new ClientShutdownException("sigil: client is shutting down");
             }
+        }
+    }
+
+    private static SubmitConversationRatingRequest NormalizeConversationRatingRequest(SubmitConversationRatingRequest request)
+    {
+        var input = request ?? new SubmitConversationRatingRequest();
+        var normalized = new SubmitConversationRatingRequest
+        {
+            RatingId = (input.RatingId ?? string.Empty).Trim(),
+            Rating = input.Rating,
+            Comment = (input.Comment ?? string.Empty).Trim(),
+            Metadata = input.Metadata != null
+                ? new Dictionary<string, object?>(input.Metadata, StringComparer.Ordinal)
+                : new Dictionary<string, object?>(StringComparer.Ordinal),
+            GenerationId = (input.GenerationId ?? string.Empty).Trim(),
+            RaterId = (input.RaterId ?? string.Empty).Trim(),
+            Source = (input.Source ?? string.Empty).Trim(),
+        };
+
+        if (normalized.RatingId.Length == 0)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: ratingId is required");
+        }
+        if (normalized.RatingId.Length > MaxRatingIdLen)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: ratingId is too long");
+        }
+        if (normalized.Rating != ConversationRatingValue.Good && normalized.Rating != ConversationRatingValue.Bad)
+        {
+            throw new ValidationException(
+                "sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD"
+            );
+        }
+        if (Encoding.UTF8.GetByteCount(normalized.Comment) > MaxRatingCommentBytes)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: comment is too long");
+        }
+        if (normalized.GenerationId.Length > MaxRatingGenerationIdLen)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: generationId is too long");
+        }
+        if (normalized.RaterId.Length > MaxRatingActorIdLen)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: raterId is too long");
+        }
+        if (normalized.Source.Length > MaxRatingSourceLen)
+        {
+            throw new ValidationException("sigil conversation rating validation failed: source is too long");
+        }
+
+        if (normalized.Metadata.Count > 0)
+        {
+            byte[] metadataBytes;
+            try
+            {
+                metadataBytes = JsonSerializer.SerializeToUtf8Bytes(normalized.Metadata);
+            }
+            catch (Exception ex)
+            {
+                throw new ValidationException($"sigil conversation rating validation failed: metadata must be valid JSON ({ex.Message})");
+            }
+
+            if (metadataBytes.Length > MaxRatingMetadataBytes)
+            {
+                throw new ValidationException("sigil conversation rating validation failed: metadata is too large");
+            }
+        }
+
+        return normalized;
+    }
+
+    private static string BuildConversationRatingEndpoint(string apiEndpoint, bool insecure, string conversationId)
+    {
+        var baseUrl = BuildRatingBaseUrl(apiEndpoint, insecure);
+        return $"{baseUrl}/api/v1/conversations/{Uri.EscapeDataString(conversationId)}/ratings";
+    }
+
+    private static string BuildRatingBaseUrl(string apiEndpoint, bool insecure)
+    {
+        var trimmedEndpoint = (apiEndpoint ?? string.Empty).Trim();
+        if (trimmedEndpoint.Length == 0)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: api endpoint is required");
+        }
+
+        if (trimmedEndpoint.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || trimmedEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Uri.TryCreate(trimmedEndpoint, UriKind.Absolute, out var parsed) || string.IsNullOrWhiteSpace(parsed.Host))
+            {
+                throw new RatingTransportException(
+                    "sigil conversation rating transport failed: api endpoint host is required"
+                );
+            }
+
+            return $"{parsed.Scheme}://{parsed.Authority}";
+        }
+
+        var host = trimmedEndpoint;
+        if (host.StartsWith("grpc://", StringComparison.OrdinalIgnoreCase))
+        {
+            host = host.Substring("grpc://".Length);
+        }
+        var slashIndex = host.IndexOf('/');
+        if (slashIndex >= 0)
+        {
+            host = host.Substring(0, slashIndex);
+        }
+        host = host.Trim();
+        if (host.Length == 0)
+        {
+            throw new RatingTransportException(
+                "sigil conversation rating transport failed: api endpoint host is required"
+            );
+        }
+
+        var scheme = insecure ? "http" : "https";
+        return $"{scheme}://{host}";
+    }
+
+    private static SubmitConversationRatingResponse ParseSubmitConversationRatingResponse(string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+            }
+
+            var ratingElement = GetRequiredProperty(document.RootElement, "rating");
+            var summaryElement = GetRequiredProperty(document.RootElement, "summary");
+
+            return new SubmitConversationRatingResponse
+            {
+                Rating = ParseConversationRating(ratingElement),
+                Summary = ParseConversationRatingSummary(summaryElement),
+            };
+        }
+        catch (RatingTransportException)
+        {
+            throw;
+        }
+        catch (JsonException ex)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid JSON response", ex);
+        }
+    }
+
+    private static ConversationRating ParseConversationRating(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid rating payload");
+        }
+
+        var rating = new ConversationRating
+        {
+            RatingId = GetRequiredString(element, "rating_id"),
+            ConversationId = GetRequiredString(element, "conversation_id"),
+            Rating = ParseWireConversationRatingValue(GetRequiredString(element, "rating")),
+            CreatedAt = ParseRequiredTimestamp(element, "created_at"),
+        };
+
+        if (TryGetOptionalString(element, "comment", out var comment))
+        {
+            rating.Comment = comment;
+        }
+        if (TryGetProperty(element, "metadata", out var metadataElement))
+        {
+            rating.Metadata = metadataElement.ValueKind switch
+            {
+                JsonValueKind.Object => ParseMetadataObject(metadataElement),
+                JsonValueKind.Null => new Dictionary<string, object?>(StringComparer.Ordinal),
+                _ => throw new RatingTransportException("sigil conversation rating transport failed: invalid rating payload"),
+            };
+        }
+        if (TryGetOptionalString(element, "generation_id", out var generationId))
+        {
+            rating.GenerationId = generationId;
+        }
+        if (TryGetOptionalString(element, "rater_id", out var raterId))
+        {
+            rating.RaterId = raterId;
+        }
+        if (TryGetOptionalString(element, "source", out var source))
+        {
+            rating.Source = source;
+        }
+
+        return rating;
+    }
+
+    private static ConversationRatingSummary ParseConversationRatingSummary(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid rating summary payload");
+        }
+
+        ConversationRatingValue? latestRating = null;
+        if (TryGetProperty(element, "latest_rating", out var latestRatingElement))
+        {
+            latestRating = latestRatingElement.ValueKind switch
+            {
+                JsonValueKind.String => ParseWireConversationRatingValue(latestRatingElement.GetString() ?? string.Empty),
+                JsonValueKind.Null => null,
+                _ => throw new RatingTransportException(
+                    "sigil conversation rating transport failed: invalid rating summary payload"
+                ),
+            };
+        }
+
+        DateTimeOffset? latestBadAt = null;
+        if (TryGetProperty(element, "latest_bad_at", out var latestBadAtElement))
+        {
+            latestBadAt = latestBadAtElement.ValueKind switch
+            {
+                JsonValueKind.String => ParseTimestamp(latestBadAtElement.GetString() ?? string.Empty),
+                JsonValueKind.Null => null,
+                _ => throw new RatingTransportException(
+                    "sigil conversation rating transport failed: invalid rating summary payload"
+                ),
+            };
+        }
+
+        return new ConversationRatingSummary
+        {
+            TotalCount = GetRequiredInt(element, "total_count"),
+            GoodCount = GetRequiredInt(element, "good_count"),
+            BadCount = GetRequiredInt(element, "bad_count"),
+            LatestRating = latestRating,
+            LatestRatedAt = ParseRequiredTimestamp(element, "latest_rated_at"),
+            LatestBadAt = latestBadAt,
+            HasBadRating = GetRequiredBool(element, "has_bad_rating"),
+        };
+    }
+
+    private static ConversationRatingValue ParseWireConversationRatingValue(string value)
+    {
+        return value switch
+        {
+            "CONVERSATION_RATING_VALUE_GOOD" => ConversationRatingValue.Good,
+            "CONVERSATION_RATING_VALUE_BAD" => ConversationRatingValue.Bad,
+            _ => throw new RatingTransportException("sigil conversation rating transport failed: invalid rating payload"),
+        };
+    }
+
+    private static string ToWireConversationRatingValue(ConversationRatingValue value)
+    {
+        return value switch
+        {
+            ConversationRatingValue.Good => "CONVERSATION_RATING_VALUE_GOOD",
+            ConversationRatingValue.Bad => "CONVERSATION_RATING_VALUE_BAD",
+            _ => throw new ValidationException(
+                "sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD"
+            ),
+        };
+    }
+
+    private static string RatingErrorText(string body, int statusCode)
+    {
+        var trimmed = (body ?? string.Empty).Trim();
+        if (trimmed.Length > 0)
+        {
+            return trimmed;
+        }
+
+        if (Enum.IsDefined(typeof(HttpStatusCode), statusCode))
+        {
+            return ((HttpStatusCode)statusCode).ToString();
+        }
+
+        return "status " + statusCode.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static JsonElement GetRequiredProperty(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value))
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        return value;
+    }
+
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.Ordinal))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string GetRequiredString(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value) || value.ValueKind != JsonValueKind.String)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        var text = (value.GetString() ?? string.Empty).Trim();
+        if (text.Length == 0)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        return text;
+    }
+
+    private static bool TryGetOptionalString(JsonElement element, string name, out string value)
+    {
+        value = string.Empty;
+        if (!TryGetProperty(element, name, out var raw))
+        {
+            return false;
+        }
+
+        if (raw.ValueKind == JsonValueKind.Null)
+        {
+            return false;
+        }
+        if (raw.ValueKind != JsonValueKind.String)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        value = (raw.GetString() ?? string.Empty).Trim();
+        return true;
+    }
+
+    private static int GetRequiredInt(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value) || value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var parsed))
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        return parsed;
+    }
+
+    private static bool GetRequiredBool(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value)
+            || (value.ValueKind != JsonValueKind.True && value.ValueKind != JsonValueKind.False))
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        return value.GetBoolean();
+    }
+
+    private static DateTimeOffset ParseRequiredTimestamp(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value) || value.ValueKind != JsonValueKind.String)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid response payload");
+        }
+
+        return ParseTimestamp(value.GetString() ?? string.Empty);
+    }
+
+    private static DateTimeOffset ParseTimestamp(string raw)
+    {
+        if (!DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var timestamp))
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid timestamp in response payload");
+        }
+
+        return timestamp;
+    }
+
+    private static Dictionary<string, object?> ParseMetadataObject(JsonElement value)
+    {
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<Dictionary<string, object?>>(value.GetRawText());
+            return metadata != null
+                ? new Dictionary<string, object?>(metadata, StringComparer.Ordinal)
+                : new Dictionary<string, object?>(StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            throw new RatingTransportException("sigil conversation rating transport failed: invalid rating payload", ex);
         }
     }
 

@@ -370,6 +370,14 @@ func mergeGenerationExportConfig(base, override GenerationExportConfig) Generati
 	return out
 }
 
+func mergeAPIConfig(base, override APIConfig) APIConfig {
+	out := base
+	if override.Endpoint != "" {
+		out.Endpoint = override.Endpoint
+	}
+	return out
+}
+
 func mergeAuthConfig(base, override AuthConfig) AuthConfig {
 	out := base
 	if override.Mode != "" {

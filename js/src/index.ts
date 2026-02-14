@@ -1,7 +1,12 @@
 export { SigilClient } from './client.js';
 export { defaultConfig } from './config.js';
 export type {
+  ApiConfig,
   Artifact,
+  ConversationRating,
+  ConversationRatingInput,
+  ConversationRatingSummary,
+  ConversationRatingValue,
   ExportGenerationResult,
   ExportGenerationsRequest,
   ExportGenerationsResponse,
@@ -22,6 +27,7 @@ export type {
   SigilLogger,
   SigilSdkConfig,
   SigilSdkConfigInput,
+  SubmitConversationRatingResponse,
   TokenUsage,
   ToolCallPart,
   ToolDefinition,

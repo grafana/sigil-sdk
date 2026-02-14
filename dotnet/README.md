@@ -57,6 +57,10 @@ var sigil = new SigilClient(new SigilClientConfig
         FlushInterval = TimeSpan.FromSeconds(1),
         QueueSize = 2000,
     },
+    Api = new ApiConfig
+    {
+        Endpoint = "http://localhost:8080",
+    },
 });
 
 var openAI = new OpenAIResponseClient(
@@ -122,6 +126,32 @@ Generation export transport protocols:
 - `SigilContext.WithAgentVersion(...)`
 
 These defaults are used when a start payload omits those fields.
+
+## Conversation Ratings
+
+Use the SDK helper to submit user-facing ratings:
+
+```csharp
+var result = await client.SubmitConversationRatingAsync(
+    "conv-123",
+    new SubmitConversationRatingRequest
+    {
+        RatingId = "rat-123",
+        Rating = ConversationRatingValue.Bad,
+        Comment = "Answer ignored user context",
+        Metadata = new Dictionary<string, object?>
+        {
+            ["channel"] = "assistant-ui",
+        },
+        Source = "sdk-dotnet",
+    },
+    CancellationToken.None
+);
+
+Console.WriteLine($"{result.Rating.Rating} hasBad={result.Summary.HasBadRating}");
+```
+
+`SubmitConversationRatingAsync(...)` sends requests to `SigilClientConfig.Api.Endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) already configured on the SDK client.
 
 ## .NET best practices
 

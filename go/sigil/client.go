@@ -26,6 +26,7 @@ import (
 type Config struct {
 	Trace            TraceConfig
 	GenerationExport GenerationExportConfig
+	API              APIConfig
 	// Tracer is optional and mainly used for tests. If nil, the client builds one from Trace config.
 	Tracer trace.Tracer
 	// Meter is optional and mainly used for tests. If nil, the client builds one from Trace config.
@@ -91,6 +92,10 @@ type GenerationExportConfig struct {
 	InitialBackoff  time.Duration
 	MaxBackoff      time.Duration
 	PayloadMaxBytes int
+}
+
+type APIConfig struct {
+	Endpoint string
 }
 
 const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
@@ -170,6 +175,9 @@ func DefaultConfig() Config {
 			InitialBackoff:  100 * time.Millisecond,
 			MaxBackoff:      5 * time.Second,
 			PayloadMaxBytes: 4 << 20,
+		},
+		API: APIConfig{
+			Endpoint: "http://localhost:8080",
 		},
 		Tracer: nil,
 		Logger: log.Default(),
@@ -262,6 +270,7 @@ func NewClient(config Config) *Client {
 
 	cfg.Trace = mergeTraceConfig(defaults.Trace, cfg.Trace)
 	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
+	cfg.API = mergeAPIConfig(defaults.API, cfg.API)
 
 	traceHeaders, err := resolveHeadersWithAuth(cfg.Trace.Headers, cfg.Trace.Auth)
 	if err != nil {

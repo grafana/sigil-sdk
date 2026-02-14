@@ -19,6 +19,9 @@ const client = new SigilClient({
     endpoint: "http://localhost:8080/api/v1/generations:export",
     auth: { mode: "tenant", tenantId: "dev-tenant" },
   },
+  api: {
+    endpoint: "http://localhost:8080",
+  },
   trace: {
     protocol: "http",
     endpoint: "http://localhost:4318/v1/traces",
@@ -144,6 +147,9 @@ const client = new SigilClient({
     endpoint: "http://localhost:8080/api/v1/generations:export",
     auth: { mode: "tenant", tenantId: "prod-tenant" },
   },
+  api: {
+    endpoint: "http://localhost:8080",
+  },
   trace: {
     protocol: "grpc",
     endpoint: "localhost:4317",
@@ -169,6 +175,9 @@ const client = new SigilClient({
         ? { mode: "bearer", bearerToken: generationBearerToken }
         : { mode: "tenant", tenantId: "dev-tenant" },
   },
+  api: {
+    endpoint: "http://localhost:8080",
+  },
   trace: {
     protocol: "grpc",
     endpoint: "localhost:4317",
@@ -185,3 +194,21 @@ Common topology:
 - Generations direct to Sigil: generation `tenant` mode.
 - Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
+
+## Conversation Ratings
+
+Use the SDK helper to submit user-facing ratings:
+
+```ts
+const result = await client.submitConversationRating("conv-123", {
+  ratingId: "rat-123",
+  rating: "CONVERSATION_RATING_VALUE_BAD",
+  comment: "Answer ignored user context",
+  metadata: { channel: "assistant-ui" },
+  source: "sdk-js",
+});
+
+console.log(result.rating.rating, result.summary.hasBadRating);
+```
+
+`submitConversationRating` sends requests to `api.endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) already configured on the SDK client.

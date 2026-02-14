@@ -1,7 +1,7 @@
 """Public exports for the Sigil Python SDK."""
 
 from .client import Client
-from .config import AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig, default_config
+from .config import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig, default_config
 from .context import (
     conversation_id_from_context,
     agent_name_from_context,
@@ -15,12 +15,18 @@ from .errors import (
     EnqueueError,
     MappingError,
     QueueFullError,
+    RatingConflictError,
+    RatingTransportError,
     SigilError,
     ValidationError,
 )
 from .models import (
     Artifact,
     ArtifactKind,
+    ConversationRating,
+    ConversationRatingInput,
+    ConversationRatingSummary,
+    ConversationRatingValue,
     Generation,
     GenerationMode,
     GenerationStart,
@@ -36,6 +42,7 @@ from .models import (
     ToolExecutionEnd,
     ToolExecutionStart,
     ToolResult,
+    SubmitConversationRatingResponse,
     assistant_text_message,
     text_part,
     thinking_part,
@@ -50,9 +57,14 @@ __all__ = [
     "Artifact",
     "ArtifactKind",
     "AuthConfig",
+    "ApiConfig",
     "Client",
     "ClientConfig",
     "ClientShutdownError",
+    "ConversationRating",
+    "ConversationRatingInput",
+    "ConversationRatingSummary",
+    "ConversationRatingValue",
     "EnqueueError",
     "Generation",
     "GenerationExportConfig",
@@ -66,7 +78,10 @@ __all__ = [
     "PartKind",
     "PartMetadata",
     "QueueFullError",
+    "RatingConflictError",
+    "RatingTransportError",
     "SigilError",
+    "SubmitConversationRatingResponse",
     "TokenUsage",
     "ToolCall",
     "ToolDefinition",

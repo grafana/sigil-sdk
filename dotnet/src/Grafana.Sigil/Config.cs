@@ -53,10 +53,16 @@ public sealed class GenerationExportConfig
     public int PayloadMaxBytes { get; set; } = 4 << 20;
 }
 
+public sealed class ApiConfig
+{
+    public string Endpoint { get; set; } = "http://localhost:8080";
+}
+
 public sealed class SigilClientConfig
 {
     public TraceConfig Trace { get; set; } = new();
     public GenerationExportConfig GenerationExport { get; set; } = new();
+    public ApiConfig Api { get; set; } = new();
     public Action<string>? Logger { get; set; }
     public Func<DateTimeOffset>? UtcNow { get; set; }
     public Func<TimeSpan, CancellationToken, Task>? SleepAsync { get; set; }
@@ -93,6 +99,10 @@ internal static class ConfigResolver
             resolved.GenerationExport.Auth,
             "generation"
         );
+        if (string.IsNullOrWhiteSpace(resolved.Api.Endpoint))
+        {
+            resolved.Api.Endpoint = "http://localhost:8080";
+        }
 
         if (resolved.GenerationExport.BatchSize <= 0)
         {

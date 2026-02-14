@@ -57,11 +57,19 @@ class GenerationExportConfig:
 
 
 @dataclass(slots=True)
+class ApiConfig:
+    """Sigil HTTP API settings used by non-ingest helper endpoints."""
+
+    endpoint: str = "http://localhost:8080"
+
+
+@dataclass(slots=True)
 class ClientConfig:
     """Top-level SDK runtime configuration."""
 
     trace: TraceConfig = field(default_factory=TraceConfig)
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
+    api: ApiConfig = field(default_factory=ApiConfig)
     tracer: Optional[Tracer] = None
     meter: Optional[Meter] = None
     logger: Optional[logging.Logger] = None
@@ -92,6 +100,8 @@ def resolve_config(config: Optional[ClientConfig]) -> ClientConfig:
         out.trace.endpoint = out.trace_endpoint
     if out.generation_export_endpoint:
         out.generation_export.endpoint = out.generation_export_endpoint
+    if out.api.endpoint.strip() == "":
+        out.api.endpoint = "http://localhost:8080"
 
     out.trace.headers = _resolve_export_headers(out.trace.headers, out.trace.auth, "trace")
     out.generation_export.headers = _resolve_export_headers(

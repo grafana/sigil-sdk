@@ -44,6 +44,8 @@ The Java SDK records normalized generation payloads, correlates them with traces
 
 ```java
 SigilClient client = new SigilClient(new SigilClientConfig()
+    .setApi(new ApiConfig()
+        .setEndpoint("http://localhost:8080"))
     .setGenerationExport(new GenerationExportConfig()
         .setProtocol(GenerationExportProtocol.HTTP)
         .setEndpoint("http://localhost:8080/api/v1/generations:export")
@@ -108,6 +110,25 @@ Helpers:
 - `SigilContext.withConversationId(...)`
 - `SigilContext.withAgentName(...)`
 - `SigilContext.withAgentVersion(...)`
+
+## Conversation Ratings
+
+Use the SDK helper to submit user-facing ratings:
+
+```java
+SubmitConversationRatingResponse result = client.submitConversationRating(
+    "conv-123",
+    new SubmitConversationRatingRequest()
+        .setRatingId("rat-123")
+        .setRating(ConversationRatingValue.BAD)
+        .setComment("Answer ignored user context")
+        .setMetadata(Map.of("channel", "assistant-ui"))
+        .setSource("sdk-java"));
+
+System.out.println(result.getRating().getRating() + " hasBad=" + result.getSummary().isHasBadRating());
+```
+
+`submitConversationRating(...)` sends requests to `ApiConfig.endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) already configured on the SDK client.
 
 ## Lifecycle
 
