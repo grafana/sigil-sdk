@@ -3,6 +3,7 @@ package openai
 import (
 	"errors"
 	"strings"
+	"time"
 
 	osdk "github.com/openai/openai-go/v3"
 
@@ -13,6 +14,7 @@ import (
 type ChatCompletionsStreamSummary struct {
 	Chunks        []osdk.ChatCompletionChunk
 	FinalResponse *osdk.ChatCompletion
+	FirstChunkAt  time.Time
 }
 
 type streamToolCall struct {

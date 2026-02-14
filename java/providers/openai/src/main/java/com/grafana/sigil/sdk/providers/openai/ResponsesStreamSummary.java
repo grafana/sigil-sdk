@@ -2,6 +2,7 @@ package com.grafana.sigil.sdk.providers.openai;
 
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseStreamEvent;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,6 +10,7 @@ import java.util.List;
 public final class ResponsesStreamSummary {
     private final List<ResponseStreamEvent> events = new ArrayList<>();
     private Response finalResponse;
+    private Instant firstChunkAt;
 
     public List<ResponseStreamEvent> getEvents() {
         return events;
@@ -28,6 +30,15 @@ public final class ResponsesStreamSummary {
 
     public ResponsesStreamSummary setFinalResponse(Response finalResponse) {
         this.finalResponse = finalResponse;
+        return this;
+    }
+
+    public Instant getFirstChunkAt() {
+        return firstChunkAt;
+    }
+
+    public ResponsesStreamSummary setFirstChunkAt(Instant firstChunkAt) {
+        this.firstChunkAt = firstChunkAt;
         return this;
     }
 }

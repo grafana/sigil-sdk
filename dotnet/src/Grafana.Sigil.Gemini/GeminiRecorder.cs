@@ -8,7 +8,9 @@ public static class GeminiRecorder
     public static async Task<GenerateContentResponse> GenerateContentAsync(
         SigilClient client,
         Client provider,
-        GenerateContentRequest request,
+        string model,
+        IReadOnlyList<Content>? contents,
+        GenerateContentConfig? config = null,
         GeminiSigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -20,8 +22,10 @@ public static class GeminiRecorder
 
         return await GenerateContentAsync(
             client,
-            request,
-            (payload, ct) => provider.Models.GenerateContentAsync(payload.Model, payload.Contents, payload.Config, ct),
+            model,
+            contents,
+            (requestModel, requestContents, requestConfig, ct) => provider.Models.GenerateContentAsync(requestModel, requestContents, requestConfig, ct),
+            config,
             options,
             cancellationToken
         ).ConfigureAwait(false);
@@ -29,8 +33,10 @@ public static class GeminiRecorder
 
     public static async Task<GenerateContentResponse> GenerateContentAsync(
         SigilClient client,
-        GenerateContentRequest request,
-        Func<GenerateContentRequest, CancellationToken, Task<GenerateContentResponse>> invoke,
+        string model,
+        IReadOnlyList<Content>? contents,
+        Func<string, List<Content>, GenerateContentConfig?, CancellationToken, Task<GenerateContentResponse>> invoke,
+        GenerateContentConfig? config = null,
         GeminiSigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -40,9 +46,9 @@ public static class GeminiRecorder
             throw new ArgumentNullException(nameof(client));
         }
 
-        if (request == null)
+        if (string.IsNullOrWhiteSpace(model))
         {
-            throw new ArgumentNullException(nameof(request));
+            throw new ArgumentException("model is required", nameof(model));
         }
 
         if (invoke == null)
@@ -51,7 +57,8 @@ public static class GeminiRecorder
         }
 
         var effective = options ?? new GeminiSigilOptions();
-        var modelName = ResolveModelName(request, effective);
+        var mappedContents = MapContents(contents);
+        var modelName = ResolveModelName(model, effective);
 
         var recorder = client.StartGeneration(new GenerationStart
         {
@@ -68,13 +75,13 @@ public static class GeminiRecorder
 
         try
         {
-            var response = await invoke(request, cancellationToken).ConfigureAwait(false);
+            var response = await invoke(model, mappedContents, config, cancellationToken).ConfigureAwait(false);
             Exception? mappingError = null;
             Generation generation;
 
             try
             {
-                generation = GeminiGenerationMapper.FromRequestResponse(request, response, effective with { ModelName = modelName });
+                generation = GeminiGenerationMapper.FromRequestResponse(model, mappedContents, config, response, effective with { ModelName = modelName });
             }
             catch (Exception ex)
             {
@@ -99,7 +106,9 @@ public static class GeminiRecorder
     public static async Task<GeminiStreamSummary> GenerateContentStreamAsync(
         SigilClient client,
         Client provider,
-        GenerateContentRequest request,
+        string model,
+        IReadOnlyList<Content>? contents,
+        GenerateContentConfig? config = null,
         GeminiSigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -111,8 +120,10 @@ public static class GeminiRecorder
 
         return await GenerateContentStreamAsync(
             client,
-            request,
-            (payload, ct) => provider.Models.GenerateContentStreamAsync(payload.Model, payload.Contents, payload.Config, ct),
+            model,
+            contents,
+            (requestModel, requestContents, requestConfig, ct) => provider.Models.GenerateContentStreamAsync(requestModel, requestContents, requestConfig, ct),
+            config,
             options,
             cancellationToken
         ).ConfigureAwait(false);
@@ -120,8 +131,10 @@ public static class GeminiRecorder
 
     public static async Task<GeminiStreamSummary> GenerateContentStreamAsync(
         SigilClient client,
-        GenerateContentRequest request,
-        Func<GenerateContentRequest, CancellationToken, IAsyncEnumerable<GenerateContentResponse>> invoke,
+        string model,
+        IReadOnlyList<Content>? contents,
+        Func<string, List<Content>, GenerateContentConfig?, CancellationToken, IAsyncEnumerable<GenerateContentResponse>> invoke,
+        GenerateContentConfig? config = null,
         GeminiSigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -131,9 +144,9 @@ public static class GeminiRecorder
             throw new ArgumentNullException(nameof(client));
         }
 
-        if (request == null)
+        if (string.IsNullOrWhiteSpace(model))
         {
-            throw new ArgumentNullException(nameof(request));
+            throw new ArgumentException("model is required", nameof(model));
         }
 
         if (invoke == null)
@@ -142,7 +155,8 @@ public static class GeminiRecorder
         }
 
         var effective = options ?? new GeminiSigilOptions();
-        var modelName = ResolveModelName(request, effective);
+        var mappedContents = MapContents(contents);
+        var modelName = ResolveModelName(model, effective);
 
         var recorder = client.StartStreamingGeneration(new GenerationStart
         {
@@ -160,10 +174,16 @@ public static class GeminiRecorder
         try
         {
             var summary = new GeminiStreamSummary();
-            await foreach (var response in invoke(request, cancellationToken).WithCancellation(cancellationToken))
+            await foreach (var response in invoke(model, mappedContents, config, cancellationToken).WithCancellation(cancellationToken))
             {
                 if (response != null)
                 {
+                    if (!summary.FirstChunkAt.HasValue)
+                    {
+                        var firstChunkAt = DateTimeOffset.UtcNow;
+                        summary.FirstChunkAt = firstChunkAt;
+                        recorder.SetFirstTokenAt(firstChunkAt);
+                    }
                     summary.Responses.Add(response);
                 }
             }
@@ -172,7 +192,7 @@ public static class GeminiRecorder
             Generation generation;
             try
             {
-                generation = GeminiGenerationMapper.FromStream(request, summary, effective with { ModelName = modelName });
+                generation = GeminiGenerationMapper.FromStream(model, mappedContents, config, summary, effective with { ModelName = modelName });
             }
             catch (Exception ex)
             {
@@ -194,16 +214,35 @@ public static class GeminiRecorder
         }
     }
 
-    private static string ResolveModelName(GenerateContentRequest request, GeminiSigilOptions options)
+    private static List<Content> MapContents(IReadOnlyList<Content>? contents)
+    {
+        var mapped = new List<Content>();
+        if (contents == null)
+        {
+            return mapped;
+        }
+
+        foreach (var content in contents)
+        {
+            if (content != null)
+            {
+                mapped.Add(content);
+            }
+        }
+
+        return mapped;
+    }
+
+    private static string ResolveModelName(string model, GeminiSigilOptions options)
     {
         if (!string.IsNullOrWhiteSpace(options.ModelName))
         {
             return options.ModelName;
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Model))
+        if (!string.IsNullOrWhiteSpace(model))
         {
-            return request.Model;
+            return model;
         }
 
         return "unknown";

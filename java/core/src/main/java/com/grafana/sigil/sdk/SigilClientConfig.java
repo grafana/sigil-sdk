@@ -1,5 +1,6 @@
 package com.grafana.sigil.sdk;
 
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Tracer;
 import java.time.Clock;
 import java.util.logging.Logger;
@@ -10,6 +11,7 @@ public final class SigilClientConfig {
     private GenerationExportConfig generationExport = new GenerationExportConfig();
     private GenerationExporter generationExporter;
     private Tracer tracer;
+    private Meter meter;
     private Logger logger = Logger.getLogger("com.grafana.sigil.sdk");
     private Clock clock = Clock.systemUTC();
 
@@ -35,6 +37,10 @@ public final class SigilClientConfig {
         return tracer;
     }
 
+    public Meter getMeter() {
+        return meter;
+    }
+
     public GenerationExporter getGenerationExporter() {
         return generationExporter;
     }
@@ -46,6 +52,11 @@ public final class SigilClientConfig {
 
     public SigilClientConfig setTracer(Tracer tracer) {
         this.tracer = tracer;
+        return this;
+    }
+
+    public SigilClientConfig setMeter(Meter meter) {
+        this.meter = meter;
         return this;
     }
 
@@ -73,6 +84,7 @@ public final class SigilClientConfig {
                 .setGenerationExport(generationExport.copy())
                 .setGenerationExporter(generationExporter)
                 .setTracer(tracer)
+                .setMeter(meter)
                 .setLogger(logger)
                 .setClock(clock);
     }

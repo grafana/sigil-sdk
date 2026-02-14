@@ -8,17 +8,7 @@ import pytest
 
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig, TraceConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_anthropic import (
-    AnthropicMessage,
-    AnthropicOptions,
-    AnthropicRequest,
-    AnthropicResponse,
-    AnthropicStreamSummary,
-    completion,
-    completion_stream,
-    from_request_response,
-    from_stream,
-)
+from sigil_sdk_anthropic import AnthropicOptions, AnthropicStreamSummary, messages
 
 
 class _CapturingExporter:
@@ -48,18 +38,62 @@ def _new_client(exporter):
     )
 
 
+def _request() -> dict:
+    return {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 512,
+        "temperature": 0.3,
+        "top_p": 0.75,
+        "tool_choice": {"type": "tool", "name": "weather"},
+        "thinking": {"type": "adaptive", "budget_tokens": 2048},
+        "system": "be concise",
+        "tools": [
+            {
+                "name": "weather",
+                "description": "Get weather",
+                "input_schema": {"type": "object"},
+            }
+        ],
+        "messages": [
+            {"role": "user", "content": "hello"},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call-weather",
+                        "content": {"ok": True},
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def _response() -> dict:
+    return {
+        "id": "resp-1",
+        "model": "claude-sonnet-4-5-20260210",
+        "role": "assistant",
+        "content": [
+            {"type": "tool_use", "id": "call-weather", "name": "weather", "input": {"city": "Paris"}},
+            {"type": "text", "text": "world"},
+        ],
+        "stop_reason": "end_turn",
+        "usage": {
+            "input_tokens": 120,
+            "output_tokens": 40,
+            "cache_read_input_tokens": 12,
+            "cache_creation_input_tokens": 4,
+        },
+    }
+
+
 def test_anthropic_sync_wrapper_sets_sync_mode_and_raw_artifacts_default_off() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
     try:
-        completion(
-            client,
-            AnthropicRequest(
-                model="claude-sonnet-4-5",
-                messages=[AnthropicMessage(role="user", content="hello")],
-            ),
-            lambda _request: AnthropicResponse(id="resp-1", output_text="world"),
-        )
+        messages.create(client, _request(), lambda _request: _response())
 
         client.flush()
         generation = exporter.requests[0].generations[0]
@@ -74,20 +108,20 @@ def test_anthropic_stream_wrapper_sets_stream_mode_and_opt_in_artifacts() -> Non
     exporter = _CapturingExporter()
     client = _new_client(exporter)
     try:
-        completion_stream(
+        messages.stream(
             client,
-            AnthropicRequest(
-                model="claude-sonnet-4-5",
-                messages=[AnthropicMessage(role="user", content="hello")],
+            _request(),
+            lambda _request: AnthropicStreamSummary(
+                output_text="stream-output",
+                events=[{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "stream-output"}}],
             ),
-            lambda _request: AnthropicStreamSummary(output_text="stream-output", events=[{"delta": "x"}]),
             AnthropicOptions(raw_artifacts=True),
         )
 
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.mode.value == "STREAM"
-        assert [artifact.kind.value for artifact in generation.artifacts] == ["request", "provider_event"]
+        assert [artifact.kind.value for artifact in generation.artifacts] == ["request", "tools", "provider_event"]
     finally:
         client.shutdown()
 
@@ -98,9 +132,9 @@ def test_anthropic_wrapper_propagates_provider_error_and_sets_call_error() -> No
 
     try:
         with pytest.raises(RuntimeError, match="provider failure"):
-            completion(
+            messages.create(
                 client,
-                AnthropicRequest(model="claude-sonnet-4-5", messages=[AnthropicMessage(role="user", content="hello")]),
+                _request(),
                 lambda _request: (_ for _ in ()).throw(RuntimeError("provider failure")),
             )
 
@@ -112,24 +146,12 @@ def test_anthropic_wrapper_propagates_provider_error_and_sets_call_error() -> No
         client.shutdown()
 
 
-def test_anthropic_mappers_filter_system_messages_and_support_raw_artifacts() -> None:
-    request = AnthropicRequest(
-        model="claude-sonnet-4-5",
-        max_tokens=512,
-        temperature=0.3,
-        top_p=0.75,
-        tool_choice={"type": "tool", "name": "weather"},
-        thinking={"type": "adaptive", "budget_tokens": 2048},
-        messages=[
-            AnthropicMessage(role="system", content="system"),
-            AnthropicMessage(role="user", content="hello"),
-            AnthropicMessage(role="tool", content='{"ok":true}', name="tool-weather"),
-        ],
-    )
-    response = AnthropicResponse(id="resp-1", output_text="world", stop_reason="stop")
+def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
+    request = _request()
+    response = _response()
 
-    mapped_default = from_request_response(request, response)
-    assert mapped_default.response_model == "claude-sonnet-4-5"
+    mapped_default = messages.from_request_response(request, response)
+    assert mapped_default.response_model == "claude-sonnet-4-5-20260210"
     assert len(mapped_default.input) == 2
     assert mapped_default.input[0].role.value == "user"
     assert mapped_default.input[1].role.value == "tool"
@@ -139,14 +161,19 @@ def test_anthropic_mappers_filter_system_messages_and_support_raw_artifacts() ->
     assert mapped_default.tool_choice == '{"name":"weather","type":"tool"}'
     assert mapped_default.thinking_enabled is True
     assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
+    assert mapped_default.usage.cache_creation_input_tokens == 4
+    assert mapped_default.usage.cache_read_input_tokens == 12
     assert mapped_default.artifacts == []
 
-    mapped_with_artifacts = from_request_response(request, response, AnthropicOptions(raw_artifacts=True))
-    assert [artifact.kind.value for artifact in mapped_with_artifacts.artifacts] == ["request", "response"]
+    mapped_with_artifacts = messages.from_request_response(request, response, AnthropicOptions(raw_artifacts=True))
+    assert [artifact.kind.value for artifact in mapped_with_artifacts.artifacts] == ["request", "response", "tools"]
 
-    stream_mapped = from_stream(
+    stream_mapped = messages.from_stream(
         request,
-        AnthropicStreamSummary(output_text="stream-output", events=[{"delta": "x"}]),
+        AnthropicStreamSummary(
+            output_text="stream-output",
+            events=[{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "stream-output"}}],
+        ),
         AnthropicOptions(raw_artifacts=True),
     )
     assert stream_mapped.response_model == "claude-sonnet-4-5"
@@ -155,16 +182,22 @@ def test_anthropic_mappers_filter_system_messages_and_support_raw_artifacts() ->
     assert stream_mapped.tool_choice == '{"name":"weather","type":"tool"}'
     assert stream_mapped.thinking_enabled is True
     assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
-    assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "provider_event"]
+    assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "tools", "provider_event"]
 
 
 def test_anthropic_mapper_maps_thinking_disabled() -> None:
-    request = AnthropicRequest(
-        model="claude-sonnet-4-5",
-        thinking="disabled",
-        messages=[AnthropicMessage(role="user", content="hello")],
-    )
-    response = AnthropicResponse(id="resp-1", output_text="ok")
-    mapped = from_request_response(request, response)
+    request = {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 128,
+        "thinking": "disabled",
+        "messages": [{"role": "user", "content": "hello"}],
+    }
+    response = {
+        "id": "resp-1",
+        "model": "claude-sonnet-4-5",
+        "role": "assistant",
+        "content": [{"type": "text", "text": "ok"}],
+    }
+    mapped = messages.from_request_response(request, response)
 
     assert mapped.thinking_enabled is False

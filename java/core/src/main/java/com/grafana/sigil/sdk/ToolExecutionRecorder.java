@@ -97,11 +97,13 @@ public class ToolExecutionRecorder implements AutoCloseable {
         if (snapshotCallError != null) {
             span.recordException(snapshotCallError);
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "tool_execution_error");
+            span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, SigilClient.errorCategoryFromThrowable(snapshotCallError, true));
             span.setStatus(StatusCode.ERROR, String.valueOf(snapshotCallError.getMessage()));
         } else {
             span.setStatus(StatusCode.OK);
         }
 
+        client.recordToolExecutionMetrics(seed, startedAt, completedAt, snapshotCallError);
         span.end(completedAt.toEpochMilli(), TimeUnit.MILLISECONDS);
         client.recordToolExecution(execution);
 

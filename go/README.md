@@ -57,15 +57,12 @@ Cross-language parity tracks are available for:
 ```go
 cfg := sigil.DefaultConfig()
 
-// Trace export (OTLP)
+// Trace + metric export (OTLP, typically Alloy/Collector)
 cfg.Trace.Protocol = sigil.TraceProtocolHTTP // or sigil.TraceProtocolGRPC
 cfg.Trace.Endpoint = "http://localhost:4318/v1/traces" // grpc example: "localhost:4317"
-cfg.Trace.Auth = sigil.AuthConfig{
-	Mode: sigil.ExportAuthModeNone,
-}
 
 // Generation export (custom ingest)
-cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default
+cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default; or sigil.GenerationExportProtocolHTTP / sigil.GenerationExportProtocolNone
 cfg.GenerationExport.Endpoint = "localhost:4317"                  // HTTP parity: "http://localhost:8080/api/v1/generations:export"
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:     sigil.ExportAuthModeTenant,
@@ -82,6 +79,18 @@ client := sigil.NewClient(cfg)
 defer func() {
 	_ = client.Shutdown(context.Background())
 }()
+```
+
+### Instrumentation-only mode (no generation send)
+
+Use `GenerationExportProtocolNone` to keep generation and tool instrumentation active while disabling generation transport:
+
+```go
+cfg := sigil.DefaultConfig()
+cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolNone
+
+client := sigil.NewClient(cfg)
+defer func() { _ = client.Shutdown(context.Background()) }()
 ```
 
 ## Per-export auth modes
@@ -140,6 +149,15 @@ Common topology:
 - Always call `client.Shutdown(ctx)` before process exit.
 - `Shutdown` flushes pending generation batches and shuts down the trace provider.
 - Optional `client.Flush(ctx)` is available for explicit flush points.
+
+## SDK metrics
+
+The SDK emits four OTel histograms automatically on the trace pipeline endpoint:
+
+- `gen_ai.client.operation.duration`
+- `gen_ai.client.token.usage`
+- `gen_ai.client.time_to_first_token`
+- `gen_ai.client.tool_calls_per_operation`
 
 ## Explicit flow example
 

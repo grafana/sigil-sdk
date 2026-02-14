@@ -1,7 +1,10 @@
 import * as grpc from '@grpc/grpc-js';
-import { trace, type Tracer } from '@opentelemetry/api';
+import { metrics, trace, type Meter, type Tracer } from '@opentelemetry/api';
+import { OTLPMetricExporter as OTLPMetricExporterGRPC } from '@opentelemetry/exporter-metrics-otlp-grpc';
+import { OTLPMetricExporter as OTLPMetricExporterHTTP } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPTraceExporter as OTLPTraceExporterGRPC } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { OTLPTraceExporter as OTLPTraceExporterHTTP } from '@opentelemetry/exporter-trace-otlp-http';
+import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { BatchSpanProcessor, BasicTracerProvider, type SpanExporter } from '@opentelemetry/sdk-trace-base';
 import type { TraceConfig } from './types.js';
 
@@ -9,6 +12,7 @@ const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 
 export interface TraceRuntime {
   tracer: Tracer;
+  meter: Meter;
   flush(): Promise<void>;
   shutdown(): Promise<void>;
 }
@@ -18,10 +22,10 @@ export function createTraceRuntime(
   onError?: (message: string, error: unknown) => void
 ): TraceRuntime {
   try {
-    const exporter = createTraceExporter(config);
-    const provider = new BasicTracerProvider({
+    const traceExporter = createTraceExporter(config);
+    const traceProvider = new BasicTracerProvider({
       spanProcessors: [
-        new BatchSpanProcessor(exporter, {
+        new BatchSpanProcessor(traceExporter, {
           maxQueueSize: 2_048,
           maxExportBatchSize: 512,
           scheduledDelayMillis: 1_000,
@@ -29,21 +33,34 @@ export function createTraceRuntime(
         }),
       ],
     });
-    const tracer = provider.getTracer(instrumentationName);
+
+    const metricExporter = createMetricExporter(config);
+    const metricReader = new PeriodicExportingMetricReader({
+      exporter: metricExporter,
+      exportIntervalMillis: 1_000,
+      exportTimeoutMillis: 1_000,
+    });
+    const meterProvider = new MeterProvider({
+      readers: [metricReader],
+    });
 
     return {
-      tracer,
+      tracer: traceProvider.getTracer(instrumentationName),
+      meter: meterProvider.getMeter(instrumentationName),
       async flush() {
-        await provider.forceFlush();
+        await traceProvider.forceFlush();
+        await meterProvider.forceFlush();
       },
       async shutdown() {
-        await provider.shutdown();
+        await traceProvider.shutdown();
+        await meterProvider.shutdown();
       },
     };
   } catch (error) {
-    onError?.('sigil trace exporter init failed', error);
+    onError?.('sigil telemetry exporter init failed', error);
     return {
       tracer: trace.getTracer(instrumentationName),
+      meter: metrics.getMeter(instrumentationName),
       async flush() {},
       async shutdown() {},
     };
@@ -54,7 +71,7 @@ function createTraceExporter(config: TraceConfig): SpanExporter {
   switch (config.protocol) {
     case 'grpc': {
       const endpoint = parseEndpoint(config.endpoint);
-      const url = normalizeGRPCTraceEndpoint(endpoint, config.insecure);
+      const url = normalizeGRPCEndpoint(endpoint, config.insecure);
       const metadata = toGRPCMetadata(config.headers);
       const insecure = config.insecure || endpoint.insecure;
 
@@ -75,13 +92,50 @@ function createTraceExporter(config: TraceConfig): SpanExporter {
   }
 }
 
+function createMetricExporter(config: TraceConfig) {
+  switch (config.protocol) {
+    case 'grpc': {
+      const endpoint = parseEndpoint(config.endpoint);
+      const url = normalizeGRPCEndpoint(endpoint, config.insecure);
+      const metadata = toGRPCMetadata(config.headers);
+      const insecure = config.insecure || endpoint.insecure;
+      return new OTLPMetricExporterGRPC({
+        url,
+        metadata,
+        credentials: insecure ? grpc.credentials.createInsecure() : grpc.credentials.createSsl(),
+        timeoutMillis: 1_000,
+      });
+    }
+    case 'http':
+    default:
+      return new OTLPMetricExporterHTTP({
+        url: normalizeHTTPMetricsEndpoint(parseEndpoint(config.endpoint), config.insecure),
+        headers: config.headers ? { ...config.headers } : undefined,
+        timeoutMillis: 1_000,
+      });
+  }
+}
+
 function normalizeHTTPTraceEndpoint(endpoint: ParsedEndpoint, insecureConfig: boolean): string {
   const scheme = endpoint.scheme ?? (insecureConfig || endpoint.insecure ? 'http' : 'https');
   const path = endpoint.path.length === 0 || endpoint.path === '/' ? '/v1/traces' : endpoint.path;
   return `${scheme}://${endpoint.host}${path}`;
 }
 
-function normalizeGRPCTraceEndpoint(endpoint: ParsedEndpoint, insecureConfig: boolean): string {
+function normalizeHTTPMetricsEndpoint(endpoint: ParsedEndpoint, insecureConfig: boolean): string {
+  const scheme = endpoint.scheme ?? (insecureConfig || endpoint.insecure ? 'http' : 'https');
+  const trimmedPath = endpoint.path.length > 1 && endpoint.path.endsWith('/')
+    ? endpoint.path.slice(0, -1)
+    : endpoint.path;
+  const path = trimmedPath.length === 0 || trimmedPath === '/'
+    ? '/v1/metrics'
+    : (trimmedPath === '/v1/traces' || trimmedPath.endsWith('/v1/traces'))
+      ? `${trimmedPath.slice(0, -'/v1/traces'.length)}/v1/metrics`
+      : trimmedPath;
+  return `${scheme}://${endpoint.host}${path}`;
+}
+
+function normalizeGRPCEndpoint(endpoint: ParsedEndpoint, insecureConfig: boolean): string {
   const scheme = endpoint.scheme ?? (insecureConfig || endpoint.insecure ? 'http' : 'https');
   return `${scheme}://${endpoint.host}`;
 }

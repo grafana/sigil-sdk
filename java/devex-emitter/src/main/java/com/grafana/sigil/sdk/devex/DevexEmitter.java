@@ -17,13 +17,20 @@ import com.grafana.sigil.sdk.TokenUsage;
 import com.grafana.sigil.sdk.TraceConfig;
 import com.grafana.sigil.sdk.TraceProtocol;
 import com.grafana.sigil.sdk.providers.anthropic.AnthropicAdapter;
+import com.grafana.sigil.sdk.providers.anthropic.AnthropicOptions;
 import com.grafana.sigil.sdk.providers.gemini.GeminiAdapter;
+import com.grafana.sigil.sdk.providers.gemini.GeminiOptions;
 import com.grafana.sigil.sdk.providers.openai.OpenAiChatCompletions;
 import com.grafana.sigil.sdk.providers.openai.OpenAiOptions;
 import com.grafana.sigil.sdk.providers.openai.OpenAiResponses;
-import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
+import com.anthropic.core.http.StreamResponse;
+import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.google.genai.types.Content;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
 import com.openai.core.ObjectMappers;
-import com.openai.core.http.StreamResponse;
 import com.openai.models.ReasoningEffort;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
@@ -130,7 +137,7 @@ public final class DevexEmitter {
                 intFromEnv("SIGIL_TRAFFIC_ROTATE_TURNS", 24),
                 stringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral"),
                 stringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
-                stringFromEnv("SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT", "http://sigil:4318/v1/traces"),
+                stringFromEnv("SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT", "http://alloy:4318/v1/traces"),
                 intFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0));
     }
 
@@ -299,7 +306,7 @@ public final class DevexEmitter {
         OpenAiChatCompletions.createStreaming(
                 client,
                 request,
-                ignored -> new FixedStreamResponse<>(List.of(chatChunkOne(context.turn), chatChunkTwo(context.turn))),
+                ignored -> new FixedOpenAiStreamResponse<>(List.of(chatChunkOne(context.turn), chatChunkTwo(context.turn))),
                 openAiOptions(context));
     }
 
@@ -331,7 +338,7 @@ public final class DevexEmitter {
         OpenAiResponses.createStreaming(
                 client,
                 request,
-                ignored -> new FixedStreamResponse<>(List.of(
+                ignored -> new FixedOpenAiStreamResponse<>(List.of(
                         responseTextDeltaEvent("Ticket " + context.turn + ": canary healthy", 1),
                         responseTextDeltaEvent("; production gate passed.", 2),
                         responseCompletedEvent(context.turn))),
@@ -339,109 +346,85 @@ public final class DevexEmitter {
     }
 
     static void emitAnthropicSync(SigilClient client, EmitContext context) throws Exception {
-        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("claude-sonnet-4-5")
-                .setSystemPrompt("Summarize with diagnosis and recommendation.")
-                .setMessages(List.of(
-                        new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("Summarize reliability drift " + context.turn + ".")));
+        MessageCreateParams request = MessageCreateParams.builder()
+                .model("claude-sonnet-4-5")
+                .system("Summarize with diagnosis and recommendation.")
+                .maxTokens(320)
+                .temperature(0.3)
+                .addUserMessage("Summarize reliability drift " + context.turn + ".")
+                .build();
 
         AnthropicAdapter.completion(
                 client,
                 request,
-                ignored -> new ProviderAdapterSupport.OpenAiChatResponse()
-                        .setId("java-anthropic-sync-" + context.turn)
-                        .setModel("claude-sonnet-4-5")
-                        .setOutputText("Diagnosis " + context.turn + ": retry storms in eu-west; rebalance queues.")
-                        .setStopReason("end_turn")
-                        .setUsage(new TokenUsage()
-                                .setInputTokens(72 + (context.turn % 8))
-                                .setOutputTokens(30 + (context.turn % 5))
-                                .setTotalTokens(102 + (context.turn % 10))
-                                .setCacheReadInputTokens(10)),
-                providerAdapterOptions(context));
+                ignored -> anthropicMessageFixture(context.turn),
+                anthropicOptions(context));
     }
 
     static void emitAnthropicStream(SigilClient client, EmitContext context) throws Exception {
-        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("claude-sonnet-4-5")
-                .setSystemPrompt("Emit mitigation status deltas.")
-                .setMessages(List.of(
-                        new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("Stream mitigation deltas " + context.turn + ".")));
+        MessageCreateParams request = MessageCreateParams.builder()
+                .model("claude-sonnet-4-5")
+                .system("Emit mitigation status deltas.")
+                .maxTokens(280)
+                .addUserMessage("Stream mitigation deltas " + context.turn + ".")
+                .build();
 
         AnthropicAdapter.completionStream(
                 client,
                 request,
-                ignored -> new ProviderAdapterSupport.OpenAiStreamSummary()
-                        .setOutputText("Change " + context.turn + ": guard enabled; verification done.")
-                        .setFinalResponse(new ProviderAdapterSupport.OpenAiChatResponse()
-                                .setId("java-anthropic-stream-" + context.turn)
-                                .setModel("claude-sonnet-4-5")
-                                .setOutputText("Change " + context.turn + ": guard enabled; verification done.")
-                                .setStopReason("end_turn")
-                                .setUsage(new TokenUsage()
-                                        .setInputTokens(45 + (context.turn % 6))
-                                        .setOutputTokens(16 + (context.turn % 4))
-                                        .setTotalTokens(61 + (context.turn % 7))))
-                        .setChunks(List.of(
-                                Map.of("event", "message_start"),
-                                Map.of("event", "delta", "text", "guard enabled"),
-                                Map.of("event", "message_delta", "stop_reason", "end_turn"))),
-                providerAdapterOptions(context));
+                ignored -> new FixedAnthropicStreamResponse<>(List.of()),
+                anthropicOptions(context));
     }
 
     static void emitGeminiSync(SigilClient client, EmitContext context) throws Exception {
-        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("gemini-2.5-pro")
-                .setSystemPrompt("Use structured release-note style.")
-                .setMessages(List.of(
-                        new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("Generate launch summary " + context.turn + "."),
-                        new ProviderAdapterSupport.OpenAiMessage()
-                                .setRole("tool")
-                                .setName("release_metrics")
-                                .setContent("{\"status\":\"green\"}")));
+        List<Content> contents = List.of(
+                Content.builder()
+                        .role("user")
+                        .parts(Part.fromText("Generate launch summary " + context.turn + "."))
+                        .build(),
+                Content.builder()
+                        .role("tool")
+                        .parts(Part.fromFunctionResponse("release_metrics", Map.of("status", "green")))
+                        .build());
+        GenerateContentConfig config = GenerateContentConfig.fromJson("""
+                {
+                  "systemInstruction": {"parts": [{"text": "Use structured release-note style."}]},
+                  "maxOutputTokens": 320,
+                  "temperature": 0.2,
+                  "topP": 0.9,
+                  "thinkingConfig": {"includeThoughts": true, "thinkingBudget": 256}
+                }
+                """);
 
         GeminiAdapter.completion(
                 client,
-                request,
-                ignored -> new ProviderAdapterSupport.OpenAiChatResponse()
-                        .setId("java-gemini-sync-" + context.turn)
-                        .setModel("gemini-2.5-pro-001")
-                        .setOutputText("Launch " + context.turn + ": all gates green; metrics stable.")
-                        .setStopReason("STOP")
-                        .setUsage(new TokenUsage()
-                                .setInputTokens(60 + (context.turn % 7))
-                                .setOutputTokens(19 + (context.turn % 5))
-                                .setTotalTokens(79 + (context.turn % 8))
-                                .setReasoningTokens(6)),
-                providerAdapterOptions(context));
+                "gemini-2.5-pro",
+                contents,
+                config,
+                (_model, _contents, _config) -> geminiResponseFixture(context.turn),
+                geminiOptions(context));
     }
 
     static void emitGeminiStream(SigilClient client, EmitContext context) throws Exception {
-        ProviderAdapterSupport.OpenAiChatRequest request = new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("gemini-2.5-pro")
-                .setSystemPrompt("Emit staged migration stream language.")
-                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage()
-                        .setRole("user")
-                        .setContent("Stream migration status " + context.turn + ".")));
+        List<Content> contents = List.of(Content.builder()
+                .role("user")
+                .parts(Part.fromText("Stream migration status " + context.turn + "."))
+                .build());
+        GenerateContentConfig config = GenerateContentConfig.fromJson("""
+                {
+                  "systemInstruction": {"parts": [{"text": "Emit staged migration stream language."}]},
+                  "maxOutputTokens": 220,
+                  "thinkingConfig": {"includeThoughts": false}
+                }
+                """);
 
         GeminiAdapter.completionStream(
                 client,
-                request,
-                ignored -> new ProviderAdapterSupport.OpenAiStreamSummary()
-                        .setOutputText("Wave " + context.turn + ": shard sync complete; promotion done.")
-                        .setFinalResponse(new ProviderAdapterSupport.OpenAiChatResponse()
-                                .setId("java-gemini-stream-" + context.turn)
-                                .setModel("gemini-2.5-pro-001")
-                                .setOutputText("Wave " + context.turn + ": shard sync complete; promotion done.")
-                                .setStopReason("STOP")
-                                .setUsage(new TokenUsage()
-                                        .setInputTokens(46 + (context.turn % 5))
-                                        .setOutputTokens(17 + (context.turn % 4))
-                                        .setTotalTokens(63 + (context.turn % 7))))
-                        .setChunks(List.of(
-                                Map.of("delta", "shard sync complete"),
-                                Map.of("delta", "promotion done"))),
-                providerAdapterOptions(context));
+                "gemini-2.5-pro",
+                contents,
+                config,
+                (_model, _contents, _config) -> List.of(geminiResponseFixture(context.turn)),
+                geminiOptions(context));
     }
 
     static void emitCustomSync(SigilClient client, RuntimeConfig config, EmitContext context) throws Exception {
@@ -507,8 +490,18 @@ public final class DevexEmitter {
                 .setRawArtifacts(false);
     }
 
-    static ProviderAdapterSupport.OpenAiOptions providerAdapterOptions(EmitContext context) {
-        return new ProviderAdapterSupport.OpenAiOptions()
+    static AnthropicOptions anthropicOptions(EmitContext context) {
+        return new AnthropicOptions()
+                .setConversationId(context.conversationId)
+                .setAgentName(context.agentName)
+                .setAgentVersion(context.agentVersion)
+                .setTags(context.tags)
+                .setMetadata(context.metadata)
+                .setRawArtifacts(false);
+    }
+
+    static GeminiOptions geminiOptions(EmitContext context) {
+        return new GeminiOptions()
                 .setConversationId(context.conversationId)
                 .setAgentName(context.agentName)
                 .setAgentVersion(context.agentVersion)
@@ -548,6 +541,65 @@ public final class DevexEmitter {
                         24 + (turn % 6),
                         108 + (turn % 12)),
                 ChatCompletion.class);
+    }
+
+    static com.anthropic.models.messages.Message anthropicMessageFixture(int turn) throws IOException {
+        return com.anthropic.core.ObjectMappers.jsonMapper().readValue(
+                """
+                {
+                  "id": "java-anthropic-sync-%d",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Diagnosis %d: retry storms in eu-west; rebalance queues."
+                    }
+                  ],
+                  "model": "claude-sonnet-4-5",
+                  "stop_reason": "end_turn",
+                  "usage": {
+                    "input_tokens": %d,
+                    "output_tokens": %d,
+                    "cache_read_input_tokens": 10
+                  }
+                }
+                """.formatted(
+                        turn,
+                        turn,
+                        72 + (turn % 8),
+                        30 + (turn % 5)),
+                com.anthropic.models.messages.Message.class);
+    }
+
+    static GenerateContentResponse geminiResponseFixture(int turn) {
+        return GenerateContentResponse.fromJson(
+                """
+                {
+                  "responseId": "java-gemini-sync-%d",
+                  "modelVersion": "gemini-2.5-pro-001",
+                  "candidates": [
+                    {
+                      "finishReason": "STOP",
+                      "content": {
+                        "role": "model",
+                        "parts": [
+                          {"text": "Launch %d: all gates green; metrics stable."}
+                        ]
+                      }
+                    }
+                  ],
+                  "usageMetadata": {
+                    "promptTokenCount": %d,
+                    "candidatesTokenCount": %d,
+                    "totalTokenCount": %d,
+                    "thoughtsTokenCount": 6
+                  }
+                }
+                """.formatted(
+                        turn,
+                        turn,
+                        60 + (turn % 7),
+                        19 + (turn % 5),
+                        79 + (turn % 8)));
     }
 
     static ChatCompletionChunk chatChunkOne(int turn) throws IOException {
@@ -689,10 +741,27 @@ public final class DevexEmitter {
         return ObjectMappers.jsonMapper().readValue(value, type);
     }
 
-    static final class FixedStreamResponse<T> implements StreamResponse<T> {
+    static final class FixedOpenAiStreamResponse<T> implements com.openai.core.http.StreamResponse<T> {
         private final List<T> values;
 
-        FixedStreamResponse(List<T> values) {
+        FixedOpenAiStreamResponse(List<T> values) {
+            this.values = values;
+        }
+
+        @Override
+        public Stream<T> stream() {
+            return values.stream();
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    static final class FixedAnthropicStreamResponse<T> implements StreamResponse<T> {
+        private final List<T> values;
+
+        FixedAnthropicStreamResponse(List<T> values) {
             this.values = values;
         }
 

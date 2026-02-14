@@ -1,11 +1,11 @@
-"""Gemini wrapper helpers and payload mappers."""
+"""Gemini strict wrapper helpers and payload mappers."""
 
 from __future__ import annotations
 
-import copy
-from dataclasses import asdict, dataclass, field
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, field, is_dataclass
 import json
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from sigil_sdk import (
     Artifact,
@@ -19,55 +19,25 @@ from sigil_sdk import (
     Part,
     PartKind,
     TokenUsage,
+    ToolCall,
     ToolDefinition,
+    ToolResult,
 )
 
+if TYPE_CHECKING:
+    from google.genai import types as genai_types
+
+    GenerateContentConfig = genai_types.GenerateContentConfigOrDict
+    GenerateContentResponse = genai_types.GenerateContentResponse
+    GeminiContent = genai_types.ContentListUnion
+else:
+    GenerateContentConfig = Any
+    GenerateContentResponse = Any
+    GeminiContent = Any
+
 _thinking_budget_metadata_key = "sigil.gen_ai.request.thinking.budget_tokens"
-
-
-@dataclass(slots=True)
-class GeminiMessage:
-    """Simplified Gemini message shape."""
-
-    role: str
-    content: str
-    name: str = ""
-
-
-@dataclass(slots=True)
-class GeminiRequest:
-    """Simplified Gemini completion request shape."""
-
-    model: str
-    messages: list[GeminiMessage]
-    system_prompt: str = ""
-    max_output_tokens: int | None = None
-    temperature: float | None = None
-    top_p: float | None = None
-    function_calling_mode: Any = None
-    thinking_config: Any = None
-    tools: list[ToolDefinition] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class GeminiResponse:
-    """Simplified Gemini completion response shape."""
-
-    output_text: str
-    id: str = ""
-    model: str = ""
-    usage: TokenUsage = field(default_factory=TokenUsage)
-    stop_reason: str = ""
-    raw: Any = None
-
-
-@dataclass(slots=True)
-class GeminiStreamSummary:
-    """Simplified Gemini stream summary shape."""
-
-    output_text: str
-    final_response: GeminiResponse | None = None
-    events: list[Any] = field(default_factory=list)
+_thinking_level_metadata_key = "sigil.gen_ai.request.thinking.level"
+_usage_tool_use_prompt_tokens_metadata_key = "sigil.gen_ai.usage.tool_use_prompt_tokens"
 
 
 @dataclass(slots=True)
@@ -83,19 +53,29 @@ class GeminiOptions:
     raw_artifacts: bool = False
 
 
-def completion(
-    client,
-    request: GeminiRequest,
-    provider_call: Callable[[GeminiRequest], GeminiResponse],
-    options: GeminiOptions | None = None,
-) -> GeminiResponse:
-    """Runs a sync Gemini call and records a `SYNC` generation."""
+@dataclass(slots=True)
+class GeminiStreamSummary:
+    """Streaming summary for Gemini models API flows."""
 
+    responses: list[GenerateContentResponse] = field(default_factory=list)
+    output_text: str = ""
+    final_response: GenerateContentResponse | None = None
+
+
+def _models_generate_content(
+    client,
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    provider_call: Callable[[str, list[GeminiContent], GenerateContentConfig | None], GenerateContentResponse],
+    options: GeminiOptions | None = None,
+) -> GenerateContentResponse:
     opts = options or GeminiOptions()
-    recorder = client.start_generation(_start_payload(request, opts, mode=GenerationMode.SYNC))
+    recorder = client.start_generation(_start_payload(model, contents, config, opts, GenerationMode.SYNC))
+
     try:
-        response = provider_call(request)
-        recorder.set_result(from_request_response(request, response, opts))
+        response = provider_call(model, contents, config)
+        recorder.set_result(_models_from_request_response(model, contents, config, response, opts))
     except Exception as exc:  # noqa: BLE001
         recorder.set_call_error(exc)
         raise
@@ -104,22 +84,27 @@ def completion(
 
     if recorder.err() is not None:
         raise recorder.err()
+
     return response
 
 
-async def completion_async(
+async def _models_generate_content_async(
     client,
-    request: GeminiRequest,
-    provider_call: Callable[[GeminiRequest], Awaitable[GeminiResponse]],
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    provider_call: Callable[
+        [str, list[GeminiContent], GenerateContentConfig | None],
+        Awaitable[GenerateContentResponse],
+    ],
     options: GeminiOptions | None = None,
-) -> GeminiResponse:
-    """Runs an async Gemini call and records a `SYNC` generation."""
-
+) -> GenerateContentResponse:
     opts = options or GeminiOptions()
-    recorder = client.start_generation(_start_payload(request, opts, mode=GenerationMode.SYNC))
+    recorder = client.start_generation(_start_payload(model, contents, config, opts, GenerationMode.SYNC))
+
     try:
-        response = await provider_call(request)
-        recorder.set_result(from_request_response(request, response, opts))
+        response = await provider_call(model, contents, config)
+        recorder.set_result(_models_from_request_response(model, contents, config, response, opts))
     except Exception as exc:  # noqa: BLE001
         recorder.set_call_error(exc)
         raise
@@ -128,22 +113,24 @@ async def completion_async(
 
     if recorder.err() is not None:
         raise recorder.err()
+
     return response
 
 
-def completion_stream(
+def _models_generate_content_stream(
     client,
-    request: GeminiRequest,
-    provider_call: Callable[[GeminiRequest], GeminiStreamSummary],
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    provider_call: Callable[[str, list[GeminiContent], GenerateContentConfig | None], GeminiStreamSummary],
     options: GeminiOptions | None = None,
 ) -> GeminiStreamSummary:
-    """Runs a sync Gemini stream flow and records a `STREAM` generation."""
-
     opts = options or GeminiOptions()
-    recorder = client.start_streaming_generation(_start_payload(request, opts, mode=GenerationMode.STREAM))
+    recorder = client.start_streaming_generation(_start_payload(model, contents, config, opts, GenerationMode.STREAM))
+
     try:
-        summary = provider_call(request)
-        recorder.set_result(from_stream(request, summary, opts))
+        summary = provider_call(model, contents, config)
+        recorder.set_result(_models_from_stream(model, contents, config, summary, opts))
     except Exception as exc:  # noqa: BLE001
         recorder.set_call_error(exc)
         raise
@@ -152,22 +139,27 @@ def completion_stream(
 
     if recorder.err() is not None:
         raise recorder.err()
+
     return summary
 
 
-async def completion_stream_async(
+async def _models_generate_content_stream_async(
     client,
-    request: GeminiRequest,
-    provider_call: Callable[[GeminiRequest], Awaitable[GeminiStreamSummary]],
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    provider_call: Callable[
+        [str, list[GeminiContent], GenerateContentConfig | None],
+        Awaitable[GeminiStreamSummary],
+    ],
     options: GeminiOptions | None = None,
 ) -> GeminiStreamSummary:
-    """Runs an async Gemini stream flow and records a `STREAM` generation."""
-
     opts = options or GeminiOptions()
-    recorder = client.start_streaming_generation(_start_payload(request, opts, mode=GenerationMode.STREAM))
+    recorder = client.start_streaming_generation(_start_payload(model, contents, config, opts, GenerationMode.STREAM))
+
     try:
-        summary = await provider_call(request)
-        recorder.set_result(from_stream(request, summary, opts))
+        summary = await provider_call(model, contents, config)
+        recorder.set_result(_models_from_stream(model, contents, config, summary, opts))
     except Exception as exc:  # noqa: BLE001
         recorder.set_call_error(exc)
         raise
@@ -176,256 +168,671 @@ async def completion_stream_async(
 
     if recorder.err() is not None:
         raise recorder.err()
+
     return summary
 
 
-def from_request_response(
-    request: GeminiRequest,
-    response: GeminiResponse,
+def _models_from_request_response(
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    response: GenerateContentResponse,
     options: GeminiOptions | None = None,
 ) -> Generation:
-    """Maps Gemini request/response payloads into a normalized generation."""
-
     opts = options or GeminiOptions()
-    metadata = _metadata_with_thinking_budget(opts.metadata, _gemini_thinking_budget(request.thinking_config))
+    request_controls = _request_controls(config)
+    usage = _map_usage(_read(response, "usage_metadata"))
+    usage_metadata = _gemini_usage_metadata(_read(response, "usage_metadata"))
+    output = _map_output_messages(response)
+    if not output:
+        text = _extract_response_text(response)
+        if text:
+            output = [Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=text)])]
+
     generation = Generation(
         conversation_id=opts.conversation_id,
         agent_name=opts.agent_name,
         agent_version=opts.agent_version,
         mode=GenerationMode.SYNC,
-        model=ModelRef(provider=opts.provider_name, name=request.model),
-        response_id=response.id,
-        response_model=response.model or request.model,
-        system_prompt=request.system_prompt,
-        max_tokens=request.max_output_tokens,
-        temperature=request.temperature,
-        top_p=request.top_p,
-        tool_choice=_canonical_tool_choice(request.function_calling_mode),
-        thinking_enabled=_gemini_thinking_enabled(request.thinking_config),
-        input=_map_input_messages(request.messages),
-        output=[_assistant_text_message(response.output_text)],
-        tools=copy.deepcopy(request.tools),
-        usage=copy.deepcopy(response.usage),
-        stop_reason=response.stop_reason,
+        model=ModelRef(provider=opts.provider_name, name=model.strip()),
+        response_id=_as_str(_read(response, "response_id")),
+        response_model=_as_str(_read(response, "model_version")) or model.strip(),
+        system_prompt=_extract_system_prompt(config),
+        max_tokens=request_controls.max_tokens,
+        temperature=request_controls.temperature,
+        top_p=request_controls.top_p,
+        tool_choice=request_controls.tool_choice,
+        thinking_enabled=request_controls.thinking_enabled,
+        input=_map_input_messages(contents),
+        output=output,
+        tools=_map_tools(config),
+        usage=usage,
+        stop_reason=_response_stop_reason(response),
         tags=dict(opts.tags),
-        metadata=metadata,
+        metadata=_merge_metadata(
+            _metadata_with_thinking_budget(
+                opts.metadata,
+                request_controls.thinking_budget,
+                request_controls.thinking_level,
+            ),
+            usage_metadata,
+        ),
     )
 
     if opts.raw_artifacts:
         generation.artifacts = [
-            Artifact(
-                kind=ArtifactKind.REQUEST,
-                name="gemini.request",
-                content_type="application/json",
-                payload=_json_bytes(asdict(request)),
+            _json_artifact(
+                ArtifactKind.REQUEST,
+                "gemini.request",
+                {
+                    "model": model,
+                    "contents": contents,
+                    "config": config,
+                },
             ),
-            Artifact(
-                kind=ArtifactKind.RESPONSE,
-                name="gemini.response",
-                content_type="application/json",
-                payload=_json_bytes(response.raw if response.raw is not None else asdict(response)),
-            ),
+            _json_artifact(ArtifactKind.RESPONSE, "gemini.response", response),
         ]
-        if request.tools:
-            generation.artifacts.append(
-                Artifact(
-                    kind=ArtifactKind.TOOLS,
-                    name="gemini.tools",
-                    content_type="application/json",
-                    payload=_json_bytes([asdict(tool) for tool in request.tools]),
-                )
-            )
+        if generation.tools:
+            generation.artifacts.append(_json_artifact(ArtifactKind.TOOLS, "gemini.tools", generation.tools))
 
     return generation
 
 
-def from_stream(
-    request: GeminiRequest,
+def _models_from_stream(
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
     summary: GeminiStreamSummary,
     options: GeminiOptions | None = None,
 ) -> Generation:
-    """Maps Gemini stream summary into a normalized generation."""
-
     opts = options or GeminiOptions()
-    metadata = _metadata_with_thinking_budget(opts.metadata, _gemini_thinking_budget(request.thinking_config))
-    if summary.final_response is not None:
-        generation = from_request_response(request, summary.final_response, opts)
+
+    final_response = summary.final_response
+    if final_response is None and summary.responses:
+        final_response = summary.responses[-1]
+
+    if final_response is not None:
+        generation = _models_from_request_response(model, contents, config, final_response, opts)
         generation.mode = GenerationMode.STREAM
     else:
+        controls = _request_controls(config)
+        stream_usage_metadata = _gemini_stream_usage_metadata(summary.responses)
         generation = Generation(
             conversation_id=opts.conversation_id,
             agent_name=opts.agent_name,
             agent_version=opts.agent_version,
             mode=GenerationMode.STREAM,
-            model=ModelRef(provider=opts.provider_name, name=request.model),
-            response_model=request.model,
-            system_prompt=request.system_prompt,
-            max_tokens=request.max_output_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            tool_choice=_canonical_tool_choice(request.function_calling_mode),
-            thinking_enabled=_gemini_thinking_enabled(request.thinking_config),
-            input=_map_input_messages(request.messages),
-            output=[_assistant_text_message(summary.output_text)],
-            tools=copy.deepcopy(request.tools),
+            model=ModelRef(provider=opts.provider_name, name=model.strip()),
+            response_model=model.strip(),
+            system_prompt=_extract_system_prompt(config),
+            max_tokens=controls.max_tokens,
+            temperature=controls.temperature,
+            top_p=controls.top_p,
+            tool_choice=controls.tool_choice,
+            thinking_enabled=controls.thinking_enabled,
+            input=_map_input_messages(contents),
+            output=[],
+            tools=_map_tools(config),
             tags=dict(opts.tags),
-            metadata=metadata,
+            metadata=_merge_metadata(
+                _metadata_with_thinking_budget(opts.metadata, controls.thinking_budget, controls.thinking_level),
+                stream_usage_metadata,
+            ),
         )
 
-    if generation.output:
-        generation.output[0] = _assistant_text_message(summary.output_text)
-    else:
-        generation.output = [_assistant_text_message(summary.output_text)]
+    output_text = summary.output_text.strip() or _extract_stream_output_text(summary.responses)
+    if output_text:
+        generation.output = [Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=output_text)])]
 
     if opts.raw_artifacts:
         if not any(artifact.kind == ArtifactKind.REQUEST for artifact in generation.artifacts):
             generation.artifacts.append(
-                Artifact(
-                    kind=ArtifactKind.REQUEST,
-                    name="gemini.request",
-                    content_type="application/json",
-                    payload=_json_bytes(asdict(request)),
+                _json_artifact(
+                    ArtifactKind.REQUEST,
+                    "gemini.request",
+                    {
+                        "model": model,
+                        "contents": contents,
+                        "config": config,
+                    },
                 )
             )
-        generation.artifacts.append(
-            Artifact(
-                kind=ArtifactKind.PROVIDER_EVENT,
-                name="gemini.stream.events",
-                content_type="application/json",
-                payload=_json_bytes(summary.events),
-            )
-        )
+        if generation.tools and not any(artifact.kind == ArtifactKind.TOOLS for artifact in generation.artifacts):
+            generation.artifacts.append(_json_artifact(ArtifactKind.TOOLS, "gemini.tools", generation.tools))
+        generation.artifacts.append(_json_artifact(ArtifactKind.PROVIDER_EVENT, "gemini.stream.events", summary.responses))
 
     return generation
 
 
-def _map_input_messages(messages: list[GeminiMessage]) -> list[Message]:
-    mapped: list[Message] = []
-    for message in messages:
-        if message.role == "system":
-            continue
-        mapped.append(
-            Message(
-                role=_normalize_role(message.role),
-                name=message.name,
-                parts=[Part(kind=PartKind.TEXT, text=message.content)],
-            )
-        )
-    return mapped
-
-
-def _normalize_role(role: str) -> MessageRole:
-    if role == "assistant":
-        return MessageRole.ASSISTANT
-    if role == "tool":
-        return MessageRole.TOOL
-    return MessageRole.USER
-
-
-def _assistant_text_message(text: str) -> Message:
-    return Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=text)])
-
-
 def _start_payload(
-    request: GeminiRequest,
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
     options: GeminiOptions,
     mode: GenerationMode,
 ) -> GenerationStart:
-    metadata = _metadata_with_thinking_budget(options.metadata, _gemini_thinking_budget(request.thinking_config))
+    del contents
+    controls = _request_controls(config)
     return GenerationStart(
         conversation_id=options.conversation_id,
         agent_name=options.agent_name,
         agent_version=options.agent_version,
         mode=mode,
-        model=ModelRef(provider=options.provider_name, name=request.model),
-        system_prompt=request.system_prompt,
-        max_tokens=request.max_output_tokens,
-        temperature=request.temperature,
-        top_p=request.top_p,
-        tool_choice=_canonical_tool_choice(request.function_calling_mode),
-        thinking_enabled=_gemini_thinking_enabled(request.thinking_config),
-        tools=copy.deepcopy(request.tools),
+        model=ModelRef(provider=options.provider_name, name=model.strip()),
+        system_prompt=_extract_system_prompt(config),
+        max_tokens=controls.max_tokens,
+        temperature=controls.temperature,
+        top_p=controls.top_p,
+        tool_choice=controls.tool_choice,
+        thinking_enabled=controls.thinking_enabled,
+        tools=_map_tools(config),
         tags=dict(options.tags),
-        metadata=metadata,
+        metadata=_metadata_with_thinking_budget(options.metadata, controls.thinking_budget, controls.thinking_level),
     )
 
 
-def _json_bytes(payload: Any) -> bytes:
-    return json.dumps(payload, default=str, separators=(",", ":")).encode("utf-8")
+@dataclass(slots=True)
+class _RequestControls:
+    max_tokens: int | None
+    temperature: float | None
+    top_p: float | None
+    tool_choice: str | None
+    thinking_enabled: bool | None
+    thinking_budget: int | None
+    thinking_level: str | None
 
 
-def _gemini_thinking_enabled(thinking_config: Any) -> bool | None:
-    if thinking_config is None:
-        return None
-    if isinstance(thinking_config, dict):
-        include_thoughts = thinking_config.get("include_thoughts")
-        if isinstance(include_thoughts, bool):
-            return include_thoughts
-        return None
+def _request_controls(config: GenerateContentConfig | None) -> _RequestControls:
+    tool_config = _read(config, "tool_config")
+    function_calling = _read(tool_config, "function_calling_config")
+    thinking_config = _read(config, "thinking_config")
 
-    include_thoughts = getattr(thinking_config, "include_thoughts", None)
-    if isinstance(include_thoughts, bool):
-        return include_thoughts
-    return None
+    return _RequestControls(
+        max_tokens=_as_int_or_none(_read(config, "max_output_tokens")),
+        temperature=_as_float_or_none(_read(config, "temperature")),
+        top_p=_as_float_or_none(_read(config, "top_p")),
+        tool_choice=_canonical_tool_choice(_read(function_calling, "mode")),
+        thinking_enabled=_as_bool_or_none(
+            _first_not_none(
+                _read(thinking_config, "include_thoughts"),
+                _read(thinking_config, "includeThoughts"),
+            )
+        ),
+        thinking_budget=_as_int_or_none(
+            _first_not_none(
+                _read(thinking_config, "thinking_budget"),
+                _read(thinking_config, "thinkingBudget"),
+            )
+        ),
+        thinking_level=_gemini_thinking_level(
+            _first_not_none(
+                _read(thinking_config, "thinking_level"),
+                _read(thinking_config, "thinkingLevel"),
+            )
+        ),
+    )
 
 
-def _gemini_thinking_budget(thinking_config: Any) -> int | None:
-    if thinking_config is None:
-        return None
-    if isinstance(thinking_config, dict):
-        for key in ("thinking_budget", "thinkingBudget"):
-            resolved = _coerce_int(thinking_config.get(key))
-            if resolved is not None:
-                return resolved
-        return None
+def _map_input_messages(contents: list[GeminiContent]) -> list[Message]:
+    mapped: list[Message] = []
+    for raw_content in _as_list(contents):
+        role = _normalize_role(_as_str(_read(raw_content, "role")))
+        parts = _map_parts(_read(raw_content, "parts"), role)
+        if parts:
+            mapped_role = role
+            if any(part.kind == PartKind.TOOL_RESULT for part in parts):
+                mapped_role = MessageRole.TOOL
+            mapped.append(Message(role=mapped_role, parts=parts))
+    return mapped
 
-    for attr in ("thinking_budget", "thinkingBudget"):
-        resolved = _coerce_int(getattr(thinking_config, attr, None))
-        if resolved is not None:
-            return resolved
-    return None
+
+def _map_output_messages(response: GenerateContentResponse) -> list[Message]:
+    mapped: list[Message] = []
+    for candidate in _as_list(_read(response, "candidates")):
+        content = _read(candidate, "content")
+        role = _normalize_role(_as_str(_read(content, "role")) or "assistant")
+        parts = _map_parts(_read(content, "parts"), role)
+        if parts:
+            mapped.append(Message(role=role, parts=parts))
+    return mapped
+
+
+def _map_parts(raw_parts: Any, role: MessageRole) -> list[Part]:
+    parts: list[Part] = []
+    for raw_part in _as_list(raw_parts):
+        text = _as_str(_read(raw_part, "text"))
+        if text:
+            if _as_bool(_read(raw_part, "thought")) and role == MessageRole.ASSISTANT:
+                parts.append(Part(kind=PartKind.THINKING, thinking=text))
+            else:
+                parts.append(Part(kind=PartKind.TEXT, text=text))
+
+        function_call = _read(raw_part, "function_call")
+        if function_call is not None:
+            parts.append(
+                Part(
+                    kind=PartKind.TOOL_CALL,
+                    tool_call=ToolCall(
+                        id=_as_str(_read(function_call, "id")),
+                        name=_as_str(_read(function_call, "name")),
+                        input_json=_json_bytes(_read(function_call, "args")),
+                    ),
+                )
+            )
+
+        function_response = _read(raw_part, "function_response")
+        if function_response is not None:
+            response_payload = _read(function_response, "response")
+            parts.append(
+                Part(
+                    kind=PartKind.TOOL_RESULT,
+                    tool_result=ToolResult(
+                        tool_call_id=_as_str(_read(function_response, "id")),
+                        name=_as_str(_read(function_response, "name")),
+                        content=_extract_text(response_payload),
+                        content_json=_json_bytes(response_payload),
+                        is_error=_as_bool(_read(function_response, "is_error")),
+                    ),
+                )
+            )
+
+    return parts
+
+
+def _extract_system_prompt(config: GenerateContentConfig | None) -> str:
+    instruction = _read(config, "system_instruction")
+    if instruction is None:
+        return ""
+
+    parts = _as_list(_read(instruction, "parts"))
+    if not parts:
+        return _extract_text(instruction)
+
+    chunks: list[str] = []
+    for part in parts:
+        text = _as_str(_read(part, "text"))
+        if text:
+            chunks.append(text)
+    return "\n".join(chunks)
+
+
+def _map_tools(config: GenerateContentConfig | None) -> list[ToolDefinition]:
+    mapped: list[ToolDefinition] = []
+    for tool in _as_list(_read(config, "tools")):
+        declarations = _as_list(_read(tool, "function_declarations"))
+        for declaration in declarations:
+            name = _as_str(_read(declaration, "name"))
+            if not name:
+                continue
+            mapped.append(
+                ToolDefinition(
+                    name=name,
+                    description=_as_str(_read(declaration, "description")),
+                    type="function",
+                    input_schema_json=_json_bytes(_read(declaration, "parameters_json_schema")),
+                )
+            )
+
+    return mapped
+
+
+def _map_usage(raw_usage: Any) -> TokenUsage:
+    input_tokens = _as_int(_read(raw_usage, "prompt_token_count"))
+    output_tokens = _as_int(_read(raw_usage, "candidates_token_count"))
+    total_tokens = _as_int(_read(raw_usage, "total_token_count"))
+    tool_use_prompt_tokens = _as_int(_read(raw_usage, "tool_use_prompt_token_count"))
+    reasoning_tokens = _as_int(_read(raw_usage, "thoughts_token_count"))
+    if total_tokens == 0:
+        total_tokens = input_tokens + output_tokens + tool_use_prompt_tokens + reasoning_tokens
+
+    usage = TokenUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        cache_read_input_tokens=_as_int(_read(raw_usage, "cached_content_token_count")),
+        cache_write_input_tokens=_as_int(_read(raw_usage, "cache_write_input_token_count")),
+        cache_creation_input_tokens=_as_int(_read(raw_usage, "cache_creation_input_token_count")),
+        reasoning_tokens=reasoning_tokens,
+    )
+    return usage.normalize()
+
+
+def _response_stop_reason(response: GenerateContentResponse) -> str:
+    stop_reason = ""
+    for candidate in _as_list(_read(response, "candidates")):
+        reason = _as_str(_read(candidate, "finish_reason"))
+        if reason:
+            stop_reason = reason.upper()
+    return stop_reason
+
+
+def _extract_response_text(response: GenerateContentResponse) -> str:
+    chunks: list[str] = []
+    for candidate in _as_list(_read(response, "candidates")):
+        content = _read(candidate, "content")
+        for part in _as_list(_read(content, "parts")):
+            text = _as_str(_read(part, "text"))
+            if text:
+                chunks.append(text)
+    return "\n".join(chunks)
+
+
+def _extract_stream_output_text(responses: list[GenerateContentResponse]) -> str:
+    chunks: list[str] = []
+    for response in responses:
+        text = _extract_response_text(response)
+        if text:
+            chunks.append(text)
+    return "\n".join(chunks)
+
+
+def _normalize_role(role: str) -> MessageRole:
+    normalized = role.strip().lower()
+    if normalized == "assistant" or normalized == "model":
+        return MessageRole.ASSISTANT
+    if normalized == "tool":
+        return MessageRole.TOOL
+    return MessageRole.USER
 
 
 def _canonical_tool_choice(value: Any) -> str | None:
     if value is None:
         return None
+
     if isinstance(value, str):
         normalized = value.strip().lower()
         return normalized or None
+
     if hasattr(value, "value"):
         normalized = str(value.value).strip().lower()
         return normalized or None
+
     try:
-        encoded = json.dumps(value, default=str, separators=(",", ":"), sort_keys=True)
+        encoded = json.dumps(_to_plain(value), separators=(",", ":"), sort_keys=True)
     except Exception:  # noqa: BLE001
-        normalized = str(value).strip().lower()
-        return normalized or None
-    return encoded if encoded != "" else None
+        fallback = str(value).strip().lower()
+        return fallback or None
+
+    return encoded or None
 
 
-def _metadata_with_thinking_budget(metadata: dict[str, Any], thinking_budget: int | None) -> dict[str, Any]:
+def _metadata_with_thinking_budget(
+    metadata: Mapping[str, Any],
+    thinking_budget: int | None,
+    thinking_level: str | None,
+) -> dict[str, Any]:
     out = dict(metadata)
     if thinking_budget is not None:
         out[_thinking_budget_metadata_key] = thinking_budget
+    if thinking_level is not None:
+        out[_thinking_level_metadata_key] = thinking_level
     return out
 
 
-def _coerce_int(value: Any) -> int | None:
+def _gemini_thinking_level(value: Any) -> str | None:
+    normalized = _as_str(value).strip().lower()
+    if not normalized or normalized == "thinking_level_unspecified":
+        return None
+    if normalized in {"thinking_level_low", "low"}:
+        return "low"
+    if normalized in {"thinking_level_medium", "medium"}:
+        return "medium"
+    if normalized in {"thinking_level_high", "high"}:
+        return "high"
+    if normalized in {"thinking_level_minimal", "minimal"}:
+        return "minimal"
+    return normalized
+
+
+def _gemini_usage_metadata(raw_usage: Any) -> dict[str, Any]:
+    tool_use_prompt_tokens = _as_int_or_none(
+        _read(raw_usage, "tool_use_prompt_token_count") or _read(raw_usage, "toolUsePromptTokenCount")
+    )
+    if tool_use_prompt_tokens is None:
+        return {}
+    if tool_use_prompt_tokens <= 0:
+        return {}
+    return {
+        _usage_tool_use_prompt_tokens_metadata_key: tool_use_prompt_tokens,
+    }
+
+
+def _gemini_stream_usage_metadata(responses: list[GenerateContentResponse]) -> dict[str, Any]:
+    for response in reversed(responses):
+        metadata = _gemini_usage_metadata(_read(response, "usage_metadata"))
+        if metadata:
+            return metadata
+    return {}
+
+
+def _merge_metadata(base: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    merged.update(extra)
+    return merged
+
+
+def _json_artifact(kind: ArtifactKind, name: str, payload: Any) -> Artifact:
+    return Artifact(
+        kind=kind,
+        name=name,
+        content_type="application/json",
+        payload=_json_bytes(payload),
+    )
+
+
+def _json_bytes(value: Any) -> bytes:
+    return json.dumps(_to_plain(value), separators=(",", ":"), sort_keys=True, default=str).encode("utf-8")
+
+
+def _to_plain(value: Any) -> Any:
+    if value is None:
+        return None
+
+    if isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+
+    if isinstance(value, Mapping):
+        return {str(key): _to_plain(inner) for key, inner in value.items()}
+
+    if isinstance(value, list | tuple):
+        return [_to_plain(inner) for inner in value]
+
+    if is_dataclass(value):
+        return {key: _to_plain(inner) for key, inner in asdict(value).items()}
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump(mode="json")
+        except TypeError:
+            dumped = model_dump()
+        return _to_plain(dumped)
+
+    to_json_dict = getattr(value, "to_json_dict", None)
+    if callable(to_json_dict):
+        return _to_plain(to_json_dict())
+
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _to_plain(to_dict())
+
+    if hasattr(value, "__dict__"):
+        return _to_plain(vars(value))
+
+    return str(value)
+
+
+def _extract_text(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value.strip()
+
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace").strip()
+
+    if isinstance(value, Mapping):
+        text = _as_str(value.get("text"))
+        if text:
+            return text
+        content = value.get("content")
+        if content is not None:
+            return _extract_text(content)
+        return ""
+
+    if isinstance(value, list | tuple):
+        chunks: list[str] = []
+        for item in value:
+            chunk = _extract_text(item)
+            if chunk:
+                chunks.append(chunk)
+        return "\n".join(chunks)
+
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _extract_text(model_dump(mode="json"))
+        except TypeError:
+            return _extract_text(model_dump())
+
+    return _as_str(value)
+
+
+def _read(value: Any, key: str, default: Any = None) -> Any:
+    if value is None:
+        return default
+
+    if isinstance(value, Mapping):
+        return value.get(key, default)
+
+    if hasattr(value, key):
+        return getattr(value, key)
+
+    getter = getattr(value, "get", None)
+    if callable(getter):
+        try:
+            return getter(key, default)
+        except Exception:  # noqa: BLE001
+            return default
+
+    return default
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, Mapping)):
+        return list(value)
+    return []
+
+
+def _as_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    return False
+
+
+def _as_bool_or_none(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    return None
+
+
+def _as_int(value: Any) -> int:
+    converted = _as_int_or_none(value)
+    return converted if converted is not None else 0
+
+
+def _as_int_or_none(value: Any) -> int | None:
     if value is None or isinstance(value, bool):
         return None
+
     if isinstance(value, int):
         return value
+
     if isinstance(value, float):
         integer = int(value)
         if float(integer) == value:
             return integer
         return None
+
     if isinstance(value, str):
         text = value.strip()
-        if text == "":
+        if not text:
             return None
         try:
             return int(text)
         except ValueError:
             return None
+
     return None
+
+
+def _first_not_none(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _as_float_or_none(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    return None
+
+
+class _ModelsNamespace:
+    """Namespace for Gemini models wrappers and mappers."""
+
+    generate_content = staticmethod(_models_generate_content)
+    generate_content_async = staticmethod(_models_generate_content_async)
+    generate_content_stream = staticmethod(_models_generate_content_stream)
+    generate_content_stream_async = staticmethod(_models_generate_content_stream_async)
+    from_request_response = staticmethod(_models_from_request_response)
+    from_stream = staticmethod(_models_from_stream)
+
+
+models = _ModelsNamespace()

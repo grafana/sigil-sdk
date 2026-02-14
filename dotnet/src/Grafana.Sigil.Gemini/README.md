@@ -23,26 +23,26 @@ var sigil = new SigilClient(config);
 
 var gemini = new Client(apiKey: Environment.GetEnvironmentVariable("GEMINI_API_KEY")!);
 
-var request = new GenerateContentRequest
+var model = "gemini-2.5-pro";
+var contents = new List<Content>
 {
-    Model = "gemini-2.5-pro",
-    Contents = new List<Content>
+    new Content
     {
-        new Content
+        Role = "user",
+        Parts = new List<GPart>
         {
-            Role = "user",
-            Parts = new List<GPart>
-            {
-                new GPart { Text = "What's the weather in Paris?" },
-            },
+            new GPart { Text = "What's the weather in Paris?" },
         },
     },
-    Config = new GenerateContentConfig
+};
+var config = new GenerateContentConfig
+{
+    SystemInstruction = new Content
     {
-        SystemInstruction = new Content
+        Role = "user",
+        Parts = new List<GPart>
         {
-            Role = "user",
-            Parts = new List<GPart> { new GPart { Text = "Be concise." } },
+            new GPart { Text = "Be concise." },
         },
     },
 };
@@ -50,7 +50,9 @@ var request = new GenerateContentRequest
 GenerateContentResponse response = await GeminiRecorder.GenerateContentAsync(
     sigil,
     gemini,
-    request,
+    model,
+    contents,
+    config,
     options: new GeminiSigilOptions
     {
         ConversationId = "conv-gemini-1",
@@ -67,7 +69,9 @@ GenerateContentResponse response = await GeminiRecorder.GenerateContentAsync(
 GeminiStreamSummary summary = await GeminiRecorder.GenerateContentStreamAsync(
     sigil,
     gemini,
-    request,
+    model,
+    contents,
+    config,
     options: new GeminiSigilOptions
     {
         ConversationId = "conv-gemini-stream-1",
@@ -103,8 +107,10 @@ Raw artifacts are off by default and should be enabled only for diagnostics.
 ```csharp
 var response = await GeminiRecorder.GenerateContentAsync(
     sigil,
-    request,
-    (payload, ct) => gemini.Models.GenerateContentAsync(payload.Model, payload.Contents, payload.Config, ct),
+    model,
+    contents,
+    (requestModel, requestContents, requestConfig, ct) => gemini.Models.GenerateContentAsync(requestModel, requestContents, requestConfig, ct),
+    config,
     options: new GeminiSigilOptions { ModelName = "gemini-2.5-pro" },
     cancellationToken: CancellationToken.None
 );
@@ -117,3 +123,12 @@ var response = await GeminiRecorder.GenerateContentAsync(
 - Stop reason and usage fields are normalized from Gemini responses.
 - Provider exceptions are captured as generation `CallError` and rethrown.
 - Call `SigilClient.ShutdownAsync(...)` during application shutdown to flush pending exports.
+
+## Provider metadata mapping
+
+Gemini-specific fields are mapped as follows:
+
+- `usage.ThoughtsTokenCount` -> normalized `usage.reasoning_tokens`
+- `usage.ToolUsePromptTokenCount` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
+- `config.ThinkingConfig.ThinkingBudget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
+- `config.ThinkingConfig.ThinkingLevel` -> metadata `sigil.gen_ai.request.thinking.level`

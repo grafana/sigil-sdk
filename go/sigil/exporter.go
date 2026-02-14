@@ -12,8 +12,12 @@ import (
 	"time"
 
 	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -46,11 +50,23 @@ func newNoopGenerationExporter(err error) generationExporter {
 	return &noopGenerationExporter{err: err}
 }
 
-func (e *noopGenerationExporter) Export(_ context.Context, _ *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *noopGenerationExporter) Export(_ context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
 	if e.err != nil {
 		return nil, e.err
 	}
-	return nil, errors.New("generation exporter unavailable")
+	if request == nil {
+		return &sigilv1.ExportGenerationsResponse{}, nil
+	}
+	response := &sigilv1.ExportGenerationsResponse{
+		Results: make([]*sigilv1.ExportGenerationResult, 0, len(request.GetGenerations())),
+	}
+	for _, generation := range request.GetGenerations() {
+		response.Results = append(response.Results, &sigilv1.ExportGenerationResult{
+			GenerationId: generation.GetId(),
+			Accepted:     true,
+		})
+	}
+	return response, nil
 }
 
 func (e *noopGenerationExporter) Shutdown(_ context.Context) error {
@@ -182,6 +198,8 @@ func newGenerationExporter(cfg GenerationExportConfig) (generationExporter, erro
 		return newGRPCGenerationExporter(cfg)
 	case GenerationExportProtocolHTTP:
 		return newHTTPGenerationExporter(cfg)
+	case GenerationExportProtocolNone:
+		return newNoopGenerationExporter(nil), nil
 	default:
 		return nil, fmt.Errorf("unsupported generation export protocol %q", cfg.Protocol)
 	}
@@ -234,6 +252,62 @@ func newTraceProvider(cfg TraceConfig) (trace.Tracer, *sdktrace.TracerProvider, 
 
 		provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
 		return provider.Tracer(instrumentationName), provider, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported trace protocol %q", cfg.Protocol)
+	}
+}
+
+func newMeterProvider(cfg TraceConfig) (metric.Meter, *sdkmetric.MeterProvider, error) {
+	switch cfg.Protocol {
+	case TraceProtocolGRPC:
+		endpoint, _, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		opts := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(endpoint)}
+		if cfg.Insecure || insecureEndpoint {
+			opts = append(opts, otlpmetricgrpc.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			opts = append(opts, otlpmetricgrpc.WithHeaders(cfg.Headers))
+		}
+
+		exporter, err := otlpmetricgrpc.New(context.Background(), opts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("init otlp grpc metric exporter: %w", err)
+		}
+
+		provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)))
+		return provider.Meter(instrumentationName), provider, nil
+	case TraceProtocolHTTP:
+		endpoint, path, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		opts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(endpoint)}
+		metricsPath := path
+		if metricsPath == "" || metricsPath == "/" || metricsPath == "/v1/traces" {
+			metricsPath = "/v1/metrics"
+		}
+		if metricsPath != "" {
+			opts = append(opts, otlpmetrichttp.WithURLPath(metricsPath))
+		}
+		if cfg.Insecure || insecureEndpoint {
+			opts = append(opts, otlpmetrichttp.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			opts = append(opts, otlpmetrichttp.WithHeaders(cfg.Headers))
+		}
+
+		exporter, err := otlpmetrichttp.New(context.Background(), opts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("init otlp http metric exporter: %w", err)
+		}
+
+		provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)))
+		return provider.Meter(instrumentationName), provider, nil
 	default:
 		return nil, nil, fmt.Errorf("unsupported trace protocol %q", cfg.Protocol)
 	}
@@ -582,6 +656,11 @@ func (c *Client) Shutdown(ctx context.Context) error {
 		if c.traceProvider != nil {
 			if err := c.traceProvider.Shutdown(ctx); err != nil {
 				shutdownErr = errors.Join(shutdownErr, err)
+			}
+		}
+		if c.meterProvider != nil {
+			if err := c.meterProvider.Shutdown(ctx); err != nil {
+				c.logf("sigil metric provider shutdown failed: %v", err)
 			}
 		}
 	})

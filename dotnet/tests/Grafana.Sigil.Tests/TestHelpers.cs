@@ -185,6 +185,7 @@ internal static class TestHelpers
             Trace = new TraceConfig
             {
                 Endpoint = string.Empty,
+                EnableMetrics = false,
             },
             GenerationExporter = exporter,
             GenerationExport = new GenerationExportConfig

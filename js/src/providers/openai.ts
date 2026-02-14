@@ -30,6 +30,7 @@ export interface ChatCompletionsStreamSummary {
   events?: ChatStreamEvent[];
   finalResponse?: ChatResponse;
   outputText?: string;
+  firstChunkAt?: Date | string | number;
 }
 
 /** Streaming summary accepted by responses stream wrapper. */
@@ -37,6 +38,7 @@ export interface ResponsesStreamSummary {
   events?: ResponsesStreamEvent[];
   finalResponse?: ResponsesResponse;
   outputText?: string;
+  firstChunkAt?: Date | string | number;
 }
 
 async function chatCompletionsCreate(
@@ -117,6 +119,10 @@ async function chatCompletionsStream(
     },
     async (recorder) => {
       const summary = await providerCall(request);
+      const firstChunkAt = asDate(summary.firstChunkAt);
+      if (firstChunkAt !== undefined) {
+        recorder.setFirstTokenAt(firstChunkAt);
+      }
       recorder.setResult(chatCompletionsFromStream(request, summary, options));
       return summary;
     }
@@ -288,6 +294,10 @@ async function responsesStream(
     },
     async (recorder) => {
       const summary = await providerCall(request);
+      const firstChunkAt = asDate(summary.firstChunkAt);
+      if (firstChunkAt !== undefined) {
+        recorder.setFirstTokenAt(firstChunkAt);
+      }
       recorder.setResult(responsesFromStream(request, summary, options));
       return summary;
     }
@@ -1107,4 +1117,15 @@ function hasValue(value: unknown): boolean {
 
 function isRecord(value: unknown): value is AnyRecord {
   return typeof value === 'object' && value !== null;
+}
+
+function asDate(value: Date | string | number | undefined): Date | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const date = value instanceof Date ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date;
 }

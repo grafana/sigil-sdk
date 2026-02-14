@@ -166,6 +166,29 @@ class SigilClientTransportTest {
     }
 
     @Test
+    void recordsGenerationWhenExportProtocolIsNone() throws Exception {
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                .setGenerationExport(new GenerationExportConfig()
+                        .setProtocol(GenerationExportProtocol.NONE)
+                        .setBatchSize(1)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            GenerationRecorder recorder = client.startGeneration(TestFixtures.startFixture());
+            recorder.setResult(TestFixtures.resultFixture());
+            recorder.end();
+
+            assertThat(recorder.error()).isEmpty();
+            assertThat(recorder.lastGeneration()).isPresent();
+
+            client.flush();
+            client.shutdown();
+        }
+    }
+
+    @Test
     void exportRoundTripSeedMatrixMatchesProtoOverHttpAndGrpc() throws Exception {
         for (int seed = 1; seed <= 5; seed++) {
             assertRoundTripMatchesProto(seed, GenerationExportProtocol.HTTP);

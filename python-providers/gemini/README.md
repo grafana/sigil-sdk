@@ -1,88 +1,80 @@
 # Sigil Python Provider Helper: Gemini
 
-`sigil-sdk-gemini` provides wrapper-first helpers and explicit mappers for Gemini request/response flows.
-
-Use it to convert Gemini-style payloads into normalized Sigil generations with predictable defaults.
+`sigil-sdk-gemini` provides strict Gemini Models wrappers and mappers for Sigil.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-gemini
+pip install sigil-sdk sigil-sdk-gemini google-genai
 ```
 
-## Quick Start (Sync)
+## Wrapper Mode (Sync)
 
 ```python
+from google.genai import types as genai_types
 from sigil_sdk import Client, ClientConfig
-from sigil_sdk_gemini import (
-    GeminiMessage,
-    GeminiOptions,
-    GeminiRequest,
-    GeminiResponse,
-    completion,
-)
+from sigil_sdk_gemini import GeminiOptions, models
 
 client = Client(ClientConfig())
 
-request = GeminiRequest(
-    model="gemini-2.5-pro",
-    messages=[GeminiMessage(role="user", content="Hello")],
-)
+model = "gemini-2.5-pro"
+contents = [genai_types.Content(role="user", parts=[genai_types.Part(text="Hello")])]
+config = genai_types.GenerateContentConfig(max_output_tokens=256)
 
-def provider_call(req: GeminiRequest) -> GeminiResponse:
-    # Replace this with your Gemini SDK call.
-    return GeminiResponse(id="resp-1", model=req.model, output_text="Hi there")
-
-response = completion(
+response = models.generate_content(
     client,
-    request,
-    provider_call,
-    GeminiOptions(conversation_id="conv-1", agent_name="my-agent", agent_version="1.0.0"),
+    model,
+    contents,
+    config,
+    lambda req_model, req_contents, req_config: gemini_client.models.generate_content(
+        model=req_model,
+        contents=req_contents,
+        config=req_config,
+    ),
+    GeminiOptions(conversation_id="conv-1", agent_name="assistant", agent_version="1.0.0"),
 )
 ```
 
-## Streaming Wrapper
+## Wrapper Mode (Stream)
 
 ```python
-from sigil_sdk_gemini import GeminiStreamSummary, completion_stream
+from sigil_sdk_gemini import GeminiStreamSummary, models
 
-summary = completion_stream(
+summary = models.generate_content_stream(
     client,
-    request,
-    lambda req: GeminiStreamSummary(
-        output_text="streamed final text",
-        events=[{"delta": "stream"}],
+    model,
+    contents,
+    config,
+    lambda req_model, req_contents, req_config: GeminiStreamSummary(
+        responses=list(gemini_client.models.generate_content_stream(
+            model=req_model,
+            contents=req_contents,
+            config=req_config,
+        ))
     ),
 )
 ```
 
-Call `client.shutdown()` during process teardown to flush buffered telemetry.
-
-## Mapper-Only Usage
+## Mapper Mode
 
 ```python
-from sigil_sdk_gemini import from_request_response
-
-generation = from_request_response(request, response)
+generation = models.from_request_response(model, contents, config, response)
+stream_generation = models.from_stream(model, contents, config, summary)
 ```
 
 ## Raw Provider Artifacts (Opt-In)
 
-Raw artifacts are off by default.
-
 ```python
-from sigil_sdk_gemini import GeminiOptions
-
 options = GeminiOptions(raw_artifacts=True)
 ```
 
-When enabled, wrappers include request/response payload artifacts (and stream event artifacts for streaming paths).
+Raw artifacts are default OFF and should only be enabled for diagnostics.
 
-## Public Functions
+## Provider metadata mapping
 
-- `completion(...)`
-- `completion_async(...)`
-- `completion_stream(...)`
-- `completion_stream_async(...)`
-- `from_request_response(...)`
-- `from_stream(...)`
+Gemini-specific fields are mapped as follows:
+
+- `usage.thoughts_token_count` -> normalized `usage.reasoning_tokens`
+- `usage.tool_use_prompt_token_count` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinking_config.thinking_budget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
+- `config.thinking_config.thinking_level` -> metadata `sigil.gen_ai.request.thinking.level`

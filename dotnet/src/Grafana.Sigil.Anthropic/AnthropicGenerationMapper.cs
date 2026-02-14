@@ -9,6 +9,9 @@ namespace Grafana.Sigil.Anthropic;
 public static class AnthropicGenerationMapper
 {
     private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
+    private const string ServerToolUseWebSearchRequestsMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_search_requests";
+    private const string ServerToolUseWebFetchRequestsMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_fetch_requests";
+    private const string ServerToolUseTotalRequestsMetadataKey = "sigil.gen_ai.usage.server_tool_use.total_requests";
 
     public static Generation FromRequestResponse(
         MessageCreateParams request,
@@ -46,6 +49,7 @@ public static class AnthropicGenerationMapper
         var systemPrompt = ExtractSystemPrompt(requestJson);
         var tools = MapTools(requestJson);
         var metadata = MetadataWithThinkingBudget(effective.Metadata, requestThinkingBudget);
+        metadata = MergeServerToolUsageMetadata(metadata, ReadObject(responseJson, "usage"));
 
         var generation = new Generation
         {
@@ -128,6 +132,7 @@ public static class AnthropicGenerationMapper
         var responseModel = requestModel;
         var stopReason = string.Empty;
         var usage = new TokenUsage();
+        var usageMetadata = new JsonElement();
 
         var assistantParts = new List<Part>();
         var toolParts = new List<Part>();
@@ -209,11 +214,18 @@ public static class AnthropicGenerationMapper
                     {
                         var delta = ReadObject(json, "delta");
                         stopReason = FirstNonEmpty(ReadString(delta, "stop_reason"), stopReason);
-                        usage = MapUsage(ReadObject(json, "usage"));
+                        var eventUsage = ReadObject(json, "usage");
+                        usage = MapUsage(eventUsage);
+                        if (eventUsage.ValueKind == JsonValueKind.Object)
+                        {
+                            usageMetadata = eventUsage;
+                        }
                         break;
                     }
             }
         }
+
+        metadata = MergeServerToolUsageMetadata(metadata, usageMetadata);
 
         foreach (var block in streamBlocks.Values.OrderBy(block => block.Index))
         {
@@ -926,6 +938,45 @@ public static class AnthropicGenerationMapper
         {
             outMetadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
         }
+        return outMetadata;
+    }
+
+    private static Dictionary<string, object?> MergeServerToolUsageMetadata(
+        IReadOnlyDictionary<string, object?> metadata,
+        JsonElement usage
+    )
+    {
+        var outMetadata = new Dictionary<string, object?>(metadata, StringComparer.Ordinal);
+        if (usage.ValueKind != JsonValueKind.Object)
+        {
+            return outMetadata;
+        }
+
+        var serverToolUse = ReadObject(usage, "server_tool_use");
+        if (serverToolUse.ValueKind != JsonValueKind.Object)
+        {
+            return outMetadata;
+        }
+
+        var webSearchRequests = ReadLong(serverToolUse, "web_search_requests");
+        var webFetchRequests = ReadLong(serverToolUse, "web_fetch_requests");
+
+        if (webSearchRequests > 0)
+        {
+            outMetadata[ServerToolUseWebSearchRequestsMetadataKey] = webSearchRequests;
+        }
+
+        if (webFetchRequests > 0)
+        {
+            outMetadata[ServerToolUseWebFetchRequestsMetadataKey] = webFetchRequests;
+        }
+
+        var totalRequests = webSearchRequests + webFetchRequests;
+        if (totalRequests > 0)
+        {
+            outMetadata[ServerToolUseTotalRequestsMetadataKey] = totalRequests;
+        }
+
         return outMetadata;
     }
 

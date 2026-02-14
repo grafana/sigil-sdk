@@ -36,6 +36,9 @@ public sealed class AnthropicMappingAndRecorderTests
         Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(2048L, ReadThinkingBudget(generation));
+        Assert.Equal(2L, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_search_requests"));
+        var webFetchRequests = TryReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_fetch_requests") ?? 0L;
+        Assert.Equal(2L + webFetchRequests, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.total_requests"));
         Assert.Equal(162, generation.Usage.TotalTokens);
         Assert.Equal(30, generation.Usage.CacheReadInputTokens);
         Assert.Equal(10, generation.Usage.CacheCreationInputTokens);
@@ -48,7 +51,7 @@ public sealed class AnthropicMappingAndRecorderTests
         var request = CreateRequest();
         var summary = new AnthropicStreamSummary();
         summary.Events.Add(CreateMessageStartEvent("msg_stream_1", "stream output"));
-        summary.Events.Add(CreateMessageDeltaEvent(80, 25, 8, 4));
+        summary.Events.Add(CreateMessageDeltaEvent(80, 25, 8, 4, 3, 2));
 
         var generation = AnthropicGenerationMapper.FromStream(request, summary, new AnthropicSigilOptions().WithRawArtifacts());
 
@@ -61,6 +64,9 @@ public sealed class AnthropicMappingAndRecorderTests
         Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(2048L, ReadThinkingBudget(generation));
+        Assert.Equal(3L, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_search_requests"));
+        var streamWebFetchRequests = TryReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_fetch_requests") ?? 0L;
+        Assert.Equal(3L + streamWebFetchRequests, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.total_requests"));
         Assert.Equal(105, generation.Usage.TotalTokens);
         Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent);
     }
@@ -171,8 +177,58 @@ public sealed class AnthropicMappingAndRecorderTests
         };
     }
 
+    private static long ReadMetadataLong(Generation generation, string key)
+    {
+        var raw = generation.Metadata[key];
+        return raw switch
+        {
+            JsonElement json when json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,
+            IConvertible convertible => Convert.ToInt64(convertible),
+            _ => throw new InvalidOperationException($"unexpected metadata type for {key}"),
+        };
+    }
+
+    private static long? TryReadMetadataLong(Generation generation, string key)
+    {
+        if (!generation.Metadata.TryGetValue(key, out var raw))
+        {
+            return null;
+        }
+
+        return raw switch
+        {
+            JsonElement json when json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,
+            IConvertible convertible => Convert.ToInt64(convertible),
+            _ => null,
+        };
+    }
+
     private static AnthropicMessage CreateResponse()
     {
+        var usage = new Usage
+        {
+            InputTokens = 120,
+            OutputTokens = 42,
+            CacheReadInputTokens = 30,
+            CacheCreationInputTokens = 10,
+            CacheCreation = null,
+            ServerToolUse = null,
+            ServiceTier = null,
+        };
+        var serverToolUse = CreateType(
+            typeof(Usage).Assembly,
+            "Anthropic.Models.Messages.ServerToolUsage",
+            instance =>
+            {
+                SetIfPresent(instance, "WebSearchRequests", 2L);
+                SetIfPresent(instance, "WebFetchRequests", 1L);
+            }
+        );
+        if (serverToolUse != null)
+        {
+            SetIfPresent(usage, "ServerToolUse", serverToolUse);
+        }
+
         return new AnthropicMessage
         {
             ID = "msg_1",
@@ -194,23 +250,14 @@ public sealed class AnthropicMappingAndRecorderTests
             Model = Model.ClaudeSonnet4_5,
             StopReason = StopReason.EndTurn,
             StopSequence = null,
-            Usage = new Usage
-            {
-                InputTokens = 120,
-                OutputTokens = 42,
-                CacheReadInputTokens = 30,
-                CacheCreationInputTokens = 10,
-                CacheCreation = null,
-                ServerToolUse = null,
-                ServiceTier = null,
-            },
+            Usage = usage,
         };
     }
 
     private static async IAsyncEnumerable<RawMessageStreamEvent> StreamEvents()
     {
         yield return CreateMessageStartEvent("msg_stream_recorder", "hello");
-        yield return CreateMessageDeltaEvent(2, 1, null, null);
+        yield return CreateMessageDeltaEvent(2, 1, null, null, null, null);
         await Task.CompletedTask;
     }
 
@@ -252,9 +299,39 @@ public sealed class AnthropicMappingAndRecorderTests
         long inputTokens,
         long outputTokens,
         long? cacheReadTokens,
-        long? cacheCreationTokens
+        long? cacheCreationTokens,
+        long? webSearchRequests,
+        long? webFetchRequests
     )
     {
+        var usage = new MessageDeltaUsage
+        {
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            CacheReadInputTokens = cacheReadTokens,
+            CacheCreationInputTokens = cacheCreationTokens,
+            ServerToolUse = null,
+        };
+        var serverToolUse = CreateType(
+            typeof(MessageDeltaUsage).Assembly,
+            "Anthropic.Models.Messages.ServerToolUsage",
+            instance =>
+            {
+                if (webSearchRequests.HasValue)
+                {
+                    SetIfPresent(instance, "WebSearchRequests", webSearchRequests.Value);
+                }
+                if (webFetchRequests.HasValue)
+                {
+                    SetIfPresent(instance, "WebFetchRequests", webFetchRequests.Value);
+                }
+            }
+        );
+        if (serverToolUse != null)
+        {
+            SetIfPresent(usage, "ServerToolUse", serverToolUse);
+        }
+
         return new RawMessageStreamEvent(new RawMessageDeltaEvent
         {
             Type = JsonSerializer.SerializeToElement("message_delta"),
@@ -263,14 +340,7 @@ public sealed class AnthropicMappingAndRecorderTests
                 StopReason = StopReason.EndTurn,
                 StopSequence = null,
             },
-            Usage = new MessageDeltaUsage
-            {
-                InputTokens = inputTokens,
-                OutputTokens = outputTokens,
-                CacheReadInputTokens = cacheReadTokens,
-                CacheCreationInputTokens = cacheCreationTokens,
-                ServerToolUse = null,
-            },
+            Usage = usage,
         });
     }
 

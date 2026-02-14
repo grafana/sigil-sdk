@@ -8,16 +8,20 @@ namespace Grafana.Sigil.Gemini;
 public static class GeminiGenerationMapper
 {
     private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
+    private const string ThinkingLevelMetadataKey = "sigil.gen_ai.request.thinking.level";
+    private const string ToolUsePromptTokensMetadataKey = "sigil.gen_ai.usage.tool_use_prompt_tokens";
 
     public static Generation FromRequestResponse(
-        GenerateContentRequest request,
+        string model,
+        IReadOnlyList<Content>? contents,
+        GenerateContentConfig? config,
         GenerateContentResponse response,
         GeminiSigilOptions? options = null
     )
     {
-        if (request == null)
+        if (string.IsNullOrWhiteSpace(model))
         {
-            throw new ArgumentNullException(nameof(request));
+            throw new ArgumentException("model is required", nameof(model));
         }
 
         if (response == null)
@@ -25,6 +29,43 @@ public static class GeminiGenerationMapper
             throw new ArgumentNullException(nameof(response));
         }
 
+        var request = BuildRequest(model, contents, config);
+        return FromRequestResponseInternal(request, response, options);
+    }
+
+    public static Generation FromStream(
+        string model,
+        IReadOnlyList<Content>? contents,
+        GenerateContentConfig? config,
+        GeminiStreamSummary summary,
+        GeminiSigilOptions? options = null
+    )
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new ArgumentException("model is required", nameof(model));
+        }
+
+        if (summary == null)
+        {
+            throw new ArgumentNullException(nameof(summary));
+        }
+
+        if (summary.Responses.Count == 0)
+        {
+            throw new ArgumentException("stream summary must contain at least one response", nameof(summary));
+        }
+
+        var request = BuildRequest(model, contents, config);
+        return FromStreamInternal(request, summary, options);
+    }
+
+    private static Generation FromRequestResponseInternal(
+        GenerateContentRequest request,
+        GenerateContentResponse response,
+        GeminiSigilOptions? options = null
+    )
+    {
         var effective = options ?? new GeminiSigilOptions();
         var modelName = ResolveModelName(request, effective);
 
@@ -38,12 +79,10 @@ public static class GeminiGenerationMapper
         var toolChoice = CanonicalToolChoice(ReadNestedProperty(request.Config, "ToolConfig", "FunctionCallingConfig", "Mode"));
         var thinkingEnabled = ReadNestedBool(request.Config, "ThinkingConfig", "IncludeThoughts");
         var thinkingBudget = ReadNullableLongProperty(request.Config, "ThinkingConfig", "ThinkingBudget");
+        var thinkingLevel = ExtractThinkingLevel(request.Config);
 
-        var metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal);
-        if (thinkingBudget.HasValue)
-        {
-            metadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
-        }
+        var metadata = ThinkingMetadata(effective.Metadata, thinkingBudget, thinkingLevel);
+        metadata = MergeGeminiUsageMetadata(metadata, response.UsageMetadata);
         if (!string.IsNullOrWhiteSpace(response.ModelVersion))
         {
             metadata["model_version"] = response.ModelVersion;
@@ -82,27 +121,12 @@ public static class GeminiGenerationMapper
         return generation;
     }
 
-    public static Generation FromStream(
+    private static Generation FromStreamInternal(
         GenerateContentRequest request,
         GeminiStreamSummary summary,
         GeminiSigilOptions? options = null
     )
     {
-        if (request == null)
-        {
-            throw new ArgumentNullException(nameof(request));
-        }
-
-        if (summary == null)
-        {
-            throw new ArgumentNullException(nameof(summary));
-        }
-
-        if (summary.Responses.Count == 0)
-        {
-            throw new ArgumentException("stream summary must contain at least one response", nameof(summary));
-        }
-
         var effective = options ?? new GeminiSigilOptions();
         var modelName = ResolveModelName(request, effective);
         var tools = MapTools(request.Config);
@@ -112,12 +136,14 @@ public static class GeminiGenerationMapper
         var toolChoice = CanonicalToolChoice(ReadNestedProperty(request.Config, "ToolConfig", "FunctionCallingConfig", "Mode"));
         var thinkingEnabled = ReadNestedBool(request.Config, "ThinkingConfig", "IncludeThoughts");
         var thinkingBudget = ReadNullableLongProperty(request.Config, "ThinkingConfig", "ThinkingBudget");
+        var thinkingLevel = ExtractThinkingLevel(request.Config);
 
         var output = new List<Message>();
         var responseId = string.Empty;
         var responseModel = string.Empty;
         var stopReason = string.Empty;
         var usage = new TokenUsage();
+        GenerateContentResponseUsageMetadata? usageMetadata = null;
 
         foreach (var response in summary.Responses)
         {
@@ -139,6 +165,7 @@ public static class GeminiGenerationMapper
             if (response.UsageMetadata != null)
             {
                 usage = MapUsage(response.UsageMetadata);
+                usageMetadata = response.UsageMetadata;
             }
 
             var responseStopReason = ResolveStopReason(response.Candidates, preferLast: true);
@@ -150,10 +177,11 @@ public static class GeminiGenerationMapper
             output.AddRange(MapCandidates(response.Candidates, preferLastStopReason: true));
         }
 
-        var metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal);
-        if (thinkingBudget.HasValue)
+        var metadata = ThinkingMetadata(effective.Metadata, thinkingBudget, thinkingLevel);
+        metadata = MergeGeminiUsageMetadata(metadata, usageMetadata);
+        if (!string.IsNullOrWhiteSpace(responseModel))
         {
-            metadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
+            metadata["model_version"] = responseModel;
         }
 
         var generation = new Generation
@@ -187,6 +215,32 @@ public static class GeminiGenerationMapper
 
         GenerationValidator.Validate(generation);
         return generation;
+    }
+
+    private static GenerateContentRequest BuildRequest(
+        string model,
+        IReadOnlyList<Content>? contents,
+        GenerateContentConfig? config
+    )
+    {
+        var mappedContents = new List<Content>();
+        if (contents != null)
+        {
+            foreach (var content in contents)
+            {
+                if (content != null)
+                {
+                    mappedContents.Add(content);
+                }
+            }
+        }
+
+        return new GenerateContentRequest
+        {
+            Model = model,
+            Contents = mappedContents,
+            Config = config,
+        };
     }
 
     private static List<Message> MapContents(IReadOnlyList<Content>? contents)
@@ -326,7 +380,9 @@ public static class GeminiGenerationMapper
 
         var inputTokens = usage.PromptTokenCount ?? 0;
         var outputTokens = usage.CandidatesTokenCount ?? 0;
-        var totalTokens = usage.TotalTokenCount ?? (inputTokens + outputTokens);
+        var toolUsePromptTokens = usage.ToolUsePromptTokenCount ?? 0;
+        var reasoningTokens = usage.ThoughtsTokenCount ?? 0;
+        var totalTokens = usage.TotalTokenCount ?? (inputTokens + outputTokens + toolUsePromptTokens + reasoningTokens);
 
         return new TokenUsage
         {
@@ -334,8 +390,46 @@ public static class GeminiGenerationMapper
             OutputTokens = outputTokens,
             TotalTokens = totalTokens,
             CacheReadInputTokens = usage.CachedContentTokenCount ?? 0,
-            ReasoningTokens = usage.ThoughtsTokenCount ?? 0,
+            ReasoningTokens = reasoningTokens,
         };
+    }
+
+    private static Dictionary<string, object?> ThinkingMetadata(
+        IReadOnlyDictionary<string, object?> metadata,
+        long? thinkingBudget,
+        string? thinkingLevel
+    )
+    {
+        var outMetadata = new Dictionary<string, object?>(metadata, StringComparer.Ordinal);
+        if (thinkingBudget.HasValue)
+        {
+            outMetadata[ThinkingBudgetMetadataKey] = thinkingBudget.Value;
+        }
+        if (!string.IsNullOrWhiteSpace(thinkingLevel))
+        {
+            outMetadata[ThinkingLevelMetadataKey] = thinkingLevel;
+        }
+        return outMetadata;
+    }
+
+    private static Dictionary<string, object?> MergeGeminiUsageMetadata(
+        IReadOnlyDictionary<string, object?> metadata,
+        GenerateContentResponseUsageMetadata? usage
+    )
+    {
+        var outMetadata = new Dictionary<string, object?>(metadata, StringComparer.Ordinal);
+        if (usage == null)
+        {
+            return outMetadata;
+        }
+
+        var toolUsePromptTokens = usage.ToolUsePromptTokenCount;
+        if (toolUsePromptTokens.HasValue && toolUsePromptTokens.Value > 0)
+        {
+            outMetadata[ToolUsePromptTokensMetadataKey] = toolUsePromptTokens.Value;
+        }
+
+        return outMetadata;
     }
 
     private static string ExtractSystemPrompt(GenerateContentConfig? config)
@@ -618,6 +712,42 @@ public static class GeminiGenerationMapper
     {
         var value = ReadNestedProperty(source, path);
         return value is bool boolValue ? boolValue : null;
+    }
+
+    private static string? ExtractThinkingLevel(GenerateContentConfig? config)
+    {
+        var level = ReadNestedProperty(config, "ThinkingConfig", "ThinkingLevel");
+        if (level == null)
+        {
+            return null;
+        }
+
+        var normalized = level.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        var canonical = normalized.ToLowerInvariant().Replace(" ", string.Empty);
+        if (canonical.StartsWith("thinking_level_", StringComparison.Ordinal))
+        {
+            canonical = canonical["thinking_level_".Length..];
+        }
+        else if (canonical.StartsWith("thinkinglevel_", StringComparison.Ordinal))
+        {
+            canonical = canonical["thinkinglevel_".Length..];
+        }
+        else if (canonical.StartsWith("thinkinglevel", StringComparison.Ordinal))
+        {
+            canonical = canonical["thinkinglevel".Length..];
+        }
+
+        if (canonical == "unspecified")
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(canonical) ? null : canonical;
     }
 
     private static string? CanonicalToolChoice(object? value)

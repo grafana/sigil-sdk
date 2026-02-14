@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -24,6 +28,8 @@ type Config struct {
 	GenerationExport GenerationExportConfig
 	// Tracer is optional and mainly used for tests. If nil, the client builds one from Trace config.
 	Tracer trace.Tracer
+	// Meter is optional and mainly used for tests. If nil, the client builds one from Trace config.
+	Meter metric.Meter
 	// Logger receives async export failures. Defaults to log.Default().
 	Logger *log.Logger
 	// Now controls clock behavior (useful for tests).
@@ -69,6 +75,7 @@ type GenerationExportProtocol string
 const (
 	GenerationExportProtocolGRPC GenerationExportProtocol = "grpc"
 	GenerationExportProtocolHTTP GenerationExportProtocol = "http"
+	GenerationExportProtocolNone GenerationExportProtocol = "none"
 )
 
 type GenerationExportConfig struct {
@@ -93,6 +100,7 @@ const (
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
 	spanAttrErrorType              = "error.type"
+	spanAttrErrorCategory          = "error.category"
 	spanAttrOperationName          = "gen_ai.operation.name"
 	spanAttrProviderName           = "gen_ai.provider.name"
 	spanAttrRequestModel           = "gen_ai.request.model"
@@ -109,13 +117,29 @@ const (
 	spanAttrOutputTokens           = "gen_ai.usage.output_tokens"
 	spanAttrCacheReadTokens        = "gen_ai.usage.cache_read_input_tokens"
 	spanAttrCacheWriteTokens       = "gen_ai.usage.cache_write_input_tokens"
+	spanAttrCacheCreationTokens    = "gen_ai.usage.cache_creation_input_tokens"
+	spanAttrReasoningTokens        = "gen_ai.usage.reasoning_tokens"
 	spanAttrToolName               = "gen_ai.tool.name"
 	spanAttrToolCallID             = "gen_ai.tool.call.id"
 	spanAttrToolType               = "gen_ai.tool.type"
 	spanAttrToolDescription        = "gen_ai.tool.description"
 	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
 	spanAttrToolCallResult         = "gen_ai.tool.call.result"
+
+	metricOperationDuration      = "gen_ai.client.operation.duration"
+	metricTokenUsage             = "gen_ai.client.token.usage"
+	metricTimeToFirstToken       = "gen_ai.client.time_to_first_token"
+	metricToolCallsPerOperation  = "gen_ai.client.tool_calls_per_operation"
+	metricAttrTokenType          = "gen_ai.token.type"
+	metricTokenTypeInput         = "input"
+	metricTokenTypeOutput        = "output"
+	metricTokenTypeCacheRead     = "cache_read"
+	metricTokenTypeCacheWrite    = "cache_write"
+	metricTokenTypeCacheCreation = "cache_creation"
+	metricTokenTypeReasoning     = "reasoning"
 )
+
+var statusCodePattern = regexp.MustCompile(`\b([1-5][0-9][0-9])\b`)
 
 // Keep unexported aliases for backward-compatible fmt.Errorf wrapping.
 var (
@@ -158,6 +182,9 @@ type Client struct {
 	config        Config
 	tracer        trace.Tracer
 	traceProvider *sdktrace.TracerProvider
+	meter         metric.Meter
+	meterProvider *sdkmetric.MeterProvider
+	instruments   telemetryInstruments
 	exporter      generationExporter
 
 	queue    chan queuedGeneration
@@ -199,6 +226,7 @@ type GenerationRecorder struct {
 	hasResult      bool
 	lastGeneration Generation
 	finalErr       error
+	firstTokenAt   time.Time
 }
 
 // ToolExecutionRecorder records and closes one in-flight execute_tool span.
@@ -218,6 +246,13 @@ type ToolExecutionRecorder struct {
 	result    ToolExecutionEnd
 	hasResult bool
 	finalErr  error
+}
+
+type telemetryInstruments struct {
+	operationDuration     metric.Float64Histogram
+	tokenUsage            metric.Int64Histogram
+	timeToFirstToken      metric.Float64Histogram
+	toolCallsPerOperation metric.Int64Histogram
 }
 
 // NewClient creates a Client, applying defaults for empty config values.
@@ -259,11 +294,29 @@ func NewClient(config Config) *Client {
 		tracer, provider, err := newTraceProvider(cfg.Trace)
 		if err != nil {
 			cfg.Logger.Printf("sigil trace exporter init failed: %v", err)
-			client.tracer = defaults.Tracer
+			client.tracer = otel.Tracer(instrumentationName)
 		} else {
 			client.tracer = tracer
 			client.traceProvider = provider
 		}
+	}
+	if cfg.Meter != nil {
+		client.meter = cfg.Meter
+	} else {
+		meter, provider, err := newMeterProvider(cfg.Trace)
+		if err != nil {
+			cfg.Logger.Printf("sigil metric exporter init failed: %v", err)
+			client.meter = otel.Meter(instrumentationName)
+		} else {
+			client.meter = meter
+			client.meterProvider = provider
+		}
+	}
+	instruments, err := newTelemetryInstruments(client.meter)
+	if err != nil {
+		cfg.Logger.Printf("sigil metric instrument init failed: %v", err)
+	} else {
+		client.instruments = instruments
 	}
 
 	exporter := cfg.testGenerationExporter
@@ -448,6 +501,17 @@ func (r *GenerationRecorder) SetCallError(err error) {
 	r.mu.Unlock()
 }
 
+// SetFirstTokenAt records when the first streaming chunk was received.
+// It is safe to call on a nil recorder.
+func (r *GenerationRecorder) SetFirstTokenAt(firstTokenAt time.Time) {
+	if r == nil || firstTokenAt.IsZero() {
+		return
+	}
+	r.mu.Lock()
+	r.firstTokenAt = firstTokenAt.UTC()
+	r.mu.Unlock()
+}
+
 // SetResult stores the mapped generation and/or a mapping error.
 // It directly accepts the (Generation, error) return of provider mappers,
 // so calls like rec.SetResult(openai.FromRequestResponse(req, resp)) chain naturally.
@@ -486,6 +550,7 @@ func (r *GenerationRecorder) End() {
 	callErr := r.callErr
 	mapErr := r.mapErr
 	generation := r.generation
+	firstTokenAt := r.firstTokenAt
 	r.mu.Unlock()
 
 	// No-op recorder: no client/span means nothing to finalize.
@@ -517,8 +582,13 @@ func (r *GenerationRecorder) End() {
 		r.span.RecordError(enqueueErr)
 	}
 
-	if errorType := generationErrorType(callErr, mapErr, enqueueErr); errorType != "" {
+	errorType := generationErrorType(callErr, mapErr, enqueueErr)
+	errorCategory := generationErrorCategory(callErr, mapErr, enqueueErr)
+	if errorType != "" {
 		r.span.SetAttributes(attribute.String(spanAttrErrorType, errorType))
+		if errorCategory != "" {
+			r.span.SetAttributes(attribute.String(spanAttrErrorCategory, errorCategory))
+		}
 	}
 
 	switch {
@@ -531,6 +601,7 @@ func (r *GenerationRecorder) End() {
 	default:
 		r.span.SetStatus(codes.Ok, "")
 	}
+	r.client.recordGenerationMetrics(normalized, errorType, errorCategory, firstTokenAt)
 	r.span.End(trace.WithTimestamp(normalized.CompletedAt))
 
 	// rec.Err reports local validation/enqueue failures only.
@@ -640,10 +711,12 @@ func (r *ToolExecutionRecorder) End() {
 	if finalErr != nil {
 		r.span.RecordError(finalErr)
 		r.span.SetAttributes(attribute.String(spanAttrErrorType, "tool_execution_error"))
+		r.span.SetAttributes(attribute.String(spanAttrErrorCategory, toolErrorCategory(finalErr)))
 		r.span.SetStatus(codes.Error, finalErr.Error())
 	} else {
 		r.span.SetStatus(codes.Ok, "")
 	}
+	r.client.recordToolExecutionMetrics(r.seed, r.startedAt, completedAt, finalErr)
 	r.span.End(trace.WithTimestamp(completedAt))
 
 	r.mu.Lock()
@@ -881,6 +954,12 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	if g.Usage.CacheWriteInputTokens != 0 {
 		attrs = append(attrs, attribute.Int64(spanAttrCacheWriteTokens, g.Usage.CacheWriteInputTokens))
 	}
+	if g.Usage.CacheCreationInputTokens != 0 {
+		attrs = append(attrs, attribute.Int64(spanAttrCacheCreationTokens, g.Usage.CacheCreationInputTokens))
+	}
+	if g.Usage.ReasoningTokens != 0 {
+		attrs = append(attrs, attribute.Int64(spanAttrReasoningTokens, g.Usage.ReasoningTokens))
+	}
 
 	return attrs
 }
@@ -981,6 +1060,258 @@ func generationErrorType(callErr, mapErr, enqueueErr error) string {
 	default:
 		return ""
 	}
+}
+
+func generationErrorCategory(callErr, mapErr, enqueueErr error) string {
+	switch {
+	case callErr != nil:
+		return classifyErrorCategory(callErr, false)
+	case mapErr != nil:
+		return "sdk_error"
+	case enqueueErr != nil:
+		return "sdk_error"
+	default:
+		return ""
+	}
+}
+
+func toolErrorCategory(err error) string {
+	if err == nil {
+		return ""
+	}
+	return classifyErrorCategory(err, true)
+}
+
+func classifyErrorCategory(err error, fallbackSDK bool) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "timeout"
+	}
+	statusCode := httpStatusCodeFromError(err)
+	switch {
+	case statusCode == 429:
+		return "rate_limit"
+	case statusCode == 401 || statusCode == 403:
+		return "auth_error"
+	case statusCode == 408:
+		return "timeout"
+	case statusCode >= 500 && statusCode <= 599:
+		return "server_error"
+	case statusCode >= 400 && statusCode <= 499:
+		return "client_error"
+	case fallbackSDK:
+		return "sdk_error"
+	default:
+		return "sdk_error"
+	}
+}
+
+func httpStatusCodeFromError(err error) int {
+	if err == nil {
+		return 0
+	}
+	type statusCoder interface {
+		StatusCode() int
+	}
+	var byMethod statusCoder
+	if errors.As(err, &byMethod) {
+		code := byMethod.StatusCode()
+		if code >= 100 && code <= 599 {
+			return code
+		}
+	}
+
+	value := reflectIntField(err, "StatusCode")
+	if value >= 100 && value <= 599 {
+		return value
+	}
+	value = reflectIntField(err, "Status")
+	if value >= 100 && value <= 599 {
+		return value
+	}
+
+	matches := statusCodePattern.FindAllString(err.Error(), -1)
+	for i := range matches {
+		parsed, parseErr := strconv.Atoi(matches[i])
+		if parseErr == nil && parsed >= 100 && parsed <= 599 {
+			return parsed
+		}
+	}
+	return 0
+}
+
+func reflectIntField(err error, field string) int {
+	value := reflect.ValueOf(err)
+	if !value.IsValid() {
+		return 0
+	}
+	for value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return 0
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return 0
+	}
+	member := value.FieldByName(field)
+	if !member.IsValid() {
+		return 0
+	}
+	switch member.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return int(member.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(member.Uint())
+	default:
+		return 0
+	}
+}
+
+func newTelemetryInstruments(meter metric.Meter) (telemetryInstruments, error) {
+	out := telemetryInstruments{}
+	var err error
+	out.operationDuration, err = meter.Float64Histogram(metricOperationDuration, metric.WithUnit("s"))
+	if err != nil {
+		return telemetryInstruments{}, err
+	}
+	out.tokenUsage, err = meter.Int64Histogram(metricTokenUsage, metric.WithUnit("token"))
+	if err != nil {
+		return telemetryInstruments{}, err
+	}
+	out.timeToFirstToken, err = meter.Float64Histogram(metricTimeToFirstToken, metric.WithUnit("s"))
+	if err != nil {
+		return telemetryInstruments{}, err
+	}
+	out.toolCallsPerOperation, err = meter.Int64Histogram(metricToolCallsPerOperation, metric.WithUnit("count"))
+	if err != nil {
+		return telemetryInstruments{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) recordGenerationMetrics(generation Generation, errorType string, errorCategory string, firstTokenAt time.Time) {
+	if c == nil {
+		return
+	}
+	if c.instruments.operationDuration == nil || c.instruments.tokenUsage == nil ||
+		c.instruments.timeToFirstToken == nil || c.instruments.toolCallsPerOperation == nil {
+		return
+	}
+	if generation.CompletedAt.IsZero() || generation.StartedAt.IsZero() {
+		return
+	}
+	duration := generation.CompletedAt.Sub(generation.StartedAt).Seconds()
+	if duration < 0 {
+		duration = 0
+	}
+
+	durationAttrs := metric.WithAttributes(
+		attribute.String(spanAttrOperationName, operationName(generation)),
+		attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
+		attribute.String(spanAttrRequestModel, strings.TrimSpace(generation.Model.Name)),
+		attribute.String(spanAttrAgentName, strings.TrimSpace(generation.AgentName)),
+		attribute.String(spanAttrErrorType, errorType),
+		attribute.String(spanAttrErrorCategory, errorCategory),
+	)
+	c.instruments.operationDuration.Record(context.Background(), duration, durationAttrs)
+
+	recordToken := func(tokenType string, value int64) {
+		if value == 0 {
+			return
+		}
+		c.instruments.tokenUsage.Record(
+			context.Background(),
+			value,
+			metric.WithAttributes(
+				attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
+				attribute.String(spanAttrRequestModel, strings.TrimSpace(generation.Model.Name)),
+				attribute.String(spanAttrAgentName, strings.TrimSpace(generation.AgentName)),
+				attribute.String(metricAttrTokenType, tokenType),
+			),
+		)
+	}
+
+	recordToken(metricTokenTypeInput, generation.Usage.InputTokens)
+	recordToken(metricTokenTypeOutput, generation.Usage.OutputTokens)
+	recordToken(metricTokenTypeCacheRead, generation.Usage.CacheReadInputTokens)
+	recordToken(metricTokenTypeCacheWrite, generation.Usage.CacheWriteInputTokens)
+	recordToken(metricTokenTypeCacheCreation, generation.Usage.CacheCreationInputTokens)
+	recordToken(metricTokenTypeReasoning, generation.Usage.ReasoningTokens)
+
+	toolCalls := countToolCalls(generation.Output)
+	c.instruments.toolCallsPerOperation.Record(
+		context.Background(),
+		int64(toolCalls),
+		metric.WithAttributes(
+			attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
+			attribute.String(spanAttrRequestModel, strings.TrimSpace(generation.Model.Name)),
+			attribute.String(spanAttrAgentName, strings.TrimSpace(generation.AgentName)),
+		),
+	)
+
+	if operationName(generation) == defaultOperationNameStream && !firstTokenAt.IsZero() {
+		ttft := firstTokenAt.Sub(generation.StartedAt).Seconds()
+		if ttft >= 0 {
+			c.instruments.timeToFirstToken.Record(
+				context.Background(),
+				ttft,
+				metric.WithAttributes(
+					attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
+					attribute.String(spanAttrRequestModel, strings.TrimSpace(generation.Model.Name)),
+					attribute.String(spanAttrAgentName, strings.TrimSpace(generation.AgentName)),
+				),
+			)
+		}
+	}
+}
+
+func (c *Client) recordToolExecutionMetrics(seed ToolExecutionStart, startedAt time.Time, completedAt time.Time, finalErr error) {
+	if c == nil {
+		return
+	}
+	if c.instruments.operationDuration == nil {
+		return
+	}
+	if startedAt.IsZero() || completedAt.IsZero() {
+		return
+	}
+	duration := completedAt.Sub(startedAt).Seconds()
+	if duration < 0 {
+		duration = 0
+	}
+	errorType := ""
+	errorCategory := ""
+	if finalErr != nil {
+		errorType = "tool_execution_error"
+		errorCategory = toolErrorCategory(finalErr)
+	}
+	c.instruments.operationDuration.Record(
+		context.Background(),
+		duration,
+		metric.WithAttributes(
+			attribute.String(spanAttrOperationName, "execute_tool"),
+			attribute.String(spanAttrProviderName, ""),
+			attribute.String(spanAttrRequestModel, strings.TrimSpace(seed.ToolName)),
+			attribute.String(spanAttrAgentName, strings.TrimSpace(seed.AgentName)),
+			attribute.String(spanAttrErrorType, errorType),
+			attribute.String(spanAttrErrorCategory, errorCategory),
+		),
+	)
+}
+
+func countToolCalls(messages []Message) int {
+	total := 0
+	for i := range messages {
+		for j := range messages[i].Parts {
+			if messages[i].Parts[j].Kind == PartKindToolCall {
+				total++
+			}
+		}
+	}
+	return total
 }
 
 func toolSpanName(toolName string) string {

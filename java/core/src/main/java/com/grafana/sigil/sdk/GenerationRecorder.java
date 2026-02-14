@@ -19,6 +19,7 @@ public class GenerationRecorder implements AutoCloseable {
     private boolean ended;
     private Throwable callError;
     private GenerationResult result;
+    private Instant firstTokenAt;
     private Throwable finalError;
     private Generation lastGeneration;
 
@@ -46,10 +47,21 @@ public class GenerationRecorder implements AutoCloseable {
         }
     }
 
+    /** Records when the first streamed token/chunk arrived. */
+    public void setFirstTokenAt(Instant firstTokenAt) {
+        if (firstTokenAt == null) {
+            return;
+        }
+        synchronized (lock) {
+            this.firstTokenAt = firstTokenAt;
+        }
+    }
+
     /** Finalizes the generation lifecycle. Safe to call multiple times. */
     public void end() {
         GenerationResult snapshotResult;
         Throwable snapshotCallError;
+        Instant snapshotFirstTokenAt;
 
         synchronized (lock) {
             if (ended) {
@@ -58,6 +70,7 @@ public class GenerationRecorder implements AutoCloseable {
             ended = true;
             snapshotResult = result == null ? new GenerationResult() : result.copy();
             snapshotCallError = callError;
+            snapshotFirstTokenAt = firstTokenAt;
         }
 
         Instant completedAt = snapshotResult.getCompletedAt() == null ? client.now() : snapshotResult.getCompletedAt();
@@ -93,19 +106,31 @@ public class GenerationRecorder implements AutoCloseable {
             span.recordException(localError);
         }
 
+        String errorType = "";
+        String errorCategory = "";
         if (snapshotCallError != null) {
+            errorType = "provider_call_error";
+            errorCategory = SigilClient.errorCategoryFromThrowable(snapshotCallError, true);
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "provider_call_error");
+            span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
             span.setStatus(StatusCode.ERROR, String.valueOf(snapshotCallError.getMessage()));
         } else if (localError instanceof ValidationException) {
+            errorType = "validation_error";
+            errorCategory = "sdk_error";
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "validation_error");
+            span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
             span.setStatus(StatusCode.ERROR, String.valueOf(localError.getMessage()));
         } else if (localError != null) {
+            errorType = "enqueue_error";
+            errorCategory = "sdk_error";
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "enqueue_error");
+            span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
             span.setStatus(StatusCode.ERROR, String.valueOf(localError.getMessage()));
         } else {
             span.setStatus(StatusCode.OK);
         }
 
+        client.recordGenerationMetrics(generation, errorType, errorCategory, snapshotFirstTokenAt);
         span.end(completedAt.toEpochMilli(), TimeUnit.MILLISECONDS);
         client.recordGeneration(generation);
 

@@ -130,6 +130,34 @@ def test_shutdown_flushes_pending_generation() -> None:
     assert exporter.shutdown_calls == 1
 
 
+def test_builtin_noop_generation_exporter_supports_instrumentation_only_mode() -> None:
+    provider = TracerProvider()
+    tracer = provider.get_tracer("sigil-test")
+    client = Client(
+        ClientConfig(
+            tracer=tracer,
+            generation_export=GenerationExportConfig(
+                protocol="none",
+                batch_size=1,
+                flush_interval=timedelta(hours=1),
+            ),
+            trace=TraceConfig(protocol="http", endpoint="http://localhost:4318/v1/traces"),
+        )
+    )
+    try:
+        rec = client.start_generation(_seed_generation("conv-noop"))
+        rec.set_result(output=_assistant_output("ok-noop"))
+        rec.end()
+
+        assert rec.err() is None
+        assert rec.last_generation is not None
+
+        client.flush()
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
 def test_queue_full_error_is_exposed_as_local_recorder_error() -> None:
     exporter = CapturingGenerationExporter()
     client = _new_client(exporter, batch_size=10, queue_size=1)

@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":providers:openai"))
     implementation(project(":providers:anthropic"))
     implementation(project(":providers:gemini"))
+    implementation(libs.openai.java)
 }
 
 jmh {

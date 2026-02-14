@@ -164,6 +164,12 @@ public static class AnthropicRecorder
             var summary = new AnthropicStreamSummary();
             await foreach (var streamEvent in invoke(request, cancellationToken).WithCancellation(cancellationToken))
             {
+                if (!summary.FirstChunkAt.HasValue)
+                {
+                    var firstChunkAt = DateTimeOffset.UtcNow;
+                    summary.FirstChunkAt = firstChunkAt;
+                    recorder.SetFirstTokenAt(firstChunkAt);
+                }
                 summary.Events.Add(streamEvent);
             }
 

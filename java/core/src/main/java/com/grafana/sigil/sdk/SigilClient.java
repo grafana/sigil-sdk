@@ -2,10 +2,15 @@ package com.grafana.sigil.sdk;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.DoubleHistogram;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,6 +27,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Sigil Java SDK runtime client. */
 public final class SigilClient implements AutoCloseable {
@@ -30,6 +37,7 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_AGENT_NAME = "gen_ai.agent.name";
     static final String SPAN_ATTR_AGENT_VERSION = "gen_ai.agent.version";
     static final String SPAN_ATTR_ERROR_TYPE = "error.type";
+    static final String SPAN_ATTR_ERROR_CATEGORY = "error.category";
     static final String SPAN_ATTR_OPERATION_NAME = "gen_ai.operation.name";
     static final String SPAN_ATTR_PROVIDER_NAME = "gen_ai.provider.name";
     static final String SPAN_ATTR_REQUEST_MODEL = "gen_ai.request.model";
@@ -46,6 +54,8 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
     static final String SPAN_ATTR_CACHE_READ_TOKENS = "gen_ai.usage.cache_read_input_tokens";
     static final String SPAN_ATTR_CACHE_WRITE_TOKENS = "gen_ai.usage.cache_write_input_tokens";
+    static final String SPAN_ATTR_CACHE_CREATION_TOKENS = "gen_ai.usage.cache_creation_input_tokens";
+    static final String SPAN_ATTR_REASONING_TOKENS = "gen_ai.usage.reasoning_tokens";
     static final String SPAN_ATTR_TOOL_NAME = "gen_ai.tool.name";
     static final String SPAN_ATTR_TOOL_CALL_ID = "gen_ai.tool.call.id";
     static final String SPAN_ATTR_TOOL_TYPE = "gen_ai.tool.type";
@@ -53,10 +63,29 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments";
     static final String SPAN_ATTR_TOOL_CALL_RESULT = "gen_ai.tool.call.result";
 
+    static final String METRIC_OPERATION_DURATION = "gen_ai.client.operation.duration";
+    static final String METRIC_TOKEN_USAGE = "gen_ai.client.token.usage";
+    static final String METRIC_TTFT = "gen_ai.client.time_to_first_token";
+    static final String METRIC_TOOL_CALLS_PER_OPERATION = "gen_ai.client.tool_calls_per_operation";
+    static final String METRIC_ATTR_TOKEN_TYPE = "gen_ai.token.type";
+    static final String METRIC_TOKEN_TYPE_INPUT = "input";
+    static final String METRIC_TOKEN_TYPE_OUTPUT = "output";
+    static final String METRIC_TOKEN_TYPE_CACHE_READ = "cache_read";
+    static final String METRIC_TOKEN_TYPE_CACHE_WRITE = "cache_write";
+    static final String METRIC_TOKEN_TYPE_CACHE_CREATION = "cache_creation";
+    static final String METRIC_TOKEN_TYPE_REASONING = "reasoning";
+
+    private static final Pattern STATUS_CODE_PATTERN = Pattern.compile("\\b([1-5][0-9][0-9])\\b");
+
     private final SigilClientConfig config;
     private final GenerationExporter generationExporter;
     private final TraceRuntime traceRuntime;
     private final Tracer tracer;
+    private final Meter meter;
+    private final DoubleHistogram operationDurationHistogram;
+    private final DoubleHistogram tokenUsageHistogram;
+    private final DoubleHistogram ttftHistogram;
+    private final DoubleHistogram toolCallsHistogram;
     private final Logger logger;
     private final Clock clock;
 
@@ -112,10 +141,19 @@ public final class SigilClient implements AutoCloseable {
                 : config.getGenerationExporter();
 
         if (config.getTracer() != null) {
+            Tracer configuredTracer = config.getTracer();
+            Meter configuredMeter = config.getMeter() != null
+                    ? config.getMeter()
+                    : GlobalOpenTelemetry.getMeter("github.com/grafana/sigil/sdks/java");
             this.traceRuntime = new TraceRuntime() {
                 @Override
                 public Tracer tracer() {
-                    return config.getTracer();
+                    return configuredTracer;
+                }
+
+                @Override
+                public Meter meter() {
+                    return configuredMeter;
                 }
 
                 @Override
@@ -126,7 +164,8 @@ public final class SigilClient implements AutoCloseable {
                 public void shutdown() {
                 }
             };
-            this.tracer = config.getTracer();
+            this.tracer = configuredTracer;
+            this.meter = configuredMeter;
         } else {
             TraceRuntime runtime;
             try {
@@ -135,10 +174,16 @@ public final class SigilClient implements AutoCloseable {
                 logWarn("sigil trace exporter init failed", exception);
                 runtime = new TraceRuntime() {
                     private final Tracer fallback = GlobalOpenTelemetry.getTracer("github.com/grafana/sigil/sdks/java");
+                    private final Meter fallbackMeter = GlobalOpenTelemetry.getMeter("github.com/grafana/sigil/sdks/java");
 
                     @Override
                     public Tracer tracer() {
                         return fallback;
+                    }
+
+                    @Override
+                    public Meter meter() {
+                        return fallbackMeter;
                     }
 
                     @Override
@@ -151,8 +196,22 @@ public final class SigilClient implements AutoCloseable {
                 };
             }
             this.traceRuntime = runtime;
-            this.tracer = runtime.tracer();
+            this.tracer = config.getTracer() != null ? config.getTracer() : runtime.tracer();
+            this.meter = config.getMeter() != null ? config.getMeter() : runtime.meter();
         }
+
+        this.operationDurationHistogram = meter.histogramBuilder(METRIC_OPERATION_DURATION)
+                .setUnit("s")
+                .build();
+        this.tokenUsageHistogram = meter.histogramBuilder(METRIC_TOKEN_USAGE)
+                .setUnit("token")
+                .build();
+        this.ttftHistogram = meter.histogramBuilder(METRIC_TTFT)
+                .setUnit("s")
+                .build();
+        this.toolCallsHistogram = meter.histogramBuilder(METRIC_TOOL_CALLS_PER_OPERATION)
+                .setUnit("count")
+                .build();
 
         Duration interval = exportConfig.getFlushInterval();
         if (!interval.isNegative() && !interval.isZero()) {
@@ -496,9 +555,11 @@ public final class SigilClient implements AutoCloseable {
     }
 
     private GenerationExporter createGenerationExporter(GenerationExportConfig exportConfig) {
-        return exportConfig.getProtocol() == GenerationExportProtocol.GRPC
-                ? new GrpcGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders(), exportConfig.isInsecure())
-                : new HttpGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders());
+        return switch (exportConfig.getProtocol()) {
+            case GRPC -> new GrpcGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders(), exportConfig.isInsecure());
+            case HTTP -> new HttpGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders());
+            case NONE -> new NoopGenerationExporter();
+        };
     }
 
     private void logWarn(String message, Throwable error) {
@@ -584,6 +645,8 @@ public final class SigilClient implements AutoCloseable {
             span.setAttribute(SPAN_ATTR_OUTPUT_TOKENS, usage.getOutputTokens());
             span.setAttribute(SPAN_ATTR_CACHE_READ_TOKENS, usage.getCacheReadInputTokens());
             span.setAttribute(SPAN_ATTR_CACHE_WRITE_TOKENS, usage.getCacheWriteInputTokens());
+            span.setAttribute(SPAN_ATTR_CACHE_CREATION_TOKENS, usage.getCacheCreationInputTokens());
+            span.setAttribute(SPAN_ATTR_REASONING_TOKENS, usage.getReasoningTokens());
         }
     }
 
@@ -609,6 +672,242 @@ public final class SigilClient implements AutoCloseable {
         if (!seed.getToolDescription().isBlank()) {
             span.setAttribute(SPAN_ATTR_TOOL_DESCRIPTION, seed.getToolDescription());
         }
+    }
+
+    void recordGenerationMetrics(Generation generation, String errorType, String errorCategory, Instant firstTokenAt) {
+        if (generation == null) {
+            return;
+        }
+        if (generation.getStartedAt() == null || generation.getCompletedAt() == null) {
+            return;
+        }
+
+        double durationSeconds = Math.max(0d, Duration.between(generation.getStartedAt(), generation.getCompletedAt()).toNanos() / 1_000_000_000d);
+        operationDurationHistogram.record(
+                durationSeconds,
+                Attributes.builder()
+                        .put(SPAN_ATTR_OPERATION_NAME, operationName(generation))
+                        .put(SPAN_ATTR_PROVIDER_NAME, generation.getModel() == null ? "" : generation.getModel().getProvider())
+                        .put(SPAN_ATTR_REQUEST_MODEL, generation.getModel() == null ? "" : generation.getModel().getName())
+                        .put(SPAN_ATTR_AGENT_NAME, generation.getAgentName())
+                        .put(SPAN_ATTR_ERROR_TYPE, errorType == null ? "" : errorType)
+                        .put(SPAN_ATTR_ERROR_CATEGORY, errorCategory == null ? "" : errorCategory)
+                        .build()
+        );
+
+        TokenUsage usage = generation.getUsage();
+        if (usage != null) {
+            recordTokenUsage(generation, METRIC_TOKEN_TYPE_INPUT, usage.getInputTokens());
+            recordTokenUsage(generation, METRIC_TOKEN_TYPE_OUTPUT, usage.getOutputTokens());
+            recordTokenUsage(generation, METRIC_TOKEN_TYPE_CACHE_READ, usage.getCacheReadInputTokens());
+            recordTokenUsage(generation, METRIC_TOKEN_TYPE_CACHE_WRITE, usage.getCacheWriteInputTokens());
+            recordTokenUsage(generation, METRIC_TOKEN_TYPE_CACHE_CREATION, usage.getCacheCreationInputTokens());
+            recordTokenUsage(generation, METRIC_TOKEN_TYPE_REASONING, usage.getReasoningTokens());
+        }
+
+        toolCallsHistogram.record(
+                (double) countToolCalls(generation.getOutput()),
+                Attributes.builder()
+                        .put(SPAN_ATTR_PROVIDER_NAME, generation.getModel() == null ? "" : generation.getModel().getProvider())
+                        .put(SPAN_ATTR_REQUEST_MODEL, generation.getModel() == null ? "" : generation.getModel().getName())
+                        .put(SPAN_ATTR_AGENT_NAME, generation.getAgentName())
+                        .build()
+        );
+
+        if (defaultOperationName(GenerationMode.STREAM).equals(operationName(generation)) && firstTokenAt != null) {
+            double ttftSeconds = Duration.between(generation.getStartedAt(), firstTokenAt).toNanos() / 1_000_000_000d;
+            if (ttftSeconds >= 0d) {
+                ttftHistogram.record(
+                        ttftSeconds,
+                        Attributes.builder()
+                                .put(SPAN_ATTR_PROVIDER_NAME, generation.getModel() == null ? "" : generation.getModel().getProvider())
+                                .put(SPAN_ATTR_REQUEST_MODEL, generation.getModel() == null ? "" : generation.getModel().getName())
+                                .put(SPAN_ATTR_AGENT_NAME, generation.getAgentName())
+                                .build()
+                );
+            }
+        }
+    }
+
+    private void recordTokenUsage(Generation generation, String tokenType, long value) {
+        if (value == 0L) {
+            return;
+        }
+        tokenUsageHistogram.record(
+                (double) value,
+                Attributes.builder()
+                        .put(SPAN_ATTR_PROVIDER_NAME, generation.getModel() == null ? "" : generation.getModel().getProvider())
+                        .put(SPAN_ATTR_REQUEST_MODEL, generation.getModel() == null ? "" : generation.getModel().getName())
+                        .put(SPAN_ATTR_AGENT_NAME, generation.getAgentName())
+                        .put(METRIC_ATTR_TOKEN_TYPE, tokenType)
+                        .build()
+        );
+    }
+
+    void recordToolExecutionMetrics(ToolExecutionStart seed, Instant startedAt, Instant completedAt, Throwable finalError) {
+        if (seed == null || startedAt == null || completedAt == null) {
+            return;
+        }
+
+        double durationSeconds = Math.max(0d, Duration.between(startedAt, completedAt).toNanos() / 1_000_000_000d);
+        String errorType = "";
+        String errorCategory = "";
+        if (finalError != null) {
+            errorType = "tool_execution_error";
+            errorCategory = errorCategoryFromThrowable(finalError, true);
+        }
+
+        operationDurationHistogram.record(
+                durationSeconds,
+                Attributes.builder()
+                        .put(SPAN_ATTR_OPERATION_NAME, "execute_tool")
+                        .put(SPAN_ATTR_PROVIDER_NAME, "")
+                        .put(SPAN_ATTR_REQUEST_MODEL, seed.getToolName())
+                        .put(SPAN_ATTR_AGENT_NAME, seed.getAgentName())
+                        .put(SPAN_ATTR_ERROR_TYPE, errorType)
+                        .put(SPAN_ATTR_ERROR_CATEGORY, errorCategory)
+                        .build()
+        );
+    }
+
+    static String errorCategoryFromThrowable(Throwable error, boolean fallbackSdk) {
+        if (error == null) {
+            return fallbackSdk ? "sdk_error" : "";
+        }
+
+        String message = String.valueOf(error.getMessage());
+        String lower = message.toLowerCase();
+        if (lower.contains("timeout") || lower.contains("deadline exceeded")) {
+            return "timeout";
+        }
+
+        Integer statusCode = extractStatusCode(error);
+        if (statusCode != null) {
+            if (statusCode == 429) {
+                return "rate_limit";
+            }
+            if (statusCode == 401 || statusCode == 403) {
+                return "auth_error";
+            }
+            if (statusCode == 408) {
+                return "timeout";
+            }
+            if (statusCode >= 500 && statusCode <= 599) {
+                return "server_error";
+            }
+            if (statusCode >= 400 && statusCode <= 499) {
+                return "client_error";
+            }
+        }
+
+        return fallbackSdk ? "sdk_error" : "";
+    }
+
+    private static Integer extractStatusCode(Throwable error) {
+        if (error == null) {
+            return null;
+        }
+
+        Integer byMethod = invokeStatusMethod(error, "statusCode");
+        if (byMethod != null) {
+            return byMethod;
+        }
+        byMethod = invokeStatusMethod(error, "status");
+        if (byMethod != null) {
+            return byMethod;
+        }
+
+        Integer byField = readStatusField(error, "statusCode");
+        if (byField != null) {
+            return byField;
+        }
+        byField = readStatusField(error, "status");
+        if (byField != null) {
+            return byField;
+        }
+
+        Matcher matcher = STATUS_CODE_PATTERN.matcher(String.valueOf(error.getMessage()));
+        while (matcher.find()) {
+            try {
+                int parsed = Integer.parseInt(matcher.group(1));
+                if (parsed >= 100 && parsed <= 599) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+                // Continue scanning.
+            }
+        }
+        return null;
+    }
+
+    private static Integer invokeStatusMethod(Throwable error, String methodName) {
+        try {
+            Method method = error.getClass().getMethod(methodName);
+            Object value = method.invoke(error);
+            return asStatusCode(value);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static Integer readStatusField(Throwable error, String fieldName) {
+        Class<?> current = error.getClass();
+        while (current != null) {
+            try {
+                Field field = current.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                Object value = field.get(error);
+                return asStatusCode(value);
+            } catch (Exception ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    private static Integer asStatusCode(Object value) {
+        if (value instanceof Number number) {
+            int parsed = number.intValue();
+            return parsed >= 100 && parsed <= 599 ? parsed : null;
+        }
+        if (value instanceof String text) {
+            try {
+                int parsed = Integer.parseInt(text.trim());
+                return parsed >= 100 && parsed <= 599 ? parsed : null;
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static long countToolCalls(List<Message> messages) {
+        long total = 0;
+        if (messages == null) {
+            return 0;
+        }
+        for (Message message : messages) {
+            if (message == null || message.getParts() == null) {
+                continue;
+            }
+            for (MessagePart part : message.getParts()) {
+                if (part != null && part.getKind() == MessagePartKind.TOOL_CALL) {
+                    total++;
+                }
+            }
+        }
+        return total;
+    }
+
+    private static String operationName(Generation generation) {
+        return operationName(generation.getOperationName(), generation.getMode());
+    }
+
+    private static String operationName(String operationName, GenerationMode mode) {
+        if (operationName != null && !operationName.isBlank()) {
+            return operationName;
+        }
+        return defaultOperationName(mode == null ? GenerationMode.SYNC : mode);
     }
 
     private static Long thinkingBudgetFromMetadata(Map<String, Object> metadata) {

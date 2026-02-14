@@ -1,88 +1,73 @@
 # Sigil Python Provider Helper: Anthropic
 
-`sigil-sdk-anthropic` provides wrapper-first helpers and explicit mappers for Anthropic request/response flows.
-
-Use it to convert Anthropic-style payloads into normalized Sigil generations with minimal boilerplate.
+`sigil-sdk-anthropic` provides strict Anthropic Messages wrappers and mappers for Sigil.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-anthropic
+pip install sigil-sdk sigil-sdk-anthropic anthropic
 ```
 
-## Quick Start (Sync)
+## Wrapper Mode (Sync)
 
 ```python
+from anthropic.types.message_create_params import MessageCreateParams
 from sigil_sdk import Client, ClientConfig
-from sigil_sdk_anthropic import (
-    AnthropicMessage,
-    AnthropicOptions,
-    AnthropicRequest,
-    AnthropicResponse,
-    completion,
-)
+from sigil_sdk_anthropic import AnthropicOptions, messages
 
 client = Client(ClientConfig())
 
-request = AnthropicRequest(
-    model="claude-sonnet-4-5",
-    messages=[AnthropicMessage(role="user", content="Hello")],
-)
+request: MessageCreateParams = {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 256,
+    "messages": [{"role": "user", "content": "Hello"}],
+}
 
-def provider_call(req: AnthropicRequest) -> AnthropicResponse:
-    # Replace this with your Anthropic SDK call.
-    return AnthropicResponse(id="resp-1", model=req.model, output_text="Hi there")
+def provider_call(req: MessageCreateParams):
+    return anthropic_client.messages.create(**req)
 
-response = completion(
+response = messages.create(
     client,
     request,
     provider_call,
-    AnthropicOptions(conversation_id="conv-1", agent_name="my-agent", agent_version="1.0.0"),
+    AnthropicOptions(conversation_id="conv-1", agent_name="assistant", agent_version="1.0.0"),
 )
 ```
 
-## Streaming Wrapper
+## Wrapper Mode (Stream)
 
 ```python
-from sigil_sdk_anthropic import AnthropicStreamSummary, completion_stream
+from sigil_sdk_anthropic import AnthropicStreamSummary, messages
 
-summary = completion_stream(
+summary = messages.stream(
     client,
     request,
     lambda req: AnthropicStreamSummary(
-        output_text="streamed final text",
-        events=[{"delta": "stream"}],
+        output_text="streamed text",
+        events=[{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "streamed text"}}],
     ),
 )
 ```
 
-Call `client.shutdown()` during process teardown to flush buffered telemetry.
-
-## Mapper-Only Usage
+## Mapper Mode
 
 ```python
-from sigil_sdk_anthropic import from_request_response
-
-generation = from_request_response(request, response)
+generation = messages.from_request_response(request, response)
+stream_generation = messages.from_stream(request, summary)
 ```
 
 ## Raw Provider Artifacts (Opt-In)
 
-Raw artifacts are off by default.
-
 ```python
-from sigil_sdk_anthropic import AnthropicOptions
-
 options = AnthropicOptions(raw_artifacts=True)
 ```
 
-When enabled, wrappers include request/response payload artifacts (and stream event artifacts for streaming paths).
+Raw artifacts are default OFF and should only be enabled for diagnostics.
 
-## Public Functions
+## Provider metadata mapping
 
-- `completion(...)`
-- `completion_async(...)`
-- `completion_stream(...)`
-- `completion_stream_async(...)`
-- `from_request_response(...)`
-- `from_stream(...)`
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+
+- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
+- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `sigil.gen_ai.usage.server_tool_use.total_requests`

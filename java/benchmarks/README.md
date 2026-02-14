@@ -1,6 +1,6 @@
 # Java SDK Benchmarks
 
-Run from `/Users/cyriltovena/.codex/worktrees/e97a/sigil/sdks/java`:
+Run from `sdks/java`:
 
 ```bash
 ./gradlew :benchmarks:jmh

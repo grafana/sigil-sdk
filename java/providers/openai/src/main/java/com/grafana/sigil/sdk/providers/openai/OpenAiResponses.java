@@ -8,6 +8,7 @@ import com.openai.helpers.ResponseAccumulator;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseStreamEvent;
+import java.time.Instant;
 
 /** OpenAI Responses wrappers and mappers using official OpenAI Java SDK types. */
 public final class OpenAiResponses {
@@ -39,6 +40,11 @@ public final class OpenAiResponses {
 
             try (StreamResponse<ResponseStreamEvent> stream = providerCall.apply(request)) {
                 stream.stream().forEach(event -> {
+                    if (summary.getFirstChunkAt() == null) {
+                        Instant firstChunkAt = Instant.now();
+                        summary.setFirstChunkAt(firstChunkAt);
+                        recorder.setFirstTokenAt(firstChunkAt);
+                    }
                     summary.getEvents().add(event);
                     try {
                         accumulator.accumulate(event);

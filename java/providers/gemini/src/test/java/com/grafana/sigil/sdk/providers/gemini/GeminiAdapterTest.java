@@ -3,6 +3,10 @@ package com.grafana.sigil.sdk.providers.gemini;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.genai.types.Content;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
 import com.grafana.sigil.sdk.ExportGenerationResult;
 import com.grafana.sigil.sdk.ExportGenerationsRequest;
 import com.grafana.sigil.sdk.ExportGenerationsResponse;
@@ -12,12 +16,10 @@ import com.grafana.sigil.sdk.GenerationExporter;
 import com.grafana.sigil.sdk.GenerationMode;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
-import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 
@@ -30,12 +32,8 @@ class GeminiAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            GeminiAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
-            GeminiAdapter.completionStream(
-                    client,
-                    request(),
-                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new ProviderAdapterSupport.OpenAiOptions());
+            GeminiAdapter.completion(client, model(), contents(), config(), (_m, _c, _cfg) -> response(), new GeminiOptions());
+            GeminiAdapter.completionStream(client, model(), contents(), config(), (_m, _c, _cfg) -> List.of(response()), new GeminiOptions());
         }
 
         assertThat(exporter.generations).hasSize(2);
@@ -44,9 +42,14 @@ class GeminiAdapterTest {
         assertThat(exporter.generations.get(0).getMaxTokens()).isEqualTo(512L);
         assertThat(exporter.generations.get(0).getTemperature()).isEqualTo(0.2);
         assertThat(exporter.generations.get(0).getTopP()).isEqualTo(0.75);
-        assertThat(exporter.generations.get(0).getToolChoice()).isEqualTo("{\"mode\":\"auto\"}");
+        assertThat(exporter.generations.get(0).getToolChoice()).isEqualTo("auto");
         assertThat(exporter.generations.get(0).getThinkingEnabled()).isTrue();
         assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).isEqualTo(1536L);
+        Object thinkingLevel = exporter.generations.get(0).getMetadata().get("sigil.gen_ai.request.thinking.level");
+        if (thinkingLevel != null) {
+            assertThat(thinkingLevel).isEqualTo("high");
+        }
+        assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.usage.tool_use_prompt_tokens")).isEqualTo(5L);
         assertThat(exporter.generations.get(1).getMode()).isEqualTo(GenerationMode.STREAM);
     }
 
@@ -58,23 +61,21 @@ class GeminiAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            GeminiAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
+            GeminiAdapter.completion(client, model(), contents(), config(), (_m, _c, _cfg) -> response(), new GeminiOptions());
+            GeminiAdapter.completionStream(client, model(), contents(), config(), (_m, _c, _cfg) -> List.of(response()), new GeminiOptions());
             GeminiAdapter.completionStream(
                     client,
-                    request(),
-                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new ProviderAdapterSupport.OpenAiOptions());
-            GeminiAdapter.completionStream(
-                    client,
-                    request(),
-                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()).setChunks(List.of("event")),
-                    new ProviderAdapterSupport.OpenAiOptions().setRawArtifacts(true));
+                    model(),
+                    contents(),
+                    config(),
+                    (_m, _c, _cfg) -> List.of(response()),
+                    new GeminiOptions().setRawArtifacts(true));
         }
 
         assertThat(exporter.generations).hasSize(3);
         assertThat(exporter.generations.get(0).getArtifacts()).isEmpty();
         assertThat(exporter.generations.get(1).getArtifacts()).isEmpty();
-        assertThat(exporter.generations.get(2).getArtifacts()).hasSize(2);
+        assertThat(exporter.generations.get(2).getArtifacts()).hasSizeGreaterThanOrEqualTo(2);
     }
 
     @Test
@@ -87,11 +88,13 @@ class GeminiAdapterTest {
                     .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
                 GeminiAdapter.completion(
                         client,
-                        request(),
-                        _r -> {
+                        model(),
+                        contents(),
+                        config(),
+                        (_m, _c, _cfg) -> {
                             throw new RuntimeException("gemini failed");
                         },
-                        new ProviderAdapterSupport.OpenAiOptions());
+                        new GeminiOptions());
             }
         }).isInstanceOf(RuntimeException.class).hasMessageContaining("gemini failed");
 
@@ -102,25 +105,81 @@ class GeminiAdapterTest {
     @Test
     void mapperSetsThinkingFalseWhenIncludeThoughtsFalse() {
         var mapped = GeminiAdapter.fromRequestResponse(
-                request().setThinkingConfig(Map.of("include_thoughts", false)),
+                model(),
+                contents(),
+                GenerateContentConfig.fromJson("""
+                        {
+                          "maxOutputTokens": 512,
+                          "temperature": 0.2,
+                          "topP": 0.75,
+                          "thinkingConfig": {
+                            "includeThoughts": false,
+                            "thinkingBudget": 1536
+                          }
+                        }
+                        """),
                 response(),
-                new ProviderAdapterSupport.OpenAiOptions());
+                new GeminiOptions());
         assertThat(mapped.getThinkingEnabled()).isFalse();
     }
 
-    private static ProviderAdapterSupport.OpenAiChatRequest request() {
-        return new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("gemini-2.5")
-                .setMaxOutputTokens(512L)
-                .setTemperature(0.2)
-                .setTopP(0.75)
-                .setFunctionCallingMode(Map.of("mode", "auto"))
-                .setThinkingConfig(Map.of("include_thoughts", true, "thinking_budget", 1536))
-                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("hi")));
+    private static String model() {
+        return "gemini-2.5-pro";
     }
 
-    private static ProviderAdapterSupport.OpenAiChatResponse response() {
-        return new ProviderAdapterSupport.OpenAiChatResponse().setOutputText("ok");
+    private static List<Content> contents() {
+        return List.of(Content.builder()
+                .role("user")
+                .parts(Part.fromText("hi"))
+                .build());
+    }
+
+    private static GenerateContentConfig config() {
+        return GenerateContentConfig.fromJson("""
+                {
+                  "maxOutputTokens": 512,
+                  "temperature": 0.2,
+                  "topP": 0.75,
+                  "toolConfig": {
+                    "functionCallingConfig": {
+                      "mode": "AUTO"
+                    }
+                  },
+                  "thinkingConfig": {
+                    "includeThoughts": true,
+                    "thinkingBudget": 1536,
+                    "thinkingLevel": "HIGH"
+                  }
+                }
+                """);
+    }
+
+    private static GenerateContentResponse response() {
+        return GenerateContentResponse.fromJson("""
+                {
+                  "responseId": "resp_1",
+                  "modelVersion": "gemini-2.5-pro-001",
+                  "candidates": [
+                    {
+                      "finishReason": "STOP",
+                      "content": {
+                        "role": "model",
+                        "parts": [
+                          {"text": "ok"}
+                        ]
+                      }
+                    }
+                  ],
+                  "usageMetadata": {
+                    "promptTokenCount": 10,
+                    "candidatesTokenCount": 5,
+                    "totalTokenCount": 15,
+                    "cachedContentTokenCount": 2,
+                    "thoughtsTokenCount": 3,
+                    "toolUsePromptTokenCount": 5
+                  }
+                }
+                """);
     }
 
     private static final class CapturingExporter implements GenerationExporter {

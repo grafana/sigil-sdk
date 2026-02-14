@@ -6,21 +6,25 @@ import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import re
 import secrets
 import threading
 from typing import Any, Optional
 
+from opentelemetry.metrics import Histogram, Meter
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .config import ClientConfig, resolve_config
 from .context import agent_name_from_context, agent_version_from_context, conversation_id_from_context
 from .errors import ClientShutdownError, EnqueueError, QueueFullError, ValidationError
-from .exporters import GRPCGenerationExporter, HTTPGenerationExporter
+from .exporters import GRPCGenerationExporter, HTTPGenerationExporter, NoopGenerationExporter
 from .models import (
     ExportGenerationsRequest,
     Generation,
     GenerationMode,
     GenerationStart,
+    Message,
+    PartKind,
     ToolExecutionEnd,
     ToolExecutionStart,
 )
@@ -34,6 +38,7 @@ _span_attr_conversation_id = "gen_ai.conversation.id"
 _span_attr_agent_name = "gen_ai.agent.name"
 _span_attr_agent_version = "gen_ai.agent.version"
 _span_attr_error_type = "error.type"
+_span_attr_error_category = "error.category"
 _span_attr_operation_name = "gen_ai.operation.name"
 _span_attr_provider_name = "gen_ai.provider.name"
 _span_attr_request_model = "gen_ai.request.model"
@@ -50,12 +55,28 @@ _span_attr_input_tokens = "gen_ai.usage.input_tokens"
 _span_attr_output_tokens = "gen_ai.usage.output_tokens"
 _span_attr_cache_read_tokens = "gen_ai.usage.cache_read_input_tokens"
 _span_attr_cache_write_tokens = "gen_ai.usage.cache_write_input_tokens"
+_span_attr_cache_creation_tokens = "gen_ai.usage.cache_creation_input_tokens"
+_span_attr_reasoning_tokens = "gen_ai.usage.reasoning_tokens"
 _span_attr_tool_name = "gen_ai.tool.name"
 _span_attr_tool_call_id = "gen_ai.tool.call.id"
 _span_attr_tool_type = "gen_ai.tool.type"
 _span_attr_tool_description = "gen_ai.tool.description"
 _span_attr_tool_call_arguments = "gen_ai.tool.call.arguments"
 _span_attr_tool_call_result = "gen_ai.tool.call.result"
+
+_metric_operation_duration = "gen_ai.client.operation.duration"
+_metric_token_usage = "gen_ai.client.token.usage"
+_metric_ttft = "gen_ai.client.time_to_first_token"
+_metric_tool_calls_per_operation = "gen_ai.client.tool_calls_per_operation"
+_metric_attr_token_type = "gen_ai.token.type"
+_metric_token_type_input = "input"
+_metric_token_type_output = "output"
+_metric_token_type_cache_read = "cache_read"
+_metric_token_type_cache_write = "cache_write"
+_metric_token_type_cache_creation = "cache_creation"
+_metric_token_type_reasoning = "reasoning"
+
+_status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 
 
 class Client:
@@ -91,16 +112,29 @@ class Client:
                     headers=self._config.generation_export.headers,
                     insecure=self._config.generation_export.insecure,
                 )
+            elif protocol == "none":
+                self._generation_exporter = NoopGenerationExporter()
             else:
                 raise ValueError(f"unsupported generation export protocol {self._config.generation_export.protocol!r}")
 
-        if self._config.tracer is not None:
+        if self._config.tracer is not None and self._config.meter is not None:
             self._tracer = self._config.tracer
+            self._meter = self._config.meter
             self._trace_runtime = None
         else:
             trace_runtime = create_trace_runtime(self._config.trace, self._log_warn)
-            self._tracer = trace_runtime.tracer
+            self._tracer = self._config.tracer if self._config.tracer is not None else trace_runtime.tracer
+            self._meter = self._config.meter if self._config.meter is not None else trace_runtime.meter
             self._trace_runtime = trace_runtime
+
+        self._operation_duration_histogram: Histogram = self._meter.create_histogram(
+            _metric_operation_duration, unit="s"
+        )
+        self._token_usage_histogram: Histogram = self._meter.create_histogram(_metric_token_usage, unit="token")
+        self._ttft_histogram: Histogram = self._meter.create_histogram(_metric_ttft, unit="s")
+        self._tool_calls_histogram: Histogram = self._meter.create_histogram(
+            _metric_tool_calls_per_operation, unit="count"
+        )
 
         self._timer_stop = threading.Event()
         self._timer_thread: Optional[threading.Thread] = None
@@ -341,6 +375,99 @@ class Client:
             return
         self._logger.warning("%s: %s", message, error)
 
+    def _record_generation_metrics(
+        self,
+        generation: Generation,
+        error_type: str,
+        error_category: str,
+        first_token_at: datetime | None,
+    ) -> None:
+        started_at = generation.started_at
+        completed_at = generation.completed_at
+        if started_at is None or completed_at is None:
+            return
+
+        duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
+        self._operation_duration_histogram.record(
+            duration_seconds,
+            attributes={
+                _span_attr_operation_name: generation.operation_name,
+                _span_attr_provider_name: generation.model.provider,
+                _span_attr_request_model: generation.model.name,
+                _span_attr_agent_name: generation.agent_name,
+                _span_attr_error_type: error_type,
+                _span_attr_error_category: error_category,
+            },
+        )
+
+        usage = generation.usage
+        self._record_token_usage(generation, _metric_token_type_input, usage.input_tokens)
+        self._record_token_usage(generation, _metric_token_type_output, usage.output_tokens)
+        self._record_token_usage(generation, _metric_token_type_cache_read, usage.cache_read_input_tokens)
+        self._record_token_usage(generation, _metric_token_type_cache_write, usage.cache_write_input_tokens)
+        self._record_token_usage(generation, _metric_token_type_cache_creation, usage.cache_creation_input_tokens)
+        self._record_token_usage(generation, _metric_token_type_reasoning, usage.reasoning_tokens)
+
+        self._tool_calls_histogram.record(
+            _count_tool_call_parts(generation.output),
+            attributes={
+                _span_attr_provider_name: generation.model.provider,
+                _span_attr_request_model: generation.model.name,
+                _span_attr_agent_name: generation.agent_name,
+            },
+        )
+
+        if generation.operation_name == _default_operation_name(GenerationMode.STREAM) and first_token_at is not None:
+            ttft_seconds = (first_token_at - started_at).total_seconds()
+            if ttft_seconds >= 0:
+                self._ttft_histogram.record(
+                    ttft_seconds,
+                    attributes={
+                        _span_attr_provider_name: generation.model.provider,
+                        _span_attr_request_model: generation.model.name,
+                        _span_attr_agent_name: generation.agent_name,
+                    },
+                )
+
+    def _record_token_usage(self, generation: Generation, token_type: str, value: int) -> None:
+        if value == 0:
+            return
+        self._token_usage_histogram.record(
+            value,
+            attributes={
+                _span_attr_provider_name: generation.model.provider,
+                _span_attr_request_model: generation.model.name,
+                _span_attr_agent_name: generation.agent_name,
+                _metric_attr_token_type: token_type,
+            },
+        )
+
+    def _record_tool_execution_metrics(
+        self,
+        seed: ToolExecutionStart,
+        started_at: datetime,
+        completed_at: datetime,
+        final_error: Exception | None,
+    ) -> None:
+        duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
+        error_type = ""
+        error_category = ""
+        if final_error is not None:
+            error_type = "tool_execution_error"
+            error_category = _error_category_from_exception(final_error, fallback_sdk=True)
+
+        self._operation_duration_histogram.record(
+            duration_seconds,
+            attributes={
+                _span_attr_operation_name: "execute_tool",
+                _span_attr_provider_name: "",
+                _span_attr_request_model: seed.tool_name,
+                _span_attr_agent_name: seed.agent_name,
+                _span_attr_error_type: error_type,
+                _span_attr_error_category: error_category,
+            },
+        )
+
 
 @dataclass(slots=True)
 class GenerationRecorder:
@@ -358,6 +485,7 @@ class GenerationRecorder:
     _result: Generation | None = None
     _last_generation: Generation | None = None
     _final_error: Exception | None = None
+    _first_token_at: datetime | None = None
 
     def __enter__(self) -> "GenerationRecorder":
         return self
@@ -389,6 +517,14 @@ class GenerationRecorder:
             if mapping_error is not None:
                 self._mapping_error = mapping_error
 
+    def set_first_token_at(self, first_token_at: datetime) -> None:
+        """Records when the first streaming token/chunk arrived."""
+
+        if first_token_at is None:
+            return
+        with self._lock:
+            self._first_token_at = _to_utc(first_token_at)
+
     def end(self) -> None:
         """Finalizes span and queues generation export. Safe to call multiple times."""
 
@@ -399,6 +535,7 @@ class GenerationRecorder:
             call_error = self._call_error
             mapping_error = self._mapping_error
             result = copy.deepcopy(self._result) if self._result is not None else Generation()
+            first_token_at = self._first_token_at
 
         completed_at = _to_utc(self.client._now())
         generation = self._normalize_generation(result, completed_at, call_error)
@@ -430,18 +567,30 @@ class GenerationRecorder:
         if local_error is not None:
             self.span.record_exception(local_error)
 
+        error_type = ""
+        error_category = ""
         if call_error is not None:
-            self.span.set_attribute(_span_attr_error_type, "provider_call_error")
+            error_type = "provider_call_error"
+            error_category = _error_category_from_exception(call_error, fallback_sdk=True)
+            self.span.set_attribute(_span_attr_error_type, error_type)
+            self.span.set_attribute(_span_attr_error_category, error_category)
             self.span.set_status(Status(StatusCode.ERROR, str(call_error)))
         elif mapping_error is not None:
-            self.span.set_attribute(_span_attr_error_type, "mapping_error")
+            error_type = "mapping_error"
+            error_category = "sdk_error"
+            self.span.set_attribute(_span_attr_error_type, error_type)
+            self.span.set_attribute(_span_attr_error_category, error_category)
             self.span.set_status(Status(StatusCode.ERROR, str(mapping_error)))
         elif local_error is not None:
             error_type = "validation_error" if isinstance(local_error, ValidationError) else "enqueue_error"
+            error_category = "sdk_error"
             self.span.set_attribute(_span_attr_error_type, error_type)
+            self.span.set_attribute(_span_attr_error_category, error_category)
             self.span.set_status(Status(StatusCode.ERROR, str(local_error)))
         else:
             self.span.set_status(Status(StatusCode.OK))
+
+        self.client._record_generation_metrics(generation, error_type, error_category, first_token_at)
 
         self.span.end(end_time=_datetime_to_ns(generation.completed_at or completed_at))
 
@@ -614,9 +763,12 @@ class ToolExecutionRecorder:
         if final_error is not None:
             self.span.record_exception(final_error)
             self.span.set_attribute(_span_attr_error_type, "tool_execution_error")
+            self.span.set_attribute(_span_attr_error_category, _error_category_from_exception(final_error, fallback_sdk=True))
             self.span.set_status(Status(StatusCode.ERROR, str(final_error)))
         else:
             self.span.set_status(Status(StatusCode.OK))
+
+        self.client._record_tool_execution_metrics(self.seed, self.started_at, completed_at, final_error)
 
         self.span.end(end_time=_datetime_to_ns(completed_at))
 
@@ -725,6 +877,10 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
         span.set_attribute(_span_attr_cache_read_tokens, usage.cache_read_input_tokens)
     if usage.cache_write_input_tokens:
         span.set_attribute(_span_attr_cache_write_tokens, usage.cache_write_input_tokens)
+    if usage.cache_creation_input_tokens:
+        span.set_attribute(_span_attr_cache_creation_tokens, usage.cache_creation_input_tokens)
+    if usage.reasoning_tokens:
+        span.set_attribute(_span_attr_reasoning_tokens, usage.reasoning_tokens)
 
 
 def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
@@ -816,3 +972,96 @@ def _serialize_tool_content(value: Any) -> str:
         except Exception:  # noqa: BLE001
             return json.dumps(trimmed)
     return json.dumps(value)
+
+
+def _count_tool_call_parts(messages: list[Message]) -> int:
+    total = 0
+    for message in messages:
+        for part in message.parts:
+            if part.kind == PartKind.TOOL_CALL:
+                total += 1
+    return total
+
+
+def _error_category_from_exception(error: Exception | str | None, fallback_sdk: bool) -> str:
+    if error is None:
+        return "sdk_error" if fallback_sdk else ""
+    if isinstance(error, str):
+        return _classify_error_category(_extract_status_code_from_message(error), error, fallback_sdk)
+
+    status_code = _extract_status_code_from_exception(error)
+    message = str(error)
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    return _classify_error_category(status_code, message, fallback_sdk)
+
+
+def _classify_error_category(status_code: int | None, message: str, fallback_sdk: bool) -> str:
+    message_lower = message.lower()
+    if "timeout" in message_lower or "deadline exceeded" in message_lower:
+        return "timeout"
+    if status_code == 429:
+        return "rate_limit"
+    if status_code in (401, 403):
+        return "auth_error"
+    if status_code == 408:
+        return "timeout"
+    if status_code is not None and 500 <= status_code <= 599:
+        return "server_error"
+    if status_code is not None and 400 <= status_code <= 499:
+        return "client_error"
+    if fallback_sdk:
+        return "sdk_error"
+    return ""
+
+
+def _extract_status_code_from_exception(error: Exception) -> int | None:
+    for field in ("status", "status_code", "Status", "StatusCode"):
+        parsed = _as_status_code(getattr(error, field, None))
+        if parsed is not None:
+            return parsed
+
+    response = getattr(error, "response", None)
+    if response is not None:
+        for field in ("status", "status_code", "Status", "StatusCode"):
+            parsed = _as_status_code(getattr(response, field, None))
+            if parsed is not None:
+                return parsed
+
+    inner_error = getattr(error, "error", None)
+    if inner_error is not None:
+        for field in ("status", "status_code", "Status", "StatusCode"):
+            parsed = _as_status_code(getattr(inner_error, field, None))
+            if parsed is not None:
+                return parsed
+
+    return _extract_status_code_from_message(str(error))
+
+
+def _extract_status_code_from_message(message: str) -> int | None:
+    matches = _status_code_pattern.findall(message)
+    for match in matches:
+        parsed = _as_status_code(match)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _as_status_code(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "":
+            return None
+        try:
+            parsed = int(stripped)
+        except ValueError:
+            return None
+    else:
+        return None
+    if 100 <= parsed <= 599:
+        return parsed
+    return None

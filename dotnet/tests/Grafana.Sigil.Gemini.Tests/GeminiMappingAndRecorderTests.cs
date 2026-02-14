@@ -1,4 +1,5 @@
 using Google.GenAI.Types;
+using System.Reflection;
 using Xunit;
 using GPart = Google.GenAI.Types.Part;
 
@@ -6,14 +7,19 @@ namespace Grafana.Sigil.Gemini.Tests;
 
 public sealed class GeminiMappingAndRecorderTests
 {
+    private const string DefaultModel = "gemini-2.5-pro";
+
     [Fact]
     public void FromRequestResponse_MapsSyncModeAndDefaultsRawArtifactsOff()
     {
-        var request = CreateRequest();
+        var contents = CreateContents();
+        var config = CreateConfig();
         var response = CreateResponse();
 
         var generation = GeminiGenerationMapper.FromRequestResponse(
-            request,
+            DefaultModel,
+            contents,
+            config,
             response,
             new GeminiSigilOptions
             {
@@ -34,6 +40,8 @@ public sealed class GeminiMappingAndRecorderTests
         Assert.Contains("any", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(1536L, ReadThinkingBudget(generation));
+        Assert.Equal("medium", ReadThinkingLevel(generation));
+        Assert.Equal(7L, ReadMetadataLong(generation, "sigil.gen_ai.usage.tool_use_prompt_tokens"));
         Assert.Equal(170, generation.Usage.TotalTokens);
         Assert.Equal(12, generation.Usage.CacheReadInputTokens);
         Assert.Equal(10, generation.Usage.ReasoningTokens);
@@ -44,7 +52,8 @@ public sealed class GeminiMappingAndRecorderTests
     [Fact]
     public void FromStream_MapsStreamMode_AndRawArtifactsOptIn()
     {
-        var request = CreateRequest();
+        var contents = CreateContents();
+        var config = CreateConfig();
         var summary = new GeminiStreamSummary();
         summary.Responses.Add(new GenerateContentResponse
         {
@@ -103,10 +112,11 @@ public sealed class GeminiMappingAndRecorderTests
                 PromptTokenCount = 20,
                 CandidatesTokenCount = 6,
                 TotalTokenCount = 26,
+                ToolUsePromptTokenCount = 4,
             },
         });
 
-        var generation = GeminiGenerationMapper.FromStream(request, summary, new GeminiSigilOptions().WithRawArtifacts());
+        var generation = GeminiGenerationMapper.FromStream(DefaultModel, contents, config, summary, new GeminiSigilOptions().WithRawArtifacts());
 
         Assert.Equal(GenerationMode.Stream, generation.Mode);
         Assert.Equal("resp_stream_2", generation.ResponseId);
@@ -117,6 +127,8 @@ public sealed class GeminiMappingAndRecorderTests
         Assert.Contains("any", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(1536L, ReadThinkingBudget(generation));
+        Assert.Equal("medium", ReadThinkingLevel(generation));
+        Assert.Equal(4L, ReadMetadataLong(generation, "sigil.gen_ai.usage.tool_use_prompt_tokens"));
         Assert.Equal(26, generation.Usage.TotalTokens);
         Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent);
     }
@@ -140,12 +152,15 @@ public sealed class GeminiMappingAndRecorderTests
             },
         });
 
-        var request = CreateRequest();
+        var contents = CreateContents();
+        var config = CreateConfig();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => GeminiRecorder.GenerateContentAsync(
             client,
-            request,
-            (_, _) => throw new InvalidOperationException("provider failed"),
+            DefaultModel,
+            contents,
+            (_, _, _, _) => throw new InvalidOperationException("provider failed"),
+            config,
             new GeminiSigilOptions
             {
                 ModelName = "gemini-2.5-pro",
@@ -154,8 +169,10 @@ public sealed class GeminiMappingAndRecorderTests
 
         var streamSummary = await GeminiRecorder.GenerateContentStreamAsync(
             client,
-            request,
-            (_, _) => StreamResponses(),
+            DefaultModel,
+            contents,
+            (_, _, _, _) => StreamResponses(),
+            config,
             new GeminiSigilOptions
             {
                 ModelName = "gemini-2.5-pro",
@@ -176,96 +193,99 @@ public sealed class GeminiMappingAndRecorderTests
     [Fact]
     public void FromRequestResponse_MapsThinkingDisabled()
     {
-        var request = CreateRequest();
-        request.Config!.ThinkingConfig = new ThinkingConfig
+        var config = CreateConfig();
+        config.ThinkingConfig = new ThinkingConfig
         {
             IncludeThoughts = false,
         };
 
-        var generation = GeminiGenerationMapper.FromRequestResponse(request, CreateResponse());
+        var generation = GeminiGenerationMapper.FromRequestResponse(DefaultModel, CreateContents(), config, CreateResponse());
         Assert.False(generation.ThinkingEnabled);
     }
 
-    private static GenerateContentRequest CreateRequest()
+    private static List<Content> CreateContents()
     {
-        return new GenerateContentRequest
+        return new List<Content>
         {
-            Model = "gemini-2.5-pro",
-            Contents = new List<Content>
+            new Content
             {
-                new Content
+                Role = "user",
+                Parts = new List<GPart>
                 {
-                    Role = "user",
-                    Parts = new List<GPart>
+                    new GPart
                     {
-                        new GPart
-                        {
-                            Text = "What is the weather in Paris?",
-                        },
+                        Text = "What is the weather in Paris?",
                     },
                 },
-                new Content
+            },
+            new Content
+            {
+                Role = "user",
+                Parts = new List<GPart>
                 {
-                    Role = "user",
-                    Parts = new List<GPart>
+                    new GPart
                     {
-                        new GPart
+                        FunctionResponse = new FunctionResponse
                         {
-                            FunctionResponse = new FunctionResponse
+                            Id = "call_weather",
+                            Name = "weather",
+                            Response = new Dictionary<string, object>
                             {
-                                Id = "call_weather",
-                                Name = "weather",
-                                Response = new Dictionary<string, object>
-                                {
-                                    ["output"] = "18C and sunny",
-                                },
+                                ["output"] = "18C and sunny",
                             },
                         },
                     },
                 },
             },
-            Config = new GenerateContentConfig
+        };
+    }
+
+    private static GenerateContentConfig CreateConfig()
+    {
+        var thinkingConfig = new ThinkingConfig
+        {
+            IncludeThoughts = true,
+            ThinkingBudget = 1536,
+        };
+        SetIfPresent(thinkingConfig, "ThinkingLevel", "medium");
+
+        return new GenerateContentConfig
+        {
+            MaxOutputTokens = 444,
+            Temperature = 0.15f,
+            TopP = 0.8f,
+            ToolConfig = new ToolConfig
             {
-                MaxOutputTokens = 444,
-                Temperature = 0.15f,
-                TopP = 0.8f,
-                ToolConfig = new ToolConfig
+                FunctionCallingConfig = new FunctionCallingConfig
                 {
-                    FunctionCallingConfig = new FunctionCallingConfig
+                    Mode = FunctionCallingConfigMode.Any,
+                },
+            },
+            ThinkingConfig = thinkingConfig,
+            SystemInstruction = new Content
+            {
+                Role = "user",
+                Parts = new List<GPart>
+                {
+                    new GPart
                     {
-                        Mode = FunctionCallingConfigMode.Any,
+                        Text = "Be concise.",
                     },
                 },
-                ThinkingConfig = new ThinkingConfig
+            },
+            Tools = new List<Tool>
+            {
+                new Tool
                 {
-                    IncludeThoughts = true,
-                    ThinkingBudget = 1536,
-                },
-                SystemInstruction = new Content
-                {
-                    Role = "user",
-                    Parts = new List<GPart>
+                    FunctionDeclarations = new List<FunctionDeclaration>
                     {
-                        new GPart
+                        new FunctionDeclaration
                         {
-                            Text = "Be concise.",
-                        },
-                    },
-                },
-                Tools = new List<Tool>
-                {
-                    new Tool
-                    {
-                        FunctionDeclarations = new List<FunctionDeclaration>
-                        {
-                            new FunctionDeclaration
+                            Name = "weather",
+                            Description = "Get weather",
+                            ParametersJsonSchema = new Dictionary<string, object>
                             {
-                                Name = "weather",
-                                Description = "Get weather",
-                                ParametersJsonSchema = new Dictionary<string, object>
-                                {
-                                    ["type"] = "object",
-                                },
+                                ["type"] = "object",
                             },
                         },
                     },
@@ -317,6 +337,7 @@ public sealed class GeminiMappingAndRecorderTests
                 TotalTokenCount = 170,
                 CachedContentTokenCount = 12,
                 ThoughtsTokenCount = 10,
+                ToolUsePromptTokenCount = 7,
             },
         };
     }
@@ -331,6 +352,126 @@ public sealed class GeminiMappingAndRecorderTests
             IConvertible convertible => Convert.ToInt64(convertible),
             _ => throw new InvalidOperationException("unexpected thinking budget metadata type"),
         };
+    }
+
+    private static string ReadThinkingLevel(Generation generation)
+    {
+        var raw = generation.Metadata["sigil.gen_ai.request.thinking.level"];
+        return raw switch
+        {
+            System.Text.Json.JsonElement json when json.ValueKind == System.Text.Json.JsonValueKind.String => json.GetString() ?? string.Empty,
+            string text => text,
+            _ => throw new InvalidOperationException("unexpected thinking level metadata type"),
+        };
+    }
+
+    private static long ReadMetadataLong(Generation generation, string key)
+    {
+        var raw = generation.Metadata[key];
+        return raw switch
+        {
+            System.Text.Json.JsonElement json
+                when json.ValueKind == System.Text.Json.JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,
+            IConvertible convertible => Convert.ToInt64(convertible),
+            _ => throw new InvalidOperationException($"unexpected metadata type for {key}"),
+        };
+    }
+
+    private static void SetIfPresent(object target, string propertyName, object? value)
+    {
+        var property = target.GetType().GetProperty(propertyName);
+        if (property == null || !property.CanWrite)
+        {
+            return;
+        }
+
+        var converted = ConvertIfNeeded(value, property.PropertyType);
+        if (converted != null || !property.PropertyType.IsValueType || Nullable.GetUnderlyingType(property.PropertyType) != null)
+        {
+            property.SetValue(target, converted);
+        }
+    }
+
+    private static object? ConvertIfNeeded(object? value, System.Type destinationType)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        var targetType = Nullable.GetUnderlyingType(destinationType) ?? destinationType;
+        if (targetType.IsInstanceOfType(value))
+        {
+            return value;
+        }
+
+        if (targetType.IsEnum)
+        {
+            if (value is string text)
+            {
+                var normalized = text.Trim();
+                if (normalized.Length == 0)
+                {
+                    return null;
+                }
+
+                var direct = Enum.GetNames(targetType)
+                    .FirstOrDefault(name => string.Equals(name, normalized, StringComparison.OrdinalIgnoreCase));
+                if (direct != null)
+                {
+                    return Enum.Parse(targetType, direct, ignoreCase: true);
+                }
+
+                var suffixMatch = Enum.GetNames(targetType)
+                    .FirstOrDefault(name => name.EndsWith(normalized, StringComparison.OrdinalIgnoreCase));
+                if (suffixMatch != null)
+                {
+                    return Enum.Parse(targetType, suffixMatch, ignoreCase: true);
+                }
+
+                return null;
+            }
+
+            try
+            {
+                return Enum.ToObject(targetType, value);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        var implicitOperator = targetType
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(method =>
+                method.Name == "op_Implicit"
+                && method.ReturnType == targetType
+                && method.GetParameters().Length == 1
+                && method.GetParameters()[0].ParameterType.IsInstanceOfType(value));
+        if (implicitOperator != null)
+        {
+            return implicitOperator.Invoke(null, new[] { value });
+        }
+
+        var convertingCtor = targetType
+            .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .FirstOrDefault(ctor =>
+                ctor.GetParameters().Length == 1
+                && ctor.GetParameters()[0].ParameterType.IsInstanceOfType(value));
+        if (convertingCtor != null)
+        {
+            return convertingCtor.Invoke(new[] { value });
+        }
+
+        try
+        {
+            return Convert.ChangeType(value, targetType);
+        }
+        catch
+        {
+            return value;
+        }
     }
 
     private static async IAsyncEnumerable<GenerateContentResponse> StreamResponses()
@@ -362,6 +503,7 @@ public sealed class GeminiMappingAndRecorderTests
                 PromptTokenCount = 1,
                 CandidatesTokenCount = 1,
                 TotalTokenCount = 2,
+                ToolUsePromptTokenCount = 1,
             },
         };
 

@@ -11,6 +11,9 @@ import (
 )
 
 const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
+const usageServerToolUseWebSearchMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_search_requests"
+const usageServerToolUseWebFetchMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_fetch_requests"
+const usageServerToolUseTotalMetadataKey = "sigil.gen_ai.usage.server_tool_use.total_requests"
 
 // FromRequestResponse maps an Anthropic request/response pair to sigil.Generation.
 func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, opts ...Option) (sigil.Generation, error) {
@@ -52,6 +55,8 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 		responseModel = requestModel
 	}
 	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req)
+	metadata := mergeThinkingBudgetMetadata(options.metadata, thinkingBudget)
+	metadata = mergeServerToolUsageMetadata(metadata, resp.Usage.ServerToolUse)
 
 	generation := sigil.Generation{
 		ConversationID:  options.conversationID,
@@ -72,7 +77,7 @@ func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, 
 		Usage:           mapUsage(resp.Usage),
 		StopReason:      string(resp.StopReason),
 		Tags:            cloneStringMap(options.tags),
-		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Metadata:        metadata,
 		Artifacts:       artifacts,
 	}
 
@@ -674,5 +679,24 @@ func mergeThinkingBudgetMetadata(metadata map[string]any, thinkingBudget *int64)
 		out = map[string]any{}
 	}
 	out[thinkingBudgetMetadataKey] = *thinkingBudget
+	return out
+}
+
+func mergeServerToolUsageMetadata(metadata map[string]any, usage asdk.BetaServerToolUsage) map[string]any {
+	out := cloneAnyMap(metadata)
+	total := usage.WebSearchRequests + usage.WebFetchRequests
+	if total == 0 {
+		return out
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	if usage.WebSearchRequests > 0 {
+		out[usageServerToolUseWebSearchMetadataKey] = usage.WebSearchRequests
+	}
+	if usage.WebFetchRequests > 0 {
+		out[usageServerToolUseWebFetchMetadataKey] = usage.WebFetchRequests
+	}
+	out[usageServerToolUseTotalMetadataKey] = total
 	return out
 }

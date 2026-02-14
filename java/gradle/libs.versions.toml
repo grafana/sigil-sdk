@@ -31,6 +31,7 @@ protoc-gen-grpc = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc
 otel-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "otel" }
 otel-context = { module = "io.opentelemetry:opentelemetry-context", version.ref = "otel" }
 otel-sdk-trace = { module = "io.opentelemetry:opentelemetry-sdk-trace", version.ref = "otel" }
+otel-sdk-metrics = { module = "io.opentelemetry:opentelemetry-sdk-metrics", version.ref = "otel" }
 otel-exporter-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version.ref = "otel" }
 otel-sdk-testing = { module = "io.opentelemetry:opentelemetry-sdk-testing", version.ref = "otel" }
 

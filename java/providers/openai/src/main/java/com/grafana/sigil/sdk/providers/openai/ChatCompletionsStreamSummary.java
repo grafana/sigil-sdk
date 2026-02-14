@@ -2,6 +2,7 @@ package com.grafana.sigil.sdk.providers.openai;
 
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -9,6 +10,7 @@ import java.util.List;
 public final class ChatCompletionsStreamSummary {
     private final List<ChatCompletionChunk> chunks = new ArrayList<>();
     private ChatCompletion finalResponse;
+    private Instant firstChunkAt;
 
     public List<ChatCompletionChunk> getChunks() {
         return chunks;
@@ -28,6 +30,15 @@ public final class ChatCompletionsStreamSummary {
 
     public ChatCompletionsStreamSummary setFinalResponse(ChatCompletion finalResponse) {
         this.finalResponse = finalResponse;
+        return this;
+    }
+
+    public Instant getFirstChunkAt() {
+        return firstChunkAt;
+    }
+
+    public ChatCompletionsStreamSummary setFirstChunkAt(Instant firstChunkAt) {
+        this.firstChunkAt = firstChunkAt;
         return this;
     }
 }

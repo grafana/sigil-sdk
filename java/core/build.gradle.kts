@@ -28,6 +28,7 @@ dependencies {
     implementation(libs.grpc.stub)
 
     implementation(libs.otel.sdk.trace)
+    implementation(libs.otel.sdk.metrics)
     implementation(libs.otel.exporter.otlp)
 
     testImplementation(platform(libs.junit.bom))

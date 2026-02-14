@@ -22,7 +22,6 @@ const client = new SigilClient({
   trace: {
     protocol: "http",
     endpoint: "http://localhost:4318/v1/traces",
-    auth: { mode: "none" },
   },
 });
 
@@ -94,12 +93,37 @@ await client.startToolExecution(
 ## Behavior
 
 - Generation modes are explicit: `SYNC` and `STREAM`.
-- Generation export supports HTTP and gRPC.
+- Generation export supports HTTP, gRPC, and `none` (instrumentation-only).
 - Trace export supports OTLP HTTP and OTLP gRPC.
 - Exports are asynchronous with bounded queueing and retry/backoff.
 - `flush()` drains queued generations; `shutdown()` flushes and closes exporters.
 - Empty tool names produce a no-op tool recorder.
 - Raw provider artifacts are opt-in (`rawArtifacts: true`).
+
+## Instrumentation-only mode (no generation send)
+
+Set `generationExport.protocol` to `"none"` to keep generation/tool instrumentation and spans while disabling generation transport.
+
+```ts
+const client = new SigilClient({
+  generationExport: {
+    protocol: "none",
+  },
+  trace: {
+    protocol: "http",
+    endpoint: "http://localhost:4318/v1/traces",
+  },
+});
+```
+
+## SDK metrics
+
+The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+
+- `gen_ai.client.operation.duration`
+- `gen_ai.client.token.usage`
+- `gen_ai.client.time_to_first_token`
+- `gen_ai.client.tool_calls_per_operation`
 
 ## Per-export auth modes
 

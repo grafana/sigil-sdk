@@ -177,6 +177,12 @@ public static class OpenAIRecorder
             var summary = new OpenAIChatCompletionsStreamSummary();
             await foreach (var update in invoke(messageList, requestOptions, cancellationToken).WithCancellation(cancellationToken))
             {
+                if (!summary.FirstChunkAt.HasValue)
+                {
+                    var firstChunkAt = DateTimeOffset.UtcNow;
+                    summary.FirstChunkAt = firstChunkAt;
+                    recorder.SetFirstTokenAt(firstChunkAt);
+                }
                 summary.Updates.Add(update);
             }
 
@@ -378,6 +384,12 @@ public static class OpenAIRecorder
             var summary = new OpenAIResponsesStreamSummary();
             await foreach (var streamEvent in invoke(itemList, requestOptions, cancellationToken).WithCancellation(cancellationToken))
             {
+                if (!summary.FirstChunkAt.HasValue)
+                {
+                    var firstChunkAt = DateTimeOffset.UtcNow;
+                    summary.FirstChunkAt = firstChunkAt;
+                    recorder.SetFirstTokenAt(firstChunkAt);
+                }
                 summary.Events.Add(streamEvent);
                 if (streamEvent is StreamingResponseCompletedUpdate completed && completed.Response != null)
                 {

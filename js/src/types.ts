@@ -1,9 +1,9 @@
-import type { Tracer } from '@opentelemetry/api';
+import type { Meter, Tracer } from '@opentelemetry/api';
 
 /** Supported OTLP trace export protocols. */
 export type TraceProtocol = 'grpc' | 'http';
 /** Supported generation export protocols. */
-export type GenerationExportProtocol = 'grpc' | 'http';
+export type GenerationExportProtocol = 'grpc' | 'http' | 'none';
 /** Generation execution mode. */
 export type GenerationMode = 'SYNC' | 'STREAM';
 /** Supported auth modes for transport exports. */
@@ -94,6 +94,7 @@ export interface SigilSdkConfig {
   generationExport: GenerationExportConfig;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
+  meter?: Meter;
   logger?: SigilLogger;
   now?: () => Date;
   sleep?: (durationMs: number) => Promise<void>;
@@ -105,6 +106,7 @@ export interface SigilSdkConfigInput {
   generationExport?: Partial<GenerationExportConfig>;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
+  meter?: Meter;
   logger?: SigilLogger;
   now?: () => Date;
   sleep?: (durationMs: number) => Promise<void>;
@@ -132,6 +134,7 @@ export interface TokenUsage {
   totalTokens?: number;
   cacheReadInputTokens?: number;
   cacheWriteInputTokens?: number;
+  cacheCreationInputTokens?: number;
   reasoningTokens?: number;
 }
 
@@ -303,6 +306,7 @@ export interface ToolExecution {
 export interface GenerationRecorder {
   setResult(result: GenerationResult): void;
   setCallError(error: unknown): void;
+  setFirstTokenAt(firstTokenAt: Date): void;
   end(): void;
   getError(): Error | undefined;
 }

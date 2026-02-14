@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"errors"
+	"time"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/grafana/sigil/sdks/go/sigil"
@@ -11,6 +12,7 @@ import (
 type StreamSummary struct {
 	Events       []asdk.BetaRawMessageStreamEventUnion
 	FinalMessage *asdk.BetaMessage
+	FirstChunkAt time.Time
 }
 
 // FromStream maps Anthropic streaming output to sigil.Generation.
@@ -36,6 +38,7 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 	stopReason := ""
 	modelName := string(req.Model)
 	responseID := ""
+	serverToolUsage := asdk.BetaServerToolUsage{}
 
 	for _, event := range summary.Events {
 		switch event.Type {
@@ -65,11 +68,14 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 			assistantParts = append(assistantParts, part)
 		case "message_delta":
 			usage = mapDeltaUsage(event.Usage)
+			serverToolUsage = event.Usage.ServerToolUse
 			if event.Delta.StopReason != "" {
 				stopReason = string(event.Delta.StopReason)
 			}
 		}
 	}
+	metadata := mergeThinkingBudgetMetadata(options.metadata, thinkingBudget)
+	metadata = mergeServerToolUsageMetadata(metadata, serverToolUsage)
 
 	input := mapRequestMessages(req.Messages)
 	output := make([]sigil.Message, 0, 2)
@@ -128,7 +134,7 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 		Usage:           usage,
 		StopReason:      stopReason,
 		Tags:            cloneStringMap(options.tags),
-		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Metadata:        metadata,
 		Artifacts:       artifacts,
 	}
 

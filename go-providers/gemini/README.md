@@ -5,12 +5,12 @@ typed Sigil `Generation` model.
 
 ## Scope
 - One-liner wrappers:
-  - `GenerateContent(ctx, sigilClient, provider, req, opts...)`
-  - `GenerateContentStream(ctx, sigilClient, provider, req, opts...)`
+  - `GenerateContent(ctx, sigilClient, provider, model, contents, config, opts...)`
+  - `GenerateContentStream(ctx, sigilClient, provider, model, contents, config, opts...)`
 - Request/response mapper:
-  - `FromRequestResponse(req, resp, opts...)`
+  - `FromRequestResponse(model, contents, config, resp, opts...)`
 - Stream mapper:
-  - `FromStream(req, summary, opts...)`
+  - `FromStream(model, contents, config, summary, opts...)`
 - Typed artifacts:
   - `request`
   - `response`
@@ -22,7 +22,7 @@ typed Sigil `Generation` model.
 
 ## Wrapper (one-liner)
 ```go
-resp, err := gemini.GenerateContent(ctx, sigilClient, providerClient, req,
+resp, err := gemini.GenerateContent(ctx, sigilClient, providerClient, model, contents, config,
 	gemini.WithConversationID("conv-1"),
 	gemini.WithAgentName("assistant-gemini"),
 	gemini.WithAgentVersion("1.0.0"),
@@ -43,13 +43,13 @@ ctx, rec := sigilClient.StartGeneration(ctx, sigil.GenerationStart{
 })
 defer rec.End()
 
-resp, err := geminiClient.Models.GenerateContent(ctx, req.Model, req.Contents, req.Config)
+resp, err := geminiClient.Models.GenerateContent(ctx, model, contents, config)
 if err != nil {
 	rec.SetCallError(err)
 	return err
 }
 
-rec.SetResult(gemini.FromRequestResponse(req, resp))
+rec.SetResult(gemini.FromRequestResponse(model, contents, config, resp))
 ```
 
 ## Streaming Defer Pattern
@@ -69,7 +69,7 @@ for response, err := range geminiClient.Models.GenerateContentStream(ctx, model,
 	// process response here
 }
 
-rec.SetResult(gemini.FromStream(req, summary))
+rec.SetResult(gemini.FromStream(model, contents, config, summary))
 ```
 
 ## Live SDK examples
@@ -80,3 +80,12 @@ Run them with:
 ```bash
 SIGIL_RUN_LIVE_EXAMPLES=1 GOOGLE_API_KEY=... go test -run Example_withSigil -v
 ```
+
+## Provider metadata mapping
+
+Gemini-specific fields are mapped as follows:
+
+- `usage.thoughtsTokenCount` -> normalized `usage.reasoning_tokens`
+- `usage.toolUsePromptTokenCount` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinkingConfig.thinkingBudget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
+- `config.thinkingConfig.thinkingLevel` -> metadata `sigil.gen_ai.request.thinking.level`

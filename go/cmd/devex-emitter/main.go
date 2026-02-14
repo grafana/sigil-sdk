@@ -799,7 +799,7 @@ func loadConfig() runtimeConfig {
 		maxCycles:      intFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0),
 		customProvider: strings.TrimSpace(stringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral")),
 		genGRPC:        stringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
-		traceGRPC:      stringFromEnv("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "sigil:4317"),
+		traceGRPC:      stringFromEnv("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "alloy:4317"),
 	}
 }
 

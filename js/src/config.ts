@@ -60,6 +60,7 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
     generationExport: mergeGenerationExportConfig(config.generationExport),
     generationExporter: config.generationExporter,
     tracer: config.tracer,
+    meter: config.meter,
     logger: config.logger,
     now: config.now,
     sleep: config.sleep,

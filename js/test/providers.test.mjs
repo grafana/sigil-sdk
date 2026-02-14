@@ -3,25 +3,6 @@ import test from 'node:test';
 import { trace } from '@opentelemetry/api';
 import { anthropic, defaultConfig, gemini, openai, SigilClient } from '../.test-dist/index.js';
 
-const nonOpenAISuites = [
-  {
-    name: 'anthropic',
-    provider: 'anthropic',
-    sdk: anthropic,
-    syncMethod: 'completion',
-    streamMethod: 'completionStream',
-    streamEventsKey: 'events',
-  },
-  {
-    name: 'gemini',
-    provider: 'gemini',
-    sdk: gemini,
-    syncMethod: 'completion',
-    streamMethod: 'completionStream',
-    streamEventsKey: 'events',
-  },
-];
-
 class CapturingExporter {
   requests = [];
 
@@ -36,79 +17,198 @@ class CapturingExporter {
   }
 }
 
-test('anthropic and gemini sync wrappers set SYNC mode with raw artifacts OFF by default', async () => {
-  for (const suite of nonOpenAISuites) {
-    const generation = await captureSingleGeneration(async (client) => {
-      await suite.sdk[suite.syncMethod](
-        client,
-        {
-          model: `${suite.name}-model`,
-          systemPrompt: `${suite.name}-system`,
-          maxTokens: suite.name === 'anthropic' ? 320 : undefined,
-          maxOutputTokens: suite.name === 'gemini' ? 320 : undefined,
-          temperature: 0.2,
-          topP: 0.85,
-          functionCallingMode: suite.name === 'gemini' ? { mode: 'ANY' } : undefined,
-          thinking: suite.name === 'anthropic' ? { type: 'adaptive', budget_tokens: 2048 } : undefined,
-          thinkingConfig: suite.name === 'gemini' ? { includeThoughts: true, thinkingBudget: 1536 } : undefined,
-          messages: [{ role: 'user', content: `hello-${suite.name}` }],
+test('anthropic messages wrapper maps strict request/response and records SYNC mode', async () => {
+  const generation = await captureSingleGeneration(async (client) => {
+    await anthropic.messages.create(
+      client,
+      {
+        model: 'claude-sonnet-4-5',
+        max_tokens: 320,
+        temperature: 0.2,
+        top_p: 0.85,
+        thinking: { type: 'adaptive', budget_tokens: 2048 },
+        system: [{ type: 'text', text: 'anthropic-system' }],
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello-anthropic' }] }],
+      },
+      async () => ({
+        id: 'resp-anthropic',
+        model: 'claude-sonnet-4-5',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'output-anthropic' }],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          total_tokens: 120,
+          server_tool_use: {
+            web_search_requests: 2,
+          },
         },
-        async () => ({
-          id: `resp-${suite.name}`,
-          outputText: `output-${suite.name}`,
-        })
-      );
-    });
-
-    assert.equal(generation.mode, 'SYNC');
-    assert.equal(generation.model.provider, suite.provider);
-    assert.equal(generation.model.name, `${suite.name}-model`);
-    assert.equal(generation.temperature, 0.2);
-    assert.equal(generation.topP, 0.85);
-    assert.equal(generation.maxTokens, 320);
-    assert.equal(
-      generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'],
-      suite.name === 'anthropic' ? 2048 : 1536
+      })
     );
-    assert.equal(generation.artifacts, undefined);
-  }
+  });
+
+  assert.equal(generation.mode, 'SYNC');
+  assert.equal(generation.model.provider, 'anthropic');
+  assert.equal(generation.model.name, 'claude-sonnet-4-5');
+  assert.equal(generation.temperature, 0.2);
+  assert.equal(generation.topP, 0.85);
+  assert.equal(generation.maxTokens, 320);
+  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 2048);
+  assert.equal(generation.metadata['sigil.gen_ai.usage.server_tool_use.web_search_requests'], 2);
+  assert.equal(generation.metadata['sigil.gen_ai.usage.server_tool_use.total_requests'], 2);
+  assert.equal(generation.artifacts, undefined);
+});
+
+test('gemini models wrapper maps strict request/response and records SYNC mode', async () => {
+  const generation = await captureSingleGeneration(async (client) => {
+    await gemini.models.generateContent(
+      client,
+      'gemini-2.5-pro',
+      [{ role: 'user', parts: [{ text: 'hello-gemini' }] }],
+      {
+        maxOutputTokens: 320,
+        temperature: 0.2,
+        topP: 0.85,
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'ANY',
+          },
+        },
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 1536,
+          thinkingLevel: 'HIGH',
+        },
+        systemInstruction: {
+          role: 'user',
+          parts: [{ text: 'gemini-system' }],
+        },
+      },
+      async () => ({
+        responseId: 'resp-gemini',
+        modelVersion: 'gemini-2.5-pro-001',
+        candidates: [
+          {
+            finishReason: 'STOP',
+            content: {
+              role: 'model',
+              parts: [{ text: 'output-gemini' }],
+            },
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 100,
+          candidatesTokenCount: 20,
+          totalTokenCount: 120,
+          thoughtsTokenCount: 6,
+          toolUsePromptTokenCount: 5,
+        },
+      })
+    );
+  });
+
+  assert.equal(generation.mode, 'SYNC');
+  assert.equal(generation.model.provider, 'gemini');
+  assert.equal(generation.model.name, 'gemini-2.5-pro');
+  assert.equal(generation.temperature, 0.2);
+  assert.equal(generation.topP, 0.85);
+  assert.equal(generation.maxTokens, 320);
+  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 1536);
+  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.level'], 'high');
+  assert.equal(generation.metadata['sigil.gen_ai.usage.tool_use_prompt_tokens'], 5);
+  assert.equal(generation.artifacts, undefined);
 });
 
 test('anthropic and gemini stream wrappers set STREAM mode and include artifacts only on opt-in', async () => {
-  for (const suite of nonOpenAISuites) {
-    const generation = await captureSingleGeneration(async (client) => {
-      await suite.sdk[suite.streamMethod](
-        client,
-        {
-          model: `${suite.name}-model`,
-          maxTokens: suite.name === 'anthropic' ? 400 : undefined,
-          maxOutputTokens: suite.name === 'gemini' ? 400 : undefined,
-          temperature: 0.1,
-          topP: 0.9,
-          functionCallingMode: suite.name === 'gemini' ? { mode: 'ANY' } : undefined,
-          thinking: suite.name === 'anthropic' ? { type: 'adaptive', budget_tokens: 2048 } : undefined,
-          thinkingConfig: suite.name === 'gemini' ? { includeThoughts: true, thinkingBudget: 1536 } : undefined,
-          messages: [{ role: 'user', content: `stream-${suite.name}` }],
-        },
-        async () => ({
-          outputText: `stream-output-${suite.name}`,
-          [suite.streamEventsKey]: [{ index: 1 }],
-        }),
-        { rawArtifacts: true }
-      );
-    });
-
-    assert.equal(generation.mode, 'STREAM');
-    assert.equal(generation.model.provider, suite.provider);
-    assert.equal(generation.maxTokens, 400);
-    assert.equal(generation.temperature, 0.1);
-    assert.equal(generation.topP, 0.9);
-    assert.ok(Array.isArray(generation.artifacts));
-    assert.deepEqual(
-      generation.artifacts.map((artifact) => artifact.type),
-      ['request', 'provider_event']
+  const anthropicGeneration = await captureSingleGeneration(async (client) => {
+    await anthropic.messages.stream(
+      client,
+      {
+        model: 'claude-sonnet-4-5',
+        max_tokens: 400,
+        temperature: 0.1,
+        top_p: 0.9,
+        thinking: { type: 'adaptive', budget_tokens: 2048 },
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'stream-anthropic' }] }],
+      },
+      async () => ({
+        outputText: 'stream-output-anthropic',
+        events: [
+          { type: 'content_block_delta', delta: { type: 'text_delta', text: 'stream-output-anthropic' } },
+          { type: 'message_delta', usage: { server_tool_use: { web_search_requests: 1 } } },
+        ],
+      }),
+      { rawArtifacts: true }
     );
-  }
+  });
+
+  assert.equal(anthropicGeneration.mode, 'STREAM');
+  assert.equal(anthropicGeneration.model.provider, 'anthropic');
+  assert.equal(anthropicGeneration.maxTokens, 400);
+  assert.equal(anthropicGeneration.temperature, 0.1);
+  assert.equal(anthropicGeneration.topP, 0.9);
+  assert.equal(anthropicGeneration.metadata['sigil.gen_ai.usage.server_tool_use.web_search_requests'], 1);
+  assert.equal(anthropicGeneration.metadata['sigil.gen_ai.usage.server_tool_use.total_requests'], 1);
+  assert.ok(Array.isArray(anthropicGeneration.artifacts));
+  assert.deepEqual(
+    anthropicGeneration.artifacts.map((artifact) => artifact.type),
+    ['request', 'provider_event']
+  );
+
+  const geminiGeneration = await captureSingleGeneration(async (client) => {
+    await gemini.models.generateContentStream(
+      client,
+      'gemini-2.5-pro',
+      [{ role: 'user', parts: [{ text: 'stream-gemini' }] }],
+      {
+        maxOutputTokens: 400,
+        temperature: 0.1,
+        topP: 0.9,
+        toolConfig: {
+          functionCallingConfig: {
+            mode: 'ANY',
+          },
+        },
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingBudget: 1536,
+          thinkingLevel: 'LOW',
+        },
+      },
+      async () => ({
+        outputText: 'stream-output-gemini',
+        responses: [
+          {
+            candidates: [
+              {
+                content: {
+                  role: 'model',
+                  parts: [{ text: 'stream-output-gemini' }],
+                },
+              },
+            ],
+            usageMetadata: {
+              toolUsePromptTokenCount: 3,
+            },
+          },
+        ],
+      }),
+      { rawArtifacts: true }
+    );
+  });
+
+  assert.equal(geminiGeneration.mode, 'STREAM');
+  assert.equal(geminiGeneration.model.provider, 'gemini');
+  assert.equal(geminiGeneration.maxTokens, 400);
+  assert.equal(geminiGeneration.temperature, 0.1);
+  assert.equal(geminiGeneration.topP, 0.9);
+  assert.equal(geminiGeneration.metadata['sigil.gen_ai.request.thinking.level'], 'low');
+  assert.equal(geminiGeneration.metadata['sigil.gen_ai.usage.tool_use_prompt_tokens'], 3);
+  assert.ok(Array.isArray(geminiGeneration.artifacts));
+  assert.deepEqual(
+    geminiGeneration.artifacts.map((artifact) => artifact.type),
+    ['request', 'response', 'provider_event']
+  );
 });
 
 test('openai chat completions wrapper maps strict request/response and records SYNC mode', async () => {
@@ -326,22 +426,42 @@ test('openai responses stream wrapper records STREAM mode with stream event arti
 });
 
 test('provider wrappers propagate provider errors and persist callError', async () => {
-  for (const suite of nonOpenAISuites) {
+  for (const suite of [
+    {
+      name: 'anthropic',
+      provider: 'anthropic',
+      run: (client) => anthropic.messages.create(
+        client,
+        {
+          model: 'claude-sonnet-4-5',
+          max_tokens: 128,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+        },
+        async () => {
+          throw new Error('provider failure anthropic');
+        }
+      ),
+    },
+    {
+      name: 'gemini',
+      provider: 'gemini',
+      run: (client) => gemini.models.generateContent(
+        client,
+        'gemini-2.5-pro',
+        [{ role: 'user', parts: [{ text: 'hello' }] }],
+        undefined,
+        async () => {
+          throw new Error('provider failure gemini');
+        }
+      ),
+    },
+  ]) {
     const exporter = new CapturingExporter();
     const client = newClient(exporter);
 
     try {
       await assert.rejects(
-        suite.sdk[suite.syncMethod](
-          client,
-          {
-            model: `${suite.name}-model`,
-            messages: [{ role: 'user', content: 'hello' }],
-          },
-          async () => {
-            throw new Error(`provider failure ${suite.name}`);
-          }
-        ),
+        suite.run(client),
         new RegExp(`provider failure ${suite.name}`)
       );
 
@@ -580,23 +700,31 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
 });
 
 test('provider mappers expose thinking disabled when explicitly configured', () => {
-  const anthropicMapped = anthropic.fromRequestResponse(
+  const anthropicMapped = anthropic.messages.fromRequestResponse(
     {
       model: 'claude-sonnet',
       thinking: 'disabled',
-      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 128,
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
     },
-    { outputText: 'ok' }
+    {
+      id: 'resp-anthropic',
+      model: 'claude-sonnet',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'ok' }],
+    }
   );
   assert.equal(anthropicMapped.thinkingEnabled, false);
 
-  const geminiMapped = gemini.fromRequestResponse(
+  const geminiMapped = gemini.models.fromRequestResponse(
+    'gemini-pro',
+    [{ role: 'user', parts: [{ text: 'hi' }] }],
+    { thinkingConfig: { includeThoughts: false } },
     {
-      model: 'gemini-pro',
-      thinkingConfig: { includeThoughts: false },
-      messages: [{ role: 'user', content: 'hi' }],
-    },
-    { outputText: 'ok' }
+      responseId: 'resp-gemini',
+      modelVersion: 'gemini-pro',
+      candidates: [{ content: { role: 'model', parts: [{ text: 'ok' }] } }],
+    }
   );
   assert.equal(geminiMapped.thinkingEnabled, false);
 });

@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"time"
 
 	osdk "github.com/openai/openai-go/v3"
 	oresponses "github.com/openai/openai-go/v3/responses"
@@ -70,6 +71,10 @@ func ChatCompletionsNewStreaming(
 
 	summary := ChatCompletionsStreamSummary{}
 	for stream.Next() {
+		if summary.FirstChunkAt.IsZero() {
+			summary.FirstChunkAt = time.Now().UTC()
+			rec.SetFirstTokenAt(summary.FirstChunkAt)
+		}
 		summary.Chunks = append(summary.Chunks, stream.Current())
 	}
 	if err := stream.Err(); err != nil {
@@ -144,6 +149,10 @@ func ResponsesNewStreaming(
 
 	summary := ResponsesStreamSummary{}
 	for stream.Next() {
+		if summary.FirstChunkAt.IsZero() {
+			summary.FirstChunkAt = time.Now().UTC()
+			rec.SetFirstTokenAt(summary.FirstChunkAt)
+		}
 		event := stream.Current()
 		summary.Events = append(summary.Events, event)
 		if event.Response.ID != "" {

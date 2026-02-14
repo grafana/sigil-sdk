@@ -13,43 +13,42 @@ func TestFromRequestResponse(t *testing.T) {
 	temperature := float32(0.4)
 	topP := float32(0.75)
 	thinkingBudget := int32(2048)
-	req := GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText("What is the weather in Paris?", genai.RoleUser),
-			genai.NewContentFromParts([]*genai.Part{
-				genai.NewPartFromFunctionResponse("weather", map[string]any{
-					"temp_c": 18,
-				}),
-			}, genai.RoleUser),
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("What is the weather in Paris?", genai.RoleUser),
+		genai.NewContentFromParts([]*genai.Part{
+			genai.NewPartFromFunctionResponse("weather", map[string]any{
+				"temp_c": 18,
+			}),
+		}, genai.RoleUser),
+	}
+	config := &genai.GenerateContentConfig{
+		SystemInstruction: genai.NewContentFromText("Be concise.", genai.RoleUser),
+		MaxOutputTokens:   300,
+		Temperature:       &temperature,
+		TopP:              &topP,
+		ToolConfig: &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: genai.FunctionCallingConfigModeAny,
+			},
 		},
-		Config: &genai.GenerateContentConfig{
-			SystemInstruction: genai.NewContentFromText("Be concise.", genai.RoleUser),
-			MaxOutputTokens:   300,
-			Temperature:       &temperature,
-			TopP:              &topP,
-			ToolConfig: &genai.ToolConfig{
-				FunctionCallingConfig: &genai.FunctionCallingConfig{
-					Mode: genai.FunctionCallingConfigModeAny,
-				},
-			},
-			ThinkingConfig: &genai.ThinkingConfig{
-				IncludeThoughts: true,
-				ThinkingBudget:  &thinkingBudget,
-			},
-			Tools: []*genai.Tool{
-				{
-					FunctionDeclarations: []*genai.FunctionDeclaration{
-						{
-							Name:        "weather",
-							Description: "Get weather",
-							ParametersJsonSchema: map[string]any{
-								"type": "object",
-								"properties": map[string]any{
-									"city": map[string]any{"type": "string"},
-								},
-								"required": []string{"city"},
+		ThinkingConfig: &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  &thinkingBudget,
+			ThinkingLevel:   genai.ThinkingLevelHigh,
+		},
+		Tools: []*genai.Tool{
+			{
+				FunctionDeclarations: []*genai.FunctionDeclaration{
+					{
+						Name:        "weather",
+						Description: "Get weather",
+						ParametersJsonSchema: map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"city": map[string]any{"type": "string"},
 							},
+							"required": []string{"city"},
 						},
 					},
 				},
@@ -81,10 +80,11 @@ func TestFromRequestResponse(t *testing.T) {
 			TotalTokenCount:         170,
 			CachedContentTokenCount: 12,
 			ThoughtsTokenCount:      10,
+			ToolUsePromptTokenCount: 9,
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp,
+	generation, err := FromRequestResponse(model, contents, config, resp,
 		WithConversationID("conv-9b2f"),
 		WithAgentName("agent-gemini"),
 		WithAgentVersion("v-gemini"),
@@ -151,6 +151,12 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(2048) {
 		t.Fatalf("expected thinking budget metadata 2048, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
 	}
+	if generation.Metadata["sigil.gen_ai.request.thinking.level"] != "high" {
+		t.Fatalf("expected thinking level metadata high, got %v", generation.Metadata["sigil.gen_ai.request.thinking.level"])
+	}
+	if generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"] != int64(9) {
+		t.Fatalf("expected tool use prompt token metadata 9, got %v", generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"])
+	}
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
 	}
@@ -173,29 +179,28 @@ func TestFromStream(t *testing.T) {
 	temperature := float32(0.2)
 	topP := float32(0.6)
 	thinkingBudget := int32(1536)
-	req := GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText("What is the weather in Paris?", genai.RoleUser),
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("What is the weather in Paris?", genai.RoleUser),
+	}
+	config := &genai.GenerateContentConfig{
+		MaxOutputTokens: 90,
+		Temperature:     &temperature,
+		TopP:            &topP,
+		ToolConfig: &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: genai.FunctionCallingConfigModeAuto,
+			},
 		},
-		Config: &genai.GenerateContentConfig{
-			MaxOutputTokens: 90,
-			Temperature:     &temperature,
-			TopP:            &topP,
-			ToolConfig: &genai.ToolConfig{
-				FunctionCallingConfig: &genai.FunctionCallingConfig{
-					Mode: genai.FunctionCallingConfigModeAuto,
-				},
-			},
-			ThinkingConfig: &genai.ThinkingConfig{
-				IncludeThoughts: false,
-				ThinkingBudget:  &thinkingBudget,
-			},
-			Tools: []*genai.Tool{
-				{
-					FunctionDeclarations: []*genai.FunctionDeclaration{
-						{Name: "weather"},
-					},
+		ThinkingConfig: &genai.ThinkingConfig{
+			IncludeThoughts: false,
+			ThinkingBudget:  &thinkingBudget,
+			ThinkingLevel:   genai.ThinkingLevelMedium,
+		},
+		Tools: []*genai.Tool{
+			{
+				FunctionDeclarations: []*genai.FunctionDeclaration{
+					{Name: "weather"},
 				},
 			},
 		},
@@ -230,15 +235,16 @@ func TestFromStream(t *testing.T) {
 					},
 				},
 				UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
-					PromptTokenCount:     20,
-					CandidatesTokenCount: 6,
-					TotalTokenCount:      26,
+					PromptTokenCount:        20,
+					CandidatesTokenCount:    6,
+					TotalTokenCount:         31,
+					ToolUsePromptTokenCount: 5,
 				},
 			},
 		},
 	}
 
-	generation, err := FromStream(req, summary,
+	generation, err := FromStream(model, contents, config, summary,
 		WithConversationID("conv-stream"),
 		WithAgentName("agent-gemini-stream"),
 		WithAgentVersion("v-gemini-stream"),
@@ -265,8 +271,8 @@ func TestFromStream(t *testing.T) {
 	if generation.ResponseModel != "gemini-2.5-pro-001" {
 		t.Fatalf("expected response model gemini-2.5-pro-001, got %q", generation.ResponseModel)
 	}
-	if generation.Usage.TotalTokens != 26 {
-		t.Fatalf("expected total tokens 26, got %d", generation.Usage.TotalTokens)
+	if generation.Usage.TotalTokens != 31 {
+		t.Fatalf("expected total tokens 31, got %d", generation.Usage.TotalTokens)
 	}
 	if generation.MaxTokens == nil || *generation.MaxTokens != 90 {
 		t.Fatalf("expected max tokens 90, got %v", generation.MaxTokens)
@@ -289,23 +295,27 @@ func TestFromStream(t *testing.T) {
 	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1536) {
 		t.Fatalf("expected thinking budget metadata 1536, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
 	}
+	if generation.Metadata["sigil.gen_ai.request.thinking.level"] != "medium" {
+		t.Fatalf("expected thinking level metadata medium, got %v", generation.Metadata["sigil.gen_ai.request.thinking.level"])
+	}
+	if generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"] != int64(5) {
+		t.Fatalf("expected tool use prompt token metadata 5, got %v", generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"])
+	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
 }
 
 func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
-	req := GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText("hello", genai.RoleUser),
-		},
-		Config: &genai.GenerateContentConfig{
-			Tools: []*genai.Tool{
-				{
-					FunctionDeclarations: []*genai.FunctionDeclaration{
-						{Name: "weather"},
-					},
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("hello", genai.RoleUser),
+	}
+	config := &genai.GenerateContentConfig{
+		Tools: []*genai.Tool{
+			{
+				FunctionDeclarations: []*genai.FunctionDeclaration{
+					{Name: "weather"},
 				},
 			},
 		},
@@ -322,7 +332,7 @@ func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp, WithRawArtifacts())
+	generation, err := FromRequestResponse(model, contents, config, resp, WithRawArtifacts())
 	if err != nil {
 		t.Fatalf("from request/response: %v", err)
 	}

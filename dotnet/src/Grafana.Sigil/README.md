@@ -45,6 +45,29 @@ var client = new SigilClient(new SigilClientConfig
 
 Trace and generation export are configured independently, including protocol and auth mode.
 
+Generation export transport protocols:
+
+- `GenerationExportProtocol.Grpc`
+- `GenerationExportProtocol.Http`
+- `GenerationExportProtocol.None` (instrumentation-only; no generation transport)
+
+## Instrumentation-only mode (no generation send)
+
+```csharp
+var client = new SigilClient(new SigilClientConfig
+{
+    GenerationExport = new GenerationExportConfig
+    {
+        Protocol = GenerationExportProtocol.None,
+    },
+    Trace = new TraceConfig
+    {
+        Protocol = TraceProtocol.Http,
+        Endpoint = "http://localhost:4318/v1/traces",
+    },
+});
+```
+
 ## Manual generation instrumentation (sync)
 
 Use this API for unsupported providers or custom pipelines.

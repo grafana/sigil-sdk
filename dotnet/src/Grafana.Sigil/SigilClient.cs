@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Globalization;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace Grafana.Sigil;
@@ -15,6 +18,7 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrAgentName = "gen_ai.agent.name";
     internal const string SpanAttrAgentVersion = "gen_ai.agent.version";
     internal const string SpanAttrErrorType = "error.type";
+    internal const string SpanAttrErrorCategory = "error.category";
     internal const string SpanAttrOperationName = "gen_ai.operation.name";
     internal const string SpanAttrProviderName = "gen_ai.provider.name";
     internal const string SpanAttrRequestModel = "gen_ai.request.model";
@@ -31,6 +35,8 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrOutputTokens = "gen_ai.usage.output_tokens";
     internal const string SpanAttrCacheReadTokens = "gen_ai.usage.cache_read_input_tokens";
     internal const string SpanAttrCacheWriteTokens = "gen_ai.usage.cache_write_input_tokens";
+    internal const string SpanAttrCacheCreationTokens = "gen_ai.usage.cache_creation_input_tokens";
+    internal const string SpanAttrReasoningTokens = "gen_ai.usage.reasoning_tokens";
     internal const string SpanAttrToolName = "gen_ai.tool.name";
     internal const string SpanAttrToolCallId = "gen_ai.tool.call.id";
     internal const string SpanAttrToolType = "gen_ai.tool.type";
@@ -38,9 +44,28 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrToolCallArguments = "gen_ai.tool.call.arguments";
     internal const string SpanAttrToolCallResult = "gen_ai.tool.call.result";
 
+    internal const string MetricOperationDuration = "gen_ai.client.operation.duration";
+    internal const string MetricTokenUsage = "gen_ai.client.token.usage";
+    internal const string MetricTimeToFirstToken = "gen_ai.client.time_to_first_token";
+    internal const string MetricToolCallsPerOperation = "gen_ai.client.tool_calls_per_operation";
+    internal const string MetricAttrTokenType = "gen_ai.token.type";
+    internal const string MetricTokenTypeInput = "input";
+    internal const string MetricTokenTypeOutput = "output";
+    internal const string MetricTokenTypeCacheRead = "cache_read";
+    internal const string MetricTokenTypeCacheWrite = "cache_write";
+    internal const string MetricTokenTypeCacheCreation = "cache_creation";
+    internal const string MetricTokenTypeReasoning = "reasoning";
+
+    private static readonly Regex StatusCodeRegex = new(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled);
+
     internal readonly SigilClientConfig _config;
     private readonly IGenerationExporter _generationExporter;
     private readonly TraceRuntime _traceRuntime;
+    private readonly Meter _meter;
+    private readonly Histogram<double> _operationDurationHistogram;
+    private readonly Histogram<double> _tokenUsageHistogram;
+    private readonly Histogram<double> _ttftHistogram;
+    private readonly Histogram<double> _toolCallsHistogram;
     private readonly Action<string> _log;
 
     private readonly object _pendingLock = new();
@@ -61,15 +86,29 @@ public sealed class SigilClient : IAsyncDisposable
         _log = _config.Logger!;
 
         _generationExporter = _config.GenerationExporter
-            ?? (_config.GenerationExport.Protocol == GenerationExportProtocol.Http
-                ? new HttpGenerationExporter(_config.GenerationExport.Endpoint, _config.GenerationExport.Headers)
-                : new GrpcGenerationExporter(
+            ?? _config.GenerationExport.Protocol switch
+            {
+                GenerationExportProtocol.Http => new HttpGenerationExporter(
+                    _config.GenerationExport.Endpoint,
+                    _config.GenerationExport.Headers
+                ),
+                GenerationExportProtocol.Grpc => new GrpcGenerationExporter(
                     _config.GenerationExport.Endpoint,
                     _config.GenerationExport.Insecure,
                     _config.GenerationExport.Headers
-                ));
+                ),
+                GenerationExportProtocol.None => new NoopGenerationExporter(),
+                _ => throw new InvalidOperationException(
+                    $"unsupported generation export protocol {_config.GenerationExport.Protocol}"
+                ),
+            };
 
         _traceRuntime = TraceRuntime.Create(_config.Trace, _log);
+        _meter = _traceRuntime.Meter;
+        _operationDurationHistogram = _meter.CreateHistogram<double>(MetricOperationDuration, "s");
+        _tokenUsageHistogram = _meter.CreateHistogram<double>(MetricTokenUsage, "token");
+        _ttftHistogram = _meter.CreateHistogram<double>(MetricTimeToFirstToken, "s");
+        _toolCallsHistogram = _meter.CreateHistogram<double>(MetricToolCallsPerOperation, "count");
 
         _timerTask = Task.Run(RunFlushTimerAsync);
     }
@@ -550,6 +589,16 @@ public sealed class SigilClient : IAsyncDisposable
         {
             activity.SetTag(SpanAttrCacheWriteTokens, generation.Usage.CacheWriteInputTokens);
         }
+
+        if (generation.Usage.CacheCreationInputTokens != 0)
+        {
+            activity.SetTag(SpanAttrCacheCreationTokens, generation.Usage.CacheCreationInputTokens);
+        }
+
+        if (generation.Usage.ReasoningTokens != 0)
+        {
+            activity.SetTag(SpanAttrReasoningTokens, generation.Usage.ReasoningTokens);
+        }
     }
 
     internal static void ApplyToolSpanAttributes(Activity activity, ToolExecutionStart tool)
@@ -596,6 +645,265 @@ public sealed class SigilClient : IAsyncDisposable
         }
 
         return DefaultOperationNameForMode(generation.Mode ?? GenerationMode.Sync);
+    }
+
+    internal void RecordGenerationMetrics(
+        Generation generation,
+        string errorType,
+        string errorCategory,
+        DateTimeOffset? firstTokenAt
+    )
+    {
+        if (!generation.StartedAt.HasValue || !generation.CompletedAt.HasValue)
+        {
+            return;
+        }
+
+        var startedAt = generation.StartedAt.Value;
+        var completedAt = generation.CompletedAt.Value;
+        var durationSeconds = Math.Max(0d, (completedAt - startedAt).TotalSeconds);
+
+        _operationDurationHistogram.Record(
+            durationSeconds,
+            new KeyValuePair<string, object?>[]
+            {
+                new(SpanAttrOperationName, OperationName(generation)),
+                new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
+                new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
+                new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
+                new(SpanAttrErrorType, errorType ?? string.Empty),
+                new(SpanAttrErrorCategory, errorCategory ?? string.Empty),
+            });
+
+        RecordTokenUsage(generation, MetricTokenTypeInput, generation.Usage.InputTokens);
+        RecordTokenUsage(generation, MetricTokenTypeOutput, generation.Usage.OutputTokens);
+        RecordTokenUsage(generation, MetricTokenTypeCacheRead, generation.Usage.CacheReadInputTokens);
+        RecordTokenUsage(generation, MetricTokenTypeCacheWrite, generation.Usage.CacheWriteInputTokens);
+        RecordTokenUsage(generation, MetricTokenTypeCacheCreation, generation.Usage.CacheCreationInputTokens);
+        RecordTokenUsage(generation, MetricTokenTypeReasoning, generation.Usage.ReasoningTokens);
+
+        _toolCallsHistogram.Record(
+            CountToolCallParts(generation.Output),
+            new KeyValuePair<string, object?>[]
+            {
+                new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
+                new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
+                new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
+            });
+
+        if (string.Equals(OperationName(generation), DefaultOperationNameStream, StringComparison.Ordinal)
+            && firstTokenAt.HasValue)
+        {
+            var ttftSeconds = (firstTokenAt.Value - startedAt).TotalSeconds;
+            if (ttftSeconds >= 0d)
+            {
+                _ttftHistogram.Record(
+                    ttftSeconds,
+                    new KeyValuePair<string, object?>[]
+                    {
+                        new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
+                        new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
+                        new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
+                    });
+            }
+        }
+    }
+
+    internal void RecordToolExecutionMetrics(
+        ToolExecutionStart seed,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt,
+        Exception? finalError
+    )
+    {
+        var durationSeconds = Math.Max(0d, (completedAt - startedAt).TotalSeconds);
+        var errorType = finalError == null ? string.Empty : "tool_execution_error";
+        var errorCategory = finalError == null ? string.Empty : ErrorCategoryFromException(finalError, true);
+
+        _operationDurationHistogram.Record(
+            durationSeconds,
+            new KeyValuePair<string, object?>[]
+            {
+                new(SpanAttrOperationName, "execute_tool"),
+                new(SpanAttrProviderName, string.Empty),
+                new(SpanAttrRequestModel, seed.ToolName ?? string.Empty),
+                new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
+                new(SpanAttrErrorType, errorType),
+                new(SpanAttrErrorCategory, errorCategory),
+            });
+    }
+
+    internal static string ErrorCategoryFromException(Exception? error, bool fallbackSdk)
+    {
+        if (error == null)
+        {
+            return fallbackSdk ? "sdk_error" : string.Empty;
+        }
+
+        if (error is TimeoutException or OperationCanceledException)
+        {
+            return "timeout";
+        }
+
+        var message = error.Message ?? string.Empty;
+        if (message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("deadline exceeded", StringComparison.OrdinalIgnoreCase))
+        {
+            return "timeout";
+        }
+
+        var statusCode = ExtractStatusCode(error);
+        if (statusCode == 429)
+        {
+            return "rate_limit";
+        }
+
+        if (statusCode is 401 or 403)
+        {
+            return "auth_error";
+        }
+
+        if (statusCode == 408)
+        {
+            return "timeout";
+        }
+
+        if (statusCode.HasValue && statusCode.Value >= 500 && statusCode.Value <= 599)
+        {
+            return "server_error";
+        }
+
+        if (statusCode.HasValue && statusCode.Value >= 400 && statusCode.Value <= 499)
+        {
+            return "client_error";
+        }
+
+        return fallbackSdk ? "sdk_error" : string.Empty;
+    }
+
+    private void RecordTokenUsage(Generation generation, string tokenType, long value)
+    {
+        if (value == 0L)
+        {
+            return;
+        }
+
+        _tokenUsageHistogram.Record(
+            value,
+            new KeyValuePair<string, object?>[]
+            {
+                new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
+                new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
+                new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
+                new(MetricAttrTokenType, tokenType),
+            });
+    }
+
+    private static long CountToolCallParts(IReadOnlyList<Message> messages)
+    {
+        long total = 0;
+        foreach (var message in messages)
+        {
+            foreach (var part in message.Parts)
+            {
+                if (part.Kind == PartKind.ToolCall)
+                {
+                    total++;
+                }
+            }
+        }
+
+        return total;
+    }
+
+    private static int? ExtractStatusCode(Exception error)
+    {
+        var direct = ReadStatusCodeValue(error);
+        if (direct.HasValue)
+        {
+            return direct;
+        }
+
+        foreach (var propertyName in new[] { "Response", "Error" })
+        {
+            var property = error.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var nested = property?.GetValue(error);
+            if (nested != null)
+            {
+                var nestedValue = ReadStatusCodeValue(nested);
+                if (nestedValue.HasValue)
+                {
+                    return nestedValue;
+                }
+            }
+        }
+
+        var matches = StatusCodeRegex.Matches(error.Message ?? string.Empty);
+        foreach (Match match in matches)
+        {
+            if (int.TryParse(match.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                && parsed is >= 100 and <= 599)
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ReadStatusCodeValue(object value)
+    {
+        foreach (var memberName in new[] { "StatusCode", "Status", "statusCode", "status" })
+        {
+            var property = value.GetType().GetProperty(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (property != null)
+            {
+                var parsed = ConvertToStatusCode(property.GetValue(value));
+                if (parsed.HasValue)
+                {
+                    return parsed;
+                }
+            }
+
+            var field = value.GetType().GetField(memberName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field != null)
+            {
+                var parsed = ConvertToStatusCode(field.GetValue(value));
+                if (parsed.HasValue)
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static int? ConvertToStatusCode(object? value)
+    {
+        if (value == null)
+        {
+            return null;
+        }
+
+        if (value is int statusCode)
+        {
+            return statusCode is >= 100 and <= 599 ? statusCode : null;
+        }
+
+        if (value is long longStatus && longStatus is >= 100 and <= 599)
+        {
+            return (int)longStatus;
+        }
+
+        if (value is string text
+            && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            && parsed is >= 100 and <= 599)
+        {
+            return parsed;
+        }
+
+        return null;
     }
 
     private static bool TryGetThinkingBudgetFromMetadata(
@@ -692,6 +1000,7 @@ public sealed class GenerationRecorder
     private Exception? _callError;
     private Exception? _mappingError;
     private Generation? _result;
+    private DateTimeOffset? _firstTokenAt;
 
     public Generation? LastGeneration { get; private set; }
 
@@ -739,6 +1048,19 @@ public sealed class GenerationRecorder
         }
     }
 
+    public void SetFirstTokenAt(DateTimeOffset firstTokenAt)
+    {
+        if (_noop)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _firstTokenAt = InternalUtils.Utc(firstTokenAt);
+        }
+    }
+
     public void End()
     {
         if (_noop)
@@ -749,6 +1071,7 @@ public sealed class GenerationRecorder
         Exception? callError;
         Exception? mappingError;
         Generation result;
+        DateTimeOffset? firstTokenAt;
 
         lock (_gate)
         {
@@ -761,6 +1084,7 @@ public sealed class GenerationRecorder
             callError = _callError;
             mappingError = _mappingError;
             result = _result != null ? InternalUtils.DeepClone(_result) : new Generation();
+            firstTokenAt = _firstTokenAt;
         }
 
         var completedAt = _client!._config.UtcNow!();
@@ -803,6 +1127,24 @@ public sealed class GenerationRecorder
             localError = new EnqueueException($"sigil: generation enqueue failed: {ex.Message}", ex);
         }
 
+        var errorType = string.Empty;
+        var errorCategory = string.Empty;
+        if (callError != null)
+        {
+            errorType = "provider_call_error";
+            errorCategory = SigilClient.ErrorCategoryFromException(callError, true);
+        }
+        else if (mappingError != null)
+        {
+            errorType = "mapping_error";
+            errorCategory = "sdk_error";
+        }
+        else if (localError != null)
+        {
+            errorType = localError is ValidationException ? "validation_error" : "enqueue_error";
+            errorCategory = "sdk_error";
+        }
+
         if (_activity != null)
         {
             if (localError != null)
@@ -810,23 +1152,11 @@ public sealed class GenerationRecorder
                 SigilClient.RecordException(_activity, localError);
             }
 
-            if (callError != null)
+            if (errorType.Length > 0)
             {
-                _activity.SetTag(SigilClient.SpanAttrErrorType, "provider_call_error");
-                _activity.SetStatus(ActivityStatusCode.Error, callError.Message);
-            }
-            else if (mappingError != null)
-            {
-                _activity.SetTag(SigilClient.SpanAttrErrorType, "mapping_error");
-                _activity.SetStatus(ActivityStatusCode.Error, mappingError.Message);
-            }
-            else if (localError != null)
-            {
-                _activity.SetTag(
-                    SigilClient.SpanAttrErrorType,
-                    localError is ValidationException ? "validation_error" : "enqueue_error"
-                );
-                _activity.SetStatus(ActivityStatusCode.Error, localError.Message);
+                _activity.SetTag(SigilClient.SpanAttrErrorType, errorType);
+                _activity.SetTag(SigilClient.SpanAttrErrorCategory, errorCategory);
+                _activity.SetStatus(ActivityStatusCode.Error, (callError ?? mappingError ?? localError)?.Message);
             }
             else
             {
@@ -835,6 +1165,8 @@ public sealed class GenerationRecorder
 
             _activity.Stop();
         }
+
+        _client.RecordGenerationMetrics(generation, errorType, errorCategory, firstTokenAt);
 
         LastGeneration = InternalUtils.DeepClone(generation);
         Error = localError;
@@ -1011,6 +1343,9 @@ public sealed class ToolExecutionRecorder
         }
 
         var finalError = executionError;
+        var completedAt = result.CompletedAt.HasValue
+            ? InternalUtils.Utc(result.CompletedAt.Value)
+            : _client!._config.UtcNow!();
 
         if (_activity != null)
         {
@@ -1043,6 +1378,7 @@ public sealed class ToolExecutionRecorder
             {
                 SigilClient.RecordException(_activity, finalError);
                 _activity.SetTag(SigilClient.SpanAttrErrorType, "tool_execution_error");
+                _activity.SetTag(SigilClient.SpanAttrErrorCategory, SigilClient.ErrorCategoryFromException(finalError, true));
                 _activity.SetStatus(ActivityStatusCode.Error, finalError.Message);
             }
             else
@@ -1050,9 +1386,11 @@ public sealed class ToolExecutionRecorder
                 _activity.SetStatus(ActivityStatusCode.Ok);
             }
 
+            _activity.SetEndTime(completedAt.UtcDateTime);
             _activity.Stop();
         }
 
+        _client!.RecordToolExecutionMetrics(_seed, _startedAt, completedAt, finalError);
         Error = finalError;
     }
 }

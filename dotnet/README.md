@@ -43,7 +43,6 @@ var sigil = new SigilClient(new SigilClientConfig
     {
         Protocol = TraceProtocol.Http,
         Endpoint = "http://localhost:4318/v1/traces",
-        Auth = new AuthConfig { Mode = ExportAuthMode.None },
     },
     GenerationExport = new GenerationExportConfig
     {
@@ -108,6 +107,12 @@ Recorder behavior is explicit and idempotent:
 - `End()` is safe to call once in `finally`
 - recorder `Error` only reports local instrumentation/export-queue errors
 
+Generation export transport protocols:
+
+- `GenerationExportProtocol.Grpc`
+- `GenerationExportProtocol.Http`
+- `GenerationExportProtocol.None` (instrumentation-only; no generation transport)
+
 ## Context defaults
 
 `SigilContext` uses async-local scopes:
@@ -124,6 +129,32 @@ These defaults are used when a start payload omits those fields.
 - Always call `ShutdownAsync(...)` during process shutdown.
 - Keep provider request/response payloads normalized; enable raw artifacts only for debug sessions.
 - Use explicit auth config per export path (trace vs generation) instead of sharing ad-hoc headers.
+
+## Instrumentation-only mode (no generation send)
+
+```csharp
+var sigil = new SigilClient(new SigilClientConfig
+{
+    GenerationExport = new GenerationExportConfig
+    {
+        Protocol = GenerationExportProtocol.None,
+    },
+    Trace = new TraceConfig
+    {
+        Protocol = TraceProtocol.Http,
+        Endpoint = "http://localhost:4318/v1/traces",
+    },
+});
+```
+
+## SDK metrics
+
+The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+
+- `gen_ai.client.operation.duration`
+- `gen_ai.client.token.usage`
+- `gen_ai.client.time_to_first_token`
+- `gen_ai.client.tool_calls_per_operation`
 
 ## Local tasks
 

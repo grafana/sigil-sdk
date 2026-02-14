@@ -30,6 +30,7 @@ public sealed class TraceTransportTests
             Protocol = TraceProtocol.Http,
             Endpoint = collector.Endpoint,
             Insecure = true,
+            EnableMetrics = false,
         };
 
         await using var client = new SigilClient(config);
@@ -55,6 +56,7 @@ public sealed class TraceTransportTests
             Protocol = TraceProtocol.Grpc,
             Endpoint = $"127.0.0.1:{collector.Port}",
             Insecure = true,
+            EnableMetrics = false,
             Auth = new AuthConfig
             {
                 Mode = ExportAuthMode.Tenant,
@@ -89,6 +91,7 @@ public sealed class TraceTransportTests
             Protocol = TraceProtocol.Http,
             Endpoint = collector.Endpoint,
             Insecure = true,
+            EnableMetrics = false,
             Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["authorization"] = "Bearer override-trace-token",

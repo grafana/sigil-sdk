@@ -164,7 +164,7 @@ def load_config() -> RuntimeConfig:
         gen_http_endpoint=string_from_env(
             "SIGIL_TRAFFIC_GEN_HTTP_ENDPOINT", "http://sigil:8080/api/v1/generations:export"
         ),
-        trace_grpc_endpoint=string_from_env("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "sigil:4317"),
+        trace_grpc_endpoint=string_from_env("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "alloy:4317"),
         max_cycles=int_from_env("SIGIL_TRAFFIC_MAX_CYCLES", 0),
     )
 

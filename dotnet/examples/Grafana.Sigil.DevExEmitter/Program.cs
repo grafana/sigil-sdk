@@ -20,7 +20,6 @@ using GeminiContent = Google.GenAI.Types.Content;
 using GeminiFinishReason = Google.GenAI.Types.FinishReason;
 using GeminiFunctionResponse = Google.GenAI.Types.FunctionResponse;
 using GeminiGenerateContentConfig = Google.GenAI.Types.GenerateContentConfig;
-using GeminiGenerateContentRequest = Grafana.Sigil.Gemini.GenerateContentRequest;
 using GeminiGenerateContentResponse = Google.GenAI.Types.GenerateContentResponse;
 using GeminiGenerateContentResponseUsageMetadata = Google.GenAI.Types.GenerateContentResponseUsageMetadata;
 using Grafana.Sigil;
@@ -662,50 +661,48 @@ internal static class Program
 
     private static async Task EmitGeminiSyncAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
     {
-        var request = new GeminiGenerateContentRequest
+        var model = "gemini-2.5-pro";
+        var contents = new List<GeminiContent>
         {
-            Model = "gemini-2.5-pro",
-            Contents =
-            [
-                new GeminiContent
-                {
-                    Role = "user",
-                    Parts = [new GPart { Text = $"Generate launch summary {context.Turn}." }],
-                },
-                new GeminiContent
-                {
-                    Role = "user",
-                    Parts =
-                    [
-                        new GPart
+            new GeminiContent
+            {
+                Role = "user",
+                Parts = [new GPart { Text = $"Generate launch summary {context.Turn}." }],
+            },
+            new GeminiContent
+            {
+                Role = "user",
+                Parts =
+                [
+                    new GPart
+                    {
+                        FunctionResponse = new GeminiFunctionResponse
                         {
-                            FunctionResponse = new GeminiFunctionResponse
+                            Id = "release_metrics",
+                            Name = "release_metrics",
+                            Response = new Dictionary<string, object>
                             {
-                                Id = "release_metrics",
-                                Name = "release_metrics",
-                                Response = new Dictionary<string, object>
-                                {
-                                    ["status"] = "green",
-                                },
+                                ["status"] = "green",
                             },
                         },
-                    ],
-                },
-            ],
-            Config = new GeminiGenerateContentConfig
+                    },
+                ],
+            },
+        };
+        var config = new GeminiGenerateContentConfig
+        {
+            SystemInstruction = new GeminiContent
             {
-                SystemInstruction = new GeminiContent
-                {
-                    Role = "user",
-                    Parts = [new GPart { Text = "Use structured release-note style." }],
-                },
+                Role = "user",
+                Parts = [new GPart { Text = "Use structured release-note style." }],
             },
         };
 
         await GeminiRecorder.GenerateContentAsync(
             client,
-            request,
-            (_, _) => Task.FromResult(new GeminiGenerateContentResponse
+            model,
+            contents,
+            (_, _, _, _) => Task.FromResult(new GeminiGenerateContentResponse
             {
                 ResponseId = $"dotnet-gemini-sync-{context.Turn}",
                 ModelVersion = "gemini-2.5-pro-001",
@@ -729,6 +726,7 @@ internal static class Program
                     ThoughtsTokenCount = 6,
                 },
             }),
+            config,
             options: new GeminiSigilOptions
             {
                 ProviderName = "gemini",
@@ -745,23 +743,21 @@ internal static class Program
 
     private static async Task EmitGeminiStreamAsync(SigilClient client, EmitContext context, CancellationToken cancellationToken)
     {
-        var request = new GeminiGenerateContentRequest
+        var model = "gemini-2.5-pro";
+        var contents = new List<GeminiContent>
         {
-            Model = "gemini-2.5-pro",
-            Contents =
-            [
-                new GeminiContent
-                {
-                    Role = "user",
-                    Parts = [new GPart { Text = $"Stream migration status {context.Turn}." }],
-                },
-            ],
+            new GeminiContent
+            {
+                Role = "user",
+                Parts = [new GPart { Text = $"Stream migration status {context.Turn}." }],
+            },
         };
 
         await GeminiRecorder.GenerateContentStreamAsync(
             client,
-            request,
-            (_, ct) => StreamGeminiResponses(context.Turn, ct),
+            model,
+            contents,
+            (_, _, _, ct) => StreamGeminiResponses(context.Turn, ct),
             options: new GeminiSigilOptions
             {
                 ProviderName = "gemini",
@@ -1019,7 +1015,7 @@ internal static class Program
                 RotateTurns: IntFromEnv("SIGIL_TRAFFIC_ROTATE_TURNS", 24),
                 CustomProvider: StringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral"),
                 GenGrpcEndpoint: StringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
-                TraceHttpEndpoint: StringFromEnv("SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT", "http://sigil:4318/v1/traces"),
+                TraceHttpEndpoint: StringFromEnv("SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT", "http://alloy:4318/v1/traces"),
                 MaxCycles: IntFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0)
             );
         }

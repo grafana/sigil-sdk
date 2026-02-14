@@ -1,33 +1,40 @@
-# Grafana Sigil Java Provider Adapter: Anthropic
+# Grafana Sigil Java Provider Helpers: Anthropic
 
-This module maps Anthropic request/response and stream events into Sigil normalized generation models.
+This module provides strict wrappers around official Anthropic Java SDK request/response types for Messages.
 
-## Scope
+No simplified public DTO layer is exposed.
 
-- One-liner wrappers:
+## Public API
+
+- Wrappers:
   - `AnthropicAdapter.completion(...)`
   - `AnthropicAdapter.completionStream(...)`
-- Explicit mapper APIs:
+- Manual mappers:
   - `AnthropicAdapter.fromRequestResponse(...)`
   - `AnthropicAdapter.fromStream(...)`
 
-## Official SDK
+## Official SDK Types
 
-Designed to pair with the official Anthropic Java SDK:
+These wrappers accept and return official types from `com.anthropic:anthropic-java`:
 
-- `com.anthropic:anthropic-java`
+- `MessageCreateParams`
+- `Message`
+- `RawMessageStreamEvent`
 
 ## Wrapper Example (sync)
 
 ```java
-AnthropicAdapter.completion(
+MessageCreateParams request = MessageCreateParams.builder()
+    .model("claude-sonnet-4")
+    .maxTokens(512)
+    .addUserMessage("Summarize this run.")
+    .build();
+
+Message response = AnthropicAdapter.completion(
     sigilClient,
     request,
-    r -> {
-        // call official Anthropic SDK here
-        return new OpenAiAdapter.OpenAiChatResponse().setOutputText("answer");
-    },
-    new OpenAiAdapter.OpenAiOptions()
+    params -> anthropic.messages().create(params),
+    new AnthropicOptions()
         .setConversationId("conv-1")
         .setAgentName("assistant-anthropic")
         .setAgentVersion("1.0.0")
@@ -37,23 +44,23 @@ AnthropicAdapter.completion(
 ## Wrapper Example (stream)
 
 ```java
-AnthropicAdapter.completionStream(
+AnthropicStreamSummary summary = AnthropicAdapter.completionStream(
     sigilClient,
     request,
-    r -> new OpenAiAdapter.OpenAiStreamSummary()
-        .setOutputText("stitched")
-        .setChunks(java.util.List.of(/* stream events */)),
-    new OpenAiAdapter.OpenAiOptions()
+    params -> anthropic.messages().createStreaming(params),
+    new AnthropicOptions()
 );
 ```
 
 ## Raw Artifact Policy
 
 - Default: OFF
-- Opt-in: `OpenAiAdapter.OpenAiOptions#setRawArtifacts(true)`
+- Opt-in: `new AnthropicOptions().setRawArtifacts(true)`
 
-## Best Practices
+## Provider metadata mapping
 
-- Keep system prompt handling explicit in request mapping.
-- Validate tool-call and tool-result role mapping in tests.
-- Prefer callback wrapper APIs so recorder lifecycle is always closed.
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+
+- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
+- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `sigil.gen_ai.usage.server_tool_use.total_requests`

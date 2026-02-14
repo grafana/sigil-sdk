@@ -1,29 +1,13 @@
-"""Gemini helper wrappers for Sigil Python SDK."""
+"""Gemini strict wrapper namespace for Sigil Python SDK."""
 
 from .provider import (
-    GeminiMessage,
     GeminiOptions,
-    GeminiRequest,
-    GeminiResponse,
     GeminiStreamSummary,
-    completion,
-    completion_async,
-    completion_stream,
-    completion_stream_async,
-    from_request_response,
-    from_stream,
+    models,
 )
 
 __all__ = [
-    "GeminiMessage",
     "GeminiOptions",
-    "GeminiRequest",
-    "GeminiResponse",
     "GeminiStreamSummary",
-    "completion",
-    "completion_async",
-    "completion_stream",
-    "completion_stream_async",
-    "from_request_response",
-    "from_stream",
+    "models",
 ]

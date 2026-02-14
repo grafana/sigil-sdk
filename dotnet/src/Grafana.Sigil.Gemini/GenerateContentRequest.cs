@@ -2,7 +2,7 @@ using Google.GenAI.Types;
 
 namespace Grafana.Sigil.Gemini;
 
-public sealed record GenerateContentRequest
+internal sealed record GenerateContentRequest
 {
     public string Model { get; init; } = string.Empty;
 

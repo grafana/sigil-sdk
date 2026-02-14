@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"context"
+	"time"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
 
@@ -69,6 +70,10 @@ func MessageStream(
 
 	summary := StreamSummary{}
 	for stream.Next() {
+		if summary.FirstChunkAt.IsZero() {
+			summary.FirstChunkAt = time.Now().UTC()
+			rec.SetFirstTokenAt(summary.FirstChunkAt)
+		}
 		summary.Events = append(summary.Events, stream.Current())
 	}
 	if err := stream.Err(); err != nil {

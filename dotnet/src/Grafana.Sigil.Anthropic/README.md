@@ -110,3 +110,11 @@ var response = await AnthropicRecorder.MessageAsync(
 - Thinking blocks, tool-use blocks, and tool-result blocks map to typed Sigil parts.
 - Provider exceptions are captured as generation `CallError` and rethrown.
 - Call `SigilClient.ShutdownAsync(...)` during application shutdown to flush pending exports.
+
+## Provider metadata mapping
+
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+
+- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
+- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `sigil.gen_ai.usage.server_tool_use.total_requests`

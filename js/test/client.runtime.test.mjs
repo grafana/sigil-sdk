@@ -190,6 +190,36 @@ test('built-in HTTP exporter posts generation batches to configured endpoint', a
   }
 });
 
+test('built-in none exporter records generations without sending', async () => {
+  const defaults = defaultConfig();
+  const client = new SigilClient({
+    tracer: trace.getTracer('sigil-sdk-js-test'),
+    generationExport: {
+      ...defaults.generationExport,
+      protocol: 'none',
+      endpoint: 'http://127.0.0.1:1',
+      batchSize: 1,
+      flushIntervalMs: 60_000,
+    },
+  });
+
+  try {
+    const recorder = client.startGeneration(seedGeneration(10));
+    recorder.setResult({
+      output: [{ role: 'assistant', content: 'ok-10' }],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    await client.flush();
+
+    const snapshot = client.debugSnapshot();
+    assert.equal(snapshot.generations.length, 1);
+  } finally {
+    await client.shutdown();
+  }
+});
+
 function newClient(generationExporter, overrides) {
   const defaults = defaultConfig();
   return new SigilClient({

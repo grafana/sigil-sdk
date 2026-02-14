@@ -12,8 +12,13 @@ import com.grafana.sigil.sdk.MessageRole;
 import com.grafana.sigil.sdk.ModelRef;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
-import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
+import com.grafana.sigil.sdk.providers.openai.OpenAiChatCompletions;
+import com.grafana.sigil.sdk.providers.openai.OpenAiOptions;
+import com.openai.core.ObjectMappers;
+import com.openai.models.chat.completions.ChatCompletion;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,16 +34,36 @@ import org.openjdk.jmh.annotations.State;
 
 @State(Scope.Benchmark)
 public class SdkBenchmarks {
-    private ProviderAdapterSupport.OpenAiChatRequest request;
-    private ProviderAdapterSupport.OpenAiChatResponse response;
+    private ChatCompletionCreateParams request;
+    private ChatCompletion response;
     private SigilClient client;
 
     @Setup(Level.Trial)
-    public void setup() {
-        request = new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("gpt-5")
-                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("hello")));
-        response = new ProviderAdapterSupport.OpenAiChatResponse().setOutputText("hello");
+    public void setup() throws IOException {
+        request = ChatCompletionCreateParams.builder()
+                .model("gpt-5")
+                .addUserMessage("hello")
+                .maxCompletionTokens(128L)
+                .build();
+        response = ObjectMappers.jsonMapper().readValue(
+                """
+                {
+                  "id": "chatcmpl_1",
+                  "choices": [
+                    {
+                      "finish_reason": "stop",
+                      "index": 0,
+                      "message": {
+                        "role": "assistant",
+                        "content": "hello"
+                      }
+                    }
+                  ],
+                  "created": 1,
+                  "model": "gpt-5"
+                }
+                """,
+                ChatCompletion.class);
 
         client = new SigilClient(new SigilClientConfig()
                 .setTracer(GlobalOpenTelemetry.getTracer("bench"))
@@ -54,7 +79,7 @@ public class SdkBenchmarks {
     @BenchmarkMode(Mode.Throughput)
     @OutputTimeUnit(TimeUnit.SECONDS)
     public Object mapOpenAiSync() {
-        return ProviderAdapterSupport.fromRequestResponse(request, response, new ProviderAdapterSupport.OpenAiOptions());
+        return OpenAiChatCompletions.fromRequestResponse(request, response, new OpenAiOptions());
     }
 
     @Benchmark

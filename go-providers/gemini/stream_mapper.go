@@ -3,6 +3,7 @@ package gemini
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -11,12 +12,19 @@ import (
 
 // StreamSummary captures Gemini streamed responses.
 type StreamSummary struct {
-	Responses []*genai.GenerateContentResponse
+	Responses    []*genai.GenerateContentResponse
+	FirstChunkAt time.Time
 }
 
 // FromStream maps Gemini streaming output to sigil.Generation.
-func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Option) (sigil.Generation, error) {
-	if strings.TrimSpace(req.Model) == "" {
+func FromStream(
+	model string,
+	contents []*genai.Content,
+	config *genai.GenerateContentConfig,
+	summary StreamSummary,
+	opts ...Option,
+) (sigil.Generation, error) {
+	if strings.TrimSpace(model) == "" {
 		return sigil.Generation{}, errors.New("request model is required")
 	}
 	if len(summary.Responses) == 0 {
@@ -24,11 +32,13 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 	}
 
 	options := applyOptions(opts)
-	input := mapContents(req.Contents)
-	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req.Config)
+	input := mapContents(contents)
+	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(config)
+	thinkingLevel := extractThinkingLevel(config)
 	output := make([]sigil.Message, 0, len(summary.Responses))
 	stopReason := ""
 	usage := sigil.TokenUsage{}
+	var usageMetadata *genai.GenerateContentResponseUsageMetadata
 	responseID := ""
 	responseModel := ""
 
@@ -44,6 +54,7 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 		}
 		if response.UsageMetadata != nil {
 			usage = mapUsage(response.UsageMetadata)
+			usageMetadata = response.UsageMetadata
 		}
 		if response.ResponseID != "" {
 			responseID = response.ResponseID
@@ -55,14 +66,19 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 
 	artifacts := make([]sigil.Artifact, 0, 3)
 	if options.includeRequestArtifact {
-		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindRequest, "gemini.generate_content.request", req)
+		requestPayload := map[string]any{
+			"model":    model,
+			"contents": contents,
+			"config":   config,
+		}
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindRequest, "gemini.generate_content.request", requestPayload)
 		if err != nil {
 			return sigil.Generation{}, err
 		}
 		artifacts = append(artifacts, artifact)
 	}
-	if options.includeToolsArtifact && hasFunctionTools(req.Config) {
-		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindTools, "gemini.generate_content.tools", req.Config.Tools)
+	if options.includeToolsArtifact && hasFunctionTools(config) {
+		artifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindTools, "gemini.generate_content.tools", config.Tools)
 		if err != nil {
 			return sigil.Generation{}, err
 		}
@@ -75,18 +91,28 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 		}
 		artifacts = append(artifacts, artifact)
 	}
+	metadata := cloneAnyMap(options.metadata)
+	if responseModel != "" {
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		metadata["model_version"] = responseModel
+	}
+	metadata = mergeThinkingBudgetMetadata(metadata, thinkingBudget)
+	metadata = mergeThinkingLevelMetadata(metadata, thinkingLevel)
+	metadata = mergeGeminiUsageMetadata(metadata, usageMetadata)
 
 	generation := sigil.Generation{
 		ConversationID:  options.conversationID,
 		AgentName:       options.agentName,
 		AgentVersion:    options.agentVersion,
-		Model:           sigil.ModelRef{Provider: options.providerName, Name: req.Model},
+		Model:           sigil.ModelRef{Provider: options.providerName, Name: model},
 		ResponseID:      responseID,
 		ResponseModel:   responseModel,
-		SystemPrompt:    extractSystemPrompt(req.Config),
+		SystemPrompt:    extractSystemPrompt(config),
 		Input:           input,
 		Output:          output,
-		Tools:           mapTools(req.Config),
+		Tools:           mapTools(config),
 		MaxTokens:       maxTokens,
 		Temperature:     temperature,
 		TopP:            topP,
@@ -95,7 +121,7 @@ func FromStream(req GenerateContentRequest, summary StreamSummary, opts ...Optio
 		Usage:           usage,
 		StopReason:      stopReason,
 		Tags:            cloneStringMap(options.tags),
-		Metadata:        mergeThinkingBudgetMetadata(options.metadata, thinkingBudget),
+		Metadata:        metadata,
 		Artifacts:       artifacts,
 	}
 

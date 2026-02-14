@@ -3,11 +3,9 @@ package gemini
 import "google.golang.org/genai"
 
 func ExampleFromRequestResponse() {
-	req := GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText("Hello", genai.RoleUser),
-		},
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("Hello", genai.RoleUser),
 	}
 	resp := &genai.GenerateContentResponse{
 		Candidates: []*genai.Candidate{
@@ -18,7 +16,7 @@ func ExampleFromRequestResponse() {
 		},
 	}
 
-	generation, err := FromRequestResponse(req, resp,
+	generation, err := FromRequestResponse(model, contents, nil, resp,
 		WithConversationID("conv-1"),
 		WithAgentName("assistant-gemini"),
 		WithAgentVersion("1.0.0"),
@@ -32,11 +30,9 @@ func ExampleFromRequestResponse() {
 }
 
 func ExampleFromStream() {
-	req := GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText("Hello", genai.RoleUser),
-		},
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("Hello", genai.RoleUser),
 	}
 	summary := StreamSummary{
 		Responses: []*genai.GenerateContentResponse{
@@ -51,7 +47,7 @@ func ExampleFromStream() {
 		},
 	}
 
-	generation, err := FromStream(req, summary,
+	generation, err := FromStream(model, contents, nil, summary,
 		WithConversationID("conv-2"),
 		WithAgentName("assistant-gemini"),
 		WithAgentVersion("1.0.0"),

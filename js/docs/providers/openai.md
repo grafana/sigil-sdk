@@ -120,3 +120,12 @@ Enable only for debugging:
 ```ts
 { rawArtifacts: true }
 ```
+
+## Usage mapping notes
+
+OpenAI usage details map into normalized token usage fields:
+
+- Chat Completions: `prompt_tokens_details.cached_tokens` -> `usage.cacheReadInputTokens`
+- Chat Completions: `completion_tokens_details.reasoning_tokens` -> `usage.reasoningTokens`
+- Responses: `input_tokens_details.cached_tokens` -> `usage.cacheReadInputTokens`
+- Responses: `output_tokens_details.reasoning_tokens` -> `usage.reasoningTokens`

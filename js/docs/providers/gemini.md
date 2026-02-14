@@ -1,15 +1,15 @@
 # Sigil JS Provider Helper: Gemini
 
-This helper maps Gemini request/response payloads into Sigil `Generation` records.
+This helper maps strict Gemini `model/contents/config` payloads into Sigil `Generation` records.
 
 ## Scope
 
 - Wrapper calls:
-  - `gemini.completion(client, request, providerCall, options?)`
-  - `gemini.completionStream(client, request, providerCall, options?)`
+  - `gemini.models.generateContent(client, model, contents, config, providerCall, options?)`
+  - `gemini.models.generateContentStream(client, model, contents, config, providerCall, options?)`
 - Mapper functions:
-  - `gemini.fromRequestResponse(request, response, options?)`
-  - `gemini.fromStream(request, summary, options?)`
+  - `gemini.models.fromRequestResponse(model, contents, config, response, options?)`
+  - `gemini.models.fromStream(model, contents, config, summary, options?)`
 - Raw artifacts (debug opt-in):
   - `request`
   - `response` (sync)
@@ -22,20 +22,17 @@ import { SigilClient, gemini } from "@grafana/sigil-sdk-js";
 
 const client = new SigilClient();
 
-const response = await gemini.completion(
+const model = "gemini-2.5-pro";
+const contents = [{ role: "user", parts: [{ text: "Hello" }] }];
+const config = { maxOutputTokens: 256 };
+
+const response = await gemini.models.generateContent(
   client,
-  {
-    model: "gemini-2.5-pro",
-    messages: [{ role: "user", content: "Hello" }],
-  },
-  async (request) => {
-    const sdkResp = await provider.models.generateContent(request);
-    return {
-      id: sdkResp.responseId,
-      model: sdkResp.modelVersion,
-      outputText: sdkResp.text ?? "",
-    };
-  }
+  model,
+  contents,
+  config,
+  async (reqModel, reqContents, reqConfig) =>
+    provider.models.generateContent({ model: reqModel, contents: reqContents, config: reqConfig })
 );
 ```
 
@@ -43,12 +40,12 @@ const response = await gemini.completion(
 
 ```ts
 const recorder = client.startGeneration({
-  model: { provider: "gemini", name: "gemini-2.5-pro" },
+  model: { provider: "gemini", name: model },
 });
 
 try {
-  const response = await provider.models.generateContent(request);
-  recorder.setResult(gemini.fromRequestResponse(request, response));
+  const response = await provider.models.generateContent({ model, contents, config });
+  recorder.setResult(gemini.models.fromRequestResponse(model, contents, config, response));
 } catch (error) {
   recorder.setCallError(error);
   throw error;
@@ -61,3 +58,12 @@ try {
 
 - Default OFF.
 - Enable only for debug workflows with `{ rawArtifacts: true }`.
+
+## Provider metadata mapping
+
+Gemini-specific fields are mapped as follows:
+
+- `usage.thoughtsTokenCount` -> normalized `usage.reasoningTokens`
+- `usage.toolUsePromptTokenCount` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinkingConfig.thinkingBudget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
+- `config.thinkingConfig.thinkingLevel` -> metadata `sigil.gen_ai.request.thinking.level`

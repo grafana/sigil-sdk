@@ -267,4 +267,38 @@ public sealed class GenerationTransportTests
 
         Assert.Equal("Bearer override-token", metadata["authorization"]);
     }
+
+    [Fact]
+    public async Task GenerationTransport_NoneProtocol_RecordsWithoutSending()
+    {
+        var config = new SigilClientConfig
+        {
+            Trace = new TraceConfig
+            {
+                Endpoint = string.Empty,
+            },
+            GenerationExport = new GenerationExportConfig
+            {
+                Protocol = GenerationExportProtocol.None,
+                Endpoint = "http://127.0.0.1:1",
+                BatchSize = 1,
+                QueueSize = 10,
+                FlushInterval = TimeSpan.FromSeconds(1),
+                MaxRetries = 1,
+                InitialBackoff = TimeSpan.FromMilliseconds(1),
+                MaxBackoff = TimeSpan.FromMilliseconds(2),
+            },
+        };
+
+        await using var client = new SigilClient(config);
+        var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-none"));
+        recorder.SetResult(TestHelpers.CreateSeedResult("gen-none"));
+        recorder.End();
+
+        await client.FlushAsync();
+        await client.ShutdownAsync();
+
+        Assert.Null(recorder.Error);
+        Assert.NotNull(recorder.LastGeneration);
+    }
 }

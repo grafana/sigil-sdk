@@ -20,7 +20,7 @@ func Example_withSigilWrapper() {
 	}
 
 	client := sigil.NewClient(sigil.DefaultConfig())
-	req := exampleGeminiRequest()
+	model, contents, config := exampleGeminiRequest()
 
 	providerClient, err := genai.NewClient(context.Background(), &genai.ClientConfig{
 		APIKey:  apiKey,
@@ -30,7 +30,7 @@ func Example_withSigilWrapper() {
 		panic(err)
 	}
 
-	resp, err := GenerateContent(context.Background(), client, providerClient, req,
+	resp, err := GenerateContent(context.Background(), client, providerClient, model, contents, config,
 		WithConversationID("conv-gemini-1"),
 		WithAgentName("assistant-gemini"),
 		WithAgentVersion("1.0.0"),
@@ -54,13 +54,13 @@ func Example_withSigilDefer() {
 	}
 
 	client := sigil.NewClient(sigil.DefaultConfig())
-	req := exampleGeminiRequest()
+	model, contents, config := exampleGeminiRequest()
 
 	ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-gemini-2",
 		AgentName:      "assistant-gemini",
 		AgentVersion:   "1.0.0",
-		Model:          sigil.ModelRef{Provider: "gemini", Name: req.Model},
+		Model:          sigil.ModelRef{Provider: "gemini", Name: model},
 	})
 	defer rec.End()
 
@@ -73,13 +73,13 @@ func Example_withSigilDefer() {
 		return
 	}
 
-	resp, err := providerClient.Models.GenerateContent(ctx, req.Model, req.Contents, req.Config)
+	resp, err := providerClient.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
 		rec.SetCallError(err)
 		return
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp,
+	rec.SetResult(FromRequestResponse(model, contents, config, resp,
 		WithConversationID("conv-gemini-2"),
 		WithAgentName("assistant-gemini"),
 		WithAgentVersion("1.0.0"),
@@ -99,13 +99,13 @@ func Example_withSigilStreamingDefer() {
 	}
 
 	client := sigil.NewClient(sigil.DefaultConfig())
-	req := exampleGeminiRequest()
+	model, contents, config := exampleGeminiRequest()
 
 	ctx, rec := client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-gemini-3",
 		AgentName:      "assistant-gemini",
 		AgentVersion:   "1.0.0",
-		Model:          sigil.ModelRef{Provider: "gemini", Name: req.Model},
+		Model:          sigil.ModelRef{Provider: "gemini", Name: model},
 	})
 	defer rec.End()
 
@@ -119,7 +119,7 @@ func Example_withSigilStreamingDefer() {
 	}
 
 	summary := StreamSummary{}
-	for response, err := range providerClient.Models.GenerateContentStream(ctx, req.Model, req.Contents, req.Config) {
+	for response, err := range providerClient.Models.GenerateContentStream(ctx, model, contents, config) {
 		if err != nil {
 			rec.SetCallError(err)
 			return
@@ -130,20 +130,17 @@ func Example_withSigilStreamingDefer() {
 		}
 	}
 
-	rec.SetResult(FromStream(req, summary,
+	rec.SetResult(FromStream(model, contents, config, summary,
 		WithConversationID("conv-gemini-3"),
 		WithAgentName("assistant-gemini"),
 		WithAgentVersion("1.0.0"),
 	))
 }
 
-func exampleGeminiRequest() GenerateContentRequest {
-	return GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText("Hello", genai.RoleUser),
-		},
-	}
+func exampleGeminiRequest() (string, []*genai.Content, *genai.GenerateContentConfig) {
+	return "gemini-2.5-pro", []*genai.Content{
+		genai.NewContentFromText("Hello", genai.RoleUser),
+	}, nil
 }
 
 func geminiAPIKey() string {

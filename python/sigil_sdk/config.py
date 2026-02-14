@@ -8,6 +8,7 @@ import logging
 import time
 from typing import Callable, Optional
 
+from opentelemetry.metrics import Meter
 from opentelemetry.trace import Tracer
 
 from .exporters.base import GenerationExporter
@@ -62,6 +63,7 @@ class ClientConfig:
     trace: TraceConfig = field(default_factory=TraceConfig)
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
     tracer: Optional[Tracer] = None
+    meter: Optional[Meter] = None
     logger: Optional[logging.Logger] = None
     now: Optional[Callable[[], datetime]] = None
     sleep: Optional[Callable[[float], None]] = None

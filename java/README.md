@@ -50,8 +50,7 @@ SigilClient client = new SigilClient(new SigilClientConfig()
         .setAuth(new AuthConfig().setMode(AuthMode.TENANT).setTenantId("dev-tenant")))
     .setTrace(new TraceConfig()
         .setProtocol(TraceProtocol.OTLP_HTTP)
-        .setEndpoint("http://localhost:4318/v1/traces")
-        .setAuth(new AuthConfig().setMode(AuthMode.NONE))));
+        .setEndpoint("http://localhost:4318/v1/traces")));
 
 try {
     client.withGeneration(
@@ -85,6 +84,12 @@ Auth is configured independently for trace and generation export:
 
 Invalid combinations fail fast at client construction. If explicit headers already contain `Authorization` or `X-Scope-OrgID`, explicit headers win.
 
+Generation export transport protocols:
+
+- `GenerationExportProtocol.HTTP`
+- `GenerationExportProtocol.GRPC`
+- `GenerationExportProtocol.NONE` (instrumentation-only; no generation transport)
+
 ## Context Defaults
 
 You can set defaults via OTel context and override per-call in `GenerationStart`:
@@ -110,6 +115,26 @@ Helpers:
 - `shutdown()` flushes generation batches and closes trace exporter resources.
 - `flush()` is available for explicit synchronization points.
 
+## Instrumentation-only mode (no generation send)
+
+```java
+SigilClient client = new SigilClient(new SigilClientConfig()
+    .setGenerationExport(new GenerationExportConfig()
+        .setProtocol(GenerationExportProtocol.NONE))
+    .setTrace(new TraceConfig()
+        .setProtocol(TraceProtocol.OTLP_HTTP)
+        .setEndpoint("http://localhost:4318/v1/traces")));
+```
+
+## SDK metrics
+
+The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+
+- `gen_ai.client.operation.duration`
+- `gen_ai.client.token.usage`
+- `gen_ai.client.time_to_first_token`
+- `gen_ai.client.tool_calls_per_operation`
+
 ## Provider Wrappers
 
 Provider modules are wrapper-first for ergonomics, with explicit mapper APIs for full control:
@@ -127,7 +152,7 @@ Provider modules are wrapper-first for ergonomics, with explicit mapper APIs for
 
 ## Build, Test, Benchmark
 
-From `/Users/cyriltovena/.codex/worktrees/e97a/sigil/sdks/java`:
+From `sdks/java`:
 
 ```bash
 ./gradlew test

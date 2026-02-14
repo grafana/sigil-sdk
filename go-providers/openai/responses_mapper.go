@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3/responses"
 
@@ -15,6 +16,7 @@ import (
 type ResponsesStreamSummary struct {
 	Events        []responses.ResponseStreamEventUnion
 	FinalResponse *responses.Response
+	FirstChunkAt  time.Time
 }
 
 // ResponsesFromRequestResponse maps an OpenAI responses request/response pair to sigil.Generation.
@@ -285,8 +287,8 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 					continue
 				}
 				part := sigil.ToolResultPart(sigil.ToolResult{
-					ToolCallID: strings.TrimSpace(fmt.Sprintf("%v", item["call_id"])),
-					Content:    content,
+					ToolCallID:  strings.TrimSpace(fmt.Sprintf("%v", item["call_id"])),
+					Content:     content,
 					ContentJSON: parseJSONOrString(content),
 				})
 				part.Metadata.ProviderType = "tool_result"

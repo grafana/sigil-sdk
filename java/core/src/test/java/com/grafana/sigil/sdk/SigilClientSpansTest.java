@@ -31,7 +31,10 @@ class SigilClientSpansTest {
 
         try (SigilClient client = new SigilClient(config)) {
             GenerationRecorder recorder = client.startGeneration(TestFixtures.startFixture());
-            recorder.setResult(TestFixtures.resultFixture());
+            GenerationResult result = TestFixtures.resultFixture();
+            result.getUsage().setReasoningTokens(5);
+            result.getUsage().setCacheCreationInputTokens(3);
+            recorder.setResult(result);
             recorder.setCallError(new RuntimeException("provider exploded"));
             recorder.end();
         }
@@ -50,6 +53,9 @@ class SigilClientSpansTest {
         assertThat(span.getAttributes().get(AttributeKey.longKey(SigilClient.SPAN_ATTR_REQUEST_THINKING_BUDGET))).isEqualTo(2048L);
         assertThat(span.getAttributes().get(AttributeKey.stringArrayKey(SigilClient.SPAN_ATTR_FINISH_REASONS))).containsExactly("stop");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_ERROR_TYPE))).isEqualTo("provider_call_error");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_ERROR_CATEGORY))).isEqualTo("sdk_error");
+        assertThat(span.getAttributes().get(AttributeKey.longKey(SigilClient.SPAN_ATTR_REASONING_TOKENS))).isEqualTo(5L);
+        assertThat(span.getAttributes().get(AttributeKey.longKey(SigilClient.SPAN_ATTR_CACHE_CREATION_TOKENS))).isEqualTo(3L);
         assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
 
         provider.shutdown();

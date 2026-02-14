@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -15,7 +16,9 @@ func GenerateContent(
 	ctx context.Context,
 	client *sigil.Client,
 	provider *genai.Client,
-	req GenerateContentRequest,
+	model string,
+	contents []*genai.Content,
+	config *genai.GenerateContentConfig,
 	opts ...Option,
 ) (*genai.GenerateContentResponse, error) {
 	options := applyOptions(opts)
@@ -24,17 +27,17 @@ func GenerateContent(
 		ConversationID: options.conversationID,
 		AgentName:      options.agentName,
 		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: model},
 	})
 	defer rec.End()
 
-	resp, err := provider.Models.GenerateContent(ctx, req.Model, req.Contents, req.Config)
+	resp, err := provider.Models.GenerateContent(ctx, model, contents, config)
 	if err != nil {
 		rec.SetCallError(err)
 		return nil, err
 	}
 
-	rec.SetResult(FromRequestResponse(req, resp, opts...))
+	rec.SetResult(FromRequestResponse(model, contents, config, resp, opts...))
 	return resp, rec.Err()
 }
 
@@ -46,7 +49,9 @@ func GenerateContentStream(
 	ctx context.Context,
 	client *sigil.Client,
 	provider *genai.Client,
-	req GenerateContentRequest,
+	model string,
+	contents []*genai.Content,
+	config *genai.GenerateContentConfig,
 	opts ...Option,
 ) (StreamSummary, error) {
 	options := applyOptions(opts)
@@ -55,21 +60,25 @@ func GenerateContentStream(
 		ConversationID: options.conversationID,
 		AgentName:      options.agentName,
 		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: req.Model},
+		Model:          sigil.ModelRef{Provider: options.providerName, Name: model},
 	})
 	defer rec.End()
 
 	summary := StreamSummary{}
-	for response, err := range provider.Models.GenerateContentStream(ctx, req.Model, req.Contents, req.Config) {
+	for response, err := range provider.Models.GenerateContentStream(ctx, model, contents, config) {
 		if err != nil {
 			rec.SetCallError(err)
 			return summary, err
 		}
 		if response != nil {
+			if summary.FirstChunkAt.IsZero() {
+				summary.FirstChunkAt = time.Now().UTC()
+				rec.SetFirstTokenAt(summary.FirstChunkAt)
+			}
 			summary.Responses = append(summary.Responses, response)
 		}
 	}
 
-	rec.SetResult(FromStream(req, summary, opts...))
+	rec.SetResult(FromStream(model, contents, config, summary, opts...))
 	return summary, rec.Err()
 }

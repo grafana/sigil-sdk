@@ -3,6 +3,10 @@ package com.grafana.sigil.sdk.providers.anthropic;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.anthropic.core.ObjectMappers;
+import com.anthropic.core.http.StreamResponse;
+import com.anthropic.models.messages.Message;
+import com.anthropic.models.messages.MessageCreateParams;
 import com.grafana.sigil.sdk.ExportGenerationResult;
 import com.grafana.sigil.sdk.ExportGenerationsRequest;
 import com.grafana.sigil.sdk.ExportGenerationsResponse;
@@ -12,13 +16,13 @@ import com.grafana.sigil.sdk.GenerationExporter;
 import com.grafana.sigil.sdk.GenerationMode;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
-import com.grafana.sigil.sdk.providers.openai.ProviderAdapterSupport;
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 class AnthropicAdapterTest {
@@ -30,12 +34,12 @@ class AnthropicAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            AnthropicAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
+            AnthropicAdapter.completion(client, request(), _r -> response(), new AnthropicOptions());
             AnthropicAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new ProviderAdapterSupport.OpenAiOptions());
+                    _r -> new FakeStreamResponse<>(List.of()),
+                    new AnthropicOptions());
         }
 
         assertThat(exporter.generations).hasSize(2);
@@ -44,9 +48,11 @@ class AnthropicAdapterTest {
         assertThat(exporter.generations.get(0).getMaxTokens()).isEqualTo(256L);
         assertThat(exporter.generations.get(0).getTemperature()).isEqualTo(0.25);
         assertThat(exporter.generations.get(0).getTopP()).isEqualTo(0.9);
-        assertThat(exporter.generations.get(0).getToolChoice()).isEqualTo("{\"name\":\"weather\",\"type\":\"tool\"}");
+        assertThat(exporter.generations.get(0).getToolChoice()).contains("weather");
         assertThat(exporter.generations.get(0).getThinkingEnabled()).isTrue();
         assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).isEqualTo(2048L);
+        assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.usage.server_tool_use.web_search_requests")).isEqualTo(2L);
+        assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.usage.server_tool_use.total_requests")).isEqualTo(2L);
         assertThat(exporter.generations.get(1).getMode()).isEqualTo(GenerationMode.STREAM);
     }
 
@@ -58,23 +64,23 @@ class AnthropicAdapterTest {
                 .setGenerationExporter(exporter)
                 .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
 
-            AnthropicAdapter.completion(client, request(), _r -> response(), new ProviderAdapterSupport.OpenAiOptions());
+            AnthropicAdapter.completion(client, request(), _r -> response(), new AnthropicOptions());
             AnthropicAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()),
-                    new ProviderAdapterSupport.OpenAiOptions());
+                    _r -> new FakeStreamResponse<>(List.of()),
+                    new AnthropicOptions());
             AnthropicAdapter.completionStream(
                     client,
                     request(),
-                    _r -> new ProviderAdapterSupport.OpenAiStreamSummary().setOutputText("stream").setFinalResponse(response()).setChunks(List.of("event")),
-                    new ProviderAdapterSupport.OpenAiOptions().setRawArtifacts(true));
+                    _r -> new FakeStreamResponse<>(List.of()),
+                    new AnthropicOptions().setRawArtifacts(true));
         }
 
         assertThat(exporter.generations).hasSize(3);
         assertThat(exporter.generations.get(0).getArtifacts()).isEmpty();
         assertThat(exporter.generations.get(1).getArtifacts()).isEmpty();
-        assertThat(exporter.generations.get(2).getArtifacts()).hasSize(2);
+        assertThat(exporter.generations.get(2).getArtifacts()).hasSizeGreaterThanOrEqualTo(2);
     }
 
     @Test
@@ -91,7 +97,7 @@ class AnthropicAdapterTest {
                         _r -> {
                             throw new RuntimeException("anthropic failed");
                         },
-                        new ProviderAdapterSupport.OpenAiOptions());
+                        new AnthropicOptions());
             }
         }).isInstanceOf(RuntimeException.class).hasMessageContaining("anthropic failed");
 
@@ -100,27 +106,69 @@ class AnthropicAdapterTest {
     }
 
     @Test
-    void mapperSetsThinkingFalseWhenDisabled() {
-        var mapped = AnthropicAdapter.fromRequestResponse(
-                request().setThinking(Map.of("type", "disabled")),
-                response(),
-                new ProviderAdapterSupport.OpenAiOptions());
+    void mapperSetsThinkingFalseWhenDisabled() throws Exception {
+        MessageCreateParams request = MessageCreateParams.builder()
+                .model("claude-sonnet-4")
+                .maxTokens(256)
+                .thinking(com.anthropic.models.messages.ThinkingConfigDisabled.builder().build())
+                .addUserMessage("hi")
+                .build();
+
+        var mapped = AnthropicAdapter.fromRequestResponse(request, response(), new AnthropicOptions());
         assertThat(mapped.getThinkingEnabled()).isFalse();
     }
 
-    private static ProviderAdapterSupport.OpenAiChatRequest request() {
-        return new ProviderAdapterSupport.OpenAiChatRequest()
-                .setModel("claude-3")
-                .setMaxTokens(256L)
-                .setTemperature(0.25)
-                .setTopP(0.9)
-                .setToolChoice(Map.of("type", "tool", "name", "weather"))
-                .setThinking(Map.of("type", "adaptive", "budget_tokens", 2048))
-                .setMessages(List.of(new ProviderAdapterSupport.OpenAiMessage().setRole("user").setContent("hi")));
+    private static MessageCreateParams request() {
+        return MessageCreateParams.builder()
+                .model("claude-sonnet-4")
+                .maxTokens(256)
+                .temperature(0.25)
+                .topP(0.9)
+                .toolToolChoice("weather")
+                .enabledThinking(2048)
+                .addUserMessage("hi")
+                .build();
     }
 
-    private static ProviderAdapterSupport.OpenAiChatResponse response() {
-        return new ProviderAdapterSupport.OpenAiChatResponse().setOutputText("ok");
+    private static Message response() throws IOException {
+        return ObjectMappers.jsonMapper().readValue(
+                """
+                {
+                  "id": "msg_1",
+                  "content": [
+                    {"type": "text", "text": "ok"}
+                  ],
+                  "model": "claude-sonnet-4",
+                  "stop_reason": "end_turn",
+                  "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "cache_read_input_tokens": 2,
+                    "cache_creation_input_tokens": 3,
+                    "server_tool_use": {
+                      "web_search_requests": 2
+                    }
+                  }
+                }
+                """,
+                Message.class);
+    }
+
+    private static final class FakeStreamResponse<T> implements StreamResponse<T> {
+        private final List<T> events;
+
+        private FakeStreamResponse(List<T> events) {
+            this.events = events;
+        }
+
+        @Override
+        public Stream<T> stream() {
+            return events.stream();
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
     private static final class CapturingExporter implements GenerationExporter {

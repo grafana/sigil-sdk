@@ -1,15 +1,15 @@
 # Sigil JS Provider Helper: Anthropic
 
-This helper maps Anthropic request/response payloads into Sigil `Generation` records.
+This helper maps strict Anthropic Messages payloads into Sigil `Generation` records.
 
 ## Scope
 
 - Wrapper calls:
-  - `anthropic.completion(client, request, providerCall, options?)`
-  - `anthropic.completionStream(client, request, providerCall, options?)`
+  - `anthropic.messages.create(client, request, providerCall, options?)`
+  - `anthropic.messages.stream(client, request, providerCall, options?)`
 - Mapper functions:
-  - `anthropic.fromRequestResponse(request, response, options?)`
-  - `anthropic.fromStream(request, summary, options?)`
+  - `anthropic.messages.fromRequestResponse(request, response, options?)`
+  - `anthropic.messages.fromStream(request, summary, options?)`
 - Raw artifacts (debug opt-in):
   - `request`
   - `response` (sync)
@@ -22,20 +22,14 @@ import { SigilClient, anthropic } from "@grafana/sigil-sdk-js";
 
 const client = new SigilClient();
 
-const response = await anthropic.completion(
+const response = await anthropic.messages.create(
   client,
   {
     model: "claude-sonnet-4-5",
-    messages: [{ role: "user", content: "Hello" }],
+    max_tokens: 256,
+    messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
   },
-  async (request) => {
-    const sdkResp = await provider.messages.create(request);
-    return {
-      id: sdkResp.id,
-      model: sdkResp.model,
-      outputText: sdkResp.output_text ?? "",
-    };
-  }
+  async (request) => provider.messages.create(request)
 );
 ```
 
@@ -48,7 +42,7 @@ const recorder = client.startGeneration({
 
 try {
   const response = await provider.messages.create(request);
-  recorder.setResult(anthropic.fromRequestResponse(request, response));
+  recorder.setResult(anthropic.messages.fromRequestResponse(request, response));
 } catch (error) {
   recorder.setCallError(error);
   throw error;
@@ -61,3 +55,11 @@ try {
 
 - Default OFF.
 - Enable only for debug workflows with `{ rawArtifacts: true }`.
+
+## Provider metadata mapping
+
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+
+- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
+- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `sigil.gen_ai.usage.server_tool_use.total_requests`

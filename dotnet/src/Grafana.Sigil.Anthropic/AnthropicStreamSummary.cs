@@ -8,4 +8,6 @@ public sealed class AnthropicStreamSummary
     public List<RawMessageStreamEvent> Events { get; } = new();
 
     public AnthropicMessage? FinalMessage { get; set; }
+
+    public DateTimeOffset? FirstChunkAt { get; set; }
 }

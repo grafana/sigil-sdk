@@ -126,7 +126,6 @@ cfg = ClientConfig(
     trace=TraceConfig(
         protocol="http",
         endpoint="http://localhost:4318/v1/traces",
-        auth=AuthConfig(mode="none"),
     ),
 )
 ```
@@ -145,7 +144,6 @@ cfg = ClientConfig(
         protocol="grpc",
         endpoint="localhost:4317",
         insecure=True,
-        auth=AuthConfig(mode="none"),
     ),
 )
 ```
@@ -204,6 +202,26 @@ Common topology:
 - Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
+## Instrumentation-only mode (no generation send)
+
+Set `generation_export.protocol="none"` to keep generation/tool instrumentation and spans while disabling generation transport.
+
+```python
+from sigil_sdk import Client, ClientConfig, GenerationExportConfig, TraceConfig
+
+cfg = ClientConfig(
+    generation_export=GenerationExportConfig(
+        protocol="none",
+    ),
+    trace=TraceConfig(
+        protocol="http",
+        endpoint="http://localhost:4318/v1/traces",
+    ),
+)
+
+client = Client(cfg)
+```
+
 ## Lifecycle and Error Semantics
 
 - `flush()` forces immediate export of queued generations.
@@ -211,6 +229,15 @@ Common topology:
 - Always call `shutdown()` during process teardown to avoid dropped telemetry.
 - `recorder.set_call_error(exc)` marks provider-call failures on the generation payload and span status.
 - `recorder.err()` is for local SDK runtime errors only (validation, queue full, payload too large, shutdown).
+
+## SDK metrics
+
+The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+
+- `gen_ai.client.operation.duration`
+- `gen_ai.client.token.usage`
+- `gen_ai.client.time_to_first_token`
+- `gen_ai.client.tool_calls_per_operation`
 
 ## Public API Overview
 

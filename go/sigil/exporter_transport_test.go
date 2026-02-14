@@ -62,6 +62,53 @@ func TestSDKExportRoundTripProperties(t *testing.T) {
 	}
 }
 
+func TestSDKExportsGenerationOverNone_NoSend(t *testing.T) {
+	client := NewClient(Config{
+		Tracer: noop.NewTracerProvider().Tracer("test"),
+		GenerationExport: GenerationExportConfig{
+			Protocol:        GenerationExportProtocolNone,
+			BatchSize:       1,
+			QueueSize:       10,
+			FlushInterval:   time.Hour,
+			MaxRetries:      1,
+			InitialBackoff:  time.Millisecond,
+			MaxBackoff:      10 * time.Millisecond,
+			PayloadMaxBytes: 4 << 20,
+		},
+	})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model: ModelRef{
+			Provider: "openai",
+			Name:     "gpt-5",
+		},
+	})
+	rec.SetResult(Generation{
+		Input:  []Message{UserTextMessage("hello")},
+		Output: []Message{AssistantTextMessage("hi")},
+	}, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("recorder error: %v", err)
+	}
+
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer flushCancel()
+	if err := client.Flush(flushCtx); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	if rec.lastGeneration.ID == "" {
+		t.Fatalf("expected recorder to capture generation result")
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer shutdownCancel()
+	if err := client.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
 func runSDKRoundTrip(t *testing.T, transport exportTransport, start GenerationStart, result Generation) (*sigilv1.Generation, *sigilv1.Generation) {
 	t.Helper()
 

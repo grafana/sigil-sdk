@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import { metrics } from '@opentelemetry/api';
 import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,6 +84,73 @@ test('trace export over HTTP includes generation span attributes', async () => {
     await waitFor(() => receivedRequests.length >= 1, 2_000);
     const span = findSpanByName(receivedRequests[0], 'generateText gpt-5');
     assertSpanForGeneration(span, generation);
+  } finally {
+    await close(server);
+  }
+});
+
+test('trace endpoint suffix /v1/traces rewrites metrics export path', async () => {
+  const receivedPaths = [];
+
+  const server = createServer(async (request, response) => {
+    receivedPaths.push(request.url ?? '');
+    for await (const _chunk of request) {
+      // Drain request body.
+    }
+    response.writeHead(200);
+    response.end();
+  });
+
+  await listen(server);
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('failed to resolve trace test http server address');
+  }
+
+  const defaults = defaultConfig();
+  const client = new SigilClient({
+    trace: {
+      ...defaults.trace,
+      protocol: 'http',
+      endpoint: `http://127.0.0.1:${address.port}/otlp/v1/traces`,
+      insecure: true,
+    },
+    generationExport: {
+      ...defaults.generationExport,
+      batchSize: 1,
+      flushIntervalMs: 10,
+      maxRetries: 1,
+      initialBackoffMs: 1,
+      maxBackoffMs: 1,
+    },
+    generationExporter: {
+      async exportGenerations(request) {
+        return {
+          results: request.generations.map((generation) => ({
+            generationId: generation.id,
+            accepted: true,
+          })),
+        };
+      },
+    },
+  });
+
+  try {
+    const recorder = client.startGeneration({
+      id: 'gen-trace-http-path-rewrite',
+      conversationId: 'conv-trace-http-path-rewrite',
+      model: { provider: 'openai', name: 'gpt-5' },
+    });
+    recorder.setResult({
+      output: [{ role: 'assistant', content: 'hi' }],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    await client.shutdown();
+
+    await waitFor(() => receivedPaths.includes('/otlp/v1/metrics'), 2_000);
+    assert.ok(receivedPaths.includes('/otlp/v1/traces'));
   } finally {
     await close(server);
   }
@@ -376,6 +444,7 @@ function newClient(traceOverrides) {
         };
       },
     },
+    meter: metrics.getMeter('sigil-js-trace-test'),
   });
 }
 

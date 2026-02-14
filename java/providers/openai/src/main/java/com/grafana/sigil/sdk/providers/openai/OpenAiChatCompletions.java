@@ -8,6 +8,7 @@ import com.openai.helpers.ChatCompletionAccumulator;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import java.time.Instant;
 
 /** OpenAI chat-completions wrappers and mappers using official OpenAI Java SDK types. */
 public final class OpenAiChatCompletions {
@@ -39,6 +40,11 @@ public final class OpenAiChatCompletions {
 
             try (StreamResponse<ChatCompletionChunk> stream = providerCall.apply(request)) {
                 stream.stream().forEach(chunk -> {
+                    if (summary.getFirstChunkAt() == null) {
+                        Instant firstChunkAt = Instant.now();
+                        summary.setFirstChunkAt(firstChunkAt);
+                        recorder.setFirstTokenAt(firstChunkAt);
+                    }
                     summary.getChunks().add(chunk);
                     try {
                         accumulator.accumulate(chunk);

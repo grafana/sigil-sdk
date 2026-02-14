@@ -9,7 +9,8 @@ public enum TraceProtocol
 public enum GenerationExportProtocol
 {
     Grpc,
-    Http
+    Http,
+    None
 }
 
 public enum ExportAuthMode
@@ -33,6 +34,7 @@ public sealed class TraceConfig
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public AuthConfig Auth { get; set; } = new();
     public bool Insecure { get; set; } = true;
+    public bool EnableMetrics { get; set; } = true;
 }
 
 public sealed class GenerationExportConfig
