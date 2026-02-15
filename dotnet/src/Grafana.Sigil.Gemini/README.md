@@ -19,7 +19,24 @@ using Grafana.Sigil;
 using Grafana.Sigil.Gemini;
 using GPart = Google.GenAI.Types.Part;
 
-var sigil = new SigilClient(config);
+var sigilConfig = new SigilClientConfig
+{
+    GenerationExport = new GenerationExportConfig
+    {
+        Protocol = GenerationExportProtocol.Http,
+        Endpoint = "http://localhost:8080/api/v1/generations:export",
+        Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Tenant,
+            TenantId = "dev-tenant",
+        },
+    },
+    Api = new ApiConfig
+    {
+        Endpoint = "http://localhost:8080",
+    },
+};
+var sigil = new SigilClient(sigilConfig);
 
 var gemini = new Client(apiKey: Environment.GetEnvironmentVariable("GEMINI_API_KEY")!);
 

@@ -63,6 +63,17 @@ client.shutdown()
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` via `ClientConfig`.
 
+Quick OTEL setup pattern before creating the Sigil client:
+
+```python
+from opentelemetry import metrics, trace
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
+
+trace.set_tracer_provider(TracerProvider())
+metrics.set_meter_provider(MeterProvider())
+```
+
 ## Streaming Generation
 
 Use `start_streaming_generation(...)` when the upstream provider call is streaming.

@@ -71,6 +71,14 @@ try {
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally inject `Tracer` and `Meter` via `SigilClientConfig`.
 
+Quick OTEL setup pattern before creating the Sigil client:
+
+```java
+import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
+
+AutoConfiguredOpenTelemetrySdk.initialize();
+```
+
 ## Streaming Pattern
 
 Use `startStreamingGeneration(...)` or `withStreamingGeneration(...)`. The SDK sets mode to `STREAM` and keeps operation naming consistent.

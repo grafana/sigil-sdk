@@ -42,6 +42,15 @@ await client.shutdown();
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` directly to `SigilClient`.
 
+Quick OTEL setup pattern before creating the Sigil client:
+
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+
+const otel = new NodeSDK();
+await otel.start();
+```
+
 ## Core API
 
 - `startGeneration(...)` and `startStreamingGeneration(...)`

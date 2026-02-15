@@ -499,12 +499,11 @@ func emitGeminiSync(
 	metadata map[string]any,
 	turn int,
 ) error {
-	req := gogemini.GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText(fmt.Sprintf("Draft a short launch note for sprint %d.", turn), genai.RoleUser),
-		},
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText(fmt.Sprintf("Draft a short launch note for sprint %d.", turn), genai.RoleUser),
 	}
+	var requestConfig *genai.GenerateContentConfig
 	resp := &genai.GenerateContentResponse{
 		ResponseID:   fmt.Sprintf("go-gemini-sync-%d", turn),
 		ModelVersion: "gemini-2.5-pro-001",
@@ -521,7 +520,7 @@ func emitGeminiSync(
 		},
 	}
 
-	mapped, err := gogemini.FromRequestResponse(req, resp,
+	mapped, err := gogemini.FromRequestResponse(model, contents, requestConfig, resp,
 		gogemini.WithConversationID(conversationID),
 		gogemini.WithAgentName(agentName),
 		gogemini.WithAgentVersion(agentVersion),
@@ -548,12 +547,11 @@ func emitGeminiStream(
 	metadata map[string]any,
 	turn int,
 ) error {
-	req := gogemini.GenerateContentRequest{
-		Model: "gemini-2.5-pro",
-		Contents: []*genai.Content{
-			genai.NewContentFromText(fmt.Sprintf("Stream a migration checklist status for wave %d.", turn), genai.RoleUser),
-		},
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText(fmt.Sprintf("Stream a migration checklist status for wave %d.", turn), genai.RoleUser),
 	}
+	var requestConfig *genai.GenerateContentConfig
 	summary := gogemini.StreamSummary{
 		Responses: []*genai.GenerateContentResponse{
 			{
@@ -584,7 +582,7 @@ func emitGeminiStream(
 		},
 	}
 
-	mapped, err := gogemini.FromStream(req, summary,
+	mapped, err := gogemini.FromStream(model, contents, requestConfig, summary,
 		gogemini.WithConversationID(conversationID),
 		gogemini.WithAgentName(agentName),
 		gogemini.WithAgentVersion(agentVersion),

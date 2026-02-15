@@ -87,6 +87,16 @@ defer func() {
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup.
 
+Quick OTEL setup pattern before creating the Sigil client:
+
+```go
+tp := sdktrace.NewTracerProvider()
+otel.SetTracerProvider(tp)
+
+mp := sdkmetric.NewMeterProvider()
+otel.SetMeterProvider(mp)
+```
+
 ### Instrumentation-only mode (no generation send)
 
 Use `GenerationExportProtocolNone` to keep generation and tool instrumentation active while disabling generation transport:

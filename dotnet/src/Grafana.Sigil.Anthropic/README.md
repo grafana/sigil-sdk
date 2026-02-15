@@ -18,7 +18,24 @@ using Anthropic.Models.Messages;
 using Grafana.Sigil;
 using Grafana.Sigil.Anthropic;
 
-var sigil = new SigilClient(config);
+var sigilConfig = new SigilClientConfig
+{
+    GenerationExport = new GenerationExportConfig
+    {
+        Protocol = GenerationExportProtocol.Http,
+        Endpoint = "http://localhost:8080/api/v1/generations:export",
+        Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Tenant,
+            TenantId = "dev-tenant",
+        },
+    },
+    Api = new ApiConfig
+    {
+        Endpoint = "http://localhost:8080",
+    },
+};
+var sigil = new SigilClient(sigilConfig);
 
 var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions
 {

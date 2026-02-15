@@ -40,6 +40,23 @@ var client = new SigilClient(new SigilClientConfig
 
 Configure OTEL exporters (traces/metrics) separately in your application's OTEL setup.
 
+Quick OTEL setup pattern before creating the Sigil client:
+
+```csharp
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource("github.com/grafana/sigil/sdks/dotnet")
+    .AddOtlpExporter()
+    .Build();
+
+using var meterProvider = Sdk.CreateMeterProviderBuilder()
+    .AddMeter("github.com/grafana/sigil/sdks/dotnet")
+    .AddOtlpExporter()
+    .Build();
+```
+
 Generation export auth is configured in `GenerationExport.Auth`.
 `Api.Endpoint` configures helper API calls such as `SubmitConversationRatingAsync(...)`.
 

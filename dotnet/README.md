@@ -59,6 +59,15 @@ var sigil = new SigilClient(new SigilClientConfig
 });
 
 // Configure OTel exporters (traces/metrics) separately in your application's OTel setup.
+using var tracerProvider = OpenTelemetry.Sdk.CreateTracerProviderBuilder()
+    .AddSource("github.com/grafana/sigil/sdks/dotnet")
+    .AddOtlpExporter()
+    .Build();
+
+using var meterProvider = OpenTelemetry.Sdk.CreateMeterProviderBuilder()
+    .AddMeter("github.com/grafana/sigil/sdks/dotnet")
+    .AddOtlpExporter()
+    .Build();
 
 var openAI = new OpenAIResponseClient(
     "gpt-5",
