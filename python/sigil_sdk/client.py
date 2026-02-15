@@ -14,6 +14,7 @@ from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
+from opentelemetry import metrics, trace
 from opentelemetry.metrics import Histogram, Meter
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
@@ -44,7 +45,6 @@ from .models import (
     ToolExecutionStart,
 )
 from .proto_mapping import generation_to_proto
-from .tracing import create_trace_runtime
 from .validation import validate_generation
 
 
@@ -99,6 +99,7 @@ _metric_token_type_cache_creation = "cache_creation"
 _metric_token_type_reasoning = "reasoning"
 
 _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
+_instrumentation_name = "github.com/grafana/sigil/sdks/python"
 
 
 class Client:
@@ -139,15 +140,8 @@ class Client:
             else:
                 raise ValueError(f"unsupported generation export protocol {self._config.generation_export.protocol!r}")
 
-        if self._config.tracer is not None and self._config.meter is not None:
-            self._tracer = self._config.tracer
-            self._meter = self._config.meter
-            self._trace_runtime = None
-        else:
-            trace_runtime = create_trace_runtime(self._config.trace, self._log_warn)
-            self._tracer = self._config.tracer if self._config.tracer is not None else trace_runtime.tracer
-            self._meter = self._config.meter if self._config.meter is not None else trace_runtime.meter
-            self._trace_runtime = trace_runtime
+        self._tracer = self._config.tracer if self._config.tracer is not None else trace.get_tracer(_instrumentation_name)
+        self._meter = self._config.meter if self._config.meter is not None else metrics.get_meter(_instrumentation_name)
 
         self._operation_duration_histogram: Histogram = self._meter.create_histogram(
             _metric_operation_duration, unit="s"
@@ -326,16 +320,6 @@ class Client:
                     shutdown_fn()
             except Exception as exc:  # noqa: BLE001
                 self._log_warn("sigil generation exporter shutdown failed", exc)
-
-            if self._trace_runtime is not None:
-                try:
-                    self._trace_runtime.flush()
-                except Exception as exc:  # noqa: BLE001
-                    self._log_warn("sigil trace provider flush on shutdown failed", exc)
-                try:
-                    self._trace_runtime.shutdown()
-                except Exception as exc:  # noqa: BLE001
-                    self._log_warn("sigil trace provider shutdown failed", exc)
 
             self._closed = True
 

@@ -182,11 +182,6 @@ internal static class TestHelpers
     {
         return new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-                EnableMetrics = false,
-            },
             GenerationExporter = exporter,
             GenerationExport = new GenerationExportConfig
             {
@@ -324,10 +319,19 @@ internal sealed class HttpCaptureServer : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        try
+        {
+            _listener.Stop();
+        }
+        catch
+        {
+            // Ignore shutdown exceptions.
+        }
+
         _listener.Close();
         try
         {
-            _loop.GetAwaiter().GetResult();
+            _loop.Wait(TimeSpan.FromSeconds(2));
         }
         catch
         {
@@ -385,7 +389,15 @@ internal sealed class GrpcIngestServer : IDisposable
 
     public void Dispose()
     {
-        _host.StopAsync().GetAwaiter().GetResult();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            _host.StopAsync(cts.Token).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Ignore shutdown exceptions.
+        }
         _host.Dispose();
     }
 

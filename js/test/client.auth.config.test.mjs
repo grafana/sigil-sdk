@@ -15,18 +15,3 @@ test('invalid generation auth config throws at client init', () => {
     /requires tenantId/
   );
 });
-
-test('invalid trace auth config throws at client init', () => {
-  assert.throws(
-    () =>
-      new SigilClient({
-        trace: {
-          auth: {
-            mode: 'none',
-            bearerToken: 'token',
-          },
-        },
-      }),
-    /mode "none" does not allow/
-  );
-});

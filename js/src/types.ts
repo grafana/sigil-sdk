@@ -1,7 +1,5 @@
 import type { Meter, Tracer } from '@opentelemetry/api';
 
-/** Supported OTLP trace export protocols. */
-export type TraceProtocol = 'grpc' | 'http';
 /** Supported generation export protocols. */
 export type GenerationExportProtocol = 'grpc' | 'http' | 'none';
 /** Generation execution mode. */
@@ -14,20 +12,6 @@ export interface ExportAuthConfig {
   mode: ExportAuthMode;
   tenantId?: string;
   bearerToken?: string;
-}
-
-/** Trace exporter configuration. */
-export interface TraceConfig {
-  /** OTLP protocol for trace export. */
-  protocol: TraceProtocol;
-  /** Trace endpoint. Examples: `http://localhost:4318/v1/traces`, `localhost:4317`. */
-  endpoint: string;
-  /** Optional transport headers/metadata. */
-  headers?: Record<string, string>;
-  /** Optional auth mode for trace transport. */
-  auth: ExportAuthConfig;
-  /** Force insecure transport when protocol allows it. */
-  insecure: boolean;
 }
 
 /** Generation exporter runtime configuration. */
@@ -140,7 +124,6 @@ export interface GenerationExporter {
 
 /** Fully resolved SDK configuration. */
 export interface SigilSdkConfig {
-  trace: TraceConfig;
   generationExport: GenerationExportConfig;
   api: ApiConfig;
   generationExporter?: GenerationExporter;
@@ -153,7 +136,6 @@ export interface SigilSdkConfig {
 
 /** Partial SDK configuration passed by callers. */
 export interface SigilSdkConfigInput {
-  trace?: Partial<TraceConfig>;
   generationExport?: Partial<GenerationExportConfig>;
   api?: Partial<ApiConfig>;
   generationExporter?: GenerationExporter;

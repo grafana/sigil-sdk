@@ -5,7 +5,6 @@ import type {
   SigilLogger,
   SigilSdkConfig,
   SigilSdkConfigInput,
-  TraceConfig,
 } from './types.js';
 
 const tenantHeaderName = 'X-Scope-OrgID';
@@ -13,13 +12,6 @@ const authorizationHeaderName = 'Authorization';
 
 const defaultExportAuthConfig: ExportAuthConfig = {
   mode: 'none',
-};
-
-export const defaultTraceConfig: TraceConfig = {
-  protocol: 'http',
-  endpoint: 'http://localhost:4318/v1/traces',
-  auth: defaultExportAuthConfig,
-  insecure: true,
 };
 
 export const defaultGenerationExportConfig: GenerationExportConfig = {
@@ -54,7 +46,6 @@ export const defaultLogger: SigilLogger = {
 
 export function defaultConfig(): SigilSdkConfig {
   return {
-    trace: cloneTraceConfig(defaultTraceConfig),
     generationExport: cloneGenerationExportConfig(defaultGenerationExportConfig),
     api: cloneAPIConfig(defaultAPIConfig),
   };
@@ -62,7 +53,6 @@ export function defaultConfig(): SigilSdkConfig {
 
 export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
   return {
-    trace: mergeTraceConfig(config.trace),
     generationExport: mergeGenerationExportConfig(config.generationExport),
     api: mergeAPIConfig(config.api),
     generationExporter: config.generationExporter,
@@ -72,19 +62,6 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
     now: config.now,
     sleep: config.sleep,
   };
-}
-
-function mergeTraceConfig(config: Partial<TraceConfig> | undefined): TraceConfig {
-  const auth = mergeAuthConfig(config?.auth);
-  const headers = config?.headers !== undefined ? { ...config.headers } : undefined;
-  const merged: TraceConfig = {
-    ...defaultTraceConfig,
-    ...config,
-    auth,
-    headers,
-  };
-  merged.headers = resolveHeadersWithAuth(merged.headers, merged.auth, 'trace');
-  return merged;
 }
 
 function mergeGenerationExportConfig(config: Partial<GenerationExportConfig> | undefined): GenerationExportConfig {
@@ -180,14 +157,6 @@ function formatBearerTokenValue(token: string): string {
     return `Bearer ${value.slice(7).trim()}`;
   }
   return `Bearer ${value}`;
-}
-
-function cloneTraceConfig(config: TraceConfig): TraceConfig {
-  return {
-    ...config,
-    auth: { ...config.auth },
-    headers: config.headers ? { ...config.headers } : undefined,
-  };
 }
 
 function cloneGenerationExportConfig(config: GenerationExportConfig): GenerationExportConfig {

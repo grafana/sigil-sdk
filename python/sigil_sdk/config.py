@@ -28,17 +28,6 @@ class AuthConfig:
 
 
 @dataclass(slots=True)
-class TraceConfig:
-    """OTLP trace export configuration."""
-
-    protocol: str = "http"
-    endpoint: str = "http://localhost:4318/v1/traces"
-    headers: dict[str, str] = field(default_factory=dict)
-    auth: AuthConfig = field(default_factory=AuthConfig)
-    insecure: bool = True
-
-
-@dataclass(slots=True)
 class GenerationExportConfig:
     """Generation ingest export configuration."""
 
@@ -67,7 +56,6 @@ class ApiConfig:
 class ClientConfig:
     """Top-level SDK runtime configuration."""
 
-    trace: TraceConfig = field(default_factory=TraceConfig)
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     tracer: Optional[Tracer] = None
@@ -78,7 +66,6 @@ class ClientConfig:
     generation_exporter: Optional[GenerationExporter] = None
 
     # Convenience aliases for simpler caller config wiring.
-    trace_endpoint: str = ""
     generation_export_endpoint: str = ""
 
 
@@ -96,14 +83,11 @@ def resolve_config(config: Optional[ClientConfig]) -> ClientConfig:
     else:
         out = config
 
-    if out.trace_endpoint:
-        out.trace.endpoint = out.trace_endpoint
     if out.generation_export_endpoint:
         out.generation_export.endpoint = out.generation_export_endpoint
     if out.api.endpoint.strip() == "":
         out.api.endpoint = "http://localhost:8080"
 
-    out.trace.headers = _resolve_export_headers(out.trace.headers, out.trace.auth, "trace")
     out.generation_export.headers = _resolve_export_headers(
         out.generation_export.headers,
         out.generation_export.auth,

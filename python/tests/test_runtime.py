@@ -24,7 +24,6 @@ from sigil_sdk import (
     PartKind,
     QueueFullError,
     ToolExecutionStart,
-    TraceConfig,
     ValidationError,
     with_agent_name,
     with_agent_version,
@@ -49,7 +48,6 @@ def _new_client(exporter: CapturingGenerationExporter, tracer=None, **overrides)
             tracer=tracer,
             generation_export=generation_export,
             generation_exporter=exporter,
-            trace=TraceConfig(protocol="http", endpoint="http://localhost:4318/v1/traces"),
         )
     )
 
@@ -141,7 +139,6 @@ def test_builtin_noop_generation_exporter_supports_instrumentation_only_mode() -
                 batch_size=1,
                 flush_interval=timedelta(hours=1),
             ),
-            trace=TraceConfig(protocol="http", endpoint="http://localhost:4318/v1/traces"),
         )
     )
     try:

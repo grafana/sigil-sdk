@@ -41,7 +41,6 @@ public sealed class RatingTransportTests
 
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig { Endpoint = string.Empty },
             Api = new ApiConfig
             {
                 Endpoint = $"http://127.0.0.1:{server.Port}",
@@ -98,7 +97,6 @@ public sealed class RatingTransportTests
 
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig { Endpoint = string.Empty },
             Api = new ApiConfig
             {
                 Endpoint = $"http://127.0.0.1:{server.Port}",
@@ -133,7 +131,6 @@ public sealed class RatingTransportTests
     {
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig { Endpoint = string.Empty },
             Api = new ApiConfig
             {
                 Endpoint = "http://127.0.0.1:8080",
@@ -205,7 +202,6 @@ public sealed class RatingTransportTests
 
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig { Endpoint = string.Empty },
             Api = new ApiConfig
             {
                 Endpoint = $"127.0.0.1:{server.Port}",

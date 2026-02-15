@@ -31,10 +31,6 @@ public sealed class GenerationTransportTests
 
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
             GenerationExport = new GenerationExportConfig
             {
                 Protocol = GenerationExportProtocol.Http,
@@ -65,55 +61,6 @@ public sealed class GenerationTransportTests
     }
 
     [Fact]
-    public async Task ExportsGenerationOverGrpc_AllPropertiesRoundTripAndTypedParts()
-    {
-        using var server = new GrpcIngestServer();
-
-        var config = new SigilClientConfig
-        {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
-            GenerationExport = new GenerationExportConfig
-            {
-                Protocol = GenerationExportProtocol.Grpc,
-                Endpoint = $"127.0.0.1:{server.Port}",
-                Insecure = true,
-                BatchSize = 1,
-                QueueSize = 10,
-                FlushInterval = TimeSpan.FromSeconds(1),
-                MaxRetries = 1,
-                InitialBackoff = TimeSpan.FromMilliseconds(1),
-                MaxBackoff = TimeSpan.FromMilliseconds(2),
-            },
-        };
-
-        await using var client = new SigilClient(config);
-        var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-grpc"));
-        recorder.SetResult(TestHelpers.CreateSeedResult("gen-grpc"));
-        recorder.End();
-
-        await client.ShutdownAsync();
-
-        Assert.Single(server.Requests);
-        var request = server.Requests[0].Request;
-        Assert.Single(request.Generations);
-
-        var exported = request.Generations[0];
-        GenerationAssertions.AssertEquivalent(recorder.LastGeneration!, exported);
-
-        Assert.Contains(
-            exported.Output.SelectMany(message => message.Parts),
-            part => part.PayloadCase == SigilProto.Part.PayloadOneofCase.ToolCall && part.ToolCall.Name == "weather"
-        );
-        Assert.Contains(
-            exported.Output.SelectMany(message => message.Parts),
-            part => part.PayloadCase == SigilProto.Part.PayloadOneofCase.ToolResult && part.ToolResult.Name == "weather"
-        );
-    }
-
-    [Fact]
     public async Task GenerationHttpTransport_AppliesTenantAuthHeader()
     {
         using var server = new HttpCaptureServer((_, body) =>
@@ -137,10 +84,6 @@ public sealed class GenerationTransportTests
 
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
             GenerationExport = new GenerationExportConfig
             {
                 Protocol = GenerationExportProtocol.Http,
@@ -190,10 +133,6 @@ public sealed class GenerationTransportTests
 
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
             GenerationExport = new GenerationExportConfig
             {
                 Protocol = GenerationExportProtocol.Http,
@@ -226,57 +165,10 @@ public sealed class GenerationTransportTests
     }
 
     [Fact]
-    public async Task GenerationGrpcTransport_AppliesAndOverridesAuthMetadata()
-    {
-        using var server = new GrpcIngestServer();
-
-        var config = new SigilClientConfig
-        {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
-            GenerationExport = new GenerationExportConfig
-            {
-                Protocol = GenerationExportProtocol.Grpc,
-                Endpoint = $"127.0.0.1:{server.Port}",
-                Insecure = true,
-                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["authorization"] = "Bearer override-token",
-                },
-                Auth = new AuthConfig
-                {
-                    Mode = ExportAuthMode.Bearer,
-                    BearerToken = "token-from-auth",
-                },
-                BatchSize = 1,
-                QueueSize = 10,
-                FlushInterval = TimeSpan.FromSeconds(1),
-            },
-        };
-
-        await using var client = new SigilClient(config);
-        var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-grpc-auth"));
-        recorder.SetResult(TestHelpers.CreateSeedResult("gen-grpc-auth"));
-        recorder.End();
-        await client.ShutdownAsync();
-
-        Assert.Single(server.Requests);
-        var metadata = server.Requests[0].Headers.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
-
-        Assert.Equal("Bearer override-token", metadata["authorization"]);
-    }
-
-    [Fact]
     public async Task GenerationTransport_NoneProtocol_RecordsWithoutSending()
     {
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
             GenerationExport = new GenerationExportConfig
             {
                 Protocol = GenerationExportProtocol.None,

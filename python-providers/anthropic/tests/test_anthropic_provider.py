@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_anthropic import AnthropicOptions, AnthropicStreamSummary, messages
 
@@ -31,7 +31,6 @@ class _CapturingExporter:
 def _new_client(exporter):
     return Client(
         ClientConfig(
-            trace=TraceConfig(protocol="http", endpoint="http://localhost:4318/v1/traces"),
             generation_export=GenerationExportConfig(batch_size=10, flush_interval=timedelta(seconds=60)),
             generation_exporter=exporter,
         )

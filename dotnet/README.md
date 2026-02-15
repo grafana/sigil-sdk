@@ -5,7 +5,7 @@ The .NET SDK follows the same generation-first contract and provider parity targ
 
 ## Packages
 
-- `Grafana.Sigil`: core runtime (`SigilClient`, generation/tool recorders, generation export, OTLP trace export)
+- `Grafana.Sigil`: core runtime (`SigilClient`, generation/tool recorders, generation export)
 - `Grafana.Sigil.OpenAI`: OpenAI Responses + Chat Completions wrappers and mappers
 - `Grafana.Sigil.Anthropic`: Anthropic Messages wrappers and mappers
 - `Grafana.Sigil.Gemini`: Gemini GenerateContent wrappers and mappers
@@ -39,11 +39,6 @@ using OpenAI.Responses;
 
 var sigil = new SigilClient(new SigilClientConfig
 {
-    Trace = new TraceConfig
-    {
-        Protocol = TraceProtocol.Http,
-        Endpoint = "http://localhost:4318/v1/traces",
-    },
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Grpc,
@@ -62,6 +57,8 @@ var sigil = new SigilClient(new SigilClientConfig
         Endpoint = "http://localhost:8080",
     },
 });
+
+// Configure OTel exporters (traces/metrics) separately in your application's OTel setup.
 
 var openAI = new OpenAIResponseClient(
     "gpt-5",
@@ -158,7 +155,7 @@ Console.WriteLine($"{result.Rating.Rating} hasBad={result.Summary.HasBadRating}"
 - Create one long-lived `SigilClient` per process (for example as a singleton in DI).
 - Always call `ShutdownAsync(...)` during process shutdown.
 - Keep provider request/response payloads normalized; enable raw artifacts only for debug sessions.
-- Use explicit auth config per export path (trace vs generation) instead of sharing ad-hoc headers.
+- Use explicit generation export auth config instead of sharing ad-hoc headers.
 
 ## Instrumentation-only mode (no generation send)
 
@@ -169,17 +166,12 @@ var sigil = new SigilClient(new SigilClientConfig
     {
         Protocol = GenerationExportProtocol.None,
     },
-    Trace = new TraceConfig
-    {
-        Protocol = TraceProtocol.Http,
-        Endpoint = "http://localhost:4318/v1/traces",
-    },
 });
 ```
 
 ## SDK metrics
 
-The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+The SDK emits these OTel histograms through your configured OTel meter provider:
 
 - `gen_ai.client.operation.duration`
 - `gen_ai.client.token.usage`

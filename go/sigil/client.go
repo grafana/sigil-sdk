@@ -17,19 +17,16 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
 // Config controls Sigil client behavior.
 type Config struct {
-	Trace            TraceConfig
 	GenerationExport GenerationExportConfig
 	API              APIConfig
-	// Tracer is optional and mainly used for tests. If nil, the client builds one from Trace config.
+	// Tracer is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry tracer.
 	Tracer trace.Tracer
-	// Meter is optional and mainly used for tests. If nil, the client builds one from Trace config.
+	// Meter is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry meter.
 	Meter metric.Meter
 	// Logger receives async export failures. Defaults to log.Default().
 	Logger *log.Logger
@@ -41,13 +38,6 @@ type Config struct {
 	// testDisableWorker keeps queue synchronous for in-package tests.
 	testDisableWorker bool
 }
-
-type TraceProtocol string
-
-const (
-	TraceProtocolGRPC TraceProtocol = "grpc"
-	TraceProtocolHTTP TraceProtocol = "http"
-)
 
 type ExportAuthMode string
 
@@ -61,14 +51,6 @@ type AuthConfig struct {
 	Mode        ExportAuthMode
 	TenantID    string
 	BearerToken string
-}
-
-type TraceConfig struct {
-	Protocol TraceProtocol
-	Endpoint string
-	Headers  map[string]string
-	Auth     AuthConfig
-	Insecure bool
 }
 
 type GenerationExportProtocol string
@@ -155,14 +137,6 @@ var (
 // DefaultConfig returns a production-ready baseline configuration.
 func DefaultConfig() Config {
 	return Config{
-		Trace: TraceConfig{
-			Protocol: TraceProtocolHTTP,
-			Endpoint: "http://localhost:4318/v1/traces",
-			Auth: AuthConfig{
-				Mode: ExportAuthModeNone,
-			},
-			Insecure: true,
-		},
 		GenerationExport: GenerationExportConfig{
 			Protocol:        GenerationExportProtocolGRPC,
 			Endpoint:        "localhost:4317",
@@ -187,13 +161,11 @@ func DefaultConfig() Config {
 
 // Client records normalized generation data and GenAI spans.
 type Client struct {
-	config        Config
-	tracer        trace.Tracer
-	traceProvider *sdktrace.TracerProvider
-	meter         metric.Meter
-	meterProvider *sdkmetric.MeterProvider
-	instruments   telemetryInstruments
-	exporter      generationExporter
+	config      Config
+	tracer      trace.Tracer
+	meter       metric.Meter
+	instruments telemetryInstruments
+	exporter    generationExporter
 
 	queue    chan queuedGeneration
 	flushReq chan chan error
@@ -268,15 +240,8 @@ func NewClient(config Config) *Client {
 	cfg := config
 	defaults := DefaultConfig()
 
-	cfg.Trace = mergeTraceConfig(defaults.Trace, cfg.Trace)
 	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
 	cfg.API = mergeAPIConfig(defaults.API, cfg.API)
-
-	traceHeaders, err := resolveHeadersWithAuth(cfg.Trace.Headers, cfg.Trace.Auth)
-	if err != nil {
-		panic(fmt.Sprintf("invalid trace auth config: %v", err))
-	}
-	cfg.Trace.Headers = traceHeaders
 
 	generationHeaders, err := resolveHeadersWithAuth(cfg.GenerationExport.Headers, cfg.GenerationExport.Auth)
 	if err != nil {
@@ -300,26 +265,12 @@ func NewClient(config Config) *Client {
 	if cfg.Tracer != nil {
 		client.tracer = cfg.Tracer
 	} else {
-		tracer, provider, err := newTraceProvider(cfg.Trace)
-		if err != nil {
-			cfg.Logger.Printf("sigil trace exporter init failed: %v", err)
-			client.tracer = otel.Tracer(instrumentationName)
-		} else {
-			client.tracer = tracer
-			client.traceProvider = provider
-		}
+		client.tracer = otel.Tracer(instrumentationName)
 	}
 	if cfg.Meter != nil {
 		client.meter = cfg.Meter
 	} else {
-		meter, provider, err := newMeterProvider(cfg.Trace)
-		if err != nil {
-			cfg.Logger.Printf("sigil metric exporter init failed: %v", err)
-			client.meter = otel.Meter(instrumentationName)
-		} else {
-			client.meter = meter
-			client.meterProvider = provider
-		}
+		client.meter = otel.Meter(instrumentationName)
 	}
 	instruments, err := newTelemetryInstruments(client.meter)
 	if err != nil {

@@ -139,10 +139,6 @@ public sealed class GeminiMappingAndRecorderTests
         var exporter = new CapturingExporter();
         var client = new SigilClient(new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
             GenerationExporter = exporter,
             GenerationExport = new GenerationExportConfig
             {

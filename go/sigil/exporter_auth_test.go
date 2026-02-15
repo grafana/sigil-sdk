@@ -129,26 +129,3 @@ func TestNewClientAppliesPerExportAuthToGenerationExporter(t *testing.T) {
 		t.Fatalf("expected generation tenant header tenant-a, got %q", got)
 	}
 }
-
-func TestNewClientAppliesPerExportAuthToTraceExporter(t *testing.T) {
-	client := NewClient(Config{
-		Trace: TraceConfig{
-			Protocol: TraceProtocolHTTP,
-			Endpoint: "http://localhost:4318/v1/traces",
-			Auth: AuthConfig{
-				Mode:        ExportAuthModeBearer,
-				BearerToken: "trace-secret",
-			},
-		},
-		testGenerationExporter: &capturingGenerationExporter{},
-		testDisableWorker:      true,
-		Now:                    time.Now,
-	})
-	t.Cleanup(func() {
-		_ = client.Shutdown(context.Background())
-	})
-
-	if got := client.config.Trace.Headers[authorizationHeaderName]; got != "Bearer trace-secret" {
-		t.Fatalf("expected trace authorization header, got %q", got)
-	}
-}

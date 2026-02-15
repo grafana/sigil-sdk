@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import grpc
+from opentelemetry.sdk.trace import TracerProvider
 
 from sigil_sdk import (
     Artifact,
@@ -456,9 +457,11 @@ def _proto_json_int(value: Any) -> int:
 
 
 def _new_client(generation_export: GenerationExportConfig) -> Client:
+    trace_provider = TracerProvider()
     return Client(
         ClientConfig(
             generation_export=generation_export,
+            tracer=trace_provider.get_tracer("sigil-sdk-python-transport-test"),
         )
     )
 

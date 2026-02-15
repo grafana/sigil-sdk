@@ -19,7 +19,6 @@ from sigil_sdk import (
     MessageRole,
     ModelRef,
     TokenUsage,
-    TraceConfig,
     text_part,
     thinking_part,
     user_text_message,
@@ -104,7 +103,6 @@ class RuntimeConfig:
     rotate_turns: int
     custom_provider: str
     gen_http_endpoint: str
-    trace_grpc_endpoint: str
     max_cycles: int
 
 
@@ -164,7 +162,6 @@ def load_config() -> RuntimeConfig:
         gen_http_endpoint=string_from_env(
             "SIGIL_TRAFFIC_GEN_HTTP_ENDPOINT", "http://sigil:8080/api/v1/generations:export"
         ),
-        trace_grpc_endpoint=string_from_env("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "alloy:4317"),
         max_cycles=int_from_env("SIGIL_TRAFFIC_MAX_CYCLES", 0),
     )
 
@@ -729,12 +726,6 @@ def run_emitter(config: RuntimeConfig | None = None) -> None:
 
     client = Client(
         ClientConfig(
-            trace=TraceConfig(
-                protocol="grpc",
-                endpoint=cfg.trace_grpc_endpoint,
-                auth=AuthConfig(mode="none"),
-                insecure=True,
-            ),
             generation_export=GenerationExportConfig(
                 protocol="http",
                 endpoint=cfg.gen_http_endpoint,

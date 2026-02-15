@@ -56,58 +56,6 @@ public sealed class AuthConfigTests
             },
         };
 
-    public static TheoryData<AuthConfig, string> InvalidTraceAuthConfigs =>
-        new()
-        {
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.Tenant,
-                },
-                "trace auth mode 'tenant' requires tenant_id"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.Bearer,
-                },
-                "trace auth mode 'bearer' requires bearer_token"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.None,
-                    TenantId = "tenant-a",
-                },
-                "trace auth mode 'none' does not allow tenant_id or bearer_token"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.Tenant,
-                    TenantId = "tenant-a",
-                    BearerToken = "token",
-                },
-                "trace auth mode 'tenant' does not allow bearer_token"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.Bearer,
-                    TenantId = "tenant-a",
-                    BearerToken = "token",
-                },
-                "trace auth mode 'bearer' does not allow tenant_id"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = (ExportAuthMode)99,
-                },
-                "unsupported trace auth mode"
-            },
-        };
-
     [Theory]
     [MemberData(nameof(InvalidGenerationAuthConfigs))]
     public void Constructor_RejectsInvalidGenerationAuthConfig(AuthConfig auth, string expected)
@@ -120,15 +68,35 @@ public sealed class AuthConfigTests
         Assert.Contains(expected, error.Message);
     }
 
-    [Theory]
-    [MemberData(nameof(InvalidTraceAuthConfigs))]
-    public void Constructor_RejectsInvalidTraceAuthConfig(AuthConfig auth, string expected)
+    [Fact]
+    public async Task Constructor_AppliesGenerationBearerHeaderFromAuth()
     {
         var config = TestHelpers.TestConfig(new CapturingGenerationExporter());
-        config.Trace.Auth = auth;
+        config.GenerationExport.Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Bearer,
+            BearerToken = "token-a",
+        };
 
-        var error = Assert.Throws<ArgumentException>(() => new SigilClient(config));
+        await using var client = new SigilClient(config);
 
-        Assert.Contains(expected, error.Message);
+        Assert.Equal("Bearer token-a", config.GenerationExport.Headers["Authorization"]);
     }
+
+    [Fact]
+    public async Task Constructor_PreservesExplicitGenerationAuthorizationHeader()
+    {
+        var config = TestHelpers.TestConfig(new CapturingGenerationExporter());
+        config.GenerationExport.Headers["authorization"] = "Bearer override-token";
+        config.GenerationExport.Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Bearer,
+            BearerToken = "token-from-auth",
+        };
+
+        await using var client = new SigilClient(config);
+
+        Assert.Equal("Bearer override-token", config.GenerationExport.Headers["authorization"]);
+    }
+
 }

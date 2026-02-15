@@ -42,7 +42,6 @@ export function loadConfig() {
     rotateTurns: intFromEnv('SIGIL_TRAFFIC_ROTATE_TURNS', 24),
     customProvider: stringFromEnv('SIGIL_TRAFFIC_CUSTOM_PROVIDER', 'mistral'),
     genHttpEndpoint: stringFromEnv('SIGIL_TRAFFIC_GEN_HTTP_ENDPOINT', 'http://sigil:8080/api/v1/generations:export'),
-    traceHttpEndpoint: stringFromEnv('SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT', 'http://alloy:4318/v1/traces'),
     maxCycles: intFromEnv('SIGIL_TRAFFIC_MAX_CYCLES', 0),
   };
 }
@@ -637,12 +636,6 @@ export async function runEmitter(config = loadConfig()) {
     generationExport: {
       protocol: 'http',
       endpoint: config.genHttpEndpoint,
-      auth: { mode: 'none' },
-      insecure: true,
-    },
-    trace: {
-      protocol: 'http',
-      endpoint: config.traceHttpEndpoint,
       auth: { mode: 'none' },
       insecure: true,
     },

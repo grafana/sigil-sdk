@@ -70,16 +70,6 @@ internal static class Program
                 },
                 Insecure = true,
             },
-            Trace = new TraceConfig
-            {
-                Protocol = TraceProtocol.Http,
-                Endpoint = config.TraceHttpEndpoint,
-                Auth = new Grafana.Sigil.AuthConfig
-                {
-                    Mode = ExportAuthMode.None,
-                },
-                Insecure = true,
-            },
             Logger = message => Console.Error.WriteLine(message),
         });
 
@@ -1002,7 +992,6 @@ internal static class Program
         int RotateTurns,
         string CustomProvider,
         string GenGrpcEndpoint,
-        string TraceHttpEndpoint,
         int MaxCycles
     )
     {
@@ -1015,7 +1004,6 @@ internal static class Program
                 RotateTurns: IntFromEnv("SIGIL_TRAFFIC_ROTATE_TURNS", 24),
                 CustomProvider: StringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral"),
                 GenGrpcEndpoint: StringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
-                TraceHttpEndpoint: StringFromEnv("SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT", "http://alloy:4318/v1/traces"),
                 MaxCycles: IntFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0)
             );
         }

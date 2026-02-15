@@ -19,7 +19,6 @@ from sigil_sdk import (
     ConversationRatingValue,
     GenerationExportConfig,
     RatingConflictError,
-    TraceConfig,
     ValidationError,
 )
 
@@ -251,7 +250,6 @@ def test_submit_conversation_rating_applies_bearer_auth_header() -> None:
 def _new_client(generation_export: GenerationExportConfig, api_endpoint: str = "http://localhost:8080") -> Client:
     return Client(
         ClientConfig(
-            trace=TraceConfig(endpoint="http://localhost:4318/v1/traces"),
             generation_export=generation_export,
             api=ApiConfig(endpoint=api_endpoint),
             tracer=trace.get_tracer("sigil-sdk-python-rating-test"),

@@ -1,7 +1,6 @@
 import { defaultLogger, mergeConfig } from './config.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
-import { SpanKind, SpanStatusCode, type Histogram, type Meter, type Span, type Tracer } from '@opentelemetry/api';
-import { createTraceRuntime, type TraceRuntime } from './tracing.js';
+import { metrics, SpanKind, SpanStatusCode, trace, type Histogram, type Meter, type Span, type Tracer } from '@opentelemetry/api';
 import type {
   ConversationRating,
   ConversationRatingInput,
@@ -94,6 +93,7 @@ const metricTokenTypeCacheRead = 'cache_read';
 const metricTokenTypeCacheWrite = 'cache_write';
 const metricTokenTypeCacheCreation = 'cache_creation';
 const metricTokenTypeReasoning = 'reasoning';
+const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 
 export class SigilClient {
   private readonly config: SigilSdkConfig;
@@ -101,7 +101,6 @@ export class SigilClient {
   private readonly sleepFn: (durationMs: number) => Promise<void>;
   private readonly logger: SigilLogger;
   private readonly generationExporter: GenerationExporter;
-  private readonly traceRuntime: TraceRuntime;
   private readonly tracer: Tracer;
   private readonly meter: Meter;
   private readonly operationDurationHistogram: Histogram;
@@ -122,8 +121,7 @@ export class SigilClient {
   /**
    * Creates a Sigil SDK client.
    *
-   * `inputConfig` is merged with defaults. Both trace and generation exporters
-   * are initialized during construction.
+   * `inputConfig` is merged with defaults.
    */
   constructor(inputConfig: SigilSdkConfigInput = {}) {
     this.config = mergeConfig(inputConfig);
@@ -131,22 +129,8 @@ export class SigilClient {
     this.sleepFn = this.config.sleep ?? defaultSleep;
     this.logger = this.config.logger ?? defaultLogger;
     this.generationExporter = this.config.generationExporter ?? createDefaultGenerationExporter(this.config.generationExport);
-    if (this.config.tracer !== undefined && this.config.meter !== undefined) {
-      this.tracer = this.config.tracer;
-      this.meter = this.config.meter;
-      this.traceRuntime = {
-        tracer: this.tracer,
-        meter: this.meter,
-        async flush() {},
-        async shutdown() {},
-      };
-    } else {
-      this.traceRuntime = createTraceRuntime(this.config.trace, (message, error) => {
-        this.logWarn(message, error);
-      });
-      this.tracer = this.config.tracer ?? this.traceRuntime.tracer;
-      this.meter = this.config.meter ?? this.traceRuntime.meter;
-    }
+    this.tracer = this.config.tracer ?? trace.getTracer(instrumentationName);
+    this.meter = this.config.meter ?? metrics.getMeter(instrumentationName);
     this.operationDurationHistogram = this.meter.createHistogram(metricOperationDuration, { unit: 's' });
     this.tokenUsageHistogram = this.meter.createHistogram(metricTokenUsage, { unit: 'token' });
     this.ttftHistogram = this.meter.createHistogram(metricTimeToFirstToken, { unit: 's' });
@@ -294,7 +278,7 @@ export class SigilClient {
     await this.flushInternal();
   }
 
-  /** Flushes pending generations and shuts down generation + trace exporters. */
+  /** Flushes pending generations and shuts down the generation exporter. */
   async shutdown(): Promise<void> {
     if (this.shutdownPromise !== undefined) {
       await this.shutdownPromise;
@@ -314,18 +298,6 @@ export class SigilClient {
         await this.generationExporter.shutdown?.();
       } catch (error) {
         this.logWarn('sigil generation exporter shutdown failed', error);
-      }
-
-      try {
-        await this.traceRuntime.flush();
-      } catch (error) {
-        this.logWarn('sigil trace provider flush on shutdown failed', error);
-      }
-
-      try {
-        await this.traceRuntime.shutdown();
-      } catch (error) {
-        this.logWarn('sigil trace provider shutdown failed', error);
       }
 
       this.closed = true;

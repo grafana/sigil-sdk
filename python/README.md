@@ -1,6 +1,6 @@
 # Grafana Sigil Python SDK
 
-`sigil-sdk` records normalized LLM generation and tool-execution telemetry and exports it to Sigil ingest plus OTLP traces.
+`sigil-sdk` records normalized LLM generation and tool-execution telemetry. It exports normalized generations to Sigil ingest and uses your OpenTelemetry tracer/meter setup for traces and metrics.
 
 Use this package when you want:
 
@@ -37,7 +37,6 @@ from sigil_sdk import (
 client = Client(
     ClientConfig(
         generation_export_endpoint="http://localhost:8080/api/v1/generations:export",
-        trace_endpoint="http://localhost:4318/v1/traces",
     )
 )
 
@@ -61,6 +60,8 @@ with client.start_generation(
 
 client.shutdown()
 ```
+
+Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` via `ClientConfig`.
 
 ## Streaming Generation
 
@@ -112,10 +113,10 @@ with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_ve
 
 ## Export Configuration
 
-### HTTP generation + OTLP HTTP trace
+### HTTP generation export
 
 ```python
-from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig
 
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
@@ -123,15 +124,11 @@ cfg = ClientConfig(
         endpoint="http://localhost:8080/api/v1/generations:export",
         auth=AuthConfig(mode="tenant", tenant_id="dev-tenant"),
     ),
-    trace=TraceConfig(
-        protocol="http",
-        endpoint="http://localhost:4318/v1/traces",
-    ),
     api=ApiConfig(endpoint="http://localhost:8080"),
 )
 ```
 
-### gRPC generation + OTLP gRPC trace
+### gRPC generation export
 
 ```python
 cfg = ClientConfig(
@@ -141,18 +138,13 @@ cfg = ClientConfig(
         insecure=True,
         auth=AuthConfig(mode="tenant", tenant_id="dev-tenant"),
     ),
-    trace=TraceConfig(
-        protocol="grpc",
-        endpoint="localhost:4317",
-        insecure=True,
-    ),
     api=ApiConfig(endpoint="http://localhost:8080"),
 )
 ```
 
-## Per-export auth modes
+## Generation export auth modes
 
-Auth is resolved independently per export (`trace` and `generation_export`).
+Auth is resolved for `generation_export`.
 
 - `mode="none"`
 - `mode="tenant"` (requires `tenant_id`, injects `X-Scope-OrgID`)
@@ -163,18 +155,13 @@ Invalid mode/field combinations fail fast in `resolve_config(...)`.
 If explicit `headers` already include `Authorization` or `X-Scope-OrgID`, explicit headers win.
 
 ```python
-from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig
 
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
         endpoint="http://localhost:8080/api/v1/generations:export",
         auth=AuthConfig(mode="tenant", tenant_id="prod-tenant"),
-    ),
-    trace=TraceConfig(
-        protocol="grpc",
-        endpoint="localhost:4317",
-        auth=AuthConfig(mode="none"),
     ),
     api=ApiConfig(endpoint="http://localhost:8080"),
 )
@@ -193,16 +180,12 @@ cfg = ClientConfig()
 gen_token = (os.getenv("SIGIL_GEN_BEARER_TOKEN") or "").strip()
 if gen_token:
     cfg.generation_export.auth = AuthConfig(mode="bearer", bearer_token=gen_token)
-
-trace_token = (os.getenv("SIGIL_TRACE_BEARER_TOKEN") or "").strip()
-if trace_token:
-    cfg.trace.auth = AuthConfig(mode="bearer", bearer_token=trace_token)
 ```
 
 Common topology:
 
 - Generations direct to Sigil: generation `tenant` mode.
-- Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
+- Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
 ## Conversation Ratings
@@ -233,15 +216,11 @@ print(result.rating.rating, result.summary.has_bad_rating)
 Set `generation_export.protocol="none"` to keep generation/tool instrumentation and spans while disabling generation transport.
 
 ```python
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig, TraceConfig
+from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="none",
-    ),
-    trace=TraceConfig(
-        protocol="http",
-        endpoint="http://localhost:4318/v1/traces",
     ),
 )
 
@@ -251,14 +230,14 @@ client = Client(cfg)
 ## Lifecycle and Error Semantics
 
 - `flush()` forces immediate export of queued generations.
-- `shutdown()` flushes pending generations, then closes generation and trace exporters.
+- `shutdown()` flushes pending generations, then closes generation exporters.
 - Always call `shutdown()` during process teardown to avoid dropped telemetry.
 - `recorder.set_call_error(exc)` marks provider-call failures on the generation payload and span status.
 - `recorder.err()` is for local SDK runtime errors only (validation, queue full, payload too large, shutdown).
 
 ## SDK metrics
 
-The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+The SDK emits these OTel histograms through your configured OTEL meter provider:
 
 - `gen_ai.client.operation.duration`
 - `gen_ai.client.token.usage`

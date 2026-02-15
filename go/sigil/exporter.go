@@ -12,14 +12,6 @@ import (
 	"time"
 
 	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/metric"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -203,132 +195,6 @@ func newGenerationExporter(cfg GenerationExportConfig) (generationExporter, erro
 	default:
 		return nil, fmt.Errorf("unsupported generation export protocol %q", cfg.Protocol)
 	}
-}
-
-func newTraceProvider(cfg TraceConfig) (trace.Tracer, *sdktrace.TracerProvider, error) {
-	switch cfg.Protocol {
-	case TraceProtocolGRPC:
-		endpoint, _, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(endpoint)}
-		if cfg.Insecure || insecureEndpoint {
-			opts = append(opts, otlptracegrpc.WithInsecure())
-		}
-		if len(cfg.Headers) > 0 {
-			opts = append(opts, otlptracegrpc.WithHeaders(cfg.Headers))
-		}
-
-		exporter, err := otlptracegrpc.New(context.Background(), opts...)
-		if err != nil {
-			return nil, nil, fmt.Errorf("init otlp grpc trace exporter: %w", err)
-		}
-
-		provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
-		return provider.Tracer(instrumentationName), provider, nil
-	case TraceProtocolHTTP:
-		endpoint, path, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(endpoint)}
-		if path != "" {
-			opts = append(opts, otlptracehttp.WithURLPath(path))
-		}
-		if cfg.Insecure || insecureEndpoint {
-			opts = append(opts, otlptracehttp.WithInsecure())
-		}
-		if len(cfg.Headers) > 0 {
-			opts = append(opts, otlptracehttp.WithHeaders(cfg.Headers))
-		}
-
-		exporter, err := otlptracehttp.New(context.Background(), opts...)
-		if err != nil {
-			return nil, nil, fmt.Errorf("init otlp http trace exporter: %w", err)
-		}
-
-		provider := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
-		return provider.Tracer(instrumentationName), provider, nil
-	default:
-		return nil, nil, fmt.Errorf("unsupported trace protocol %q", cfg.Protocol)
-	}
-}
-
-func newMeterProvider(cfg TraceConfig) (metric.Meter, *sdkmetric.MeterProvider, error) {
-	switch cfg.Protocol {
-	case TraceProtocolGRPC:
-		endpoint, _, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		opts := []otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(endpoint)}
-		if cfg.Insecure || insecureEndpoint {
-			opts = append(opts, otlpmetricgrpc.WithInsecure())
-		}
-		if len(cfg.Headers) > 0 {
-			opts = append(opts, otlpmetricgrpc.WithHeaders(cfg.Headers))
-		}
-
-		exporter, err := otlpmetricgrpc.New(context.Background(), opts...)
-		if err != nil {
-			return nil, nil, fmt.Errorf("init otlp grpc metric exporter: %w", err)
-		}
-
-		provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)))
-		return provider.Meter(instrumentationName), provider, nil
-	case TraceProtocolHTTP:
-		endpoint, path, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		opts := []otlpmetrichttp.Option{otlpmetrichttp.WithEndpoint(endpoint)}
-		metricsPath := path
-		if metricsPath == "" || metricsPath == "/" || metricsPath == "/v1/traces" {
-			metricsPath = "/v1/metrics"
-		}
-		if metricsPath != "" {
-			opts = append(opts, otlpmetrichttp.WithURLPath(metricsPath))
-		}
-		if cfg.Insecure || insecureEndpoint {
-			opts = append(opts, otlpmetrichttp.WithInsecure())
-		}
-		if len(cfg.Headers) > 0 {
-			opts = append(opts, otlpmetrichttp.WithHeaders(cfg.Headers))
-		}
-
-		exporter, err := otlpmetrichttp.New(context.Background(), opts...)
-		if err != nil {
-			return nil, nil, fmt.Errorf("init otlp http metric exporter: %w", err)
-		}
-
-		provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)))
-		return provider.Meter(instrumentationName), provider, nil
-	default:
-		return nil, nil, fmt.Errorf("unsupported trace protocol %q", cfg.Protocol)
-	}
-}
-
-func mergeTraceConfig(base, override TraceConfig) TraceConfig {
-	out := base
-	if override.Protocol != "" {
-		out.Protocol = override.Protocol
-	}
-	if override.Endpoint != "" {
-		out.Endpoint = override.Endpoint
-	}
-	if override.Headers != nil {
-		out.Headers = cloneTags(override.Headers)
-	}
-	out.Auth = mergeAuthConfig(out.Auth, override.Auth)
-	if override.Insecure {
-		out.Insecure = true
-	}
-	return out
 }
 
 func mergeGenerationExportConfig(base, override GenerationExportConfig) GenerationExportConfig {
@@ -660,16 +526,6 @@ func (c *Client) Shutdown(ctx context.Context) error {
 
 		if err := c.exporter.Shutdown(ctx); err != nil {
 			shutdownErr = errors.Join(shutdownErr, err)
-		}
-		if c.traceProvider != nil {
-			if err := c.traceProvider.Shutdown(ctx); err != nil {
-				shutdownErr = errors.Join(shutdownErr, err)
-			}
-		}
-		if c.meterProvider != nil {
-			if err := c.meterProvider.Shutdown(ctx); err != nil {
-				c.logf("sigil metric provider shutdown failed: %v", err)
-			}
 		}
 	})
 

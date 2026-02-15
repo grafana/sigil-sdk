@@ -12,6 +12,7 @@ namespace Grafana.Sigil;
 
 public sealed class SigilClient : IAsyncDisposable
 {
+    internal const string InstrumentationName = "github.com/grafana/sigil/sdks/dotnet";
     internal const string DefaultOperationNameSync = "generateText";
     internal const string DefaultOperationNameStream = "streamText";
 
@@ -69,14 +70,17 @@ public sealed class SigilClient : IAsyncDisposable
 
     internal readonly SigilClientConfig _config;
     private readonly IGenerationExporter _generationExporter;
-    private readonly TraceRuntime _traceRuntime;
+    private readonly ActivitySource _activitySource;
     private readonly Meter _meter;
     private readonly Histogram<double> _operationDurationHistogram;
     private readonly Histogram<double> _tokenUsageHistogram;
     private readonly Histogram<double> _ttftHistogram;
     private readonly Histogram<double> _toolCallsHistogram;
     private readonly Action<string> _log;
-    private readonly HttpClient _ratingHttpClient = new()
+    private readonly HttpClient _ratingHttpClient = new(new HttpClientHandler
+    {
+        UseCookies = false,
+    })
     {
         Timeout = TimeSpan.FromSeconds(10),
     };
@@ -116,8 +120,8 @@ public sealed class SigilClient : IAsyncDisposable
                 ),
             };
 
-        _traceRuntime = TraceRuntime.Create(_config.Trace, _log);
-        _meter = _traceRuntime.Meter;
+        _activitySource = new ActivitySource(InstrumentationName);
+        _meter = new Meter(InstrumentationName);
         _operationDurationHistogram = _meter.CreateHistogram<double>(MetricOperationDuration, "s");
         _tokenUsageHistogram = _meter.CreateHistogram<double>(MetricTokenUsage, "token");
         _ttftHistogram = _meter.CreateHistogram<double>(MetricTimeToFirstToken, "s");
@@ -166,7 +170,7 @@ public sealed class SigilClient : IAsyncDisposable
             ? InternalUtils.Utc(seed.StartedAt.Value)
             : _config.UtcNow!();
 
-        var activity = _traceRuntime.Source.StartActivity(
+        var activity = _activitySource.StartActivity(
             ToolSpanName(seed.ToolName),
             ActivityKind.Internal,
             default(ActivityContext),
@@ -256,7 +260,7 @@ public sealed class SigilClient : IAsyncDisposable
         }
         using (response)
         {
-            var responseBody = (await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)).Trim();
+            var responseBody = (await ReadResponseBodyAsync(response.Content, cancellationToken).ConfigureAwait(false)).Trim();
             if (response.StatusCode == HttpStatusCode.BadRequest)
             {
                 throw new ValidationException(
@@ -331,16 +335,8 @@ public sealed class SigilClient : IAsyncDisposable
             _log($"sigil generation exporter shutdown failed: {ex}");
         }
 
-        try
-        {
-            _traceRuntime.Flush();
-        }
-        catch (Exception ex)
-        {
-            _log($"sigil trace flush failed: {ex}");
-        }
-
-        _traceRuntime.Dispose();
+        _activitySource.Dispose();
+        _meter.Dispose();
         _ratingHttpClient.Dispose();
     }
 
@@ -384,7 +380,7 @@ public sealed class SigilClient : IAsyncDisposable
             ? InternalUtils.Utc(seed.StartedAt.Value)
             : _config.UtcNow!();
 
-        var activity = _traceRuntime.Source.StartActivity(
+        var activity = _activitySource.StartActivity(
             GenerationSpanName(seed.OperationName, seed.Model.Name),
             ActivityKind.Client,
             default(ActivityContext),
@@ -1252,8 +1248,8 @@ public sealed class SigilClient : IAsyncDisposable
         }
 
         var message = error.Message ?? string.Empty;
-        if (message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("deadline exceeded", StringComparison.OrdinalIgnoreCase))
+        if (message.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0
+            || message.IndexOf("deadline exceeded", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return "timeout";
         }
@@ -1488,6 +1484,15 @@ public sealed class SigilClient : IAsyncDisposable
         activity.SetTag("exception.type", error.GetType().FullName);
         activity.SetTag("exception.message", error.Message);
         activity.SetTag("exception.stacktrace", error.ToString());
+    }
+
+    private static Task<string> ReadResponseBodyAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+#if NETSTANDARD2_0
+        return content.ReadAsStringAsync();
+#else
+        return content.ReadAsStringAsync(cancellationToken);
+#endif
     }
 }
 

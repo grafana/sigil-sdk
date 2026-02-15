@@ -57,9 +57,10 @@ Cross-language parity tracks are available for:
 ```go
 cfg := sigil.DefaultConfig()
 
-// Trace + metric export (OTLP, typically Alloy/Collector)
-cfg.Trace.Protocol = sigil.TraceProtocolHTTP // or sigil.TraceProtocolGRPC
-cfg.Trace.Endpoint = "http://localhost:4318/v1/traces" // grpc example: "localhost:4317"
+// Optional: inject tracer/meter explicitly.
+// If unset, the SDK uses otel.Tracer(...) and otel.Meter(...).
+// cfg.Tracer = myTracer
+// cfg.Meter = myMeter
 
 // Generation export (custom ingest)
 cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default; or sigil.GenerationExportProtocolHTTP / sigil.GenerationExportProtocolNone
@@ -84,6 +85,8 @@ defer func() {
 }()
 ```
 
+Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup.
+
 ### Instrumentation-only mode (no generation send)
 
 Use `GenerationExportProtocolNone` to keep generation and tool instrumentation active while disabling generation transport:
@@ -96,9 +99,9 @@ client := sigil.NewClient(cfg)
 defer func() { _ = client.Shutdown(context.Background()) }()
 ```
 
-## Per-export auth modes
+## Generation export auth modes
 
-Auth is configured independently for trace and generation export.
+Auth is configured for generation export.
 
 - `none`
 - `tenant` (requires `TenantID`, injects `X-Scope-OrgID`)
@@ -107,10 +110,6 @@ Auth is configured independently for trace and generation export.
 Invalid combinations fail fast during `NewClient(...)`.
 
 ```go
-cfg.Trace.Auth = sigil.AuthConfig{
-	Mode: sigil.ExportAuthModeNone, // traces may go to Alloy/Collector with no auth
-}
-
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:        sigil.ExportAuthModeBearer,
 	BearerToken: "token-from-secret-manager",
@@ -131,20 +130,12 @@ if genToken != "" {
 		BearerToken: genToken,
 	}
 }
-
-traceToken := strings.TrimSpace(os.Getenv("SIGIL_TRACE_BEARER_TOKEN"))
-if traceToken != "" {
-	cfg.Trace.Auth = sigil.AuthConfig{
-		Mode:        sigil.ExportAuthModeBearer,
-		BearerToken: traceToken,
-	}
-}
 ```
 
 Common topology:
 
 - Generations direct to Sigil: generation `tenant` mode.
-- Traces via OTEL Collector/Alloy: trace `none` or `bearer` mode.
+- Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
 ## Conversation Ratings
@@ -173,12 +164,12 @@ fmt.Printf("rating=%s has_bad=%v\n", rating.Rating.Rating, rating.Summary.HasBad
 ## Lifecycle requirement
 
 - Always call `client.Shutdown(ctx)` before process exit.
-- `Shutdown` flushes pending generation batches and shuts down the trace provider.
+- `Shutdown` flushes pending generation batches and closes generation exporters.
 - Optional `client.Flush(ctx)` is available for explicit flush points.
 
 ## SDK metrics
 
-The SDK emits four OTel histograms automatically on the trace pipeline endpoint:
+The SDK emits four OTel histograms automatically through your configured OTel meter provider:
 
 - `gen_ai.client.operation.duration`
 - `gen_ai.client.token.usage`

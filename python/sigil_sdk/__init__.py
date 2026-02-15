@@ -1,7 +1,7 @@
 """Public exports for the Sigil Python SDK."""
 
 from .client import Client
-from .config import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, TraceConfig, default_config
+from .config import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, default_config
 from .context import (
     conversation_id_from_context,
     agent_name_from_context,
@@ -88,7 +88,6 @@ __all__ = [
     "ToolExecutionEnd",
     "ToolExecutionStart",
     "ToolResult",
-    "TraceConfig",
     "ValidationError",
     "agent_name_from_context",
     "agent_version_from_context",

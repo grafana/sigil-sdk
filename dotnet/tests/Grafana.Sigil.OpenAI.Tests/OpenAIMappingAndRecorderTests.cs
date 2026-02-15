@@ -326,10 +326,6 @@ public sealed class OpenAIMappingAndRecorderTests
         var exporter = new CapturingExporter();
         var config = new SigilClientConfig
         {
-            Trace = new TraceConfig
-            {
-                Endpoint = string.Empty,
-            },
             GenerationExporter = exporter,
             GenerationExport = new GenerationExportConfig
             {

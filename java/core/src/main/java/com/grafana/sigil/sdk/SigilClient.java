@@ -90,10 +90,10 @@ public final class SigilClient implements AutoCloseable {
     static final String METRIC_TOKEN_TYPE_REASONING = "reasoning";
 
     private static final Pattern STATUS_CODE_PATTERN = Pattern.compile("\\b([1-5][0-9][0-9])\\b");
+    private static final String INSTRUMENTATION_NAME = "github.com/grafana/sigil/sdks/java";
 
     private final SigilClientConfig config;
     private final GenerationExporter generationExporter;
-    private final TraceRuntime traceRuntime;
     private final Tracer tracer;
     private final Meter meter;
     private final DoubleHistogram operationDurationHistogram;
@@ -152,72 +152,15 @@ public final class SigilClient implements AutoCloseable {
             apiConfig.setEndpoint("http://localhost:8080");
         }
 
-        TraceConfig traceConfig = config.getTrace();
-        traceConfig.setHeaders(AuthHeaders.resolve(traceConfig.getHeaders(), traceConfig.getAuth(), "trace"));
-
         this.generationExporter = config.getGenerationExporter() == null
                 ? createGenerationExporter(exportConfig)
                 : config.getGenerationExporter();
-
-        if (config.getTracer() != null) {
-            Tracer configuredTracer = config.getTracer();
-            Meter configuredMeter = config.getMeter() != null
-                    ? config.getMeter()
-                    : GlobalOpenTelemetry.getMeter("github.com/grafana/sigil/sdks/java");
-            this.traceRuntime = new TraceRuntime() {
-                @Override
-                public Tracer tracer() {
-                    return configuredTracer;
-                }
-
-                @Override
-                public Meter meter() {
-                    return configuredMeter;
-                }
-
-                @Override
-                public void flush() {
-                }
-
-                @Override
-                public void shutdown() {
-                }
-            };
-            this.tracer = configuredTracer;
-            this.meter = configuredMeter;
-        } else {
-            TraceRuntime runtime;
-            try {
-                runtime = OtelTraceRuntime.fromConfig(traceConfig);
-            } catch (Exception exception) {
-                logWarn("sigil trace exporter init failed", exception);
-                runtime = new TraceRuntime() {
-                    private final Tracer fallback = GlobalOpenTelemetry.getTracer("github.com/grafana/sigil/sdks/java");
-                    private final Meter fallbackMeter = GlobalOpenTelemetry.getMeter("github.com/grafana/sigil/sdks/java");
-
-                    @Override
-                    public Tracer tracer() {
-                        return fallback;
-                    }
-
-                    @Override
-                    public Meter meter() {
-                        return fallbackMeter;
-                    }
-
-                    @Override
-                    public void flush() {
-                    }
-
-                    @Override
-                    public void shutdown() {
-                    }
-                };
-            }
-            this.traceRuntime = runtime;
-            this.tracer = config.getTracer() != null ? config.getTracer() : runtime.tracer();
-            this.meter = config.getMeter() != null ? config.getMeter() : runtime.meter();
-        }
+        this.tracer = config.getTracer() != null
+                ? config.getTracer()
+                : GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME);
+        this.meter = config.getMeter() != null
+                ? config.getMeter()
+                : GlobalOpenTelemetry.getMeter(INSTRUMENTATION_NAME);
 
         this.operationDurationHistogram = meter.histogramBuilder(METRIC_OPERATION_DURATION)
                 .setUnit("s")
@@ -433,7 +376,7 @@ public final class SigilClient implements AutoCloseable {
     }
 
     /**
-     * Flushes pending data and shuts down generation + trace exporters.
+     * Flushes pending data and shuts down generation exporter resources.
      *
      * <p>Safe to call more than once.</p>
      */
@@ -457,18 +400,6 @@ public final class SigilClient implements AutoCloseable {
             generationExporter.shutdown();
         } catch (Exception exception) {
             logWarn("sigil generation exporter shutdown failed", exception);
-        }
-
-        try {
-            traceRuntime.flush();
-        } catch (Exception exception) {
-            logWarn("sigil trace provider flush on shutdown failed", exception);
-        }
-
-        try {
-            traceRuntime.shutdown();
-        } catch (Exception exception) {
-            logWarn("sigil trace provider shutdown failed", exception);
         }
 
         flushExecutor.shutdown();

@@ -14,8 +14,6 @@ import com.grafana.sigil.sdk.ModelRef;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
 import com.grafana.sigil.sdk.TokenUsage;
-import com.grafana.sigil.sdk.TraceConfig;
-import com.grafana.sigil.sdk.TraceProtocol;
 import com.grafana.sigil.sdk.providers.anthropic.AnthropicAdapter;
 import com.grafana.sigil.sdk.providers.anthropic.AnthropicOptions;
 import com.grafana.sigil.sdk.providers.gemini.GeminiAdapter;
@@ -69,11 +67,6 @@ public final class DevexEmitter {
                 .setGenerationExport(new GenerationExportConfig()
                         .setProtocol(GenerationExportProtocol.GRPC)
                         .setEndpoint(config.genGrpcEndpoint)
-                        .setAuth(new AuthConfig().setMode(AuthMode.NONE))
-                        .setInsecure(true))
-                .setTrace(new TraceConfig()
-                        .setProtocol(TraceProtocol.OTLP_HTTP)
-                        .setEndpoint(config.traceHttpEndpoint)
                         .setAuth(new AuthConfig().setMode(AuthMode.NONE))
                         .setInsecure(true)));
 
@@ -137,7 +130,6 @@ public final class DevexEmitter {
                 intFromEnv("SIGIL_TRAFFIC_ROTATE_TURNS", 24),
                 stringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral"),
                 stringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
-                stringFromEnv("SIGIL_TRAFFIC_TRACE_HTTP_ENDPOINT", "http://alloy:4318/v1/traces"),
                 intFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0));
     }
 
@@ -782,7 +774,6 @@ public final class DevexEmitter {
             int rotateTurns,
             String customProvider,
             String genGrpcEndpoint,
-            String traceHttpEndpoint,
             int maxCycles) {
     }
 

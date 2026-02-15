@@ -7,7 +7,6 @@ import java.util.logging.Logger;
 
 /** Top-level runtime configuration for {@link SigilClient}. */
 public final class SigilClientConfig {
-    private TraceConfig trace = new TraceConfig();
     private GenerationExportConfig generationExport = new GenerationExportConfig();
     private ApiConfig api = new ApiConfig();
     private GenerationExporter generationExporter;
@@ -15,15 +14,6 @@ public final class SigilClientConfig {
     private Meter meter;
     private Logger logger = Logger.getLogger("com.grafana.sigil.sdk");
     private Clock clock = Clock.systemUTC();
-
-    public TraceConfig getTrace() {
-        return trace;
-    }
-
-    public SigilClientConfig setTrace(TraceConfig trace) {
-        this.trace = trace == null ? new TraceConfig() : trace;
-        return this;
-    }
 
     public GenerationExportConfig getGenerationExport() {
         return generationExport;
@@ -90,7 +80,6 @@ public final class SigilClientConfig {
 
     public SigilClientConfig copy() {
         return new SigilClientConfig()
-                .setTrace(trace.copy())
                 .setGenerationExport(generationExport.copy())
                 .setApi(api.copy())
                 .setGenerationExporter(generationExporter)

@@ -2,7 +2,7 @@
 
 If you already use OpenTelemetry, Sigil is a thin extension for AI observability.
 
-The Java SDK records normalized generation payloads, correlates them with traces, and exports both through transport-aware clients.
+The Java SDK records normalized generation payloads, correlates them with traces, and exports generations through transport-aware clients.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ The Java SDK records normalized generation payloads, correlates them with traces
 
 ## Modules
 
-- `:core`: runtime client, models, validation, generation exporters, trace wiring
+- `:core`: runtime client, models, validation, generation exporters
 - `:providers:openai`: OpenAI wrapper + mapper helpers
 - `:providers:anthropic`: Anthropic wrapper + mapper helpers
 - `:providers:gemini`: Gemini wrapper + mapper helpers
@@ -49,10 +49,7 @@ SigilClient client = new SigilClient(new SigilClientConfig()
     .setGenerationExport(new GenerationExportConfig()
         .setProtocol(GenerationExportProtocol.HTTP)
         .setEndpoint("http://localhost:8080/api/v1/generations:export")
-        .setAuth(new AuthConfig().setMode(AuthMode.TENANT).setTenantId("dev-tenant")))
-    .setTrace(new TraceConfig()
-        .setProtocol(TraceProtocol.OTLP_HTTP)
-        .setEndpoint("http://localhost:4318/v1/traces")));
+        .setAuth(new AuthConfig().setMode(AuthMode.TENANT).setTenantId("dev-tenant"))));
 
 try {
     client.withGeneration(
@@ -72,13 +69,15 @@ try {
 }
 ```
 
+Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally inject `Tracer` and `Meter` via `SigilClientConfig`.
+
 ## Streaming Pattern
 
 Use `startStreamingGeneration(...)` or `withStreamingGeneration(...)`. The SDK sets mode to `STREAM` and keeps operation naming consistent.
 
 ## Auth Modes
 
-Auth is configured independently for trace and generation export:
+Auth is configured for generation export:
 
 - `NONE`
 - `TENANT` (injects `X-Scope-OrgID`)
@@ -133,7 +132,7 @@ System.out.println(result.getRating().getRating() + " hasBad=" + result.getSumma
 ## Lifecycle
 
 - Always call `shutdown()` before process exit.
-- `shutdown()` flushes generation batches and closes trace exporter resources.
+- `shutdown()` flushes generation batches and closes generation exporter resources.
 - `flush()` is available for explicit synchronization points.
 
 ## Instrumentation-only mode (no generation send)
@@ -141,15 +140,12 @@ System.out.println(result.getRating().getRating() + " hasBad=" + result.getSumma
 ```java
 SigilClient client = new SigilClient(new SigilClientConfig()
     .setGenerationExport(new GenerationExportConfig()
-        .setProtocol(GenerationExportProtocol.NONE))
-    .setTrace(new TraceConfig()
-        .setProtocol(TraceProtocol.OTLP_HTTP)
-        .setEndpoint("http://localhost:4318/v1/traces")));
+        .setProtocol(GenerationExportProtocol.NONE)));
 ```
 
 ## SDK metrics
 
-The SDK emits these OTel histograms automatically on the trace OTLP endpoint:
+The SDK emits these OTel histograms through your configured OTel meter provider:
 
 - `gen_ai.client.operation.duration`
 - `gen_ai.client.token.usage`
@@ -168,7 +164,7 @@ Provider modules are wrapper-first for ergonomics, with explicit mapper APIs for
 
 - Keep raw artifacts disabled in production unless actively debugging.
 - Prefer callback APIs (`withGeneration` / `withStreamingGeneration`) to guarantee `end()` runs.
-- Separate trace auth config from generation auth config; most deployments need different values.
+- Configure traces/metrics in your OpenTelemetry SDK setup (or inject `Tracer`/`Meter` into `SigilClientConfig`).
 - Keep `batchSize` and `queueSize` conservative first, then tune with benchmark data.
 
 ## Build, Test, Benchmark

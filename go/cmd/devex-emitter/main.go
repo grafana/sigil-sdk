@@ -34,7 +34,6 @@ type runtimeConfig struct {
 	maxCycles      int
 	customProvider string
 	genGRPC        string
-	traceGRPC      string
 }
 
 type source string
@@ -65,9 +64,6 @@ func main() {
 	clientCfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC
 	clientCfg.GenerationExport.Endpoint = cfg.genGRPC
 	clientCfg.GenerationExport.Auth = sigil.AuthConfig{Mode: sigil.ExportAuthModeNone}
-	clientCfg.Trace.Protocol = sigil.TraceProtocolGRPC
-	clientCfg.Trace.Endpoint = cfg.traceGRPC
-	clientCfg.Trace.Auth = sigil.AuthConfig{Mode: sigil.ExportAuthModeNone}
 
 	client := sigil.NewClient(clientCfg)
 	defer func() {
@@ -799,7 +795,6 @@ func loadConfig() runtimeConfig {
 		maxCycles:      intFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0),
 		customProvider: strings.TrimSpace(stringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral")),
 		genGRPC:        stringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
-		traceGRPC:      stringFromEnv("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "alloy:4317"),
 	}
 }
 

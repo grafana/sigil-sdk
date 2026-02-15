@@ -36,8 +36,6 @@ export type {
   ToolExecutionResult,
   ToolExecutionStart,
   ToolResultPart,
-  TraceConfig,
-  TraceProtocol,
 } from './types.js';
 
 export * as openai from './providers/openai.js';

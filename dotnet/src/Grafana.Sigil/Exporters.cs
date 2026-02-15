@@ -72,7 +72,10 @@ internal sealed class HttpGenerationExporter : IGenerationExporter
             normalizedHeaders[pair.Key] = pair.Value;
         }
         _headers = normalizedHeaders;
-        _httpClient = new HttpClient
+        _httpClient = new HttpClient(new HttpClientHandler
+        {
+            UseCookies = false,
+        })
         {
             Timeout = TimeSpan.FromSeconds(10),
         };
