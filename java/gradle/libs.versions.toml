@@ -1,6 +1,6 @@
 [versions]
 assertj = "3.27.7"
-jackson = "2.18.3"
+jackson = "2.21"
 jmh = "0.7.3"
 junit = "5.14.2"
 otel = "1.47.0"
