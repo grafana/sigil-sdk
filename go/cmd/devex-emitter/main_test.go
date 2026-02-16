@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/sigil/sdks/go/sigil"
 	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
@@ -106,13 +107,16 @@ func TestLoadConfigReadsTraceGRPCEndpoint(t *testing.T) {
 	}
 }
 
-func TestInstallTracerProviderExportsSpans(t *testing.T) {
+func TestInstallTelemetryProvidersExportsSpans(t *testing.T) {
 	previousProvider := otel.GetTracerProvider()
+	previousMeterProvider := otel.GetMeterProvider()
 	exporter := tracetest.NewInMemoryExporter()
-	tracerProvider := installTracerProvider(exporter)
+	tracerProvider, meterProvider := installTelemetryProviders(exporter, sdkmetric.NewManualReader())
 	t.Cleanup(func() {
 		otel.SetTracerProvider(previousProvider)
+		otel.SetMeterProvider(previousMeterProvider)
 		_ = tracerProvider.Shutdown(context.Background())
+		_ = meterProvider.Shutdown(context.Background())
 	})
 
 	_, span := otel.Tracer("devex-emitter-test").Start(context.Background(), "synthetic-span")

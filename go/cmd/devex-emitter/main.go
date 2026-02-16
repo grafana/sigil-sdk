@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -21,17 +22,20 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/genai"
 )
 
 const (
-	languageName       = "go"
-	traceServiceName   = "sigil-sdk-traffic-go"
-	traceServiceEnv    = "sigil-devex"
-	traceShutdownGrace = 5 * time.Second
+	languageName        = "go"
+	traceServiceName    = "sigil-sdk-traffic-go"
+	traceServiceEnv     = "sigil-devex"
+	traceShutdownGrace  = 5 * time.Second
+	metricFlushInterval = 2 * time.Second
 )
 
 type runtimeConfig struct {
@@ -68,15 +72,15 @@ type tagEnvelope struct {
 func main() {
 	cfg := loadConfig()
 	randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
-	traceShutdown, err := configureTracing(context.Background(), cfg)
+	telemetryShutdown, err := configureTelemetry(context.Background(), cfg)
 	if err != nil {
-		log.Fatalf("[go-emitter] tracing setup failed: %v", err)
+		log.Fatalf("[go-emitter] telemetry setup failed: %v", err)
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), traceShutdownGrace)
 		defer cancel()
-		if err := traceShutdown(shutdownCtx); err != nil {
-			log.Printf("[go-emitter] tracing shutdown error: %v", err)
+		if err := telemetryShutdown(shutdownCtx); err != nil {
+			log.Printf("[go-emitter] telemetry shutdown error: %v", err)
 		}
 	}()
 
@@ -284,6 +288,7 @@ func emitOpenAIChatCompletionsStream(
 	}
 
 	_, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"}})
+	rec.SetFirstTokenAt(time.Now().UTC())
 	rec.SetResult(mapped, nil)
 	rec.End()
 	return rec.Err()
@@ -397,6 +402,7 @@ func emitOpenAIResponsesStream(
 	}
 
 	_, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{Model: sigil.ModelRef{Provider: "openai", Name: "gpt-5"}})
+	rec.SetFirstTokenAt(time.Now().UTC())
 	rec.SetResult(mapped, nil)
 	rec.End()
 	return rec.Err()
@@ -512,6 +518,7 @@ func emitAnthropicStream(
 	}
 
 	_, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{Model: sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"}})
+	rec.SetFirstTokenAt(time.Now().UTC())
 	rec.SetResult(mapped, nil)
 	rec.End()
 	return rec.Err()
@@ -622,6 +629,7 @@ func emitGeminiStream(
 	}
 
 	_, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{Model: sigil.ModelRef{Provider: "gemini", Name: "gemini-2.5-pro"}})
+	rec.SetFirstTokenAt(time.Now().UTC())
 	rec.SetResult(mapped, nil)
 	rec.End()
 	return rec.Err()
@@ -691,6 +699,7 @@ func emitCustomStream(
 		Tags:     tags,
 		Metadata: metadata,
 	})
+	rec.SetFirstTokenAt(time.Now().UTC())
 
 	result := sigil.Generation{
 		Input: []sigil.Message{
@@ -825,37 +834,63 @@ func loadConfig() runtimeConfig {
 	}
 }
 
-func configureTracing(ctx context.Context, cfg runtimeConfig) (func(context.Context) error, error) {
-	traceEndpoint := strings.TrimSpace(cfg.traceGRPC)
-	if traceEndpoint == "" {
+func configureTelemetry(ctx context.Context, cfg runtimeConfig) (func(context.Context) error, error) {
+	telemetryEndpoint := strings.TrimSpace(cfg.traceGRPC)
+	if telemetryEndpoint == "" {
 		return func(context.Context) error { return nil }, nil
 	}
 
-	exporter, err := otlptracegrpc.New(
+	traceExporter, err := otlptracegrpc.New(
 		ctx,
-		otlptracegrpc.WithEndpoint(traceEndpoint),
+		otlptracegrpc.WithEndpoint(telemetryEndpoint),
 		otlptracegrpc.WithInsecure(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("init otlp trace exporter: %w", err)
 	}
 
-	tracerProvider := installTracerProvider(exporter)
-	return tracerProvider.Shutdown, nil
+	metricExporter, err := otlpmetricgrpc.New(
+		ctx,
+		otlpmetricgrpc.WithEndpoint(telemetryEndpoint),
+		otlpmetricgrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init otlp metric exporter: %w", err)
+	}
+
+	metricReader := sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(metricFlushInterval))
+	tracerProvider, meterProvider := installTelemetryProviders(traceExporter, metricReader)
+	return func(ctx context.Context) error {
+		metricErr := meterProvider.Shutdown(ctx)
+		traceErr := tracerProvider.Shutdown(ctx)
+		return errors.Join(metricErr, traceErr)
+	}, nil
 }
 
-func installTracerProvider(exporter sdktrace.SpanExporter) *sdktrace.TracerProvider {
+func installTelemetryProviders(
+	traceExporter sdktrace.SpanExporter,
+	metricReader sdkmetric.Reader,
+) (*sdktrace.TracerProvider, *sdkmetric.MeterProvider) {
+	res := resource.NewSchemaless(
+		attribute.String("service.name", traceServiceName),
+		attribute.String("service.namespace", traceServiceEnv),
+		attribute.String("sigil.devex.language", languageName),
+	)
+
 	tracerProvider := sdktrace.NewTracerProvider(
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(resource.NewSchemaless(
-			attribute.String("service.name", traceServiceName),
-			attribute.String("service.namespace", traceServiceEnv),
-			attribute.String("sigil.devex.language", languageName),
-		)),
+		sdktrace.WithBatcher(traceExporter),
+		sdktrace.WithResource(res),
 	)
+	meterProvider := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(metricReader),
+		sdkmetric.WithResource(res),
+	)
+
 	otel.SetTracerProvider(tracerProvider)
-	return tracerProvider
+	otel.SetMeterProvider(meterProvider)
+
+	return tracerProvider, meterProvider
 }
 
 func intFromEnv(key string, defaultValue int) int {
