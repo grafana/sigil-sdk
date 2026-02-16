@@ -2,7 +2,7 @@
 assertj = "3.27.7"
 jackson = "2.18.3"
 jmh = "0.7.3"
-junit = "5.10.2"
+junit = "5.14.2"
 otel = "1.47.0"
 protobuf = "3.25.6"
 protobufPlugin = "0.9.6"
