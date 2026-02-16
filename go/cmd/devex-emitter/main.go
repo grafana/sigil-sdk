@@ -19,11 +19,19 @@ import (
 	"github.com/openai/openai-go/v3/packages/param"
 	oresponses "github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/genai"
 )
 
 const (
-	languageName = "go"
+	languageName       = "go"
+	traceServiceName   = "sigil-sdk-traffic-go"
+	traceServiceEnv    = "sigil-devex"
+	traceShutdownGrace = 5 * time.Second
 )
 
 type runtimeConfig struct {
@@ -34,6 +42,7 @@ type runtimeConfig struct {
 	maxCycles      int
 	customProvider string
 	genGRPC        string
+	traceGRPC      string
 }
 
 type source string
@@ -59,6 +68,17 @@ type tagEnvelope struct {
 func main() {
 	cfg := loadConfig()
 	randSeed := rand.New(rand.NewSource(time.Now().UnixNano()))
+	traceShutdown, err := configureTracing(context.Background(), cfg)
+	if err != nil {
+		log.Fatalf("[go-emitter] tracing setup failed: %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), traceShutdownGrace)
+		defer cancel()
+		if err := traceShutdown(shutdownCtx); err != nil {
+			log.Printf("[go-emitter] tracing shutdown error: %v", err)
+		}
+	}()
 
 	clientCfg := sigil.DefaultConfig()
 	clientCfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC
@@ -79,7 +99,15 @@ func main() {
 		threads[src] = make([]threadState, cfg.conversations)
 	}
 
-	log.Printf("[go-emitter] started interval=%s stream_percent=%d conversations=%d rotate_turns=%d custom_provider=%s", cfg.interval, cfg.streamPercent, cfg.conversations, cfg.rotateTurns, cfg.customProvider)
+	log.Printf(
+		"[go-emitter] started interval=%s stream_percent=%d conversations=%d rotate_turns=%d custom_provider=%s trace_grpc=%s",
+		cfg.interval,
+		cfg.streamPercent,
+		cfg.conversations,
+		cfg.rotateTurns,
+		cfg.customProvider,
+		cfg.traceGRPC,
+	)
 	cycles := 0
 
 	for {
@@ -793,7 +821,41 @@ func loadConfig() runtimeConfig {
 		maxCycles:      intFromEnv("SIGIL_TRAFFIC_MAX_CYCLES", 0),
 		customProvider: strings.TrimSpace(stringFromEnv("SIGIL_TRAFFIC_CUSTOM_PROVIDER", "mistral")),
 		genGRPC:        stringFromEnv("SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT", "sigil:4317"),
+		traceGRPC:      stringFromEnv("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "alloy:4317"),
 	}
+}
+
+func configureTracing(ctx context.Context, cfg runtimeConfig) (func(context.Context) error, error) {
+	traceEndpoint := strings.TrimSpace(cfg.traceGRPC)
+	if traceEndpoint == "" {
+		return func(context.Context) error { return nil }, nil
+	}
+
+	exporter, err := otlptracegrpc.New(
+		ctx,
+		otlptracegrpc.WithEndpoint(traceEndpoint),
+		otlptracegrpc.WithInsecure(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init otlp trace exporter: %w", err)
+	}
+
+	tracerProvider := installTracerProvider(exporter)
+	return tracerProvider.Shutdown, nil
+}
+
+func installTracerProvider(exporter sdktrace.SpanExporter) *sdktrace.TracerProvider {
+	tracerProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample())),
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(resource.NewSchemaless(
+			attribute.String("service.name", traceServiceName),
+			attribute.String("service.namespace", traceServiceEnv),
+			attribute.String("sigil.devex.language", languageName),
+		)),
+	)
+	otel.SetTracerProvider(tracerProvider)
+	return tracerProvider
 }
 
 func intFromEnv(key string, defaultValue int) int {

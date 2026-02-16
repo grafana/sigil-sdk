@@ -30,7 +30,7 @@ test('HTTP transport roundtrip preserves full generation payload shape', async (
 
     const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     for (const generation of payload.generations ?? []) {
-      receivedGenerations.push(generation);
+      receivedGenerations.push(canonicalizeProtoJSONGeneration(generation));
     }
 
     response.writeHead(202, { 'content-type': 'application/json' });
@@ -81,9 +81,7 @@ test('HTTP transport roundtrip preserves full generation payload shape', async (
 
     await waitFor(() => receivedGenerations.length === totalSeeds, 2_000);
 
-    const expectedGenerations = client.debugSnapshot().generations.map((generation) =>
-      JSON.parse(JSON.stringify(generation))
-    );
+    const expectedGenerations = client.debugSnapshot().generations.map(canonicalizeSDKGeneration);
     assert.deepEqual(receivedGenerations, expectedGenerations);
   } finally {
     await client.shutdown();
@@ -562,6 +560,84 @@ function canonicalizeSDKGeneration(generation) {
   };
 }
 
+function canonicalizeProtoJSONGeneration(generation) {
+  if (!isRecord(generation)) {
+    throw new Error('invalid proto-json generation payload');
+  }
+
+  const usage = isRecord(generation.usage) ? generation.usage : {};
+  return {
+    id: asString(generation.id),
+    conversationId: asString(generation.conversation_id),
+    agentName: asString(generation.agent_name),
+    agentVersion: asString(generation.agent_version),
+    mode: fromProtoJSONGenerationMode(generation.mode),
+    operationName: asString(generation.operation_name),
+    traceId: asString(generation.trace_id),
+    spanId: asString(generation.span_id),
+    model: {
+      provider: isRecord(generation.model) ? asString(generation.model.provider) : '',
+      name: isRecord(generation.model) ? asString(generation.model.name) : '',
+    },
+    responseId: asString(generation.response_id),
+    responseModel: asString(generation.response_model),
+    systemPrompt: asString(generation.system_prompt),
+    maxTokens: asNumber(generation.max_tokens),
+    temperature: asNumber(generation.temperature),
+    topP: asNumber(generation.top_p),
+    toolChoice: asString(generation.tool_choice),
+    thinkingEnabled: Boolean(generation.thinking_enabled),
+    input: (Array.isArray(generation.input) ? generation.input : []).map(canonicalizeProtoJSONMessage),
+    output: (Array.isArray(generation.output) ? generation.output : []).map(canonicalizeProtoJSONMessage),
+    tools: (Array.isArray(generation.tools) ? generation.tools : []).map((tool) => ({
+      name: isRecord(tool) ? asString(tool.name) : '',
+      description: isRecord(tool) ? asString(tool.description) : '',
+      type: isRecord(tool) ? asString(tool.type) : '',
+      inputSchemaJSON: isRecord(tool) ? decodeBase64(asString(tool.input_schema_json)) : '',
+    })),
+    usage: {
+      inputTokens: asNumber(usage.input_tokens),
+      outputTokens: asNumber(usage.output_tokens),
+      totalTokens: asNumber(usage.total_tokens),
+      cacheReadInputTokens: asNumber(usage.cache_read_input_tokens),
+      cacheWriteInputTokens: asNumber(usage.cache_write_input_tokens),
+      reasoningTokens: asNumber(usage.reasoning_tokens),
+    },
+    stopReason: asString(generation.stop_reason),
+    startedAt: timestampStringToISO(generation.started_at),
+    completedAt: timestampStringToISO(generation.completed_at),
+    tags: normalizeProtoJSONStringMap(generation.tags),
+    metadata: normalizeProtoJSONMetadata(generation.metadata),
+    artifacts: (Array.isArray(generation.raw_artifacts) ? generation.raw_artifacts : []).map((artifact) => ({
+      type: isRecord(artifact) ? fromProtoArtifactKind(artifact.kind) : 'unknown',
+      name: isRecord(artifact) ? asString(artifact.name) : '',
+      payload: isRecord(artifact) ? decodeBase64(asString(artifact.payload)) : '',
+      mimeType: isRecord(artifact) ? asString(artifact.content_type) : 'application/json',
+      recordId: isRecord(artifact) ? asString(artifact.record_id) : '',
+      uri: isRecord(artifact) ? asString(artifact.uri) : '',
+    })),
+    callError: asString(generation.call_error),
+  };
+}
+
+function canonicalizeProtoJSONMessage(message) {
+  if (!isRecord(message)) {
+    return {
+      role: 'user',
+      name: '',
+      content: '',
+    };
+  }
+
+  return {
+    role: fromProtoJSONMessageRole(message.role),
+    name: asString(message.name),
+    content: (Array.isArray(message.parts) ? message.parts : [])
+      .map((part) => (isRecord(part) && typeof part.text === 'string' ? part.text : ''))
+      .join(''),
+  };
+}
+
 function canonicalizeSDKMessage(message) {
   return {
     role: normalizeSDKRole(message.role),
@@ -651,6 +727,32 @@ function fromProtoGenerationMode(mode) {
   return 'SYNC';
 }
 
+function fromProtoJSONGenerationMode(mode) {
+  if (mode === 'GENERATION_MODE_STREAM') {
+    return 'STREAM';
+  }
+  if (mode === 'GENERATION_MODE_SYNC' || mode === undefined || mode === null || mode === '') {
+    return 'SYNC';
+  }
+  throw new Error(`unexpected proto-json generation mode: ${String(mode)}`);
+}
+
+function fromProtoJSONMessageRole(role) {
+  switch (role) {
+    case 'MESSAGE_ROLE_ASSISTANT':
+      return 'assistant';
+    case 'MESSAGE_ROLE_TOOL':
+      return 'tool';
+    case 'MESSAGE_ROLE_USER':
+    case undefined:
+    case null:
+    case '':
+      return 'user';
+    default:
+      throw new Error(`unexpected proto-json message role: ${String(role)}`);
+  }
+}
+
 function fromProtoMessageRole(role) {
   switch (role) {
     case 'MESSAGE_ROLE_ASSISTANT':
@@ -690,6 +792,24 @@ function normalizeProtoMetadata(metadata) {
     return metadata;
   }
   return {};
+}
+
+function normalizeProtoJSONMetadata(metadata) {
+  if (!isRecord(metadata)) {
+    return {};
+  }
+  return metadata;
+}
+
+function normalizeProtoJSONStringMap(value) {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const out = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = asString(entry);
+  }
+  return out;
 }
 
 function decodeStructFields(fields) {
@@ -746,6 +866,28 @@ function asUTF8String(value) {
     return value;
   }
   return '';
+}
+
+function decodeBase64(value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return '';
+  }
+  return Buffer.from(value, 'base64').toString('utf8');
+}
+
+function timestampStringToISO(value) {
+  if (typeof value !== 'string') {
+    return new Date(0).toISOString();
+  }
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return new Date(0).toISOString();
+  }
+  return timestamp.toISOString();
+}
+
+function asString(value) {
+  return typeof value === 'string' ? value : '';
 }
 
 function asNumber(value) {

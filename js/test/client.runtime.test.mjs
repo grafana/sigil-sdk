@@ -183,7 +183,7 @@ test('built-in HTTP exporter posts generation batches to configured endpoint', a
 
     await waitFor(() => receivedRequests.length === 1);
     assert.equal(receivedRequests[0].generations.length, 1);
-    assert.equal(receivedRequests[0].generations[0].mode, 'SYNC');
+    assert.equal(receivedRequests[0].generations[0].mode, 'GENERATION_MODE_SYNC');
   } finally {
     await client.shutdown();
     await close(server);

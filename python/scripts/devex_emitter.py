@@ -23,51 +23,38 @@ from sigil_sdk import (
     thinking_part,
     user_text_message,
 )
+
+
+class _MissingProviderNamespace:
+    def __init__(self, package_name: str, import_error: ModuleNotFoundError) -> None:
+        self._package_name = package_name
+        self._import_error = import_error
+
+    def __getattr__(self, _name: str):
+        raise ModuleNotFoundError(
+            f"{self._package_name} is required to run {self._package_name.removeprefix('sigil_sdk_')} devex emitter paths"
+        ) from self._import_error
+
+
 try:
     from sigil_sdk_anthropic import (
-        AnthropicMessage,
         AnthropicOptions,
-        AnthropicRequest,
-        AnthropicResponse,
         AnthropicStreamSummary,
-        completion,
-        completion_stream,
+        messages,
     )
 except ModuleNotFoundError as anthropic_import_error:  # pragma: no cover - exercised by sdk-core tests
-    AnthropicMessage = AnthropicOptions = AnthropicRequest = AnthropicResponse = AnthropicStreamSummary = object  # type: ignore[assignment]
-
-    def completion(*_args, **_kwargs):
-        raise ModuleNotFoundError(
-            "sigil_sdk_anthropic is required to run anthropic devex emitter paths"
-        ) from anthropic_import_error
-
-    def completion_stream(*_args, **_kwargs):
-        raise ModuleNotFoundError(
-            "sigil_sdk_anthropic is required to run anthropic devex emitter paths"
-        ) from anthropic_import_error
+    AnthropicOptions = AnthropicStreamSummary = object  # type: ignore[assignment]
+    messages = _MissingProviderNamespace("sigil_sdk_anthropic", anthropic_import_error)
 
 try:
     from sigil_sdk_gemini import (
-        GeminiMessage,
         GeminiOptions,
-        GeminiRequest,
-        GeminiResponse,
         GeminiStreamSummary,
-        completion as gemini_completion,
-        completion_stream as gemini_completion_stream,
+        models,
     )
 except ModuleNotFoundError as gemini_import_error:  # pragma: no cover - exercised by sdk-core tests
-    GeminiMessage = GeminiOptions = GeminiRequest = GeminiResponse = GeminiStreamSummary = object  # type: ignore[assignment]
-
-    def gemini_completion(*_args, **_kwargs):
-        raise ModuleNotFoundError(
-            "sigil_sdk_gemini is required to run gemini devex emitter paths"
-        ) from gemini_import_error
-
-    def gemini_completion_stream(*_args, **_kwargs):
-        raise ModuleNotFoundError(
-            "sigil_sdk_gemini is required to run gemini devex emitter paths"
-        ) from gemini_import_error
+    GeminiOptions = GeminiStreamSummary = object  # type: ignore[assignment]
+    models = _MissingProviderNamespace("sigil_sdk_gemini", gemini_import_error)
 
 try:
     from sigil_sdk_openai import (
@@ -79,15 +66,8 @@ try:
     )
 except ModuleNotFoundError as openai_import_error:  # pragma: no cover - exercised by sdk-core tests
     ChatCompletionsStreamSummary = OpenAIOptions = ResponsesStreamSummary = object  # type: ignore[assignment]
-
-    class _MissingProviderNamespace:
-        def __getattr__(self, _name: str):
-            raise ModuleNotFoundError(
-                "sigil_sdk_openai is required to run openai devex emitter paths"
-            ) from openai_import_error
-
-    chat = _MissingProviderNamespace()
-    responses = _MissingProviderNamespace()
+    chat = _MissingProviderNamespace("sigil_sdk_openai", openai_import_error)
+    responses = _MissingProviderNamespace("sigil_sdk_openai", openai_import_error)
 
 LANGUAGE = "python"
 SOURCES = ("openai", "anthropic", "gemini", "mistral")
@@ -441,32 +421,39 @@ def emit_openai_responses_stream(client: Client, context: EmitContext) -> None:
 
 
 def emit_anthropic_sync(client: Client, context: EmitContext) -> None:
-    request = AnthropicRequest(
-        model="claude-sonnet-4-5",
-        system_prompt="Summarize with explicit diagnosis and recommendation.",
-        messages=[
-            AnthropicMessage(role="user", content=f"Summarize reliability drift {context.turn}."),
+    request = {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 384,
+        "system": [{"type": "text", "text": "Summarize with explicit diagnosis and recommendation."}],
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": f"Summarize reliability drift {context.turn}."}]},
         ],
-    )
+    }
 
-    def provider_call(_request: AnthropicRequest) -> AnthropicResponse:
-        return AnthropicResponse(
-            id=f"py-anthropic-sync-{context.turn}",
-            model="claude-sonnet-4-5",
-            output_text=(
-                f"Diagnosis {context.turn}: latency drift in eu-west. Recommendation: rebalance ingress workers."
-            ),
-            stop_reason="end_turn",
-            usage=TokenUsage(
-                input_tokens=74 + (context.turn % 8),
-                output_tokens=29 + (context.turn % 5),
-                total_tokens=103 + (context.turn % 10),
-                cache_read_input_tokens=9,
-            ),
-            raw={"shape": "anthropic.sync"},
-        )
+    def provider_call(_request):
+        return {
+            "id": f"py-anthropic-sync-{context.turn}",
+            "model": "claude-sonnet-4-5",
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Diagnosis {context.turn}: latency drift in eu-west. "
+                        "Recommendation: rebalance ingress workers."
+                    ),
+                }
+            ],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 74 + (context.turn % 8),
+                "output_tokens": 29 + (context.turn % 5),
+                "total_tokens": 103 + (context.turn % 10),
+                "cache_read_input_tokens": 9,
+            },
+        }
 
-    completion(
+    messages.create(
         client,
         request,
         provider_call,
@@ -481,37 +468,39 @@ def emit_anthropic_sync(client: Client, context: EmitContext) -> None:
 
 
 def emit_anthropic_stream(client: Client, context: EmitContext) -> None:
-    request = AnthropicRequest(
-        model="claude-sonnet-4-5",
-        system_prompt="Emit short delta narrative for mitigation progress.",
-        messages=[
-            AnthropicMessage(role="user", content=f"Stream mitigation deltas {context.turn}."),
+    request = {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 384,
+        "system": [{"type": "text", "text": "Emit short delta narrative for mitigation progress."}],
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": f"Stream mitigation deltas {context.turn}."}]},
         ],
-    )
+    }
 
-    def provider_call(_request: AnthropicRequest) -> AnthropicStreamSummary:
-        final_response = AnthropicResponse(
-            id=f"py-anthropic-stream-{context.turn}",
-            model="claude-sonnet-4-5",
-            output_text=f"Change {context.turn}: guard enabled; verification done.",
-            stop_reason="end_turn",
-            usage=TokenUsage(
-                input_tokens=43 + (context.turn % 6),
-                output_tokens=16 + (context.turn % 4),
-                total_tokens=59 + (context.turn % 7),
-            ),
-        )
+    def provider_call(_request) -> AnthropicStreamSummary:
+        final_response = {
+            "id": f"py-anthropic-stream-{context.turn}",
+            "model": "claude-sonnet-4-5",
+            "role": "assistant",
+            "content": [{"type": "text", "text": f"Change {context.turn}: guard enabled; verification done."}],
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 43 + (context.turn % 6),
+                "output_tokens": 16 + (context.turn % 4),
+                "total_tokens": 59 + (context.turn % 7),
+            },
+        }
         return AnthropicStreamSummary(
             output_text=f"Change {context.turn}: guard enabled; verification done.",
             final_response=final_response,
             events=[
-                {"type": "message_start"},
-                {"type": "delta", "text": "guard enabled"},
+                {"type": "message_start", "message": {"id": f"py-anthropic-stream-{context.turn}"}},
+                {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "guard enabled"}},
                 {"type": "message_delta", "stop_reason": "end_turn"},
             ],
         )
 
-    completion_stream(
+    messages.stream(
         client,
         request,
         provider_call,
@@ -526,33 +515,57 @@ def emit_anthropic_stream(client: Client, context: EmitContext) -> None:
 
 
 def emit_gemini_sync(client: Client, context: EmitContext) -> None:
-    request = GeminiRequest(
-        model="gemini-2.5-pro",
-        system_prompt="Use structured note style and explicit tool-response framing.",
-        messages=[
-            GeminiMessage(role="user", content=f"Generate launch summary {context.turn}."),
-            GeminiMessage(role="tool", content='{"tool":"release_metrics","status":"green"}', name="release_metrics"),
-        ],
-    )
+    model = "gemini-2.5-pro"
+    contents = [
+        {"role": "user", "parts": [{"text": f"Generate launch summary {context.turn}."}]},
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "function_response": {
+                        "id": "release_metrics",
+                        "name": "release_metrics",
+                        "response": {"tool": "release_metrics", "status": "green"},
+                    }
+                }
+            ],
+        },
+    ]
+    config = {
+        "system_instruction": {
+            "role": "user",
+            "parts": [{"text": "Use structured note style and explicit tool-response framing."}],
+        },
+        "tool_config": {"function_calling_config": {"mode": "ANY"}},
+        "thinking_config": {"include_thoughts": True, "thinking_budget": 1536},
+    }
 
-    def provider_call(_request: GeminiRequest) -> GeminiResponse:
-        return GeminiResponse(
-            id=f"py-gemini-sync-{context.turn}",
-            model="gemini-2.5-pro-001",
-            output_text=f"Launch {context.turn}: all gates green; rollout metrics stable.",
-            stop_reason="STOP",
-            usage=TokenUsage(
-                input_tokens=59 + (context.turn % 7),
-                output_tokens=21 + (context.turn % 5),
-                total_tokens=80 + (context.turn % 8),
-                reasoning_tokens=7,
-            ),
-            raw={"shape": "gemini.sync"},
-        )
+    def provider_call(_model: str, _contents, _config):
+        return {
+            "response_id": f"py-gemini-sync-{context.turn}",
+            "model_version": "gemini-2.5-pro-001",
+            "candidates": [
+                {
+                    "finish_reason": "STOP",
+                    "content": {
+                        "role": "model",
+                        "parts": [{"text": f"Launch {context.turn}: all gates green; rollout metrics stable."}],
+                    },
+                }
+            ],
+            "usage_metadata": {
+                "prompt_token_count": 59 + (context.turn % 7),
+                "candidates_token_count": 21 + (context.turn % 5),
+                "total_token_count": 80 + (context.turn % 8),
+                "thoughts_token_count": 7,
+            },
+        }
 
-    gemini_completion(
+    models.generate_content(
         client,
-        request,
+        model,
+        contents,
+        config,
         provider_call,
         GeminiOptions(
             conversation_id=context.conversation_id,
@@ -565,35 +578,48 @@ def emit_gemini_sync(client: Client, context: EmitContext) -> None:
 
 
 def emit_gemini_stream(client: Client, context: EmitContext) -> None:
-    request = GeminiRequest(
-        model="gemini-2.5-pro",
-        system_prompt="Emit migration stream with staged checkpoint language.",
-        messages=[
-            GeminiMessage(role="user", content=f"Stream migration status for wave {context.turn}."),
-        ],
-    )
+    model = "gemini-2.5-pro"
+    contents = [
+        {"role": "user", "parts": [{"text": f"Stream migration status for wave {context.turn}."}]},
+    ]
+    config = {
+        "system_instruction": {
+            "role": "user",
+            "parts": [{"text": "Emit migration stream with staged checkpoint language."}],
+        },
+        "thinking_config": {"include_thoughts": True, "thinking_budget": 1536},
+    }
 
-    def provider_call(_request: GeminiRequest) -> GeminiStreamSummary:
-        final_response = GeminiResponse(
-            id=f"py-gemini-stream-{context.turn}",
-            model="gemini-2.5-pro-001",
-            output_text=f"Wave {context.turn}: shard sync complete; promotion finished.",
-            stop_reason="STOP",
-            usage=TokenUsage(
-                input_tokens=45 + (context.turn % 5),
-                output_tokens=17 + (context.turn % 4),
-                total_tokens=62 + (context.turn % 7),
-            ),
-        )
+    def provider_call(_model: str, _contents, _config) -> GeminiStreamSummary:
+        final_response = {
+            "response_id": f"py-gemini-stream-{context.turn}",
+            "model_version": "gemini-2.5-pro-001",
+            "candidates": [
+                {
+                    "finish_reason": "STOP",
+                    "content": {
+                        "role": "model",
+                        "parts": [{"text": f"Wave {context.turn}: shard sync complete; promotion finished."}],
+                    },
+                }
+            ],
+            "usage_metadata": {
+                "prompt_token_count": 45 + (context.turn % 5),
+                "candidates_token_count": 17 + (context.turn % 4),
+                "total_token_count": 62 + (context.turn % 7),
+            },
+        }
         return GeminiStreamSummary(
             output_text=f"Wave {context.turn}: shard sync complete; promotion finished.",
             final_response=final_response,
-            events=[{"response_id": f"py-gemini-stream-{context.turn}", "delta": "shard sync complete"}],
+            responses=[final_response],
         )
 
-    gemini_completion_stream(
+    models.generate_content_stream(
         client,
-        request,
+        model,
+        contents,
+        config,
         provider_call,
         GeminiOptions(
             conversation_id=context.conversation_id,

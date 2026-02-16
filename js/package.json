@@ -41,5 +41,8 @@
     "@opentelemetry/sdk-metrics": "^2.1.0",
     "@opentelemetry/sdk-trace-base": "^2.5.0",
     "openai": "^6.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }

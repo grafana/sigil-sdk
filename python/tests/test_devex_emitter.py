@@ -55,3 +55,91 @@ def test_thread_rotation_resets_turn_after_threshold() -> None:
     rotated = emitter.resolve_thread(state, rotate_turns=3, source="openai", slot=0)
     assert rotated.turn == 0
     assert rotated.conversation_id != first_id
+
+
+def test_anthropic_emit_uses_messages_namespace_wrapper(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    class MessagesNamespace:
+        def create(self, client, request, provider_call, options):
+            calls["client"] = client
+            calls["request"] = request
+            calls["options"] = options
+            calls["response"] = provider_call(request)
+            return calls["response"]
+
+    monkeypatch.setattr(emitter, "messages", MessagesNamespace())
+    monkeypatch.setattr(emitter, "AnthropicOptions", lambda **kwargs: kwargs)
+
+    context = emitter.EmitContext(
+        conversation_id="conv-anthropic",
+        turn=7,
+        slot=0,
+        agent_name="devex-python-anthropic-planner",
+        agent_version="devex-1",
+        tags={"sigil.devex.provider": "anthropic"},
+        metadata={"provider_shape": "messages"},
+    )
+
+    emitter.emit_anthropic_sync(object(), context)
+
+    request = calls["request"]
+    assert isinstance(request, dict)
+    assert request["model"] == "claude-sonnet-4-5"
+    assert request["messages"][0]["role"] == "user"
+
+    response = calls["response"]
+    assert isinstance(response, dict)
+    assert response["id"] == "py-anthropic-sync-7"
+    assert response["stop_reason"] == "end_turn"
+
+    options = calls["options"]
+    assert isinstance(options, dict)
+    assert options["conversation_id"] == "conv-anthropic"
+    assert options["agent_name"] == "devex-python-anthropic-planner"
+
+
+def test_gemini_stream_uses_models_namespace_and_responses_summary(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    class StrictGeminiStreamSummary:
+        def __init__(self, *, responses, output_text="", final_response=None):
+            self.responses = responses
+            self.output_text = output_text
+            self.final_response = final_response
+
+    class ModelsNamespace:
+        def generate_content_stream(self, client, model, contents, config, provider_call, options):
+            calls["client"] = client
+            calls["model"] = model
+            calls["contents"] = contents
+            calls["config"] = config
+            calls["options"] = options
+            calls["summary"] = provider_call(model, contents, config)
+            return calls["summary"]
+
+    monkeypatch.setattr(emitter, "GeminiStreamSummary", StrictGeminiStreamSummary)
+    monkeypatch.setattr(emitter, "models", ModelsNamespace())
+    monkeypatch.setattr(emitter, "GeminiOptions", lambda **kwargs: kwargs)
+
+    context = emitter.EmitContext(
+        conversation_id="conv-gemini",
+        turn=9,
+        slot=1,
+        agent_name="devex-python-gemini-retriever",
+        agent_version="devex-1",
+        tags={"sigil.devex.provider": "gemini"},
+        metadata={"provider_shape": "generate_content"},
+    )
+
+    emitter.emit_gemini_stream(object(), context)
+
+    assert calls["model"] == "gemini-2.5-pro"
+    summary = calls["summary"]
+    assert isinstance(summary, StrictGeminiStreamSummary)
+    assert len(summary.responses) == 1
+    assert summary.final_response["response_id"] == "py-gemini-stream-9"
+
+    options = calls["options"]
+    assert isinstance(options, dict)
+    assert options["conversation_id"] == "conv-gemini"

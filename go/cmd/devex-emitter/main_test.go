@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/grafana/sigil/sdks/go/sigil"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestBuildTagEnvelopeIncludesRequiredContractFields(t *testing.T) {
@@ -90,5 +93,50 @@ func TestEnsureThreadRotatesConversationAtThreshold(t *testing.T) {
 	}
 	if thread.conversationID == firstID {
 		t.Fatalf("expected rotated conversation id to change")
+	}
+}
+
+func TestLoadConfigReadsTraceGRPCEndpoint(t *testing.T) {
+	t.Setenv("SIGIL_TRAFFIC_TRACE_GRPC_ENDPOINT", "collector:14317")
+
+	cfg := loadConfig()
+
+	if cfg.traceGRPC != "collector:14317" {
+		t.Fatalf("expected trace GRPC endpoint collector:14317, got %q", cfg.traceGRPC)
+	}
+}
+
+func TestInstallTracerProviderExportsSpans(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	tracerProvider := installTracerProvider(exporter)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		_ = tracerProvider.Shutdown(context.Background())
+	})
+
+	_, span := otel.Tracer("devex-emitter-test").Start(context.Background(), "synthetic-span")
+	span.End()
+	if err := tracerProvider.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("force flush: %v", err)
+	}
+
+	spans := exporter.GetSpans()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 exported span, got %d", len(spans))
+	}
+
+	serviceName := ""
+	for _, kv := range spans[0].Resource.Attributes() {
+		if string(kv.Key) == "service.name" {
+			serviceName = kv.Value.AsString()
+			break
+		}
+	}
+	if serviceName == "" {
+		t.Fatalf("expected service.name resource attribute")
+	}
+	if serviceName != traceServiceName {
+		t.Fatalf("expected service.name %q, got %q", traceServiceName, serviceName)
 	}
 }

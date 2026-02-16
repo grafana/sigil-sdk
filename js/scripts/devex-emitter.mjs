@@ -41,7 +41,7 @@ export function loadConfig() {
     conversations: intFromEnv('SIGIL_TRAFFIC_CONVERSATIONS', 3),
     rotateTurns: intFromEnv('SIGIL_TRAFFIC_ROTATE_TURNS', 24),
     customProvider: stringFromEnv('SIGIL_TRAFFIC_CUSTOM_PROVIDER', 'mistral'),
-    genHttpEndpoint: stringFromEnv('SIGIL_TRAFFIC_GEN_HTTP_ENDPOINT', 'http://sigil:8080/api/v1/generations:export'),
+    genGrpcEndpoint: stringFromEnv('SIGIL_TRAFFIC_GEN_GRPC_ENDPOINT', 'sigil:4317'),
     maxCycles: intFromEnv('SIGIL_TRAFFIC_MAX_CYCLES', 0),
   };
 }
@@ -634,8 +634,8 @@ export async function runEmitter(config = loadConfig()) {
   const sdk = await loadSdkModule();
   const client = new sdk.SigilClient({
     generationExport: {
-      protocol: 'http',
-      endpoint: config.genHttpEndpoint,
+      protocol: 'grpc',
+      endpoint: config.genGrpcEndpoint,
       auth: { mode: 'none' },
       insecure: true,
     },
