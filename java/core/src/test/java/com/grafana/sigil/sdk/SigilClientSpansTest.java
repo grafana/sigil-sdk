@@ -43,6 +43,7 @@ class SigilClientSpansTest {
         assertThat(spans).hasSize(1);
         SpanData span = spans.get(0);
         assertThat(span.getName()).startsWith("streamText ");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_SDK_NAME))).isEqualTo("sdk-java");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_PROVIDER_NAME))).isEqualTo("anthropic");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_REQUEST_MODEL))).isEqualTo("claude-sonnet-4-5");
         assertThat(span.getAttributes().get(AttributeKey.longKey(SigilClient.SPAN_ATTR_REQUEST_MAX_TOKENS))).isEqualTo(256L);
@@ -91,6 +92,7 @@ class SigilClientSpansTest {
         assertThat(spans).hasSize(1);
         SpanData span = spans.get(0);
         assertThat(span.getName()).isEqualTo("execute_tool weather");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_SDK_NAME))).isEqualTo("sdk-java");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_NAME))).isEqualTo("weather");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_CALL_ID))).isEqualTo("call-1");
 

@@ -219,10 +219,12 @@ def test_call_error_sets_span_error_and_does_not_set_local_error() -> None:
         assert rec.err() is None
         assert rec.last_generation is not None
         assert rec.last_generation.call_error == "provider unavailable"
+        assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
 
         span = span_exporter.get_finished_spans()[-1]
         assert span.status.status_code.name == "ERROR"
         assert span.attributes.get("error.type") == "provider_call_error"
+        assert span.attributes.get("sigil.sdk.name") == "sdk-python"
     finally:
         client.shutdown()
         provider.shutdown()
@@ -254,7 +256,10 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
             top_p=0.8,
             tool_choice="required",
             thinking_enabled=False,
-            metadata={"sigil.gen_ai.request.thinking.budget_tokens": 4096},
+            metadata={
+                "sigil.gen_ai.request.thinking.budget_tokens": 4096,
+                "sigil.sdk.name": "user-value",
+            },
             stop_reason="end_turn",
             output=_assistant_output("ok"),
         )
@@ -268,6 +273,7 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert rec.last_generation.tool_choice == "required"
         assert rec.last_generation.thinking_enabled is False
         assert rec.last_generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 4096
+        assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
 
         span = span_exporter.get_finished_spans()[-1]
         assert span.attributes.get("gen_ai.request.max_tokens") == 256
@@ -276,10 +282,39 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert span.attributes.get("sigil.gen_ai.request.tool_choice") == "required"
         assert span.attributes.get("sigil.gen_ai.request.thinking.enabled") is False
         assert span.attributes.get("sigil.gen_ai.request.thinking.budget_tokens") == 4096
+        assert span.attributes.get("sigil.sdk.name") == "sdk-python"
         assert span.attributes.get("gen_ai.response.finish_reasons") == ("end_turn",)
     finally:
         client.shutdown()
         provider.shutdown()
+
+
+def test_sdk_metadata_overrides_conflicting_seed_and_result_values() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _new_client(exporter)
+    try:
+        rec = client.start_generation(
+            GenerationStart(
+                conversation_id="conv-sdk-metadata",
+                model=ModelRef(provider="openai", name="gpt-5"),
+                metadata={
+                    "sigil.sdk.name": "seed-value",
+                },
+            )
+        )
+        rec.set_result(
+            metadata={
+                "sigil.sdk.name": "result-value",
+            },
+            output=_assistant_output("ok"),
+        )
+        rec.end()
+
+        assert rec.err() is None
+        assert rec.last_generation is not None
+        assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
+    finally:
+        client.shutdown()
 
 
 def test_validation_error_sets_local_error() -> None:
@@ -360,6 +395,7 @@ def test_tool_execution_attributes_and_content_capture() -> None:
         assert span.attributes.get("gen_ai.tool.call.id") == "call_weather"
         assert span.attributes.get("gen_ai.tool.call.arguments") is not None
         assert span.attributes.get("gen_ai.tool.call.result") is not None
+        assert span.attributes.get("sigil.sdk.name") == "sdk-python"
     finally:
         client.shutdown()
         provider.shutdown()

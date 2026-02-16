@@ -43,7 +43,10 @@ test('generation result fields override seed and update span operation name', as
       topP: 0.85,
       toolChoice: 'required',
       thinkingEnabled: false,
-      metadata: { 'sigil.gen_ai.request.thinking.budget_tokens': 4096 },
+      metadata: {
+        'sigil.gen_ai.request.thinking.budget_tokens': 4096,
+        'sigil.sdk.name': 'user-value',
+      },
       stopReason: 'end_turn',
       output: [{ role: 'assistant', content: 'ok' }],
     });
@@ -60,6 +63,7 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(generation.topP, 0.85);
     assert.equal(generation.toolChoice, 'required');
     assert.equal(generation.thinkingEnabled, false);
+    assert.equal(generation.metadata?.['sigil.sdk.name'], 'sdk-js');
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(span.name, 'text_completion gpt-5');
@@ -73,6 +77,7 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(span.attributes['sigil.gen_ai.request.tool_choice'], 'required');
     assert.equal(span.attributes['sigil.gen_ai.request.thinking.enabled'], false);
     assert.equal(span.attributes['sigil.gen_ai.request.thinking.budget_tokens'], 4096);
+    assert.equal(span.attributes['sigil.sdk.name'], 'sdk-js');
     assert.deepEqual(span.attributes['gen_ai.response.finish_reasons'], ['end_turn']);
   } finally {
     await shutdownHarness(harness);
@@ -93,10 +98,12 @@ test('generation callError sets metadata and provider_call_error span status', a
     const generation = singleGeneration(harness.client);
     assert.equal(generation.callError, 'provider unavailable');
     assert.equal(generation.metadata?.call_error, 'provider unavailable');
+    assert.equal(generation.metadata?.['sigil.sdk.name'], 'sdk-js');
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(span.status.code, SpanStatusCode.ERROR);
     assert.equal(span.attributes['error.type'], 'provider_call_error');
+    assert.equal(span.attributes['sigil.sdk.name'], 'sdk-js');
   } finally {
     await shutdownHarness(harness);
   }
@@ -143,8 +150,10 @@ test('tool execution includeContent controls argument/result attributes', async 
     assert.equal(contentSpan.attributes['gen_ai.conversation.id'], 'conv-tool');
     assert.equal(contentSpan.attributes['gen_ai.agent.name'], 'agent-tool');
     assert.equal(contentSpan.attributes['gen_ai.agent.version'], 'v-tool');
+    assert.equal(contentSpan.attributes['sigil.sdk.name'], 'sdk-js');
     assert.equal(noContentSpan.attributes['gen_ai.tool.call.arguments'], undefined);
     assert.equal(noContentSpan.attributes['gen_ai.tool.call.result'], undefined);
+    assert.equal(noContentSpan.attributes['sigil.sdk.name'], 'sdk-js');
   } finally {
     await shutdownHarness(harness);
   }

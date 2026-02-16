@@ -624,6 +624,12 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 	if attrs[spanAttrRequestThinkingBudget].AsInt64() != 4096 {
 		t.Fatalf("expected sigil.gen_ai.request.thinking.budget_tokens=4096")
 	}
+	if attrs[sdkMetadataKeyName].AsString() != sdkName {
+		t.Fatalf("expected %s=%s", sdkMetadataKeyName, sdkName)
+	}
+	if got := generationRecorder.lastGeneration.Metadata[sdkMetadataKeyName]; got != sdkName {
+		t.Fatalf("expected generation metadata %s=%s, got %#v", sdkMetadataKeyName, sdkName, got)
+	}
 	if _, ok := attrs["gen_ai.response.finish_reason"]; ok {
 		t.Fatalf("did not expect gen_ai.response.finish_reason")
 	}
@@ -754,6 +760,9 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 	}
 	if attrs[spanAttrAgentVersion].AsString() != "2026.02.12" {
 		t.Fatalf("expected gen_ai.agent.version=2026.02.12")
+	}
+	if attrs[sdkMetadataKeyName].AsString() != sdkName {
+		t.Fatalf("expected %s=%s", sdkMetadataKeyName, sdkName)
 	}
 }
 
@@ -1013,6 +1022,33 @@ func TestGenerationResultAgentFieldsOverrideSeed(t *testing.T) {
 	}
 	if attrs[spanAttrAgentVersion].AsString() != "result-version" {
 		t.Fatalf("expected gen_ai.agent.version=result-version, got %q", attrs[spanAttrAgentVersion].AsString())
+	}
+}
+
+func TestGenerationRecorderSDKMetadataOverridesConflictingValues(t *testing.T) {
+	client, _, _ := newTestClient(t, Config{})
+
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
+		Model: ModelRef{Provider: "openai", Name: "gpt-5"},
+		Metadata: map[string]any{
+			sdkMetadataKeyName: "user-seed",
+		},
+	})
+
+	generationRecorder.SetResult(Generation{
+		Output: []Message{AssistantTextMessage("ok")},
+		Metadata: map[string]any{
+			sdkMetadataKeyName: "user-result",
+		},
+	}, nil)
+	generationRecorder.End()
+
+	if err := generationRecorder.Err(); err != nil {
+		t.Fatalf("end generation: %v", err)
+	}
+
+	if got := generationRecorder.lastGeneration.Metadata[sdkMetadataKeyName]; got != sdkName {
+		t.Fatalf("expected generation metadata %s=%s, got %#v", sdkMetadataKeyName, sdkName, got)
 	}
 }
 

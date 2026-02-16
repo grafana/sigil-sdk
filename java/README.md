@@ -40,6 +40,11 @@ The Java SDK records normalized generation payloads, correlates them with traces
 
 `GenerationRecorder#error()` reports local SDK failures only (validation/enqueue/shutdown), not provider call exceptions.
 
+- Generation/tool spans always include:
+  - `sigil.sdk.name=sdk-java`
+- Normalized generation metadata always includes the same key.
+- If caller metadata provides a conflicting value for this key, the SDK overwrites it.
+
 ## Quick Start (sync)
 
 ```java

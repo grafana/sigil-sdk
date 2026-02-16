@@ -49,6 +49,7 @@ from .validation import validate_generation
 
 
 _span_attr_generation_id = "sigil.generation.id"
+_span_attr_sdk_name = "sigil.sdk.name"
 _span_attr_conversation_id = "gen_ai.conversation.id"
 _span_attr_agent_name = "gen_ai.agent.name"
 _span_attr_agent_version = "gen_ai.agent.version"
@@ -100,6 +101,7 @@ _metric_token_type_reasoning = "reasoning"
 
 _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 _instrumentation_name = "github.com/grafana/sigil/sdks/python"
+_sdk_name = "sdk-python"
 
 
 class Client:
@@ -763,6 +765,7 @@ class GenerationRecorder:
                 generation.call_error = str(call_error)
             generation.metadata["call_error"] = str(call_error)
 
+        generation.metadata[_span_attr_sdk_name] = _sdk_name
         generation.usage = generation.usage.normalize()
         return generation
 
@@ -922,6 +925,7 @@ def _tool_span_name(tool_name: str) -> str:
 
 def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
     span.set_attribute(_span_attr_operation_name, generation.operation_name or _default_operation_name(generation.mode))
+    span.set_attribute(_span_attr_sdk_name, _sdk_name)
 
     if generation.id:
         span.set_attribute(_span_attr_generation_id, generation.id)
@@ -975,6 +979,7 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
 def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
     span.set_attribute(_span_attr_operation_name, "execute_tool")
     span.set_attribute(_span_attr_tool_name, start.tool_name)
+    span.set_attribute(_span_attr_sdk_name, _sdk_name)
 
     if start.tool_call_id:
         span.set_attribute(_span_attr_tool_call_id, start.tool_call_id)

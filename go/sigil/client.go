@@ -82,6 +82,9 @@ type APIConfig struct {
 
 const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
 const (
+	sdkMetadataKeyName = "sigil.sdk.name"
+	sdkName            = "sdk-go"
+
 	spanAttrGenerationID           = "sigil.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
 	spanAttrAgentName              = "gen_ai.agent.name"
@@ -758,6 +761,10 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	}
 	g.Tags = mergeTags(r.seed.Tags, g.Tags)
 	g.Metadata = mergeMetadata(r.seed.Metadata, g.Metadata)
+	if g.Metadata == nil {
+		g.Metadata = map[string]any{}
+	}
+	g.Metadata[sdkMetadataKeyName] = sdkName
 
 	if g.StartedAt.IsZero() {
 		g.StartedAt = r.startedAt
@@ -852,6 +859,7 @@ func generationSpanName(g Generation) string {
 func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
 		attribute.String(spanAttrOperationName, operationName(g)),
+		attribute.String(sdkMetadataKeyName, sdkName),
 	}
 	if g.ID != "" {
 		attrs = append(attrs, attribute.String(spanAttrGenerationID, g.ID))
@@ -1286,6 +1294,7 @@ func toolSpanAttributes(start ToolExecutionStart) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
 		attribute.String(spanAttrOperationName, "execute_tool"),
 		attribute.String(spanAttrToolName, start.ToolName),
+		attribute.String(sdkMetadataKeyName, sdkName),
 	}
 
 	if callID := strings.TrimSpace(start.ToolCallID); callID != "" {

@@ -234,6 +234,7 @@ public class GenerationRecorder implements AutoCloseable {
         } else {
             generation.setCallError(result.getCallError());
         }
+        generation.getMetadata().put(SigilClient.SPAN_ATTR_SDK_NAME, SigilClient.SDK_NAME);
 
         return generation;
     }

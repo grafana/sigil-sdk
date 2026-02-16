@@ -108,6 +108,9 @@ await client.startToolExecution(
 - Exports are asynchronous with bounded queueing and retry/backoff.
 - `flush()` drains queued generations; `shutdown()` flushes and closes generation exporters.
 - Empty tool names produce a no-op tool recorder.
+- Generation/tool spans always include SDK identity attributes:
+  - `sigil.sdk.name=sdk-js`
+- Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Raw provider artifacts are opt-in (`rawArtifacts: true`).
 
 ## Instrumentation-only mode (no generation send)

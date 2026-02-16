@@ -17,6 +17,7 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string DefaultOperationNameStream = "streamText";
 
     internal const string SpanAttrGenerationId = "sigil.generation.id";
+    internal const string SpanAttrSdkName = "sigil.sdk.name";
     internal const string SpanAttrConversationId = "gen_ai.conversation.id";
     internal const string SpanAttrAgentName = "gen_ai.agent.name";
     internal const string SpanAttrAgentVersion = "gen_ai.agent.version";
@@ -67,6 +68,7 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string MetricTokenTypeReasoning = "reasoning";
 
     private static readonly Regex StatusCodeRegex = new(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled);
+    internal const string SdkName = "sdk-dotnet";
 
     internal readonly SigilClientConfig _config;
     private readonly IGenerationExporter _generationExporter;
@@ -997,6 +999,7 @@ public sealed class SigilClient : IAsyncDisposable
     internal static void ApplyGenerationSpanAttributes(Activity activity, Generation generation)
     {
         activity.SetTag(SpanAttrOperationName, OperationName(generation));
+        activity.SetTag(SpanAttrSdkName, SdkName);
 
         if (!string.IsNullOrWhiteSpace(generation.Id))
         {
@@ -1107,6 +1110,7 @@ public sealed class SigilClient : IAsyncDisposable
     {
         activity.SetTag(SpanAttrOperationName, "execute_tool");
         activity.SetTag(SpanAttrToolName, tool.ToolName);
+        activity.SetTag(SpanAttrSdkName, SdkName);
 
         if (!string.IsNullOrWhiteSpace(tool.ToolCallId))
         {
@@ -1732,6 +1736,7 @@ public sealed class GenerationRecorder
             generation.Metadata["call_error"] = callError.Message;
         }
 
+        generation.Metadata[SigilClient.SpanAttrSdkName] = SigilClient.SdkName;
         generation.Usage = generation.Usage.Normalize();
         return generation;
     }

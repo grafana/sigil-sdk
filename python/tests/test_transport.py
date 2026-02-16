@@ -338,6 +338,7 @@ def _assert_generation_json_payload(generation: dict[str, Any]) -> None:
     metadata = generation["metadata"]
     assert metadata["seed"] in (1, 1.0)
     assert metadata["nested"] == {"ok": True}
+    assert metadata["sigil.sdk.name"] == "sdk-python"
 
     artifacts = generation["raw_artifacts"]
     assert isinstance(artifacts, list) and len(artifacts) == 2
@@ -422,6 +423,7 @@ def _assert_generation_proto_payload(generation: sigil_pb2.Generation) -> None:
 
     assert generation.metadata["seed"] in (1, 1.0)
     assert generation.metadata["nested"] == {"ok": True}
+    assert generation.metadata["sigil.sdk.name"] == "sdk-python"
 
     assert len(generation.raw_artifacts) == 2
 

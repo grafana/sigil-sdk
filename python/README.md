@@ -108,6 +108,13 @@ with client.start_tool_execution(
     rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
 ```
 
+## SDK identity attributes
+
+- Generation and tool spans always include:
+  - `sigil.sdk.name=sdk-python`
+- Normalized generation metadata always includes the same key.
+- If caller metadata provides a conflicting value for this key, the SDK overwrites it.
+
 ## Context Defaults
 
 Use context helpers to set defaults once per request/task boundary.

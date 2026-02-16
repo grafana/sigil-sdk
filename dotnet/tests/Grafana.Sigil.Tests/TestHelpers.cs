@@ -489,6 +489,11 @@ internal static class GenerationAssertions
         Xunit.Assert.Equal(expected.Output.Count, actual.Output.Count);
         Xunit.Assert.Equal(expected.Tools.Count, actual.Tools.Count);
         Xunit.Assert.Equal(expected.Artifacts.Count, actual.RawArtifacts.Count);
+        Xunit.Assert.True(actual.Metadata.Fields.ContainsKey("sigil.sdk.name"));
+        Xunit.Assert.Equal(
+            expected.Metadata["sigil.sdk.name"]?.ToString(),
+            actual.Metadata.Fields["sigil.sdk.name"].StringValue
+        );
 
         Xunit.Assert.Contains(actual.Input.SelectMany(m => m.Parts), p => p.PayloadCase == IngestProto.Part.PayloadOneofCase.Text);
         Xunit.Assert.Contains(actual.Output.SelectMany(m => m.Parts), p => p.PayloadCase == IngestProto.Part.PayloadOneofCase.Thinking);

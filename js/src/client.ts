@@ -45,6 +45,7 @@ import {
 } from './utils.js';
 
 const spanAttrGenerationID = 'sigil.generation.id';
+const spanAttrSDKName = 'sigil.sdk.name';
 const spanAttrConversationID = 'gen_ai.conversation.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
@@ -94,6 +95,7 @@ const metricTokenTypeCacheWrite = 'cache_write';
 const metricTokenTypeCacheCreation = 'cache_creation';
 const metricTokenTypeReasoning = 'reasoning';
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
+const sdkName = 'sdk-js';
 
 export class SigilClient {
   private readonly config: SigilSdkConfig;
@@ -760,6 +762,10 @@ class GenerationRecorderImpl implements GenerationRecorder {
       }
       generation.metadata.call_error = this.callError;
     }
+    if (generation.metadata === undefined) {
+      generation.metadata = {};
+    }
+    generation.metadata[spanAttrSDKName] = sdkName;
 
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
     this.client.internalRecordGeneration(generation);
@@ -940,6 +946,7 @@ function setGenerationSpanAttributes(
   }
 ): void {
   span.setAttribute(spanAttrOperationName, generation.operationName);
+  span.setAttribute(spanAttrSDKName, sdkName);
 
   if (notEmpty(generation.id)) {
     span.setAttribute(spanAttrGenerationID, generation.id);
@@ -1026,6 +1033,7 @@ function setToolSpanAttributes(
 ): void {
   span.setAttribute(spanAttrOperationName, 'execute_tool');
   span.setAttribute(spanAttrToolName, tool.toolName);
+  span.setAttribute(spanAttrSDKName, sdkName);
 
   if (notEmpty(tool.toolCallId)) {
     span.setAttribute(spanAttrToolCallID, tool.toolCallId);

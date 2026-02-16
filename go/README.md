@@ -47,6 +47,9 @@ Cross-language parity tracks are available for:
   - `sigil.gen_ai.request.thinking.enabled`
   - `sigil.gen_ai.request.thinking.budget_tokens` (provider-specific)
   - `gen_ai.response.finish_reasons` is emitted as a string array.
+- Generation/tool spans always include SDK identity attributes:
+  - `sigil.sdk.name=sdk-go`
+- Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Context helpers are available for defaults:
   - `WithConversationID(ctx, id)`
   - `WithAgentName(ctx, name)`

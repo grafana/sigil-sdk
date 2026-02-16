@@ -40,6 +40,7 @@ import java.util.regex.Pattern;
 /** Sigil Java SDK runtime client. */
 public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_GENERATION_ID = "sigil.generation.id";
+    static final String SPAN_ATTR_SDK_NAME = "sigil.sdk.name";
     static final String SPAN_ATTR_CONVERSATION_ID = "gen_ai.conversation.id";
     static final String SPAN_ATTR_AGENT_NAME = "gen_ai.agent.name";
     static final String SPAN_ATTR_AGENT_VERSION = "gen_ai.agent.version";
@@ -91,6 +92,7 @@ public final class SigilClient implements AutoCloseable {
 
     private static final Pattern STATUS_CODE_PATTERN = Pattern.compile("\\b([1-5][0-9][0-9])\\b");
     private static final String INSTRUMENTATION_NAME = "github.com/grafana/sigil/sdks/java";
+    static final String SDK_NAME = "sdk-java";
 
     private final SigilClientConfig config;
     private final GenerationExporter generationExporter;
@@ -841,6 +843,7 @@ public final class SigilClient implements AutoCloseable {
     }
 
     static void setGenerationSpanAttributes(Span span, Generation generation) {
+        span.setAttribute(SPAN_ATTR_SDK_NAME, SDK_NAME);
         if (!generation.getId().isBlank()) {
             span.setAttribute(SPAN_ATTR_GENERATION_ID, generation.getId());
         }
@@ -902,6 +905,7 @@ public final class SigilClient implements AutoCloseable {
     }
 
     static void setToolSpanAttributes(Span span, ToolExecutionStart seed) {
+        span.setAttribute(SPAN_ATTR_SDK_NAME, SDK_NAME);
         if (!seed.getConversationId().isBlank()) {
             span.setAttribute(SPAN_ATTR_CONVERSATION_ID, seed.getConversationId());
         }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Xunit;
 
 namespace Grafana.Sigil.Tests;
@@ -199,6 +200,102 @@ public sealed class RuntimeLifecycleTests
         Assert.Equal("conv-explicit", recorder.LastGeneration!.ConversationId);
         Assert.Equal("agent-explicit", recorder.LastGeneration.AgentName);
         Assert.Equal("v-explicit", recorder.LastGeneration.AgentVersion);
+    }
+
+    [Fact]
+    public async Task GenerationRecorder_OverridesConflictingSdkMetadataValues()
+    {
+        var exporter = new CapturingGenerationExporter();
+        await using var client = new SigilClient(TestHelpers.TestConfig(exporter));
+
+        var start = TestHelpers.CreateSeedStart("gen-sdk-metadata");
+        start.Metadata["sigil.sdk.name"] = "seed-value";
+
+        var result = TestHelpers.CreateSeedResult("gen-sdk-metadata");
+        result.Metadata["sigil.sdk.name"] = "result-value";
+
+        var recorder = client.StartGeneration(start);
+        recorder.SetResult(result);
+        recorder.End();
+
+        Assert.NotNull(recorder.LastGeneration);
+        Assert.Equal("sdk-dotnet", recorder.LastGeneration!.Metadata["sigil.sdk.name"]?.ToString());
+    }
+
+    [Fact]
+    public async Task GenerationSpan_ContainsSdkIdentityTags()
+    {
+        var exporter = new CapturingGenerationExporter();
+        var config = TestHelpers.TestConfig(exporter);
+        config.GenerationExport.BatchSize = 1;
+
+        var spans = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")
+                {
+                    spans.Add(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await using var client = new SigilClient(config);
+        var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-span-sdk"));
+        recorder.SetResult(TestHelpers.CreateSeedResult("gen-span-sdk"));
+        recorder.End();
+        await client.ShutdownAsync();
+
+        Assert.Single(spans);
+        var span = spans[0];
+        Assert.Equal("sdk-dotnet", span.GetTagItem("sigil.sdk.name"));
+    }
+
+    [Fact]
+    public async Task ToolSpan_ContainsSdkIdentityTags()
+    {
+        var exporter = new CapturingGenerationExporter();
+        await using var client = new SigilClient(TestHelpers.TestConfig(exporter));
+
+        var spans = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.GetTagItem("gen_ai.operation.name")?.ToString() == "execute_tool")
+                {
+                    spans.Add(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var recorder = client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "weather",
+        });
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = new Dictionary<string, object?>
+            {
+                ["city"] = "Paris",
+            },
+            Result = new Dictionary<string, object?>
+            {
+                ["temp_c"] = 18,
+            },
+        });
+        recorder.End();
+
+        Assert.Single(spans);
+        var span = spans[0];
+        Assert.Equal("sdk-dotnet", span.GetTagItem("sigil.sdk.name"));
     }
 
     private static void EndSuccessfulGeneration(SigilClient client, string id)
