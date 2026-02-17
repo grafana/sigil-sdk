@@ -4,6 +4,10 @@ This module provides strict wrappers around official Anthropic Java SDK request/
 
 No simplified public DTO layer is exposed.
 
+## Embeddings support
+
+This helper currently supports Anthropic Messages APIs only. Native Anthropic embeddings endpoints are not available in the official SDK/API surface used in this repository.
+
 ## Public API
 
 - Wrappers:

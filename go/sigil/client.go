@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,6 +25,7 @@ import (
 type Config struct {
 	GenerationExport GenerationExportConfig
 	API              APIConfig
+	EmbeddingCapture EmbeddingCaptureConfig
 	// Tracer is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry tracer.
 	Tracer trace.Tracer
 	// Meter is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry meter.
@@ -105,6 +107,10 @@ const (
 	spanAttrFinishReasons          = "gen_ai.response.finish_reasons"
 	spanAttrInputTokens            = "gen_ai.usage.input_tokens"
 	spanAttrOutputTokens           = "gen_ai.usage.output_tokens"
+	spanAttrEmbeddingInputCount    = "gen_ai.embeddings.input_count"
+	spanAttrEmbeddingInputTexts    = "gen_ai.embeddings.input_texts"
+	spanAttrEmbeddingDimCount      = "gen_ai.embeddings.dimension.count"
+	spanAttrRequestEncodingFormats = "gen_ai.request.encoding_formats"
 	spanAttrCacheReadTokens        = "gen_ai.usage.cache_read_input_tokens"
 	spanAttrCacheWriteTokens       = "gen_ai.usage.cache_write_input_tokens"
 	spanAttrCacheCreationTokens    = "gen_ai.usage.cache_creation_input_tokens"
@@ -155,6 +161,11 @@ func DefaultConfig() Config {
 		},
 		API: APIConfig{
 			Endpoint: "http://localhost:8080",
+		},
+		EmbeddingCapture: EmbeddingCaptureConfig{
+			CaptureInput:  false,
+			MaxInputItems: 20,
+			MaxTextLength: 1024,
 		},
 		Tracer: nil,
 		Logger: log.Default(),
@@ -212,6 +223,24 @@ type GenerationRecorder struct {
 	firstTokenAt   time.Time
 }
 
+// EmbeddingRecorder records and closes one in-flight embeddings span.
+//
+// All methods are safe to call on a nil or no-op recorder.
+type EmbeddingRecorder struct {
+	client    *Client
+	ctx       context.Context
+	span      trace.Span
+	seed      EmbeddingStart
+	startedAt time.Time
+
+	mu        sync.Mutex
+	ended     bool
+	callErr   error
+	result    EmbeddingResult
+	hasResult bool
+	finalErr  error
+}
+
 // ToolExecutionRecorder records and closes one in-flight execute_tool span.
 //
 // All methods are safe to call on a nil or no-op recorder.
@@ -245,6 +274,7 @@ func NewClient(config Config) *Client {
 
 	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
 	cfg.API = mergeAPIConfig(defaults.API, cfg.API)
+	cfg.EmbeddingCapture = mergeEmbeddingCaptureConfig(defaults.EmbeddingCapture, cfg.EmbeddingCapture)
 
 	generationHeaders, err := resolveHeadersWithAuth(cfg.GenerationExport.Headers, cfg.GenerationExport.Auth)
 	if err != nil {
@@ -389,6 +419,58 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	})...)
 
 	return callCtx, &GenerationRecorder{
+		client:    c,
+		ctx:       callCtx,
+		span:      span,
+		seed:      seed,
+		startedAt: startedAt,
+	}
+}
+
+// StartEmbedding starts an embeddings GenAI span and returns a context for the provider call.
+//
+// If the client is nil a no-op recorder is returned (instrumentation never crashes business logic).
+func (c *Client) StartEmbedding(ctx context.Context, start EmbeddingStart) (context.Context, *EmbeddingRecorder) {
+	if c == nil {
+		return ctx, &EmbeddingRecorder{}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	seed := cloneEmbeddingStart(start)
+	if seed.AgentName == "" {
+		if name, ok := AgentNameFromContext(ctx); ok {
+			seed.AgentName = name
+		}
+	}
+	if seed.AgentVersion == "" {
+		if version, ok := AgentVersionFromContext(ctx); ok {
+			seed.AgentVersion = version
+		}
+	}
+
+	startedAt := seed.StartedAt
+	if startedAt.IsZero() {
+		startedAt = c.now().UTC()
+	} else {
+		startedAt = startedAt.UTC()
+	}
+	seed.StartedAt = startedAt
+
+	tracer := c.tracer
+	if tracer == nil {
+		tracer = otel.Tracer(instrumentationName)
+	}
+	callCtx, span := tracer.Start(
+		ctx,
+		embeddingSpanName(seed.Model.Name),
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithTimestamp(startedAt),
+	)
+	span.SetAttributes(embeddingSpanStartAttributes(seed)...)
+
+	return callCtx, &EmbeddingRecorder{
 		client:    c,
 		ctx:       callCtx,
 		span:      span,
@@ -576,6 +658,112 @@ func (r *GenerationRecorder) End() {
 // Err returns the accumulated error after End has been called, like sql.Rows.Err().
 // It is safe to call on a nil recorder.
 func (r *GenerationRecorder) Err() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.finalErr
+}
+
+// SetCallError records a provider/network call error.
+// It is safe to call on a nil recorder.
+func (r *EmbeddingRecorder) SetCallError(err error) {
+	if r == nil || err == nil {
+		return
+	}
+	r.mu.Lock()
+	r.callErr = err
+	r.mu.Unlock()
+}
+
+// SetResult stores the mapped embedding result.
+// It is safe to call on a nil recorder.
+func (r *EmbeddingRecorder) SetResult(result EmbeddingResult) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.result = cloneEmbeddingResult(result)
+	r.hasResult = true
+	r.mu.Unlock()
+}
+
+// End finalizes embedding recording, sets span status, and closes the span.
+//
+// End is idempotent; subsequent calls are no-ops.
+// It is safe to call on a nil or no-op recorder.
+func (r *EmbeddingRecorder) End() {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	if r.ended {
+		r.mu.Unlock()
+		return
+	}
+	r.ended = true
+	callErr := r.callErr
+	result := cloneEmbeddingResult(r.result)
+	hasResult := r.hasResult
+	r.mu.Unlock()
+
+	if r.client == nil || r.span == nil {
+		return
+	}
+
+	completedAt := r.client.now().UTC()
+	normalized := r.normalizeEmbeddingResult(result)
+
+	r.span.SetName(embeddingSpanName(r.seed.Model.Name))
+	r.span.SetAttributes(embeddingSpanEndAttributes(normalized, hasResult, r.client.config.EmbeddingCapture)...)
+
+	var localErr error
+	if err := ValidateEmbeddingStart(r.seed); err != nil {
+		localErr = fmt.Errorf("%w: %v", ErrEmbeddingValidationFailed, err)
+	} else if err := ValidateEmbeddingResult(normalized); err != nil {
+		localErr = fmt.Errorf("%w: %v", ErrEmbeddingValidationFailed, err)
+	}
+
+	if callErr != nil {
+		r.span.RecordError(callErr)
+	}
+	if localErr != nil {
+		r.span.RecordError(localErr)
+	}
+
+	errorType := ""
+	errorCategory := ""
+	switch {
+	case callErr != nil:
+		errorType = "provider_call_error"
+		errorCategory = classifyErrorCategory(callErr, false)
+		r.span.SetStatus(codes.Error, callErr.Error())
+	case localErr != nil:
+		errorType = "validation_error"
+		errorCategory = "sdk_error"
+		r.span.SetStatus(codes.Error, localErr.Error())
+	default:
+		r.span.SetStatus(codes.Ok, "")
+	}
+
+	if errorType != "" {
+		r.span.SetAttributes(attribute.String(spanAttrErrorType, errorType))
+		r.span.SetAttributes(attribute.String(spanAttrErrorCategory, errorCategory))
+	}
+
+	r.client.recordEmbeddingMetrics(r.seed, normalized, r.startedAt, completedAt, errorType, errorCategory)
+	r.span.End(trace.WithTimestamp(completedAt))
+
+	r.mu.Lock()
+	r.finalErr = localErr
+	r.mu.Unlock()
+}
+
+// Err returns the accumulated local error after End has been called.
+// It is safe to call on a nil recorder.
+func (r *EmbeddingRecorder) Err() error {
 	if r == nil {
 		return nil
 	}
@@ -791,6 +979,10 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	return g
 }
 
+func (r *EmbeddingRecorder) normalizeEmbeddingResult(raw EmbeddingResult) EmbeddingResult {
+	return cloneEmbeddingResult(raw)
+}
+
 func combineAllErrors(errs ...error) error {
 	filtered := make([]error, 0, len(errs))
 	for i := range errs {
@@ -854,6 +1046,62 @@ func generationSpanName(g Generation) string {
 		return operation
 	}
 	return operation + " " + model
+}
+
+func embeddingSpanName(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return defaultEmbeddingOperationName
+	}
+	return defaultEmbeddingOperationName + " " + model
+}
+
+func embeddingSpanStartAttributes(start EmbeddingStart) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.String(spanAttrOperationName, defaultEmbeddingOperationName),
+		attribute.String(sdkMetadataKeyName, sdkName),
+	}
+	if provider := strings.TrimSpace(start.Model.Provider); provider != "" {
+		attrs = append(attrs, attribute.String(spanAttrProviderName, provider))
+	}
+	if model := strings.TrimSpace(start.Model.Name); model != "" {
+		attrs = append(attrs, attribute.String(spanAttrRequestModel, model))
+	}
+	if agentName := strings.TrimSpace(start.AgentName); agentName != "" {
+		attrs = append(attrs, attribute.String(spanAttrAgentName, agentName))
+	}
+	if agentVersion := strings.TrimSpace(start.AgentVersion); agentVersion != "" {
+		attrs = append(attrs, attribute.String(spanAttrAgentVersion, agentVersion))
+	}
+	if start.Dimensions != nil {
+		attrs = append(attrs, attribute.Int64(spanAttrEmbeddingDimCount, *start.Dimensions))
+	}
+	if encodingFormat := strings.TrimSpace(start.EncodingFormat); encodingFormat != "" {
+		attrs = append(attrs, attribute.StringSlice(spanAttrRequestEncodingFormats, []string{encodingFormat}))
+	}
+	return attrs
+}
+
+func embeddingSpanEndAttributes(result EmbeddingResult, hasResult bool, captureCfg EmbeddingCaptureConfig) []attribute.KeyValue {
+	attrs := make([]attribute.KeyValue, 0, 8)
+	if hasResult {
+		attrs = append(attrs, attribute.Int64(spanAttrEmbeddingInputCount, int64(result.InputCount)))
+	}
+	if result.InputTokens != 0 {
+		attrs = append(attrs, attribute.Int64(spanAttrInputTokens, result.InputTokens))
+	}
+	if responseModel := strings.TrimSpace(result.ResponseModel); responseModel != "" {
+		attrs = append(attrs, attribute.String(spanAttrResponseModel, responseModel))
+	}
+	if result.Dimensions != nil {
+		attrs = append(attrs, attribute.Int64(spanAttrEmbeddingDimCount, *result.Dimensions))
+	}
+	if captureCfg.CaptureInput {
+		if texts := captureEmbeddingInputTexts(result.InputTexts, captureCfg); len(texts) > 0 {
+			attrs = append(attrs, attribute.StringSlice(spanAttrEmbeddingInputTexts, texts))
+		}
+	}
+	return attrs
 }
 
 func generationSpanAttributes(g Generation) []attribute.KeyValue {
@@ -1194,6 +1442,7 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 			context.Background(),
 			value,
 			metric.WithAttributes(
+				attribute.String(spanAttrOperationName, operationName(generation)),
 				attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
 				attribute.String(spanAttrRequestModel, strings.TrimSpace(generation.Model.Name)),
 				attribute.String(spanAttrAgentName, strings.TrimSpace(generation.AgentName)),
@@ -1233,6 +1482,60 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 				),
 			)
 		}
+	}
+}
+
+func (c *Client) recordEmbeddingMetrics(
+	seed EmbeddingStart,
+	result EmbeddingResult,
+	startedAt time.Time,
+	completedAt time.Time,
+	errorType string,
+	errorCategory string,
+) {
+	if c == nil {
+		return
+	}
+	if c.instruments.operationDuration == nil || c.instruments.tokenUsage == nil {
+		return
+	}
+	if startedAt.IsZero() || completedAt.IsZero() {
+		return
+	}
+
+	duration := completedAt.Sub(startedAt).Seconds()
+	if duration < 0 {
+		duration = 0
+	}
+
+	provider := strings.TrimSpace(seed.Model.Provider)
+	model := strings.TrimSpace(seed.Model.Name)
+	agentName := strings.TrimSpace(seed.AgentName)
+	c.instruments.operationDuration.Record(
+		context.Background(),
+		duration,
+		metric.WithAttributes(
+			attribute.String(spanAttrOperationName, defaultEmbeddingOperationName),
+			attribute.String(spanAttrProviderName, provider),
+			attribute.String(spanAttrRequestModel, model),
+			attribute.String(spanAttrAgentName, agentName),
+			attribute.String(spanAttrErrorType, errorType),
+			attribute.String(spanAttrErrorCategory, errorCategory),
+		),
+	)
+
+	if result.InputTokens != 0 {
+		c.instruments.tokenUsage.Record(
+			context.Background(),
+			result.InputTokens,
+			metric.WithAttributes(
+				attribute.String(spanAttrOperationName, defaultEmbeddingOperationName),
+				attribute.String(spanAttrProviderName, provider),
+				attribute.String(spanAttrRequestModel, model),
+				attribute.String(spanAttrAgentName, agentName),
+				attribute.String(metricAttrTokenType, metricTokenTypeInput),
+			),
+		)
 	}
 }
 
@@ -1406,4 +1709,54 @@ func mergeMetadata(base, override map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func captureEmbeddingInputTexts(inputTexts []string, cfg EmbeddingCaptureConfig) []string {
+	if len(inputTexts) == 0 {
+		return nil
+	}
+	maxItems := cfg.MaxInputItems
+	if maxItems <= 0 {
+		maxItems = 20
+	}
+	maxTextLen := cfg.MaxTextLength
+	if maxTextLen <= 0 {
+		maxTextLen = 1024
+	}
+	if maxItems > len(inputTexts) {
+		maxItems = len(inputTexts)
+	}
+	out := make([]string, 0, maxItems)
+	for i := 0; i < maxItems; i++ {
+		out = append(out, truncateEmbeddingText(inputTexts[i], maxTextLen))
+	}
+	return out
+}
+
+func truncateEmbeddingText(text string, maxLen int) string {
+	if maxLen <= 0 || utf8.RuneCountInString(text) <= maxLen {
+		return text
+	}
+	if maxLen <= len("...") {
+		return truncateRunePrefix(text, maxLen)
+	}
+	return truncateRunePrefix(text, maxLen-len("...")) + "..."
+}
+
+func truncateRunePrefix(text string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runeCount := utf8.RuneCountInString(text)
+	if runeCount <= maxRunes {
+		return text
+	}
+
+	// Find the byte index after maxRunes runes
+	byteIndex := 0
+	for i := 0; i < maxRunes && byteIndex < len(text); i++ {
+		_, size := utf8.DecodeRuneInString(text[byteIndex:])
+		byteIndex += size
+	}
+	return text[:byteIndex]
 }

@@ -61,4 +61,50 @@ class SigilClientMetricsTest {
         tracerProvider.shutdown();
         meterProvider.shutdown();
     }
+
+    @Test
+    void embeddingRecorderEmitsDurationAndInputTokenMetricsOnly() {
+        InMemoryMetricReader metricReader = InMemoryMetricReader.create();
+        SdkMeterProvider meterProvider = SdkMeterProvider.builder()
+                .registerMetricReader(metricReader)
+                .build();
+        SdkTracerProvider tracerProvider = SdkTracerProvider.builder().build();
+
+        TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
+        SigilClientConfig config = new SigilClientConfig()
+                .setTracer(tracerProvider.get("test"))
+                .setMeter(meterProvider.get("test"))
+                .setGenerationExporter(exporter)
+                .setGenerationExport(new GenerationExportConfig()
+                        .setBatchSize(100)
+                        .setQueueSize(100)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            EmbeddingRecorder recorder = client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small"))
+                    .setAgentName("agent-embed"));
+            recorder.setResult(new EmbeddingResult()
+                    .setInputCount(2)
+                    .setInputTokens(42));
+            recorder.end();
+        }
+
+        List<String> metricNames = metricReader.collectAllMetrics().stream()
+                .map(MetricData::getName)
+                .toList();
+
+        assertThat(metricNames).contains(
+                SigilClient.METRIC_OPERATION_DURATION,
+                SigilClient.METRIC_TOKEN_USAGE
+        );
+        assertThat(metricNames).doesNotContain(
+                SigilClient.METRIC_TTFT,
+                SigilClient.METRIC_TOOL_CALLS_PER_OPERATION
+        );
+
+        tracerProvider.shutdown();
+        meterProvider.shutdown();
+    }
 }

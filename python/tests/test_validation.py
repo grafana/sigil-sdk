@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from sigil_sdk import (
+    EmbeddingResult,
+    EmbeddingStart,
     Generation,
     Message,
     MessageRole,
@@ -13,6 +15,8 @@ from sigil_sdk import (
     PartKind,
     ToolCall,
     ToolResult,
+    validate_embedding_result,
+    validate_embedding_start,
     validate_generation,
 )
 
@@ -94,3 +98,36 @@ def test_validate_generation_accepts_conversation_and_response_fields() -> None:
     )
 
     validate_generation(generation)
+
+
+def test_validate_embedding_start_requires_model_fields() -> None:
+    with pytest.raises(ValueError, match=r"embedding\.model\.provider is required"):
+        validate_embedding_start(
+            EmbeddingStart(
+                model=ModelRef(provider="", name="text-embedding-3-small"),
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"embedding\.model\.name is required"):
+        validate_embedding_start(
+            EmbeddingStart(
+                model=ModelRef(provider="openai", name=""),
+            )
+        )
+
+
+def test_validate_embedding_result_rejects_negative_counts() -> None:
+    with pytest.raises(ValueError, match=r"embedding\.input_count must be >= 0"):
+        validate_embedding_result(
+            EmbeddingResult(
+                input_count=-1,
+            )
+        )
+
+    with pytest.raises(ValueError, match=r"embedding\.input_tokens must be >= 0"):
+        validate_embedding_result(
+            EmbeddingResult(
+                input_count=1,
+                input_tokens=-1,
+            )
+        )

@@ -743,6 +743,16 @@ public static class AnthropicGenerationMapper
             return bodyPascal;
         }
 
+        if (requestJson.TryGetProperty("rawBodyData", out var rawBodyCamel) && rawBodyCamel.ValueKind == JsonValueKind.Object)
+        {
+            return rawBodyCamel;
+        }
+
+        if (requestJson.TryGetProperty("RawBodyData", out var rawBodyPascal) && rawBodyPascal.ValueKind == JsonValueKind.Object)
+        {
+            return rawBodyPascal;
+        }
+
         return requestJson;
     }
 

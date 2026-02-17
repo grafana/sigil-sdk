@@ -60,6 +60,61 @@ public static class GeminiGenerationMapper
         return FromStreamInternal(request, summary, options);
     }
 
+    public static EmbeddingResult EmbeddingFromResponse(
+        string model,
+        IReadOnlyList<Content>? contents,
+        EmbedContentConfig? config,
+        EmbedContentResponse? response
+    )
+    {
+        _ = model;
+
+        var result = new EmbeddingResult
+        {
+            InputCount = EmbeddingInputCount(contents),
+            InputTexts = EmbeddingInputTexts(contents),
+        };
+
+        var requestedDimensions = config?.OutputDimensionality;
+        if (response == null)
+        {
+            if (requestedDimensions.HasValue && requestedDimensions.Value > 0)
+            {
+                result.Dimensions = requestedDimensions.Value;
+            }
+
+            return result;
+        }
+
+        long inputTokens = 0;
+        foreach (var embedding in response.Embeddings ?? new List<ContentEmbedding>())
+        {
+            if (embedding == null)
+            {
+                continue;
+            }
+
+            var tokenCount = embedding.Statistics?.TokenCount;
+            if (tokenCount.HasValue && tokenCount.Value > 0)
+            {
+                inputTokens += Convert.ToInt64(tokenCount.Value);
+            }
+
+            if (!result.Dimensions.HasValue && embedding.Values != null && embedding.Values.Count > 0)
+            {
+                result.Dimensions = embedding.Values.Count;
+            }
+        }
+
+        result.InputTokens = inputTokens;
+        if (!result.Dimensions.HasValue && requestedDimensions.HasValue && requestedDimensions.Value > 0)
+        {
+            result.Dimensions = requestedDimensions.Value;
+        }
+
+        return result;
+    }
+
     private static Generation FromRequestResponseInternal(
         GenerateContentRequest request,
         GenerateContentResponse response,
@@ -241,6 +296,64 @@ public static class GeminiGenerationMapper
             Contents = mappedContents,
             Config = config,
         };
+    }
+
+    private static int EmbeddingInputCount(IReadOnlyList<Content>? contents)
+    {
+        if (contents == null || contents.Count == 0)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var content in contents)
+        {
+            if (content != null)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static List<string> EmbeddingInputTexts(IReadOnlyList<Content>? contents)
+    {
+        if (contents == null || contents.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        var inputTexts = new List<string>(contents.Count);
+        foreach (var content in contents)
+        {
+            var text = EmbeddingContentText(content);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                inputTexts.Add(text);
+            }
+        }
+
+        return inputTexts;
+    }
+
+    private static string EmbeddingContentText(Content? content)
+    {
+        if (content?.Parts == null || content.Parts.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var chunks = new List<string>(content.Parts.Count);
+        foreach (var part in content.Parts)
+        {
+            if (part != null && !string.IsNullOrWhiteSpace(part.Text))
+            {
+                chunks.Add(part.Text.Trim());
+            }
+        }
+
+        return string.Join("\n", chunks);
     }
 
     private static List<Message> MapContents(IReadOnlyList<Content>? contents)

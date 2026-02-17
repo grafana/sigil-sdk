@@ -16,6 +16,8 @@ var (
 	ErrToolNameRequired = errors.New("sigil: tool name is required")
 	// ErrValidationFailed wraps generation validation failures.
 	ErrValidationFailed = errors.New("sigil: generation validation failed")
+	// ErrEmbeddingValidationFailed wraps embedding validation failures.
+	ErrEmbeddingValidationFailed = errors.New("sigil: embedding validation failed")
 	// ErrEnqueueFailed wraps generation enqueue failures.
 	ErrEnqueueFailed = errors.New("sigil: generation enqueue failed")
 	// ErrQueueFull is returned when the generation queue is at capacity.

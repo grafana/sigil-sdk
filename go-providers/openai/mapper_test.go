@@ -489,3 +489,62 @@ func TestResponsesFromStream(t *testing.T) {
 		t.Fatalf("unexpected artifact kinds: %#v", generation.Artifacts)
 	}
 }
+
+func TestEmbeddingsFromResponse(t *testing.T) {
+	req := osdk.EmbeddingNewParams{
+		Model: osdk.EmbeddingModel("text-embedding-3-small"),
+		Input: osdk.EmbeddingNewParamsInputUnion{
+			OfArrayOfStrings: []string{"hello", "world"},
+		},
+	}
+
+	resp := &osdk.CreateEmbeddingResponse{
+		Model: "text-embedding-3-small",
+		Data: []osdk.Embedding{
+			{
+				Embedding: []float64{0.1, 0.2, 0.3},
+			},
+			{
+				Embedding: []float64{0.4, 0.5, 0.6},
+			},
+		},
+		Usage: osdk.CreateEmbeddingResponseUsage{
+			PromptTokens: 42,
+			TotalTokens:  42,
+		},
+	}
+
+	result := EmbeddingsFromResponse(req, resp)
+	if result.InputCount != 2 {
+		t.Fatalf("expected input count 2, got %d", result.InputCount)
+	}
+	if result.InputTokens != 42 {
+		t.Fatalf("expected input tokens 42, got %d", result.InputTokens)
+	}
+	if result.ResponseModel != "text-embedding-3-small" {
+		t.Fatalf("expected response model text-embedding-3-small, got %q", result.ResponseModel)
+	}
+	if result.Dimensions == nil || *result.Dimensions != 3 {
+		t.Fatalf("expected dimensions 3, got %v", result.Dimensions)
+	}
+	if len(result.InputTexts) != 2 || result.InputTexts[0] != "hello" || result.InputTexts[1] != "world" {
+		t.Fatalf("expected input texts [hello world], got %v", result.InputTexts)
+	}
+}
+
+func TestEmbeddingsFromResponseWithTokenInputDoesNotCaptureTexts(t *testing.T) {
+	req := osdk.EmbeddingNewParams{
+		Model: osdk.EmbeddingModel("text-embedding-3-small"),
+		Input: osdk.EmbeddingNewParamsInputUnion{
+			OfArrayOfTokens: []int64{1, 2, 3},
+		},
+	}
+
+	result := EmbeddingsFromResponse(req, nil)
+	if result.InputCount != 1 {
+		t.Fatalf("expected input count 1, got %d", result.InputCount)
+	}
+	if len(result.InputTexts) != 0 {
+		t.Fatalf("expected no input texts for tokenized input, got %v", result.InputTexts)
+	}
+}

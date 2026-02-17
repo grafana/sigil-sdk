@@ -187,6 +187,83 @@ public sealed class GeminiMappingAndRecorderTests
     }
 
     [Fact]
+    public void EmbeddingFromResponse_MapsInputCountUsageAndDimensions()
+    {
+        var embedContents = CreateEmbeddingContents();
+        var config = new EmbedContentConfig
+        {
+            OutputDimensionality = 64,
+        };
+        var response = CreateEmbeddingResponse();
+
+        var result = GeminiGenerationMapper.EmbeddingFromResponse(
+            "gemini-embedding-001",
+            embedContents,
+            config,
+            response
+        );
+
+        Assert.Equal(2, result.InputCount);
+        Assert.Equal(18, result.InputTokens);
+        Assert.Equal(3, result.Dimensions);
+        Assert.Equal(new[] { "alpha", "beta" }, result.InputTexts);
+    }
+
+    [Fact]
+    public async Task Recorder_EmbedContent_DoesNotEnqueueAndPropagatesProviderErrors()
+    {
+        var exporter = new CapturingExporter();
+        await using var client = new SigilClient(new SigilClientConfig
+        {
+            GenerationExporter = exporter,
+            GenerationExport = new GenerationExportConfig
+            {
+                BatchSize = 1,
+                QueueSize = 10,
+                FlushInterval = TimeSpan.FromHours(1),
+            },
+        });
+
+        var model = "gemini-embedding-001";
+        var contents = CreateEmbeddingContents();
+        var config = new EmbedContentConfig
+        {
+            OutputDimensionality = 64,
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => GeminiRecorder.EmbedContentAsync(
+            client,
+            model,
+            contents,
+            (_, _, _, _) => Task.FromException<EmbedContentResponse>(new InvalidOperationException("embedding provider failed")),
+            config,
+            new GeminiSigilOptions
+            {
+                ModelName = model,
+            }
+        ));
+
+        var wrapped = await GeminiRecorder.EmbedContentAsync(
+            client,
+            model,
+            contents,
+            (_, _, _, _) => Task.FromResult(CreateEmbeddingResponse()),
+            config,
+            new GeminiSigilOptions
+            {
+                ModelName = model,
+            }
+        );
+
+        Assert.NotEmpty(wrapped.Embeddings ?? new List<ContentEmbedding>());
+
+        await client.FlushAsync();
+        await client.ShutdownAsync();
+
+        Assert.Empty(exporter.Requests);
+    }
+
+    [Fact]
     public void FromRequestResponse_MapsThinkingDisabled()
     {
         var config = CreateConfig();
@@ -334,6 +411,60 @@ public sealed class GeminiMappingAndRecorderTests
                 CachedContentTokenCount = 12,
                 ThoughtsTokenCount = 10,
                 ToolUsePromptTokenCount = 7,
+            },
+        };
+    }
+
+    private static List<Content> CreateEmbeddingContents()
+    {
+        return new List<Content>
+        {
+            new Content
+            {
+                Role = "user",
+                Parts = new List<GPart>
+                {
+                    new GPart
+                    {
+                        Text = "alpha",
+                    },
+                },
+            },
+            new Content
+            {
+                Role = "user",
+                Parts = new List<GPart>
+                {
+                    new GPart
+                    {
+                        Text = "beta",
+                    },
+                },
+            },
+        };
+    }
+
+    private static EmbedContentResponse CreateEmbeddingResponse()
+    {
+        return new EmbedContentResponse
+        {
+            Embeddings = new List<ContentEmbedding>
+            {
+                new ContentEmbedding
+                {
+                    Values = new List<double> { 0.1, 0.2, 0.3 },
+                    Statistics = new ContentEmbeddingStatistics
+                    {
+                        TokenCount = 11,
+                    },
+                },
+                new ContentEmbedding
+                {
+                    Statistics = new ContentEmbeddingStatistics
+                    {
+                        TokenCount = 7,
+                    },
+                },
             },
         };
     }

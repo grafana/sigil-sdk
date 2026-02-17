@@ -34,6 +34,8 @@ from .models import (
     ConversationRatingInput,
     ConversationRatingSummary,
     ConversationRatingValue,
+    EmbeddingResult,
+    EmbeddingStart,
     ExportGenerationsRequest,
     Generation,
     GenerationMode,
@@ -45,7 +47,7 @@ from .models import (
     ToolExecutionStart,
 )
 from .proto_mapping import generation_to_proto
-from .validation import validate_generation
+from .validation import validate_embedding_result, validate_embedding_start, validate_generation
 
 
 _span_attr_generation_id = "sigil.generation.id"
@@ -69,6 +71,10 @@ _span_attr_response_model = "gen_ai.response.model"
 _span_attr_finish_reasons = "gen_ai.response.finish_reasons"
 _span_attr_input_tokens = "gen_ai.usage.input_tokens"
 _span_attr_output_tokens = "gen_ai.usage.output_tokens"
+_span_attr_embedding_input_count = "gen_ai.embeddings.input_count"
+_span_attr_embedding_input_texts = "gen_ai.embeddings.input_texts"
+_span_attr_embedding_dim_count = "gen_ai.embeddings.dimension.count"
+_span_attr_request_encoding_formats = "gen_ai.request.encoding_formats"
 _span_attr_cache_read_tokens = "gen_ai.usage.cache_read_input_tokens"
 _span_attr_cache_write_tokens = "gen_ai.usage.cache_write_input_tokens"
 _span_attr_cache_creation_tokens = "gen_ai.usage.cache_creation_input_tokens"
@@ -102,6 +108,7 @@ _metric_token_type_reasoning = "reasoning"
 _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 _instrumentation_name = "github.com/grafana/sigil/sdks/python"
 _sdk_name = "sdk-python"
+_default_embedding_operation_name = "embeddings"
 
 
 class Client:
@@ -170,6 +177,36 @@ class Client:
         """Starts a stream generation recorder."""
 
         return self._start_generation(start=start, default_mode=GenerationMode.STREAM)
+
+    def start_embedding(self, start: EmbeddingStart) -> "EmbeddingRecorder":
+        """Starts an embedding recorder."""
+
+        self._assert_open()
+
+        seed = copy.deepcopy(start)
+        if seed.agent_name == "":
+            agent_name = agent_name_from_context() or ""
+            seed.agent_name = agent_name
+        if seed.agent_version == "":
+            agent_version = agent_version_from_context() or ""
+            seed.agent_version = agent_version
+
+        started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
+        seed.started_at = started_at
+
+        span = self._tracer.start_span(
+            _embedding_span_name(seed.model.name),
+            kind=SpanKind.CLIENT,
+            start_time=_datetime_to_ns(started_at),
+        )
+        _set_embedding_start_span_attributes(span, seed)
+
+        return EmbeddingRecorder(
+            client=self,
+            seed=seed,
+            span=span,
+            started_at=started_at,
+        )
 
     def start_tool_execution(self, start: ToolExecutionStart) -> "ToolExecutionRecorder":
         """Starts a tool execution recorder."""
@@ -520,12 +557,47 @@ class Client:
                     },
                 )
 
+    def _record_embedding_metrics(
+        self,
+        seed: EmbeddingStart,
+        result: EmbeddingResult,
+        started_at: datetime,
+        completed_at: datetime,
+        error_type: str,
+        error_category: str,
+    ) -> None:
+        duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
+        self._operation_duration_histogram.record(
+            duration_seconds,
+            attributes={
+                _span_attr_operation_name: _default_embedding_operation_name,
+                _span_attr_provider_name: seed.model.provider,
+                _span_attr_request_model: seed.model.name,
+                _span_attr_agent_name: seed.agent_name,
+                _span_attr_error_type: error_type,
+                _span_attr_error_category: error_category,
+            },
+        )
+
+        if result.input_tokens != 0:
+            self._token_usage_histogram.record(
+                result.input_tokens,
+                attributes={
+                    _span_attr_operation_name: _default_embedding_operation_name,
+                    _span_attr_provider_name: seed.model.provider,
+                    _span_attr_request_model: seed.model.name,
+                    _span_attr_agent_name: seed.agent_name,
+                    _metric_attr_token_type: _metric_token_type_input,
+                },
+            )
+
     def _record_token_usage(self, generation: Generation, token_type: str, value: int) -> None:
         if value == 0:
             return
         self._token_usage_histogram.record(
             value,
             attributes={
+                _span_attr_operation_name: generation.operation_name,
                 _span_attr_provider_name: generation.model.provider,
                 _span_attr_request_model: generation.model.name,
                 _span_attr_agent_name: generation.agent_name,
@@ -771,6 +843,116 @@ class GenerationRecorder:
 
 
 @dataclass(slots=True)
+class EmbeddingRecorder:
+    """Recorder for one embedding lifecycle."""
+
+    client: Client
+    seed: EmbeddingStart
+    span: Span
+    started_at: datetime
+
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _ended: bool = False
+    _call_error: Exception | None = None
+    _result: EmbeddingResult = field(default_factory=EmbeddingResult)
+    _has_result: bool = False
+    _final_error: Exception | None = None
+
+    def __enter__(self) -> "EmbeddingRecorder":
+        return self
+
+    def __exit__(self, exc_type, exc, _tb) -> bool:
+        if exc is not None and self._call_error is None:
+            self.set_call_error(exc)
+        self.end()
+        return False
+
+    def set_call_error(self, error: Exception) -> None:
+        """Records provider/runtime call error on this embedding lifecycle."""
+
+        if error is None:
+            return
+        with self._lock:
+            self._call_error = error
+
+    def set_result(self, result: EmbeddingResult | None = None, **kwargs: Any) -> None:
+        """Stores mapped embedding result payload."""
+
+        payload = EmbeddingResult(**kwargs) if result is None else result
+        with self._lock:
+            self._result = copy.deepcopy(payload)
+            self._has_result = True
+
+    def end(self) -> None:
+        """Finalizes embedding span lifecycle. Safe to call multiple times."""
+
+        with self._lock:
+            if self._ended:
+                return
+            self._ended = True
+            call_error = self._call_error
+            result = copy.deepcopy(self._result)
+            has_result = self._has_result
+
+        completed_at = _to_utc(self.client._now())
+        self.span.update_name(_embedding_span_name(self.seed.model.name))
+        _set_embedding_end_span_attributes(self.span, result, has_result, self.client._config.embedding_capture)
+
+        local_error: Exception | None = None
+        try:
+            validate_embedding_start(self.seed)
+        except Exception as exc:  # noqa: BLE001
+            local_error = ValidationError(f"sigil: embedding validation failed: {exc}")
+
+        if local_error is None:
+            try:
+                validate_embedding_result(result)
+            except Exception as exc:  # noqa: BLE001
+                local_error = ValidationError(f"sigil: embedding validation failed: {exc}")
+
+        if call_error is not None:
+            self.span.record_exception(call_error)
+        if local_error is not None:
+            self.span.record_exception(local_error)
+
+        error_type = ""
+        error_category = ""
+        if call_error is not None:
+            error_type = "provider_call_error"
+            error_category = _error_category_from_exception(call_error, fallback_sdk=True)
+            self.span.set_status(Status(StatusCode.ERROR, str(call_error)))
+        elif local_error is not None:
+            error_type = "validation_error"
+            error_category = "sdk_error"
+            self.span.set_status(Status(StatusCode.ERROR, str(local_error)))
+        else:
+            self.span.set_status(Status(StatusCode.OK))
+
+        if error_type != "":
+            self.span.set_attribute(_span_attr_error_type, error_type)
+            self.span.set_attribute(_span_attr_error_category, error_category)
+
+        self.client._record_embedding_metrics(
+            self.seed,
+            result,
+            self.started_at,
+            completed_at,
+            error_type,
+            error_category,
+        )
+        self.span.end(end_time=_datetime_to_ns(completed_at))
+
+        with self._lock:
+            self._final_error = local_error
+
+    def err(self) -> Exception | None:
+        """Returns local validation error after `end()`."""
+
+        with self._lock:
+            return self._final_error
+
+
+@dataclass(slots=True)
 class ToolExecutionRecorder:
     """Recorder for one tool execution lifecycle."""
 
@@ -918,6 +1100,13 @@ def _generation_span_name(operation_name: str, model_name: str) -> str:
     return f"{operation} {model}"
 
 
+def _embedding_span_name(model_name: str) -> str:
+    model = model_name.strip()
+    if model == "":
+        return _default_embedding_operation_name
+    return f"{_default_embedding_operation_name} {model}"
+
+
 def _tool_span_name(tool_name: str) -> str:
     name = tool_name.strip() or "unknown"
     return f"execute_tool {name}"
@@ -974,6 +1163,48 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
         span.set_attribute(_span_attr_cache_creation_tokens, usage.cache_creation_input_tokens)
     if usage.reasoning_tokens:
         span.set_attribute(_span_attr_reasoning_tokens, usage.reasoning_tokens)
+
+
+def _set_embedding_start_span_attributes(span: Span, start: EmbeddingStart) -> None:
+    span.set_attribute(_span_attr_operation_name, _default_embedding_operation_name)
+    span.set_attribute(_span_attr_sdk_name, _sdk_name)
+
+    if start.model.provider:
+        span.set_attribute(_span_attr_provider_name, start.model.provider)
+    if start.model.name:
+        span.set_attribute(_span_attr_request_model, start.model.name)
+    if start.agent_name:
+        span.set_attribute(_span_attr_agent_name, start.agent_name)
+    if start.agent_version:
+        span.set_attribute(_span_attr_agent_version, start.agent_version)
+    if start.dimensions is not None:
+        span.set_attribute(_span_attr_embedding_dim_count, start.dimensions)
+    if start.encoding_format.strip() != "":
+        span.set_attribute(_span_attr_request_encoding_formats, [start.encoding_format.strip()])
+
+
+def _set_embedding_end_span_attributes(
+    span: Span,
+    result: EmbeddingResult,
+    has_result: bool,
+    capture_config,
+) -> None:
+    if has_result:
+        span.set_attribute(_span_attr_embedding_input_count, result.input_count)
+    if result.input_tokens != 0:
+        span.set_attribute(_span_attr_input_tokens, result.input_tokens)
+    if result.response_model:
+        span.set_attribute(_span_attr_response_model, result.response_model)
+    if result.dimensions is not None:
+        span.set_attribute(_span_attr_embedding_dim_count, result.dimensions)
+    if capture_config.capture_input and result.input_texts:
+        texts = _capture_embedding_input_texts(
+            result.input_texts,
+            capture_config.max_input_items,
+            capture_config.max_text_length,
+        )
+        if texts:
+            span.set_attribute(_span_attr_embedding_input_texts, texts)
 
 
 def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
@@ -1066,6 +1297,29 @@ def _serialize_tool_content(value: Any) -> str:
         except Exception:  # noqa: BLE001
             return json.dumps(trimmed)
     return json.dumps(value)
+
+
+def _capture_embedding_input_texts(input_texts: list[str], max_input_items: int, max_text_length: int) -> list[str]:
+    if not input_texts:
+        return []
+
+    item_limit = max_input_items if max_input_items > 0 else 20
+    text_limit = max_text_length if max_text_length > 0 else 1024
+
+    out: list[str] = []
+    for raw_text in input_texts[:item_limit]:
+        text = raw_text if isinstance(raw_text, str) else str(raw_text)
+        out.append(_truncate_embedding_text(text, text_limit))
+    return out
+
+
+def _truncate_embedding_text(text: str, max_text_length: int) -> str:
+    if len(text) <= max_text_length:
+        return text
+    if max_text_length <= 3:
+        return text[:max_text_length]
+    return text[: max_text_length - 3] + "..."
+
 
 def _count_tool_call_parts(messages: list[Message]) -> int:
     total = 0

@@ -236,6 +236,35 @@ class SigilClientRuntimeTest {
     }
 
     @Test
+    void embeddingRecorderDoesNotEnqueueGenerationAndProviderErrorIsNotLocalError() {
+        TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
+        try (SigilClient client = TestFixtures.newClient(exporter)) {
+            EmbeddingRecorder recorder = client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")));
+            recorder.setCallError(new RuntimeException("embedding provider blew up"));
+            recorder.end();
+
+            assertThat(recorder.error()).isEmpty();
+            assertThat(exporter.getRequests()).isEmpty();
+        }
+    }
+
+    @Test
+    void embeddingRecorderValidationErrorReturnsLocalError() {
+        TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
+        try (SigilClient client = TestFixtures.newClient(exporter)) {
+            EmbeddingRecorder recorder = client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")));
+            recorder.setResult(new EmbeddingResult().setInputCount(-1));
+            recorder.end();
+
+            assertThat(recorder.error()).isPresent();
+            assertThat(recorder.error().orElseThrow()).isInstanceOf(ValidationException.class);
+            assertThat(exporter.getRequests()).isEmpty();
+        }
+    }
+
+    @Test
     void recorderEndIsIdempotentForGenerationAndTool() {
         TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
         try (SigilClient client = TestFixtures.newClient(exporter)) {
@@ -250,6 +279,12 @@ class SigilClientRuntimeTest {
             tool.setResult(new ToolExecutionResult().setArguments(java.util.Map.of("city", "Paris")).setResult("18C"));
             tool.end();
             tool.end();
+
+            EmbeddingRecorder embedding = client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")));
+            embedding.setResult(new EmbeddingResult().setInputCount(1));
+            embedding.end();
+            embedding.end();
 
             SigilDebugSnapshot snapshot = client.debugSnapshot();
             assertThat(snapshot.getGenerations()).hasSize(1);

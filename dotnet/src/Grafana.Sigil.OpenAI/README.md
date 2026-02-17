@@ -57,7 +57,7 @@ var sigilConfig = new SigilClientConfig
 };
 var sigil = new SigilClient(sigilConfig);
 
-var responsesClient = new OpenAIResponseClient(
+var responsesClient = new ResponsesClient(
     "gpt-5",
     Environment.GetEnvironmentVariable("OPENAI_API_KEY")!
 );
@@ -67,13 +67,13 @@ var inputItems = new List<ResponseItem>
     ResponseItem.CreateUserMessageItem("What's the weather in Paris?"),
 };
 
-var requestOptions = new ResponseCreationOptions
+var requestOptions = new CreateResponseOptions
 {
     Instructions = "You are concise.",
     MaxOutputTokenCount = 320,
 };
 
-OpenAIResponse response = await OpenAIRecorder.CreateResponseAsync(
+ResponseResult response = await OpenAIRecorder.CreateResponseAsync(
     sigil,
     responsesClient,
     inputItems,
@@ -180,7 +180,7 @@ var recorder = sigil.StartGeneration(new GenerationStart
 
 try
 {
-    OpenAIResponse response = await responsesClient.CreateResponseAsync(
+    ResponseResult response = await responsesClient.CreateResponseAsync(
         inputItems,
         requestOptions,
         CancellationToken.None

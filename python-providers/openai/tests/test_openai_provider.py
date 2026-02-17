@@ -6,6 +6,9 @@ import asyncio
 from datetime import timedelta
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
@@ -14,6 +17,7 @@ from sigil_sdk_openai import (
     OpenAIOptions,
     ResponsesStreamSummary,
     chat,
+    embeddings,
     responses,
 )
 
@@ -35,9 +39,10 @@ class _CapturingExporter:
         return
 
 
-def _new_client(exporter):
+def _new_client(exporter, tracer=None):
     return Client(
         ClientConfig(
+            tracer=tracer,
             generation_export=GenerationExportConfig(batch_size=10, flush_interval=timedelta(seconds=60)),
             generation_exporter=exporter,
         )
@@ -274,6 +279,105 @@ def test_openai_wrappers_propagate_provider_error_and_set_call_error() -> None:
             client.shutdown()
 
 
+def test_embeddings_wrapper_records_span_and_skips_generation_export() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        response = embeddings.create(
+            client,
+            {
+                "model": "text-embedding-3-small",
+                "input": ["hello", "world"],
+                "dimensions": 256,
+                "encoding_format": "float",
+            },
+            lambda _request: {
+                "model": "text-embedding-3-small",
+                "usage": {"prompt_tokens": 12},
+                "data": [{"embedding": [0.1, 0.2, 0.3]}],
+            },
+        )
+        assert response["model"] == "text-embedding-3-small"
+
+        client.flush()
+        assert exporter.requests == []
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.attributes["gen_ai.operation.name"] == "embeddings"
+        assert span.attributes["gen_ai.provider.name"] == "openai"
+        assert span.attributes["gen_ai.request.model"] == "text-embedding-3-small"
+        assert span.attributes["gen_ai.embeddings.input_count"] == 2
+        assert span.attributes["gen_ai.usage.input_tokens"] == 12
+        assert span.attributes["gen_ai.embeddings.dimension.count"] == 3
+        assert span.attributes["gen_ai.request.encoding_formats"] == ("float",)
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
+def test_embeddings_wrapper_counts_tokenized_single_input_as_one_item() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        embeddings.create(
+            client,
+            {
+                "model": "text-embedding-3-small",
+                "input": [101, 102, 103, 104],
+            },
+            lambda _request: {
+                "model": "text-embedding-3-small",
+                "usage": {"prompt_tokens": 4},
+                "data": [{"embedding": [0.1, 0.2]}],
+            },
+        )
+
+        client.flush()
+        assert exporter.requests == []
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.attributes["gen_ai.embeddings.input_count"] == 1
+        assert span.attributes["gen_ai.usage.input_tokens"] == 4
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
+def test_embeddings_wrapper_propagates_provider_error_and_sets_span_error() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        with pytest.raises(RuntimeError, match="provider failure embedding"):
+            embeddings.create(
+                client,
+                {
+                    "model": "text-embedding-3-small",
+                    "input": "hello",
+                },
+                lambda _request: (_ for _ in ()).throw(RuntimeError("provider failure embedding")),
+            )
+
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.status.status_code.name == "ERROR"
+        assert span.attributes.get("error.type") == "provider_call_error"
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
 def test_chat_mapper_filters_system_messages_and_supports_raw_artifacts() -> None:
     request = {
         "model": "gpt-5",
@@ -433,6 +537,41 @@ def test_responses_mapper_maps_output_and_stream_fallback() -> None:
     assert streamed.response_model == "gpt-5"
     assert streamed.output[0].parts[0].text == "delta-one delta-two"
     assert [artifact.kind.value for artifact in streamed.artifacts] == ["request", "provider_event"]
+
+
+def test_embeddings_mapper_extracts_input_counts_tokens_and_dimensions() -> None:
+    mapped = embeddings.from_request_response(
+        {
+            "model": "text-embedding-3-small",
+            "input": ["hello", {"text": "world"}, [1, 2, 3]],
+        },
+        {
+            "model": "text-embedding-3-small",
+            "usage": {"prompt_tokens": 30},
+            "data": [{"embedding": [0.1, 0.2, 0.3]}],
+        },
+    )
+
+    assert mapped.input_count == 3
+    assert mapped.input_texts == ["hello", "world"]
+    assert mapped.input_tokens == 30
+    assert mapped.response_model == "text-embedding-3-small"
+    assert mapped.dimensions == 3
+
+    tokenized_single = embeddings.from_request_response(
+        {
+            "model": "text-embedding-3-small",
+            "input": [101, 102, 103],
+        },
+        {
+            "model": "text-embedding-3-small",
+            "usage": {"prompt_tokens": 3},
+            "data": [{"embedding": [0.1, 0.2]}],
+        },
+    )
+    assert tokenized_single.input_count == 1
+    assert tokenized_single.input_texts == []
+    assert tokenized_single.input_tokens == 3
 
 
 def test_async_wrappers_record_generation() -> None:

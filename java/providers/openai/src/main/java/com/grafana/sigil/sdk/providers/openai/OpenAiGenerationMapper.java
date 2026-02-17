@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.grafana.sigil.sdk.Artifact;
 import com.grafana.sigil.sdk.ArtifactKind;
+import com.grafana.sigil.sdk.EmbeddingResult;
+import com.grafana.sigil.sdk.EmbeddingStart;
 import com.grafana.sigil.sdk.GenerationResult;
 import com.grafana.sigil.sdk.GenerationStart;
 import com.grafana.sigil.sdk.Message;
@@ -21,6 +23,8 @@ import com.openai.core.ObjectMappers;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.embeddings.CreateEmbeddingResponse;
+import com.openai.models.embeddings.EmbeddingCreateParams;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseStreamEvent;
@@ -244,6 +248,57 @@ final class OpenAiGenerationMapper {
                 .setThinkingEnabled(requestMapping.thinkingEnabled)
                 .setMetadata(metadataWithThinkingBudget(resolved.getMetadata(), requestMapping.thinkingBudget))
                 .setTags(new LinkedHashMap<>(resolved.getTags()));
+    }
+
+    static EmbeddingStart embeddingsStart(EmbeddingCreateParams request, OpenAiOptions options) {
+        OpenAiOptions resolved = resolveOptions(options);
+        EmbeddingStart start = new EmbeddingStart()
+                .setAgentName(resolved.getAgentName())
+                .setAgentVersion(resolved.getAgentVersion())
+                .setModel(new ModelRef()
+                        .setProvider("openai")
+                        .setName(request == null || request.model() == null ? "" : request.model().asString()))
+                .setMetadata(new LinkedHashMap<>(resolved.getMetadata()))
+                .setTags(new LinkedHashMap<>(resolved.getTags()));
+
+        if (request != null) {
+            request.dimensions().ifPresent(start::setDimensions);
+            request.encodingFormat().ifPresent(value -> start.setEncodingFormat(value.asString()));
+        }
+        return start;
+    }
+
+    static EmbeddingResult embeddingsFromRequestResponse(
+            EmbeddingCreateParams request,
+            CreateEmbeddingResponse response) {
+        EmbeddingResult result = new EmbeddingResult()
+                .setInputCount(embeddingInputCount(request == null ? null : request.input()))
+                .setInputTexts(embeddingInputTexts(request == null ? null : request.input()));
+
+        if (response == null) {
+            if (request != null) {
+                request.dimensions().ifPresent(result::setDimensions);
+            }
+            return result;
+        }
+
+        if (response.usage() != null) {
+            result.setInputTokens(response.usage().promptTokens());
+        }
+        result.setResponseModel(firstNonBlank(
+                response.model(),
+                request == null || request.model() == null ? "" : request.model().asString()));
+
+        if (response.data() != null && !response.data().isEmpty() && response.data().get(0) != null) {
+            List<Float> embedding = response.data().get(0).embedding();
+            if (embedding != null && !embedding.isEmpty()) {
+                result.setDimensions((long) embedding.size());
+            }
+        }
+        if (result.getDimensions() == null && request != null) {
+            request.dimensions().ifPresent(result::setDimensions);
+        }
+        return result;
     }
 
     static GenerationResult responsesFromRequestResponse(
@@ -870,6 +925,45 @@ final class OpenAiGenerationMapper {
             }
         }
         return "";
+    }
+
+    private static int embeddingInputCount(EmbeddingCreateParams.Input input) {
+        if (input == null) {
+            return 0;
+        }
+        if (input.isString()) {
+            return 1;
+        }
+        if (input.isArrayOfStrings()) {
+            return input.asArrayOfStrings().size();
+        }
+        if (input.isArrayOfTokens()) {
+            return 1;
+        }
+        if (input.isArrayOfTokenArrays()) {
+            return input.asArrayOfTokenArrays().size();
+        }
+        return 0;
+    }
+
+    private static List<String> embeddingInputTexts(EmbeddingCreateParams.Input input) {
+        if (input == null) {
+            return List.of();
+        }
+        if (input.isString()) {
+            String value = input.asString();
+            return value == null || value.isBlank() ? List.of() : List.of(value);
+        }
+        if (input.isArrayOfStrings()) {
+            List<String> values = new ArrayList<>();
+            for (String value : input.asArrayOfStrings()) {
+                if (value != null && !value.isBlank()) {
+                    values.add(value);
+                }
+            }
+            return values;
+        }
+        return List.of();
     }
 
     private static String firstNonBlank(String... values) {

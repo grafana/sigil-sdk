@@ -231,6 +231,53 @@ rec.SetResult(sigil.Generation{
 }, nil)
 ```
 
+## Embedding observability
+
+Use `StartEmbedding` for embedding API calls. Embedding recording emits OTel spans and SDK metrics only, and does not enqueue generation export payloads.
+
+```go
+ctx, rec := client.StartEmbedding(ctx, sigil.EmbeddingStart{
+	AgentName:    "retrieval-worker",
+	AgentVersion: "1.0.0",
+	Model:        sigil.ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+})
+defer rec.End()
+
+resp, err := provider.Embeddings.New(ctx, req)
+if err != nil {
+	rec.SetCallError(err)
+	return err
+}
+
+rec.SetResult(sigil.EmbeddingResult{
+	InputCount:    len(req.Input),
+	InputTokens:   resp.Usage.PromptTokens,
+	InputTexts:    req.Input, // captured only when EmbeddingCapture.CaptureInput=true
+	ResponseModel: resp.Model,
+})
+if err := rec.Err(); err != nil {
+	return err
+}
+```
+
+Input text capture is opt-in and should stay off in production unless you need short-term debugging:
+
+```go
+cfg.EmbeddingCapture = sigil.EmbeddingCaptureConfig{
+	CaptureInput:  true,
+	MaxInputItems: 20,
+	MaxTextLength: 1024,
+}
+```
+
+`CaptureInput` can expose PII/document content in spans. Keep it disabled by default and enable only for scoped diagnostics.
+
+TraceQL examples:
+
+- `traces{gen_ai.operation.name="embeddings"}`
+- `traces{gen_ai.operation.name="embeddings" && gen_ai.request.model="text-embedding-3-small"}`
+- `traces{gen_ai.operation.name="embeddings" && error.type!=""}`
+
 ## Provider wrappers
 
 Provider modules are documented wrapper-first for ergonomics and include explicit-flow alternatives.

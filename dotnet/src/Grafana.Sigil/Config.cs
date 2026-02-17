@@ -46,10 +46,18 @@ public sealed class SigilClientConfig
 {
     public GenerationExportConfig GenerationExport { get; set; } = new();
     public ApiConfig Api { get; set; } = new();
+    public EmbeddingCaptureConfig EmbeddingCapture { get; set; } = new();
     public Action<string>? Logger { get; set; }
     public Func<DateTimeOffset>? UtcNow { get; set; }
     public Func<TimeSpan, CancellationToken, Task>? SleepAsync { get; set; }
     public IGenerationExporter? GenerationExporter { get; set; }
+}
+
+public sealed class EmbeddingCaptureConfig
+{
+    public bool CaptureInput { get; set; }
+    public int MaxInputItems { get; set; } = 20;
+    public int MaxTextLength { get; set; } = 1024;
 }
 
 internal static class ConfigResolver
@@ -114,6 +122,17 @@ internal static class ConfigResolver
         if (resolved.GenerationExport.MaxBackoff <= TimeSpan.Zero)
         {
             resolved.GenerationExport.MaxBackoff = TimeSpan.FromMilliseconds(100);
+        }
+
+        resolved.EmbeddingCapture ??= new EmbeddingCaptureConfig();
+
+        if (resolved.EmbeddingCapture.MaxInputItems <= 0)
+        {
+            resolved.EmbeddingCapture.MaxInputItems = 20;
+        }
+        if (resolved.EmbeddingCapture.MaxTextLength <= 0)
+        {
+            resolved.EmbeddingCapture.MaxTextLength = 1024;
         }
 
         return resolved;

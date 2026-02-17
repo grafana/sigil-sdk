@@ -6,6 +6,9 @@ import type {
   ConversationRatingInput,
   ConversationRatingSummary,
   ConversationRatingValue,
+  EmbeddingRecorder,
+  EmbeddingResult,
+  EmbeddingStart,
   Generation,
   GenerationExporter,
   GenerationMode,
@@ -27,6 +30,8 @@ import type {
 } from './types.js';
 import {
   asError,
+  cloneEmbeddingResult,
+  cloneEmbeddingStart,
   cloneGeneration,
   cloneGenerationResult,
   cloneModelRef,
@@ -40,6 +45,8 @@ import {
   encodedSizeBytes,
   maybeUnref,
   newLocalID,
+  validateEmbeddingResult,
+  validateEmbeddingStart,
   validateGeneration,
   validateToolExecution,
 } from './utils.js';
@@ -65,6 +72,10 @@ const spanAttrResponseModel = 'gen_ai.response.model';
 const spanAttrFinishReasons = 'gen_ai.response.finish_reasons';
 const spanAttrInputTokens = 'gen_ai.usage.input_tokens';
 const spanAttrOutputTokens = 'gen_ai.usage.output_tokens';
+const spanAttrEmbeddingInputCount = 'gen_ai.embeddings.input_count';
+const spanAttrEmbeddingInputTexts = 'gen_ai.embeddings.input_texts';
+const spanAttrEmbeddingDimCount = 'gen_ai.embeddings.dimension.count';
+const spanAttrRequestEncodingFormats = 'gen_ai.request.encoding_formats';
 const spanAttrCacheReadTokens = 'gen_ai.usage.cache_read_input_tokens';
 const spanAttrCacheWriteTokens = 'gen_ai.usage.cache_write_input_tokens';
 const spanAttrCacheCreationTokens = 'gen_ai.usage.cache_creation_input_tokens';
@@ -96,6 +107,7 @@ const metricTokenTypeCacheCreation = 'cache_creation';
 const metricTokenTypeReasoning = 'reasoning';
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 const sdkName = 'sdk-js';
+const defaultEmbeddingOperationName = 'embeddings';
 
 export class SigilClient {
   private readonly config: SigilSdkConfig;
@@ -182,6 +194,30 @@ export class SigilClient {
     callback?: RecorderCallback<GenerationRecorder, TResult>
   ): GenerationRecorder | Promise<TResult> {
     return this.startGenerationWithMode(start, 'STREAM', callback);
+  }
+
+  /**
+   * Starts an embeddings recorder.
+   *
+   * Overloads:
+   * - returns recorder for manual lifecycle
+   * - executes callback and auto-ends recorder
+   */
+  startEmbedding(start: EmbeddingStart): EmbeddingRecorder;
+  startEmbedding<TResult>(
+    start: EmbeddingStart,
+    callback: RecorderCallback<EmbeddingRecorder, TResult>
+  ): Promise<TResult>;
+  startEmbedding<TResult>(
+    start: EmbeddingStart,
+    callback?: RecorderCallback<EmbeddingRecorder, TResult>
+  ): EmbeddingRecorder | Promise<TResult> {
+    this.assertOpen();
+    const recorder = new EmbeddingRecorderImpl(this, start);
+    if (callback === undefined) {
+      return recorder;
+    }
+    return runWithRecorder(recorder, callback);
   }
 
   /**
@@ -384,6 +420,15 @@ export class SigilClient {
     return span;
   }
 
+  internalStartEmbeddingSpan(seed: EmbeddingStart, startedAt: Date): Span {
+    const span = this.tracer.startSpan(embeddingSpanName(seed.model.name), {
+      kind: SpanKind.CLIENT,
+      startTime: startedAt,
+    });
+    setEmbeddingStartSpanAttributes(span, seed);
+    return span;
+  }
+
   internalStartToolExecutionSpan(seed: ToolExecutionStart, startedAt: Date): Span {
     const span = this.tracer.startSpan(toolSpanName(seed.toolName), {
       kind: SpanKind.INTERNAL,
@@ -452,6 +497,50 @@ export class SigilClient {
     this.recordGenerationMetrics(generation, errorType, errorCategory, firstTokenAt);
 
     span.end(generation.completedAt);
+  }
+
+  internalFinalizeEmbeddingSpan(
+    span: Span,
+    seed: EmbeddingStart,
+    result: EmbeddingResult,
+    hasResult: boolean,
+    callError: Error | undefined,
+    localError: Error | undefined,
+    startedAt: Date,
+    completedAt: Date
+  ): void {
+    span.updateName(embeddingSpanName(seed.model.name));
+    setEmbeddingEndSpanAttributes(span, result, hasResult, this.config.embeddingCapture);
+
+    if (callError !== undefined) {
+      span.recordException(callError);
+    }
+    if (localError !== undefined) {
+      span.recordException(localError);
+    }
+
+    let errorType = '';
+    let errorCategory = '';
+    if (callError !== undefined) {
+      errorType = 'provider_call_error';
+      errorCategory = errorCategoryFromError(callError, true);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: callError.message });
+    } else if (localError !== undefined) {
+      errorType = 'validation_error';
+      errorCategory = 'sdk_error';
+      span.setStatus({ code: SpanStatusCode.ERROR, message: localError.message });
+    } else {
+      span.setStatus({ code: SpanStatusCode.OK });
+    }
+
+    if (errorType.length > 0) {
+      span.setAttribute(spanAttrErrorType, errorType);
+      span.setAttribute(spanAttrErrorCategory, errorCategory);
+    }
+
+    this.recordEmbeddingMetrics(seed, result, startedAt, completedAt, errorType, errorCategory);
+
+    span.end(completedAt);
   }
 
   internalFinalizeToolExecutionSpan(span: Span, toolExecution: ToolExecution, localError: Error | undefined): Error | undefined {
@@ -539,11 +628,41 @@ export class SigilClient {
     }
   }
 
+  private recordEmbeddingMetrics(
+    seed: EmbeddingStart,
+    result: EmbeddingResult,
+    startedAt: Date,
+    completedAt: Date,
+    errorType: string,
+    errorCategory: string
+  ): void {
+    const durationSeconds = Math.max(0, (completedAt.getTime() - startedAt.getTime()) / 1_000);
+    this.operationDurationHistogram.record(durationSeconds, {
+      [spanAttrOperationName]: defaultEmbeddingOperationName,
+      [spanAttrProviderName]: seed.model.provider,
+      [spanAttrRequestModel]: seed.model.name,
+      [spanAttrAgentName]: seed.agentName ?? '',
+      [spanAttrErrorType]: errorType,
+      [spanAttrErrorCategory]: errorCategory,
+    });
+
+    if (result.inputTokens !== undefined && result.inputTokens !== 0) {
+      this.tokenUsageHistogram.record(result.inputTokens, {
+        [spanAttrOperationName]: defaultEmbeddingOperationName,
+        [spanAttrProviderName]: seed.model.provider,
+        [spanAttrRequestModel]: seed.model.name,
+        [spanAttrAgentName]: seed.agentName ?? '',
+        [metricAttrTokenType]: metricTokenTypeInput,
+      });
+    }
+  }
+
   private recordTokenUsage(generation: Generation, tokenType: string, value: number | undefined): void {
     if (value === undefined || value === 0) {
       return;
     }
     this.tokenUsageHistogram.record(value, {
+      [spanAttrOperationName]: generation.operationName,
       [spanAttrProviderName]: generation.model.provider,
       [spanAttrRequestModel]: generation.model.name,
       [spanAttrAgentName]: generation.agentName ?? '',
@@ -800,6 +919,71 @@ class GenerationRecorderImpl implements GenerationRecorder {
   }
 }
 
+class EmbeddingRecorderImpl implements EmbeddingRecorder {
+  private readonly seed: EmbeddingStart;
+  private readonly startedAt: Date;
+  private readonly span: Span;
+  private ended = false;
+  private callError?: Error;
+  private result?: EmbeddingResult;
+  private hasResult = false;
+  private localError?: Error;
+
+  constructor(
+    private readonly client: SigilClient,
+    seed: EmbeddingStart
+  ) {
+    this.seed = cloneEmbeddingStart(seed);
+    this.startedAt = this.seed.startedAt ?? this.client.internalNow();
+    this.span = this.client.internalStartEmbeddingSpan(this.seed, this.startedAt);
+  }
+
+  setCallError(error: unknown): void {
+    if (this.ended) {
+      return;
+    }
+    this.callError = asError(error);
+  }
+
+  setResult(result: EmbeddingResult): void {
+    if (this.ended) {
+      return;
+    }
+    this.result = cloneEmbeddingResult(result);
+    this.hasResult = true;
+  }
+
+  end(): void {
+    if (this.ended) {
+      return;
+    }
+    this.ended = true;
+
+    const completedAt = this.client.internalNow();
+    const normalizedResult = this.result ? cloneEmbeddingResult(this.result) : { inputCount: 0 };
+    let localError = validateEmbeddingStart(this.seed);
+    if (localError === undefined) {
+      localError = validateEmbeddingResult(normalizedResult);
+    }
+
+    this.client.internalFinalizeEmbeddingSpan(
+      this.span,
+      this.seed,
+      normalizedResult,
+      this.hasResult,
+      this.callError,
+      localError,
+      this.startedAt,
+      completedAt
+    );
+    this.localError = localError;
+  }
+
+  getError(): Error | undefined {
+    return this.localError;
+  }
+}
+
 class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
   private readonly startedAt: Date;
   private readonly span: Span;
@@ -909,6 +1093,14 @@ function generationSpanName(operationName: string, modelName: string): string {
   return `${operation} ${model}`;
 }
 
+function embeddingSpanName(modelName: string): string {
+  const model = modelName.trim();
+  if (model.length === 0) {
+    return defaultEmbeddingOperationName;
+  }
+  return `${defaultEmbeddingOperationName} ${model}`;
+}
+
 function toolSpanName(toolName: string): string {
   const normalized = toolName.trim();
   if (normalized.length === 0) {
@@ -1016,6 +1208,56 @@ function setGenerationSpanAttributes(
   }
   if ((usage.reasoningTokens ?? 0) !== 0) {
     span.setAttribute(spanAttrReasoningTokens, usage.reasoningTokens ?? 0);
+  }
+}
+
+function setEmbeddingStartSpanAttributes(span: Span, start: EmbeddingStart): void {
+  span.setAttribute(spanAttrOperationName, defaultEmbeddingOperationName);
+  span.setAttribute(spanAttrSDKName, sdkName);
+
+  if (notEmpty(start.model.provider)) {
+    span.setAttribute(spanAttrProviderName, start.model.provider);
+  }
+  if (notEmpty(start.model.name)) {
+    span.setAttribute(spanAttrRequestModel, start.model.name);
+  }
+  if (notEmpty(start.agentName)) {
+    span.setAttribute(spanAttrAgentName, start.agentName);
+  }
+  if (notEmpty(start.agentVersion)) {
+    span.setAttribute(spanAttrAgentVersion, start.agentVersion);
+  }
+  if (start.dimensions !== undefined) {
+    span.setAttribute(spanAttrEmbeddingDimCount, start.dimensions);
+  }
+  if (notEmpty(start.encodingFormat)) {
+    span.setAttribute(spanAttrRequestEncodingFormats, [start.encodingFormat]);
+  }
+}
+
+function setEmbeddingEndSpanAttributes(
+  span: Span,
+  result: EmbeddingResult,
+  hasResult: boolean,
+  captureConfig: SigilSdkConfig['embeddingCapture']
+): void {
+  if (hasResult) {
+    span.setAttribute(spanAttrEmbeddingInputCount, result.inputCount);
+  }
+  if (result.inputTokens !== undefined && result.inputTokens !== 0) {
+    span.setAttribute(spanAttrInputTokens, result.inputTokens);
+  }
+  if (notEmpty(result.responseModel)) {
+    span.setAttribute(spanAttrResponseModel, result.responseModel);
+  }
+  if (result.dimensions !== undefined) {
+    span.setAttribute(spanAttrEmbeddingDimCount, result.dimensions);
+  }
+  if (captureConfig.captureInput && result.inputTexts !== undefined) {
+    const texts = captureEmbeddingInputTexts(result.inputTexts, captureConfig.maxInputItems, captureConfig.maxTextLength);
+    if (texts.length > 0) {
+      span.setAttribute(spanAttrEmbeddingInputTexts, texts);
+    }
   }
 }
 
@@ -1242,6 +1484,30 @@ function ratingErrorText(responseText: string, status: number): string {
     return responseText;
   }
   return `HTTP ${status}`;
+}
+
+function captureEmbeddingInputTexts(inputTexts: string[], maxInputItems: number, maxTextLength: number): string[] {
+  if (inputTexts.length === 0) {
+    return [];
+  }
+  const itemLimit = maxInputItems > 0 ? maxInputItems : 20;
+  const textLimit = maxTextLength > 0 ? maxTextLength : 1024;
+  const output: string[] = [];
+  const end = Math.min(itemLimit, inputTexts.length);
+  for (let index = 0; index < end; index++) {
+    output.push(truncateEmbeddingText(inputTexts[index] ?? '', textLimit));
+  }
+  return output;
+}
+
+function truncateEmbeddingText(text: string, maxTextLength: number): string {
+  if (text.length <= maxTextLength) {
+    return text;
+  }
+  if (maxTextLength <= 3) {
+    return text.slice(0, maxTextLength);
+  }
+  return `${text.slice(0, maxTextLength - 3)}...`;
 }
 
 function thinkingBudgetFromMetadata(metadata: Record<string, unknown> | undefined): number | undefined {

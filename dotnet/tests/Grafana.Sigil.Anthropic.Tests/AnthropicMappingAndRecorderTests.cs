@@ -418,6 +418,40 @@ public sealed class AnthropicMappingAndRecorderTests
             return convertingCtor.Invoke(new[] { value });
         }
 
+        var wrapperCtor = targetType
+            .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .FirstOrDefault(ctor =>
+            {
+                var parameters = ctor.GetParameters();
+                if (parameters.Length <= 1 || !parameters[0].ParameterType.IsInstanceOfType(value))
+                {
+                    return false;
+                }
+
+                for (var index = 1; index < parameters.Length; index++)
+                {
+                    var parameterType = parameters[index].ParameterType;
+                    if (parameterType.IsValueType && Nullable.GetUnderlyingType(parameterType) == null)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        if (wrapperCtor != null)
+        {
+            var parameters = wrapperCtor.GetParameters();
+            var args = new object?[parameters.Length];
+            args[0] = value;
+            for (var index = 1; index < parameters.Length; index++)
+            {
+                args[index] = null;
+            }
+
+            return wrapperCtor.Invoke(args);
+        }
+
         try
         {
             return Convert.ChangeType(value, targetType);

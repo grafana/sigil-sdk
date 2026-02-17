@@ -60,6 +60,10 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_FINISH_REASONS = "gen_ai.response.finish_reasons";
     static final String SPAN_ATTR_INPUT_TOKENS = "gen_ai.usage.input_tokens";
     static final String SPAN_ATTR_OUTPUT_TOKENS = "gen_ai.usage.output_tokens";
+    static final String SPAN_ATTR_EMBEDDING_INPUT_COUNT = "gen_ai.embeddings.input_count";
+    static final String SPAN_ATTR_EMBEDDING_INPUT_TEXTS = "gen_ai.embeddings.input_texts";
+    static final String SPAN_ATTR_EMBEDDING_DIM_COUNT = "gen_ai.embeddings.dimension.count";
+    static final String SPAN_ATTR_REQUEST_ENCODING_FORMATS = "gen_ai.request.encoding_formats";
     static final String SPAN_ATTR_CACHE_READ_TOKENS = "gen_ai.usage.cache_read_input_tokens";
     static final String SPAN_ATTR_CACHE_WRITE_TOKENS = "gen_ai.usage.cache_write_input_tokens";
     static final String SPAN_ATTR_CACHE_CREATION_TOKENS = "gen_ai.usage.cache_creation_input_tokens";
@@ -92,6 +96,7 @@ public final class SigilClient implements AutoCloseable {
 
     private static final Pattern STATUS_CODE_PATTERN = Pattern.compile("\\b([1-5][0-9][0-9])\\b");
     private static final String INSTRUMENTATION_NAME = "github.com/grafana/sigil/sdks/java";
+    static final String DEFAULT_EMBEDDING_OPERATION_NAME = "embeddings";
     static final String SDK_NAME = "sdk-java";
 
     private final SigilClientConfig config;
@@ -102,6 +107,7 @@ public final class SigilClient implements AutoCloseable {
     private final DoubleHistogram tokenUsageHistogram;
     private final DoubleHistogram ttftHistogram;
     private final DoubleHistogram toolCallsHistogram;
+    private final EmbeddingCaptureConfig embeddingCaptureConfig;
     private final Logger logger;
     private final Clock clock;
     private final HttpClient ratingHttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
@@ -146,6 +152,7 @@ public final class SigilClient implements AutoCloseable {
         this.config = inputConfig == null ? new SigilClientConfig() : inputConfig.copy();
         this.logger = config.getLogger();
         this.clock = config.getClock();
+        this.embeddingCaptureConfig = normalizeEmbeddingCaptureConfig(config.getEmbeddingCapture());
 
         GenerationExportConfig exportConfig = config.getGenerationExport();
         exportConfig.setHeaders(AuthHeaders.resolve(exportConfig.getHeaders(), exportConfig.getAuth(), "generation export"));
@@ -191,6 +198,50 @@ public final class SigilClient implements AutoCloseable {
     /** Starts a generation recorder with {@link GenerationMode#STREAM} default mode. */
     public GenerationRecorder startStreamingGeneration(GenerationStart start) {
         return startGenerationInternal(start, GenerationMode.STREAM);
+    }
+
+    /** Starts an embedding recorder. */
+    public EmbeddingRecorder startEmbedding(EmbeddingStart start) {
+        assertOpen();
+
+        EmbeddingStart seed = start == null ? new EmbeddingStart() : start.copy();
+        if (seed.getAgentName().isBlank()) {
+            seed.setAgentName(SigilContext.agentNameFromContext());
+        }
+        if (seed.getAgentVersion().isBlank()) {
+            seed.setAgentVersion(SigilContext.agentVersionFromContext());
+        }
+
+        Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
+        seed.setStartedAt(startedAt);
+
+        Span span = tracer.spanBuilder(embeddingSpanName(seed.getModel().getName()))
+                .setSpanKind(SpanKind.CLIENT)
+                .setStartTimestamp(startedAt)
+                .startSpan();
+        setEmbeddingStartSpanAttributes(span, seed);
+
+        return new EmbeddingRecorder(this, seed, span, startedAt);
+    }
+
+    /**
+     * Runs a callback within an embedding recorder lifecycle.
+     *
+     * <p>The recorder is always ended. Callback exceptions are propagated and also captured via
+     * {@link EmbeddingRecorder#setCallError(Throwable)}.</p>
+     */
+    public <T> T withEmbedding(EmbeddingStart start, ThrowingFunction<EmbeddingRecorder, T> fn) throws Exception {
+        try (EmbeddingRecorder recorder = startEmbedding(start)) {
+            try {
+                return fn.apply(recorder);
+            } catch (Exception exception) {
+                recorder.setCallError(exception);
+                throw exception;
+            } catch (Throwable throwable) {
+                recorder.setCallError(throwable);
+                throw new RuntimeException(throwable);
+            }
+        }
     }
 
     /**
@@ -425,6 +476,10 @@ public final class SigilClient implements AutoCloseable {
 
     Instant now() {
         return Instant.now(clock);
+    }
+
+    EmbeddingCaptureConfig getEmbeddingCaptureConfig() {
+        return embeddingCaptureConfig;
     }
 
     void enqueueGeneration(Generation generation) {
@@ -830,6 +885,13 @@ public final class SigilClient implements AutoCloseable {
         return operationName + " " + modelName;
     }
 
+    static String embeddingSpanName(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return DEFAULT_EMBEDDING_OPERATION_NAME;
+        }
+        return DEFAULT_EMBEDDING_OPERATION_NAME + " " + modelName;
+    }
+
     static String toolSpanName(String toolName) {
         return "execute_tool " + toolName;
     }
@@ -840,6 +902,49 @@ public final class SigilClient implements AutoCloseable {
 
     static String newID(String prefix) {
         return prefix + "-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    static void setEmbeddingStartSpanAttributes(Span span, EmbeddingStart start) {
+        span.setAttribute(SPAN_ATTR_OPERATION_NAME, DEFAULT_EMBEDDING_OPERATION_NAME);
+        span.setAttribute(SPAN_ATTR_SDK_NAME, SDK_NAME);
+        if (!start.getModel().getProvider().isBlank()) {
+            span.setAttribute(SPAN_ATTR_PROVIDER_NAME, start.getModel().getProvider());
+        }
+        if (!start.getModel().getName().isBlank()) {
+            span.setAttribute(SPAN_ATTR_REQUEST_MODEL, start.getModel().getName());
+        }
+        if (!start.getAgentName().isBlank()) {
+            span.setAttribute(SPAN_ATTR_AGENT_NAME, start.getAgentName());
+        }
+        if (!start.getAgentVersion().isBlank()) {
+            span.setAttribute(SPAN_ATTR_AGENT_VERSION, start.getAgentVersion());
+        }
+        if (start.getDimensions() != null) {
+            span.setAttribute(SPAN_ATTR_EMBEDDING_DIM_COUNT, start.getDimensions());
+        }
+        if (!start.getEncodingFormat().isBlank()) {
+            span.setAttribute(AttributeKey.stringArrayKey(SPAN_ATTR_REQUEST_ENCODING_FORMATS), List.of(start.getEncodingFormat()));
+        }
+    }
+
+    static void setEmbeddingEndSpanAttributes(Span span, EmbeddingResult result, EmbeddingCaptureConfig captureConfig) {
+        span.setAttribute(SPAN_ATTR_EMBEDDING_INPUT_COUNT, (long) result.getInputCount());
+        if (result.getInputTokens() != 0L) {
+            span.setAttribute(SPAN_ATTR_INPUT_TOKENS, result.getInputTokens());
+        }
+        if (!result.getResponseModel().isBlank()) {
+            span.setAttribute(SPAN_ATTR_RESPONSE_MODEL, result.getResponseModel());
+        }
+        if (result.getDimensions() != null) {
+            span.setAttribute(SPAN_ATTR_EMBEDDING_DIM_COUNT, result.getDimensions());
+        }
+
+        if (captureConfig.isCaptureInput()) {
+            List<String> inputTexts = captureEmbeddingInputTexts(result.getInputTexts(), captureConfig);
+            if (!inputTexts.isEmpty()) {
+                span.setAttribute(AttributeKey.stringArrayKey(SPAN_ATTR_EMBEDDING_INPUT_TEXTS), inputTexts);
+            }
+        }
     }
 
     static void setGenerationSpanAttributes(Span span, Generation generation) {
@@ -984,6 +1089,44 @@ public final class SigilClient implements AutoCloseable {
         }
     }
 
+    void recordEmbeddingMetrics(
+            EmbeddingStart seed,
+            EmbeddingResult result,
+            Instant startedAt,
+            Instant completedAt,
+            String errorType,
+            String errorCategory) {
+        if (seed == null || result == null || startedAt == null || completedAt == null) {
+            return;
+        }
+
+        double durationSeconds = Math.max(0d, Duration.between(startedAt, completedAt).toNanos() / 1_000_000_000d);
+        operationDurationHistogram.record(
+                durationSeconds,
+                Attributes.builder()
+                        .put(SPAN_ATTR_OPERATION_NAME, DEFAULT_EMBEDDING_OPERATION_NAME)
+                        .put(SPAN_ATTR_PROVIDER_NAME, seed.getModel() == null ? "" : seed.getModel().getProvider())
+                        .put(SPAN_ATTR_REQUEST_MODEL, seed.getModel() == null ? "" : seed.getModel().getName())
+                        .put(SPAN_ATTR_AGENT_NAME, seed.getAgentName())
+                        .put(SPAN_ATTR_ERROR_TYPE, errorType == null ? "" : errorType)
+                        .put(SPAN_ATTR_ERROR_CATEGORY, errorCategory == null ? "" : errorCategory)
+                        .build()
+        );
+
+        if (result.getInputTokens() != 0L) {
+            tokenUsageHistogram.record(
+                    (double) result.getInputTokens(),
+                    Attributes.builder()
+                            .put(SPAN_ATTR_OPERATION_NAME, DEFAULT_EMBEDDING_OPERATION_NAME)
+                            .put(SPAN_ATTR_PROVIDER_NAME, seed.getModel() == null ? "" : seed.getModel().getProvider())
+                            .put(SPAN_ATTR_REQUEST_MODEL, seed.getModel() == null ? "" : seed.getModel().getName())
+                            .put(SPAN_ATTR_AGENT_NAME, seed.getAgentName())
+                            .put(METRIC_ATTR_TOKEN_TYPE, METRIC_TOKEN_TYPE_INPUT)
+                            .build()
+            );
+        }
+    }
+
     private void recordTokenUsage(Generation generation, String tokenType, long value) {
         if (value == 0L) {
             return;
@@ -991,6 +1134,7 @@ public final class SigilClient implements AutoCloseable {
         tokenUsageHistogram.record(
                 (double) value,
                 Attributes.builder()
+                        .put(SPAN_ATTR_OPERATION_NAME, operationName(generation))
                         .put(SPAN_ATTR_PROVIDER_NAME, generation.getModel() == null ? "" : generation.getModel().getProvider())
                         .put(SPAN_ATTR_REQUEST_MODEL, generation.getModel() == null ? "" : generation.getModel().getName())
                         .put(SPAN_ATTR_AGENT_NAME, generation.getAgentName())
@@ -1184,5 +1328,43 @@ public final class SigilClient implements AutoCloseable {
             }
         }
         return null;
+    }
+
+    private static EmbeddingCaptureConfig normalizeEmbeddingCaptureConfig(EmbeddingCaptureConfig input) {
+        EmbeddingCaptureConfig config = input == null ? new EmbeddingCaptureConfig() : input.copy();
+        if (config.getMaxInputItems() <= 0) {
+            config.setMaxInputItems(20);
+        }
+        if (config.getMaxTextLength() <= 0) {
+            config.setMaxTextLength(1024);
+        }
+        return config;
+    }
+
+    private static List<String> captureEmbeddingInputTexts(List<String> inputTexts, EmbeddingCaptureConfig config) {
+        if (inputTexts == null || inputTexts.isEmpty()) {
+            return List.of();
+        }
+
+        int maxItems = Math.max(1, config.getMaxInputItems());
+        int maxTextLength = Math.max(1, config.getMaxTextLength());
+        int count = Math.min(maxItems, inputTexts.size());
+
+        List<String> captured = new ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            String text = inputTexts.get(index);
+            captured.add(truncateEmbeddingText(text == null ? "" : text, maxTextLength));
+        }
+        return captured;
+    }
+
+    private static String truncateEmbeddingText(String text, int maxLength) {
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        if (maxLength <= 3) {
+            return text.substring(0, maxLength);
+        }
+        return text.substring(0, maxLength - 3) + "...";
     }
 }

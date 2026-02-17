@@ -122,6 +122,38 @@ public sealed class ValidationTests
         GenerationValidator.Validate(generation);
     }
 
+    [Fact]
+    public void ValidateEmbeddingStart_RequiresModelFields()
+    {
+        var start = new EmbeddingStart
+        {
+            Model = new ModelRef
+            {
+                Provider = string.Empty,
+                Name = "text-embedding-3-small",
+            },
+        };
+        Assert.Throws<ArgumentException>(() => GenerationValidator.ValidateEmbeddingStart(start));
+
+        start.Model.Provider = "openai";
+        start.Model.Name = string.Empty;
+        Assert.Throws<ArgumentException>(() => GenerationValidator.ValidateEmbeddingStart(start));
+    }
+
+    [Fact]
+    public void ValidateEmbeddingResult_RejectsNegativeCounts()
+    {
+        Assert.Throws<ArgumentException>(() => GenerationValidator.ValidateEmbeddingResult(new EmbeddingResult
+        {
+            InputCount = -1,
+        }));
+
+        Assert.Throws<ArgumentException>(() => GenerationValidator.ValidateEmbeddingResult(new EmbeddingResult
+        {
+            InputTokens = -1,
+        }));
+    }
+
     private static Generation Clone(Generation generation)
     {
         return System.Text.Json.JsonSerializer.Deserialize<Generation>(

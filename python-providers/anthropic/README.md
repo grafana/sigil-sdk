@@ -2,6 +2,10 @@
 
 `sigil-sdk-anthropic` provides strict Anthropic Messages wrappers and mappers for Sigil.
 
+## Embeddings support
+
+This helper currently supports Anthropic Messages APIs only. Native Anthropic embeddings endpoints are not available in the official SDK/API surface used in this repository.
+
 ## Installation
 
 ```bash

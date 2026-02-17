@@ -88,6 +88,46 @@ AutoConfiguredOpenTelemetrySdk.initialize();
 
 Use `startStreamingGeneration(...)` or `withStreamingGeneration(...)`. The SDK sets mode to `STREAM` and keeps operation naming consistent.
 
+## Embedding Observability
+
+Use `startEmbedding(...)` / `withEmbedding(...)` for embedding API calls. Embedding recording emits OTel spans and SDK metrics only, and does not enqueue generation exports.
+
+```java
+client.withEmbedding(
+    new EmbeddingStart()
+        .setAgentName("retrieval-worker")
+        .setAgentVersion("1.0.0")
+        .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")),
+    recorder -> {
+        var response = openAiClient.embeddings().create(/* request */);
+        recorder.setResult(new EmbeddingResult()
+            .setInputCount(2)
+            .setInputTokens(response.usage().promptTokens())
+            .setInputTexts(java.util.List.of("hello", "world")) // captured only when enabled
+            .setResponseModel(response.model()));
+        return response;
+    }
+);
+```
+
+Input text capture is opt-in:
+
+```java
+SigilClientConfig config = new SigilClientConfig()
+    .setEmbeddingCapture(new EmbeddingCaptureConfig()
+        .setCaptureInput(true)
+        .setMaxInputItems(20)
+        .setMaxTextLength(1024));
+```
+
+`setCaptureInput(true)` may expose PII/document content in spans. Keep it disabled by default and enable only for scoped debugging.
+
+TraceQL examples:
+
+- `traces{gen_ai.operation.name="embeddings"}`
+- `traces{gen_ai.operation.name="embeddings" && gen_ai.request.model="text-embedding-3-small"}`
+- `traces{gen_ai.operation.name="embeddings" && error.type!=""}`
+
 ## Auth Modes
 
 Auth is configured for generation export:

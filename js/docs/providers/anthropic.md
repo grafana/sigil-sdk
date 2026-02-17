@@ -2,6 +2,10 @@
 
 This helper maps strict Anthropic Messages payloads into Sigil `Generation` records.
 
+## Embeddings support
+
+This helper currently supports Anthropic Messages APIs only. Native Anthropic embeddings endpoints are not available in the official SDK/API surface used in this repository.
+
 ## Scope
 
 - Wrapper calls:

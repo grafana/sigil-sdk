@@ -104,6 +104,51 @@ func FromRequestResponse(
 	return generation, nil
 }
 
+// EmbeddingFromResponse maps a Gemini embed-content request/response pair to sigil.EmbeddingResult.
+func EmbeddingFromResponse(
+	model string,
+	contents []*genai.Content,
+	config *genai.EmbedContentConfig,
+	resp *genai.EmbedContentResponse,
+) sigil.EmbeddingResult {
+	_ = model
+
+	result := sigil.EmbeddingResult{
+		InputCount: embeddingInputCount(contents),
+		InputTexts: embeddingInputTexts(contents),
+	}
+
+	if resp == nil {
+		if config != nil && config.OutputDimensionality != nil && *config.OutputDimensionality > 0 {
+			dimensions := int64(*config.OutputDimensionality)
+			result.Dimensions = &dimensions
+		}
+		return result
+	}
+
+	var inputTokens int64
+	for _, embedding := range resp.Embeddings {
+		if embedding == nil {
+			continue
+		}
+		if embedding.Statistics != nil && embedding.Statistics.TokenCount > 0 {
+			inputTokens += int64(embedding.Statistics.TokenCount)
+		}
+		if result.Dimensions == nil && len(embedding.Values) > 0 {
+			dimensions := int64(len(embedding.Values))
+			result.Dimensions = &dimensions
+		}
+	}
+	result.InputTokens = inputTokens
+
+	if result.Dimensions == nil && config != nil && config.OutputDimensionality != nil && *config.OutputDimensionality > 0 {
+		dimensions := int64(*config.OutputDimensionality)
+		result.Dimensions = &dimensions
+	}
+
+	return result
+}
+
 func mapContents(contents []*genai.Content) []sigil.Message {
 	if len(contents) == 0 {
 		return nil
@@ -170,6 +215,49 @@ func mapContents(contents []*genai.Content) []sigil.Message {
 	}
 
 	return out
+}
+
+func embeddingInputCount(contents []*genai.Content) int {
+	count := 0
+	for _, content := range contents {
+		if content != nil {
+			count++
+		}
+	}
+	return count
+}
+
+func embeddingInputTexts(contents []*genai.Content) []string {
+	if len(contents) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(contents))
+	for _, content := range contents {
+		text := strings.TrimSpace(embeddingContentText(content))
+		if text != "" {
+			out = append(out, text)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func embeddingContentText(content *genai.Content) string {
+	if content == nil || len(content.Parts) == 0 {
+		return ""
+	}
+	chunks := make([]string, 0, len(content.Parts))
+	for _, part := range content.Parts {
+		if part == nil {
+			continue
+		}
+		if text := strings.TrimSpace(part.Text); text != "" {
+			chunks = append(chunks, text)
+		}
+	}
+	return strings.Join(chunks, "\n")
 }
 
 func mapCandidates(candidates []*genai.Candidate) ([]sigil.Message, string) {

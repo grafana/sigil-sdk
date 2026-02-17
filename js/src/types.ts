@@ -48,6 +48,16 @@ export interface ApiConfig {
   endpoint: string;
 }
 
+/** Embedding input-capture settings for span attributes. */
+export interface EmbeddingCaptureConfig {
+  /** Enables `gen_ai.embeddings.input_texts` capture on spans. */
+  captureInput: boolean;
+  /** Max number of input texts captured per embedding call. */
+  maxInputItems: number;
+  /** Max characters captured per text entry before truncation. */
+  maxTextLength: number;
+}
+
 /** Optional logger hooks used by the SDK runtime. */
 export interface SigilLogger {
   debug?: (message: string, ...args: unknown[]) => void;
@@ -126,6 +136,7 @@ export interface GenerationExporter {
 export interface SigilSdkConfig {
   generationExport: GenerationExportConfig;
   api: ApiConfig;
+  embeddingCapture: EmbeddingCaptureConfig;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -138,6 +149,7 @@ export interface SigilSdkConfig {
 export interface SigilSdkConfigInput {
   generationExport?: Partial<GenerationExportConfig>;
   api?: Partial<ApiConfig>;
+  embeddingCapture?: Partial<EmbeddingCaptureConfig>;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -267,6 +279,27 @@ export interface GenerationResult {
   artifacts?: Artifact[];
 }
 
+/** Embedding start seed fields. */
+export interface EmbeddingStart {
+  model: ModelRef;
+  agentName?: string;
+  agentVersion?: string;
+  dimensions?: number;
+  encodingFormat?: string;
+  tags?: Record<string, string>;
+  metadata?: Record<string, unknown>;
+  startedAt?: Date;
+}
+
+/** Final embedding result fields. */
+export interface EmbeddingResult {
+  inputCount: number;
+  inputTokens?: number;
+  inputTexts?: string[];
+  responseModel?: string;
+  dimensions?: number;
+}
+
 /** Fully normalized generation record exported by the SDK. */
 export interface Generation {
   id: string;
@@ -334,6 +367,14 @@ export interface ToolExecution {
   arguments?: unknown;
   result?: unknown;
   callError?: string;
+}
+
+/** Recorder API for embedding lifecycle. */
+export interface EmbeddingRecorder {
+  setResult(result: EmbeddingResult): void;
+  setCallError(error: unknown): void;
+  end(): void;
+  getError(): Error | undefined;
 }
 
 /** Recorder API for generation lifecycle. */

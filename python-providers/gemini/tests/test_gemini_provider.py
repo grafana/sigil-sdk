@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
@@ -28,9 +31,10 @@ class _CapturingExporter:
         return
 
 
-def _new_client(exporter):
+def _new_client(exporter, tracer=None):
     return Client(
         ClientConfig(
+            tracer=tracer,
             generation_export=GenerationExportConfig(batch_size=10, flush_interval=timedelta(seconds=60)),
             generation_exporter=exporter,
         )
@@ -191,6 +195,68 @@ def test_gemini_wrapper_propagates_provider_error_and_sets_call_error() -> None:
         client.shutdown()
 
 
+def test_gemini_embeddings_wrapper_records_span_and_skips_generation_export() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        response = models.embed_content(
+            client,
+            "gemini-embedding-001",
+            [{"role": "user", "parts": [{"text": "hello"}]}],
+            {"output_dimensionality": 128},
+            lambda _model, _contents, _config: {
+                "embeddings": [
+                    {"values": [0.1, 0.2, 0.3], "statistics": {"token_count": 8}},
+                ]
+            },
+        )
+        assert "embeddings" in response
+
+        client.flush()
+        assert exporter.requests == []
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.attributes["gen_ai.operation.name"] == "embeddings"
+        assert span.attributes["gen_ai.provider.name"] == "gemini"
+        assert span.attributes["gen_ai.request.model"] == "gemini-embedding-001"
+        assert span.attributes["gen_ai.embeddings.input_count"] == 1
+        assert span.attributes["gen_ai.usage.input_tokens"] == 8
+        assert span.attributes["gen_ai.embeddings.dimension.count"] == 3
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
+def test_gemini_embeddings_wrapper_propagates_provider_error_and_sets_span_error() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        with pytest.raises(RuntimeError, match="provider failure embedding"):
+            models.embed_content(
+                client,
+                "gemini-embedding-001",
+                [{"role": "user", "parts": [{"text": "hello"}]}],
+                None,
+                lambda _model, _contents, _config: (_ for _ in ()).throw(RuntimeError("provider failure embedding")),
+            )
+
+        span = span_exporter.get_finished_spans()[-1]
+        assert span.status.status_code.name == "ERROR"
+        assert span.attributes.get("error.type") == "provider_call_error"
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
 def test_gemini_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
     model = "gemini-2.5-pro"
     contents = _contents()
@@ -249,3 +315,22 @@ def test_gemini_mapper_maps_thinking_disabled() -> None:
     )
 
     assert mapped.thinking_enabled is False
+
+
+def test_gemini_embedding_mapper_extracts_usage_and_dimensions() -> None:
+    mapped = models.embedding_from_response(
+        "gemini-embedding-001",
+        ["alpha", {"role": "user", "parts": [{"text": "beta"}]}],
+        {"output_dimensionality": 256},
+        {
+            "embeddings": [
+                {"values": [0.1, 0.2], "statistics": {"token_count": 4}},
+                {"values": [0.3, 0.4], "statistics": {"token_count": 5}},
+            ]
+        },
+    )
+
+    assert mapped.input_count == 2
+    assert mapped.input_texts == ["alpha", "beta"]
+    assert mapped.input_tokens == 9
+    assert mapped.dimensions == 2

@@ -179,6 +179,31 @@ class GenerationStart:
 
 
 @dataclass(slots=True)
+class EmbeddingStart:
+    """Seed fields used when embedding recording starts."""
+
+    model: ModelRef
+    agent_name: str = ""
+    agent_version: str = ""
+    dimensions: Optional[int] = None
+    encoding_format: str = ""
+    tags: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    started_at: Optional[datetime] = None
+
+
+@dataclass(slots=True)
+class EmbeddingResult:
+    """Result fields set before an embedding span is finalized."""
+
+    input_count: int = 0
+    input_tokens: int = 0
+    input_texts: list[str] = field(default_factory=list)
+    response_model: str = ""
+    dimensions: Optional[int] = None
+
+
+@dataclass(slots=True)
 class Generation:
     """Final normalized generation payload exported by the SDK."""
 

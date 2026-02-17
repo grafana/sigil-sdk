@@ -160,4 +160,47 @@ public static class GenerationValidator
             throw new ArgumentException($"generation.artifacts[{index}] must provide payload or record_id");
         }
     }
+
+    public static void ValidateEmbeddingStart(EmbeddingStart start)
+    {
+        var value = start ?? new EmbeddingStart();
+        if (string.IsNullOrWhiteSpace(value.Model.Provider))
+        {
+            throw new ArgumentException("embedding.model.provider is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(value.Model.Name))
+        {
+            throw new ArgumentException("embedding.model.name is required");
+        }
+
+        if (value.Dimensions.HasValue && value.Dimensions.Value <= 0)
+        {
+            throw new ArgumentException("embedding.dimensions must be > 0");
+        }
+
+        if (value.EncodingFormat.Length > 0 && string.IsNullOrWhiteSpace(value.EncodingFormat))
+        {
+            throw new ArgumentException("embedding.encoding_format must not be blank");
+        }
+    }
+
+    public static void ValidateEmbeddingResult(EmbeddingResult result)
+    {
+        var value = result ?? new EmbeddingResult();
+        if (value.InputCount < 0)
+        {
+            throw new ArgumentException("embedding.input_count must be >= 0");
+        }
+
+        if (value.InputTokens < 0)
+        {
+            throw new ArgumentException("embedding.input_tokens must be >= 0");
+        }
+
+        if (value.Dimensions.HasValue && value.Dimensions.Value <= 0)
+        {
+            throw new ArgumentException("embedding.dimensions must be > 0");
+        }
+    }
 }

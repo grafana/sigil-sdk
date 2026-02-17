@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .models import ArtifactKind, Generation, GenerationMode, MessageRole, PartKind
+from .models import ArtifactKind, EmbeddingResult, EmbeddingStart, Generation, GenerationMode, MessageRole, PartKind
 
 
 def validate_generation(generation: Generation) -> None:
@@ -37,6 +37,30 @@ def validate_generation(generation: Generation) -> None:
             raise ValueError(f"generation.artifacts[{index}].kind is invalid")
         if artifact.record_id.strip() == "" and len(artifact.payload) == 0:
             raise ValueError(f"generation.artifacts[{index}] must provide payload or record_id")
+
+
+def validate_embedding_start(start: EmbeddingStart) -> None:
+    """Raises ValueError when embedding start payload is invalid."""
+
+    if start.model.provider.strip() == "":
+        raise ValueError("embedding.model.provider is required")
+    if start.model.name.strip() == "":
+        raise ValueError("embedding.model.name is required")
+    if start.dimensions is not None and start.dimensions <= 0:
+        raise ValueError("embedding.dimensions must be > 0")
+    if start.encoding_format != "" and start.encoding_format.strip() == "":
+        raise ValueError("embedding.encoding_format must not be blank")
+
+
+def validate_embedding_result(result: EmbeddingResult) -> None:
+    """Raises ValueError when embedding result payload is invalid."""
+
+    if result.input_count < 0:
+        raise ValueError("embedding.input_count must be >= 0")
+    if result.input_tokens < 0:
+        raise ValueError("embedding.input_tokens must be >= 0")
+    if result.dimensions is not None and result.dimensions <= 0:
+        raise ValueError("embedding.dimensions must be > 0")
 
 
 def _validate_message(path: str, index: int, role: str, parts: list[object]) -> None:

@@ -220,6 +220,27 @@ public sealed class GenerationStart
     public DateTimeOffset? StartedAt { get; set; }
 }
 
+public sealed class EmbeddingStart
+{
+    public ModelRef Model { get; set; } = new();
+    public string AgentName { get; set; } = string.Empty;
+    public string AgentVersion { get; set; } = string.Empty;
+    public long? Dimensions { get; set; }
+    public string EncodingFormat { get; set; } = string.Empty;
+    public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
+    public DateTimeOffset? StartedAt { get; set; }
+}
+
+public sealed class EmbeddingResult
+{
+    public int InputCount { get; set; }
+    public long InputTokens { get; set; }
+    public List<string> InputTexts { get; set; } = new();
+    public string ResponseModel { get; set; } = string.Empty;
+    public long? Dimensions { get; set; }
+}
+
 public sealed class Generation
 {
     public string Id { get; set; } = string.Empty;

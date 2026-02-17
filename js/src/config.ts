@@ -1,5 +1,6 @@
 import type {
   ApiConfig,
+  EmbeddingCaptureConfig,
   ExportAuthConfig,
   GenerationExportConfig,
   SigilLogger,
@@ -32,6 +33,12 @@ export const defaultAPIConfig: ApiConfig = {
   endpoint: 'http://localhost:8080',
 };
 
+export const defaultEmbeddingCaptureConfig: EmbeddingCaptureConfig = {
+  captureInput: false,
+  maxInputItems: 20,
+  maxTextLength: 1024,
+};
+
 export const defaultLogger: SigilLogger = {
   debug(message: string, ...args: unknown[]) {
     console.debug(message, ...args);
@@ -48,6 +55,7 @@ export function defaultConfig(): SigilSdkConfig {
   return {
     generationExport: cloneGenerationExportConfig(defaultGenerationExportConfig),
     api: cloneAPIConfig(defaultAPIConfig),
+    embeddingCapture: cloneEmbeddingCaptureConfig(defaultEmbeddingCaptureConfig),
   };
 }
 
@@ -55,6 +63,7 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
   return {
     generationExport: mergeGenerationExportConfig(config.generationExport),
     api: mergeAPIConfig(config.api),
+    embeddingCapture: mergeEmbeddingCaptureConfig(config.embeddingCapture),
     generationExporter: config.generationExporter,
     tracer: config.tracer,
     meter: config.meter,
@@ -80,6 +89,15 @@ function mergeGenerationExportConfig(config: Partial<GenerationExportConfig> | u
 function mergeAPIConfig(config: Partial<ApiConfig> | undefined): ApiConfig {
   return {
     ...defaultAPIConfig,
+    ...config,
+  };
+}
+
+function mergeEmbeddingCaptureConfig(
+  config: Partial<EmbeddingCaptureConfig> | undefined
+): EmbeddingCaptureConfig {
+  return {
+    ...defaultEmbeddingCaptureConfig,
     ...config,
   };
 }
@@ -168,6 +186,12 @@ function cloneGenerationExportConfig(config: GenerationExportConfig): Generation
 }
 
 function cloneAPIConfig(config: ApiConfig): ApiConfig {
+  return {
+    ...config,
+  };
+}
+
+function cloneEmbeddingCaptureConfig(config: EmbeddingCaptureConfig): EmbeddingCaptureConfig {
   return {
     ...config,
   };

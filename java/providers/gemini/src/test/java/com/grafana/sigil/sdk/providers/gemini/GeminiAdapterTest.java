@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.genai.types.Content;
+import com.google.genai.types.EmbedContentConfig;
+import com.google.genai.types.EmbedContentResponse;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
+import com.grafana.sigil.sdk.EmbeddingResult;
 import com.grafana.sigil.sdk.ExportGenerationResult;
 import com.grafana.sigil.sdk.ExportGenerationsRequest;
 import com.grafana.sigil.sdk.ExportGenerationsResponse;
@@ -103,6 +106,64 @@ class GeminiAdapterTest {
     }
 
     @Test
+    void embeddingWrapperDoesNotEnqueueGenerations() throws Exception {
+        CapturingExporter exporter = new CapturingExporter();
+        try (SigilClient client = new SigilClient(new SigilClientConfig()
+                .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                .setGenerationExporter(exporter)
+                .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
+
+            EmbedContentResponse response = GeminiAdapter.embedContent(
+                    client,
+                    "gemini-embedding-001",
+                    List.of("alpha", "beta"),
+                    embedConfig(),
+                    (_m, _c, _cfg) -> embedResponse(),
+                    new GeminiOptions());
+            assertThat(response.embeddings()).isPresent();
+        }
+
+        assertThat(exporter.generations).isEmpty();
+    }
+
+    @Test
+    void embeddingWrapperPropagatesProviderErrors() {
+        CapturingExporter exporter = new CapturingExporter();
+        assertThatThrownBy(() -> {
+            try (SigilClient client = new SigilClient(new SigilClientConfig()
+                    .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                    .setGenerationExporter(exporter)
+                    .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
+                GeminiAdapter.embedContent(
+                        client,
+                        "gemini-embedding-001",
+                        List.of("alpha"),
+                        embedConfig(),
+                        (_m, _c, _cfg) -> {
+                            throw new RuntimeException("gemini embedding failed");
+                        },
+                        new GeminiOptions());
+            }
+        }).isInstanceOf(RuntimeException.class).hasMessageContaining("gemini embedding failed");
+
+        assertThat(exporter.generations).isEmpty();
+    }
+
+    @Test
+    void embeddingMapperExtractsUsageAndDimensions() {
+        EmbeddingResult result = GeminiAdapter.embeddingFromResponse(
+                "gemini-embedding-001",
+                List.of("alpha", "beta"),
+                embedConfig(),
+                embedResponse());
+
+        assertThat(result.getInputCount()).isEqualTo(2);
+        assertThat(result.getInputTokens()).isEqualTo(7L);
+        assertThat(result.getDimensions()).isEqualTo(3L);
+        assertThat(result.getInputTexts()).containsExactly("alpha", "beta");
+    }
+
+    @Test
     void mapperSetsThinkingFalseWhenIncludeThoughtsFalse() {
         var mapped = GeminiAdapter.fromRequestResponse(
                 model(),
@@ -178,6 +239,31 @@ class GeminiAdapterTest {
                     "thoughtsTokenCount": 3,
                     "toolUsePromptTokenCount": 5
                   }
+                }
+                """);
+    }
+
+    private static EmbedContentConfig embedConfig() {
+        return EmbedContentConfig.fromJson("""
+                {
+                  "outputDimensionality": 256
+                }
+                """);
+    }
+
+    private static EmbedContentResponse embedResponse() {
+        return EmbedContentResponse.fromJson("""
+                {
+                  "embeddings": [
+                    {
+                      "values": [0.1, 0.2, 0.3],
+                      "statistics": {"tokenCount": 4}
+                    },
+                    {
+                      "values": [0.4, 0.5, 0.6],
+                      "statistics": {"tokenCount": 3}
+                    }
+                  ]
                 }
                 """);
     }

@@ -109,6 +109,115 @@ test('generation callError sets metadata and provider_call_error span status', a
   }
 });
 
+test('embedding span sets standard attributes and does not enqueue generation export', async () => {
+  const harness = newHarness();
+
+  try {
+    const recorder = harness.client.startEmbedding({
+      model: { provider: 'openai', name: 'text-embedding-3-small' },
+      agentName: 'agent-embed',
+      agentVersion: 'v-embed',
+      dimensions: 256,
+      encodingFormat: 'float',
+    });
+    recorder.setResult({
+      inputCount: 2,
+      inputTokens: 64,
+      responseModel: 'text-embedding-3-small',
+      dimensions: 512,
+      inputTexts: ['first', 'second'],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    const snapshot = harness.client.debugSnapshot();
+    assert.equal(snapshot.generations.length, 0);
+    assert.equal(harness.generationExporter.requests.length, 0);
+
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.name, 'embeddings text-embedding-3-small');
+    assert.equal(span.attributes['gen_ai.operation.name'], 'embeddings');
+    assert.equal(span.attributes['gen_ai.provider.name'], 'openai');
+    assert.equal(span.attributes['gen_ai.request.model'], 'text-embedding-3-small');
+    assert.equal(span.attributes['gen_ai.agent.name'], 'agent-embed');
+    assert.equal(span.attributes['gen_ai.agent.version'], 'v-embed');
+    assert.equal(span.attributes['gen_ai.embeddings.dimension.count'], 512);
+    assert.deepEqual(span.attributes['gen_ai.request.encoding_formats'], ['float']);
+    assert.equal(span.attributes['gen_ai.embeddings.input_count'], 2);
+    assert.equal(span.attributes['gen_ai.usage.input_tokens'], 64);
+    assert.equal(span.attributes['gen_ai.response.model'], 'text-embedding-3-small');
+    assert.equal(span.attributes['gen_ai.embeddings.input_texts'], undefined);
+    assert.equal(span.status.code, SpanStatusCode.OK);
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
+test('embedding input text capture is opt-in with truncation limits', async () => {
+  const harness = newHarness({
+    embeddingCapture: {
+      captureInput: true,
+      maxInputItems: 2,
+      maxTextLength: 8,
+    },
+  });
+
+  try {
+    const recorder = harness.client.startEmbedding({
+      model: { provider: 'openai', name: 'text-embedding-3-small' },
+    });
+    recorder.setResult({
+      inputCount: 3,
+      inputTexts: ['12345678', '123456789', 'dropped'],
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.deepEqual(span.attributes['gen_ai.embeddings.input_texts'], ['12345678', '12345...']);
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
+test('embedding callError marks provider_call_error span status', async () => {
+  const harness = newHarness();
+
+  try {
+    const recorder = harness.client.startEmbedding({
+      model: { provider: 'gemini', name: 'text-embedding-004' },
+    });
+    recorder.setCallError(new Error('provider unavailable'));
+    recorder.end();
+
+    assert.equal(recorder.getError(), undefined);
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.status.code, SpanStatusCode.ERROR);
+    assert.equal(span.attributes['error.type'], 'provider_call_error');
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
+test('embedding validation error is surfaced locally and marks span', async () => {
+  const harness = newHarness();
+
+  try {
+    const recorder = harness.client.startEmbedding({
+      model: { provider: '', name: 'text-embedding-3-small' },
+    });
+    recorder.end();
+
+    assert.match(recorder.getError()?.message ?? '', /embedding\.model\.provider is required/);
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.status.code, SpanStatusCode.ERROR);
+    assert.equal(span.attributes['error.type'], 'validation_error');
+    assert.equal(span.attributes['error.category'], 'sdk_error');
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
 test('tool execution includeContent controls argument/result attributes', async () => {
   const harness = newHarness();
 
@@ -196,8 +305,16 @@ test('generation and tool recorders are idempotent on duplicate end()', async ()
     toolRecorder.end();
     assert.equal(toolRecorder.getError(), undefined);
 
+    const embeddingRecorder = harness.client.startEmbedding({
+      model: { provider: 'openai', name: 'text-embedding-3-small' },
+    });
+    embeddingRecorder.end();
+    embeddingRecorder.end();
+    assert.equal(embeddingRecorder.getError(), undefined);
+
     assert.equal(generationSpans(harness.spanExporter).length, 1);
     assert.equal(toolSpans(harness.spanExporter).length, 1);
+    assert.equal(embeddingSpans(harness.spanExporter).length, 1);
   } finally {
     await shutdownHarness(harness);
   }
@@ -224,7 +341,7 @@ test('empty tool name returns no-op tool recorder', async () => {
   }
 });
 
-function newHarness() {
+function newHarness(overrides = {}) {
   const spanExporter = new InMemorySpanExporter();
   const traceProvider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(spanExporter)],
@@ -242,7 +359,9 @@ function newHarness() {
       maxRetries: 1,
       initialBackoffMs: 1,
       maxBackoffMs: 1,
+      ...(overrides.generationExport ?? {}),
     },
+    embeddingCapture: overrides.embeddingCapture,
     generationExporter,
   });
 
@@ -266,7 +385,14 @@ function singleGeneration(client) {
 }
 
 function generationSpans(spanExporter) {
-  return spanExporter.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] !== 'execute_tool');
+  return spanExporter.getFinishedSpans().filter((span) => {
+    const operation = span.attributes['gen_ai.operation.name'];
+    return operation !== 'execute_tool' && operation !== 'embeddings';
+  });
+}
+
+function embeddingSpans(spanExporter) {
+  return spanExporter.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'embeddings');
 }
 
 function toolSpans(spanExporter) {
@@ -275,6 +401,12 @@ function toolSpans(spanExporter) {
 
 function singleGenerationSpan(spanExporter) {
   const spans = generationSpans(spanExporter);
+  assert.equal(spans.length, 1);
+  return spans[0];
+}
+
+function singleEmbeddingSpan(spanExporter) {
+  const spans = embeddingSpans(spanExporter);
   assert.equal(spans.length, 1);
   return spans[0];
 }

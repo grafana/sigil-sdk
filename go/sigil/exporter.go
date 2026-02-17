@@ -244,6 +244,18 @@ func mergeAPIConfig(base, override APIConfig) APIConfig {
 	return out
 }
 
+func mergeEmbeddingCaptureConfig(base, override EmbeddingCaptureConfig) EmbeddingCaptureConfig {
+	out := base
+	out.CaptureInput = override.CaptureInput
+	if override.MaxInputItems > 0 {
+		out.MaxInputItems = override.MaxInputItems
+	}
+	if override.MaxTextLength > 0 {
+		out.MaxTextLength = override.MaxTextLength
+	}
+	return out
+}
+
 func mergeAuthConfig(base, override AuthConfig) AuthConfig {
 	out := base
 	if override.Mode != "" {

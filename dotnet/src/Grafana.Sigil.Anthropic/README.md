@@ -2,6 +2,10 @@
 
 Anthropic Messages API instrumentation helpers for `Grafana.Sigil`.
 
+## Embeddings support
+
+This helper currently supports Anthropic Messages APIs only. Native Anthropic embeddings endpoints are not available in the official SDK/API surface used in this repository.
+
 ## Install
 
 ```bash

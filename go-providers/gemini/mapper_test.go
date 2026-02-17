@@ -341,3 +341,71 @@ func TestFromRequestResponseWithRawArtifacts(t *testing.T) {
 		t.Fatalf("expected 3 artifacts with raw artifact opt-in, got %d", len(generation.Artifacts))
 	}
 }
+
+func TestEmbeddingFromResponse(t *testing.T) {
+	model := "gemini-embedding-001"
+	dimensions := int32(8)
+	contents := []*genai.Content{
+		genai.NewContentFromText("first input", genai.RoleUser),
+		genai.NewContentFromParts([]*genai.Part{
+			genai.NewPartFromText("second input"),
+		}, genai.RoleUser),
+		nil,
+	}
+	config := &genai.EmbedContentConfig{
+		OutputDimensionality: &dimensions,
+	}
+	resp := &genai.EmbedContentResponse{
+		Embeddings: []*genai.ContentEmbedding{
+			{
+				Values: []float32{0.1, 0.2, 0.3},
+				Statistics: &genai.ContentEmbeddingStatistics{
+					TokenCount: 5,
+				},
+			},
+			{
+				Values: []float32{0.4, 0.5, 0.6},
+				Statistics: &genai.ContentEmbeddingStatistics{
+					TokenCount: 7,
+				},
+			},
+		},
+	}
+
+	result := EmbeddingFromResponse(model, contents, config, resp)
+
+	if result.InputCount != 2 {
+		t.Fatalf("expected input count 2, got %d", result.InputCount)
+	}
+	if result.InputTokens != 12 {
+		t.Fatalf("expected input tokens 12, got %d", result.InputTokens)
+	}
+	if len(result.InputTexts) != 2 || result.InputTexts[0] != "first input" || result.InputTexts[1] != "second input" {
+		t.Fatalf("unexpected input texts: %#v", result.InputTexts)
+	}
+	if result.Dimensions == nil || *result.Dimensions != 3 {
+		t.Fatalf("expected dimensions 3, got %v", result.Dimensions)
+	}
+}
+
+func TestEmbeddingFromResponseFallsBackToRequestedDimensions(t *testing.T) {
+	model := "gemini-embedding-001"
+	dimensions := int32(12)
+	config := &genai.EmbedContentConfig{
+		OutputDimensionality: &dimensions,
+	}
+
+	result := EmbeddingFromResponse(model, []*genai.Content{
+		genai.NewContentFromText("single input", genai.RoleUser),
+	}, config, &genai.EmbedContentResponse{})
+
+	if result.InputCount != 1 {
+		t.Fatalf("expected input count 1, got %d", result.InputCount)
+	}
+	if result.InputTokens != 0 {
+		t.Fatalf("expected input tokens 0, got %d", result.InputTokens)
+	}
+	if result.Dimensions == nil || *result.Dimensions != 12 {
+		t.Fatalf("expected dimensions 12, got %v", result.Dimensions)
+	}
+}

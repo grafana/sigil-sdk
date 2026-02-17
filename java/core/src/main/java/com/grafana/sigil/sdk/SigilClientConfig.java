@@ -9,6 +9,7 @@ import java.util.logging.Logger;
 public final class SigilClientConfig {
     private GenerationExportConfig generationExport = new GenerationExportConfig();
     private ApiConfig api = new ApiConfig();
+    private EmbeddingCaptureConfig embeddingCapture = new EmbeddingCaptureConfig();
     private GenerationExporter generationExporter;
     private Tracer tracer;
     private Meter meter;
@@ -30,6 +31,15 @@ public final class SigilClientConfig {
 
     public SigilClientConfig setApi(ApiConfig api) {
         this.api = api == null ? new ApiConfig() : api;
+        return this;
+    }
+
+    public EmbeddingCaptureConfig getEmbeddingCapture() {
+        return embeddingCapture;
+    }
+
+    public SigilClientConfig setEmbeddingCapture(EmbeddingCaptureConfig embeddingCapture) {
+        this.embeddingCapture = embeddingCapture == null ? new EmbeddingCaptureConfig() : embeddingCapture;
         return this;
     }
 
@@ -82,6 +92,7 @@ public final class SigilClientConfig {
         return new SigilClientConfig()
                 .setGenerationExport(generationExport.copy())
                 .setApi(api.copy())
+                .setEmbeddingCapture(embeddingCapture.copy())
                 .setGenerationExporter(generationExporter)
                 .setTracer(tracer)
                 .setMeter(meter)

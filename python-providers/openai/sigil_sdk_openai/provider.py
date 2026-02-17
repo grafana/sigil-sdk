@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
 from sigil_sdk import (
     Artifact,
     ArtifactKind,
+    EmbeddingResult,
+    EmbeddingStart,
     Generation,
     GenerationMode,
     GenerationStart,
@@ -399,6 +401,78 @@ async def _responses_stream_async(
     return summary
 
 
+def _embeddings_create(
+    client,
+    request: Any,
+    provider_call: Callable[[Any], Any],
+    options: OpenAIOptions | None = None,
+) -> Any:
+    opts = options or OpenAIOptions()
+    recorder = client.start_embedding(_embeddings_start_payload(request, opts))
+
+    try:
+        response = provider_call(request)
+        recorder.set_result(_embeddings_from_request_response(request, response))
+    except Exception as exc:  # noqa: BLE001
+        recorder.set_call_error(exc)
+        raise
+    finally:
+        recorder.end()
+
+    if recorder.err() is not None:
+        raise recorder.err()
+
+    return response
+
+
+async def _embeddings_create_async(
+    client,
+    request: Any,
+    provider_call: Callable[[Any], Awaitable[Any]],
+    options: OpenAIOptions | None = None,
+) -> Any:
+    opts = options or OpenAIOptions()
+    recorder = client.start_embedding(_embeddings_start_payload(request, opts))
+
+    try:
+        response = await provider_call(request)
+        recorder.set_result(_embeddings_from_request_response(request, response))
+    except Exception as exc:  # noqa: BLE001
+        recorder.set_call_error(exc)
+        raise
+    finally:
+        recorder.end()
+
+    if recorder.err() is not None:
+        raise recorder.err()
+
+    return response
+
+
+def _embeddings_from_request_response(request: Any, response: Any) -> EmbeddingResult:
+    result = EmbeddingResult(
+        input_count=_embedding_input_count(_read(request, "input")),
+        input_texts=_embedding_input_texts(_read(request, "input")),
+    )
+
+    usage = _read(response, "usage")
+    input_tokens = _as_int_or_none(_read(usage, "prompt_tokens"))
+    if input_tokens is None:
+        input_tokens = _as_int_or_none(_read(usage, "total_tokens"))
+    if input_tokens is not None:
+        result.input_tokens = input_tokens
+
+    result.response_model = _as_str(_read(response, "model"))
+
+    data = _as_list(_read(response, "data"))
+    if data:
+        embedding = _read(data[0], "embedding")
+        if isinstance(embedding, list):
+            result.dimensions = len(embedding)
+
+    return result
+
+
 def _responses_from_request_response(
     request: ResponsesCreateRequest,
     response: ResponsesCreateResponse,
@@ -551,6 +625,18 @@ def _responses_start_payload(
         tools=payload["tools"],
         tags=dict(options.tags),
         metadata=_metadata_with_thinking_budget(options.metadata, controls["thinking_budget"]),
+    )
+
+
+def _embeddings_start_payload(request: Any, options: OpenAIOptions) -> EmbeddingStart:
+    return EmbeddingStart(
+        agent_name=options.agent_name,
+        agent_version=options.agent_version,
+        model=ModelRef(provider=options.provider_name, name=_as_str(_read(request, "model"))),
+        dimensions=_as_int_or_none(_read(request, "dimensions")),
+        encoding_format=_as_str(_read(request, "encoding_format")),
+        tags=dict(options.tags),
+        metadata=dict(options.metadata),
     )
 
 
@@ -930,6 +1016,47 @@ def _find_responses_final_from_events(events: list[ResponsesStreamEvent]) -> Res
     return None
 
 
+def _embedding_input_count(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return 1
+    if isinstance(value, Mapping):
+        return 1
+    if isinstance(value, list | tuple):
+        if not value:
+            return 0
+        if all(isinstance(item, int) and not isinstance(item, bool) for item in value):
+            return 1
+        return len(value)
+    return 0
+
+
+def _embedding_input_texts(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, Mapping):
+        text = _as_str(value.get("text"))
+        return [text] if text else []
+    if isinstance(value, list | tuple):
+        out: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    out.append(text)
+                continue
+            if isinstance(item, Mapping):
+                text = _as_str(item.get("text"))
+                if text:
+                    out.append(text)
+        return out
+    return []
+
+
 def _canonical_tool_choice(value: Any) -> str | None:
     if value is None:
         return None
@@ -1183,5 +1310,14 @@ class _ResponsesNamespace:
     from_stream = staticmethod(_responses_from_stream)
 
 
+class _EmbeddingsNamespace:
+    """Namespace for OpenAI embeddings wrappers and mappers."""
+
+    create = staticmethod(_embeddings_create)
+    create_async = staticmethod(_embeddings_create_async)
+    from_request_response = staticmethod(_embeddings_from_request_response)
+
+
 chat = _ChatNamespace()
 responses = _ResponsesNamespace()
+embeddings = _EmbeddingsNamespace()

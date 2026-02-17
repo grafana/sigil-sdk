@@ -6,9 +6,9 @@ The .NET SDK follows the same generation-first contract and provider parity targ
 ## Packages
 
 - `Grafana.Sigil`: core runtime (`SigilClient`, generation/tool recorders, generation export)
-- `Grafana.Sigil.OpenAI`: OpenAI Responses + Chat Completions wrappers and mappers
+- `Grafana.Sigil.OpenAI`: OpenAI Responses + Chat Completions + Embeddings wrappers and mappers
 - `Grafana.Sigil.Anthropic`: Anthropic Messages wrappers and mappers
-- `Grafana.Sigil.Gemini`: Gemini GenerateContent wrappers and mappers
+- `Grafana.Sigil.Gemini`: Gemini GenerateContent + EmbedContent wrappers and mappers
 
 Package docs:
 
@@ -69,7 +69,7 @@ using var meterProvider = OpenTelemetry.Sdk.CreateMeterProviderBuilder()
     .AddOtlpExporter()
     .Build();
 
-var openAI = new OpenAIResponseClient(
+var openAI = new ResponsesClient(
     "gpt-5",
     Environment.GetEnvironmentVariable("OPENAI_API_KEY")!
 );
@@ -79,7 +79,7 @@ var inputItems = new List<ResponseItem>
     ResponseItem.CreateUserMessageItem("Give me a short weather summary for Paris."),
 };
 
-var requestOptions = new ResponseCreationOptions
+var requestOptions = new CreateResponseOptions
 {
     Instructions = "You are concise.",
     MaxOutputTokenCount = 320,
@@ -106,6 +106,7 @@ await sigil.ShutdownAsync(CancellationToken.None);
 
 - `StartGeneration(...)` for non-stream operations (`SYNC`)
 - `StartStreamingGeneration(...)` for stream operations (`STREAM`)
+- `StartEmbedding(...)` for embedding operations (`embeddings`)
 - `StartToolExecution(...)` for tool spans/events
 - `FlushAsync(...)` for explicit export flush points
 - `ShutdownAsync(...)` for graceful shutdown
@@ -122,6 +123,72 @@ Generation export transport protocols:
 - `GenerationExportProtocol.Grpc`
 - `GenerationExportProtocol.Http`
 - `GenerationExportProtocol.None` (instrumentation-only; no generation transport)
+
+## Embedding observability
+
+Use `StartEmbedding(...)` for manual embedding instrumentation. Embedding recording emits OTel spans and SDK metrics only, and does not enqueue generation export payloads.
+
+```csharp
+var recorder = client.StartEmbedding(new EmbeddingStart
+{
+    AgentName = "retrieval-worker",
+    AgentVersion = "1.0.0",
+    Model = new ModelRef
+    {
+        Provider = "openai",
+        Name = "text-embedding-3-small",
+    },
+});
+
+try
+{
+    var response = await embeddingClient.GenerateEmbeddingsAsync(new[] { "hello", "world" });
+    recorder.SetResult(new EmbeddingResult
+    {
+        InputCount = 2,
+        InputTokens = response.Value.Usage.InputTokenCount,
+        InputTexts = new List<string> { "hello", "world" }, // captured only when EmbeddingCapture.CaptureInput=true
+        ResponseModel = response.Value.Model,
+    });
+}
+catch (Exception ex)
+{
+    recorder.SetCallError(ex);
+    throw;
+}
+finally
+{
+    recorder.End();
+}
+```
+
+Provider helpers:
+
+- `OpenAIRecorder.GenerateEmbeddingsAsync(...)`
+- `GeminiRecorder.EmbedContentAsync(...)`
+- Anthropic .NET SDK does not currently expose an embeddings API surface in this repository.
+
+Input text capture is opt-in:
+
+```csharp
+var config = new SigilClientConfig
+{
+    EmbeddingCapture = new EmbeddingCaptureConfig
+    {
+        CaptureInput = true,
+        MaxInputItems = 20,
+        MaxTextLength = 1024,
+    },
+};
+```
+
+`CaptureInput` can expose PII/document content in spans. Keep it disabled by default and enable only for scoped diagnostics.
+
+TraceQL examples:
+
+- `traces{gen_ai.operation.name="embeddings"}`
+- `traces{gen_ai.operation.name="embeddings" && gen_ai.request.model="text-embedding-3-small"}`
+- `traces{gen_ai.operation.name="embeddings" && error.type!=""}`
 
 ## Context defaults
 

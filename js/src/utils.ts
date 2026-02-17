@@ -1,5 +1,7 @@
 import type {
   Artifact,
+  EmbeddingResult,
+  EmbeddingStart,
   Generation,
   GenerationMode,
   GenerationResult,
@@ -74,6 +76,35 @@ export function validateToolExecution(toolExecution: ToolExecution): Error | und
   return undefined;
 }
 
+export function validateEmbeddingStart(start: EmbeddingStart): Error | undefined {
+  if (start.model.provider.trim().length === 0) {
+    return new Error('embedding.model.provider is required');
+  }
+  if (start.model.name.trim().length === 0) {
+    return new Error('embedding.model.name is required');
+  }
+  if (start.dimensions !== undefined && start.dimensions <= 0) {
+    return new Error('embedding.dimensions must be > 0');
+  }
+  if (start.encodingFormat !== undefined && start.encodingFormat.trim().length === 0) {
+    return new Error('embedding.encoding_format must not be blank');
+  }
+  return undefined;
+}
+
+export function validateEmbeddingResult(result: EmbeddingResult): Error | undefined {
+  if (result.inputCount < 0) {
+    return new Error('embedding.input_count must be >= 0');
+  }
+  if (result.inputTokens !== undefined && result.inputTokens < 0) {
+    return new Error('embedding.input_tokens must be >= 0');
+  }
+  if (result.dimensions !== undefined && result.dimensions <= 0) {
+    return new Error('embedding.dimensions must be > 0');
+  }
+  return undefined;
+}
+
 export function asError(value: unknown): Error {
   if (value instanceof Error) {
     return value;
@@ -125,6 +156,23 @@ export function cloneGenerationResult(result: GenerationResult): GenerationResul
     tags: result.tags ? { ...result.tags } : undefined,
     metadata: result.metadata ? { ...result.metadata } : undefined,
     artifacts: result.artifacts?.map(cloneArtifact),
+  };
+}
+
+export function cloneEmbeddingStart(start: EmbeddingStart): EmbeddingStart {
+  return {
+    ...start,
+    model: cloneModelRef(start.model),
+    tags: start.tags ? { ...start.tags } : undefined,
+    metadata: start.metadata ? { ...start.metadata } : undefined,
+    startedAt: start.startedAt ? new Date(start.startedAt) : undefined,
+  };
+}
+
+export function cloneEmbeddingResult(result: EmbeddingResult): EmbeddingResult {
+  return {
+    ...result,
+    inputTexts: result.inputTexts ? [...result.inputTexts] : undefined,
   };
 }
 

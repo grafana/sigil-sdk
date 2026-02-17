@@ -6,11 +6,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.genai.JsonSerializable;
 import com.google.genai.types.Content;
+import com.google.genai.types.EmbedContentConfig;
+import com.google.genai.types.EmbedContentResponse;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentParameters;
 import com.google.genai.types.GenerateContentResponse;
 import com.grafana.sigil.sdk.Artifact;
 import com.grafana.sigil.sdk.ArtifactKind;
+import com.grafana.sigil.sdk.EmbeddingResult;
+import com.grafana.sigil.sdk.EmbeddingStart;
 import com.grafana.sigil.sdk.GenerationResult;
 import com.grafana.sigil.sdk.GenerationStart;
 import com.grafana.sigil.sdk.MessagePart;
@@ -47,6 +51,11 @@ public final class GeminiAdapter {
     @FunctionalInterface
     public interface ThrowingGenerateContentCall<T> {
         T apply(String model, List<Content> contents, GenerateContentConfig config) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface ThrowingEmbedContentCall<T> {
+        T apply(String model, List<String> contents, EmbedContentConfig config) throws Exception;
     }
 
     public static GenerateContentResponse completion(
@@ -116,6 +125,25 @@ public final class GeminiAdapter {
         });
     }
 
+    public static EmbedContentResponse embedContent(
+            SigilClient client,
+            String model,
+            List<String> contents,
+            EmbedContentConfig config,
+            ThrowingEmbedContentCall<EmbedContentResponse> providerCall,
+            GeminiOptions options) throws Exception {
+        GeminiOptions resolved = resolveOptions(options);
+        String requestModel = model == null ? "" : model;
+        List<String> requestContents = contents == null ? List.of() : List.copyOf(contents);
+
+        EmbeddingStart start = embeddingStartFromRequest(requestModel, config, resolved);
+        return client.withEmbedding(start, recorder -> {
+            EmbedContentResponse response = providerCall.apply(requestModel, requestContents, config);
+            recorder.setResult(embeddingFromResponse(requestModel, requestContents, config, response));
+            return response;
+        });
+    }
+
     public static GenerationResult fromRequestResponse(
             String model,
             List<Content> contents,
@@ -134,6 +162,46 @@ public final class GeminiAdapter {
             GeminiOptions options) {
         RequestContext requestContext = buildRequest(model, contents, config);
         return fromStream(requestContext.request(), summary, options);
+    }
+
+    public static EmbeddingResult embeddingFromResponse(
+            String model,
+            List<String> contents,
+            EmbedContentConfig config,
+            EmbedContentResponse response) {
+        Long requestedDimensions = embeddingRequestedDimensions(config);
+        EmbeddingResult result = new EmbeddingResult()
+                .setInputCount(embeddingInputCount(contents))
+                .setInputTexts(embeddingInputTexts(contents));
+
+        if (response == null) {
+            result.setDimensions(requestedDimensions);
+            return result;
+        }
+
+        long inputTokens = 0L;
+        if (response.embeddings().isPresent()) {
+            for (var embedding : response.embeddings().orElse(List.of())) {
+                if (embedding == null) {
+                    continue;
+                }
+                var statistics = embedding.statistics().orElse(null);
+                if (statistics != null && statistics.tokenCount().isPresent()) {
+                    inputTokens += statistics.tokenCount().orElse(0f).longValue();
+                }
+                if (result.getDimensions() == null && embedding.values().isPresent()) {
+                    List<Float> values = embedding.values().orElse(List.of());
+                    if (!values.isEmpty()) {
+                        result.setDimensions((long) values.size());
+                    }
+                }
+            }
+        }
+        result.setInputTokens(inputTokens);
+        if (result.getDimensions() == null) {
+            result.setDimensions(requestedDimensions);
+        }
+        return result;
     }
 
     private static GenerationResult fromRequestResponse(
@@ -260,6 +328,48 @@ public final class GeminiAdapter {
                 .setThinkingEnabled(mapped.thinkingEnabled)
                 .setMetadata(metadataWithThinking(options.getMetadata(), mapped.thinkingBudget, mapped.thinkingLevel))
                 .setTags(new LinkedHashMap<>(options.getTags()));
+    }
+
+    private static EmbeddingStart embeddingStartFromRequest(String model, EmbedContentConfig config, GeminiOptions options) {
+        return new EmbeddingStart()
+                .setAgentName(options.getAgentName())
+                .setAgentVersion(options.getAgentVersion())
+                .setModel(new ModelRef().setProvider("gemini").setName(model == null ? "" : model))
+                .setDimensions(embeddingRequestedDimensions(config))
+                .setMetadata(new LinkedHashMap<>(options.getMetadata()))
+                .setTags(new LinkedHashMap<>(options.getTags()));
+    }
+
+    private static Long embeddingRequestedDimensions(EmbedContentConfig config) {
+        if (config == null || config.outputDimensionality().isEmpty()) {
+            return null;
+        }
+        Integer dimensions = config.outputDimensionality().orElse(null);
+        if (dimensions == null || dimensions <= 0) {
+            return null;
+        }
+        return dimensions.longValue();
+    }
+
+    private static int embeddingInputCount(List<String> contents) {
+        if (contents == null) {
+            return 0;
+        }
+        return contents.size();
+    }
+
+    private static List<String> embeddingInputTexts(List<String> contents) {
+        if (contents == null || contents.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(contents.size());
+        for (String content : contents) {
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+            out.add(content);
+        }
+        return out;
     }
 
     private static RequestContext buildRequest(String model, List<Content> contents, GenerateContentConfig config) {

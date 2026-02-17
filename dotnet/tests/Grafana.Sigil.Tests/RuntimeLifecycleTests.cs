@@ -6,6 +6,20 @@ namespace Grafana.Sigil.Tests;
 public sealed class RuntimeLifecycleTests
 {
     [Fact]
+    public async Task Constructor_HandlesNullEmbeddingCaptureConfig()
+    {
+        var exporter = new CapturingGenerationExporter();
+        var config = TestHelpers.TestConfig(exporter);
+        config.EmbeddingCapture = null!;
+
+        await using var _ = new SigilClient(config);
+
+        Assert.NotNull(config.EmbeddingCapture);
+        Assert.Equal(20, config.EmbeddingCapture.MaxInputItems);
+        Assert.Equal(1024, config.EmbeddingCapture.MaxTextLength);
+    }
+
+    [Fact]
     public async Task GenerationExporter_FlushesByBatchSize()
     {
         var exporter = new CapturingGenerationExporter();

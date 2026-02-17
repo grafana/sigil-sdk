@@ -1,5 +1,6 @@
-using OpenAI.Chat;
-using OpenAI.Responses;
+using global::OpenAI.Chat;
+using global::OpenAI.Embeddings;
+using global::OpenAI.Responses;
 
 namespace Grafana.Sigil.OpenAI;
 
@@ -212,11 +213,11 @@ public static class OpenAIRecorder
         }
     }
 
-    public static async Task<OpenAIResponse> CreateResponseAsync(
+    public static async Task<ResponseResult> CreateResponseAsync(
         SigilClient client,
-        OpenAIResponseClient provider,
+        ResponsesClient provider,
         IEnumerable<ResponseItem> inputItems,
-        ResponseCreationOptions? requestOptions = null,
+        CreateResponseOptions? requestOptions = null,
         OpenAISigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -234,7 +235,8 @@ public static class OpenAIRecorder
             inputItems,
             async (items, opts, ct) =>
             {
-                var result = await provider.CreateResponseAsync(items, opts, ct).ConfigureAwait(false);
+                var callOptions = BuildResponseCreateOptions(items, opts);
+                var result = await provider.CreateResponseAsync(callOptions, ct).ConfigureAwait(false);
                 return result.Value;
             },
             requestOptions,
@@ -243,11 +245,11 @@ public static class OpenAIRecorder
         ).ConfigureAwait(false);
     }
 
-    public static async Task<OpenAIResponse> CreateResponseAsync(
+    public static async Task<ResponseResult> CreateResponseAsync(
         SigilClient client,
         IEnumerable<ResponseItem> inputItems,
-        Func<IEnumerable<ResponseItem>, ResponseCreationOptions?, CancellationToken, Task<OpenAIResponse>> invoke,
-        ResponseCreationOptions? requestOptions = null,
+        Func<IEnumerable<ResponseItem>, CreateResponseOptions?, CancellationToken, Task<ResponseResult>> invoke,
+        CreateResponseOptions? requestOptions = null,
         OpenAISigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -318,9 +320,9 @@ public static class OpenAIRecorder
 
     public static async Task<OpenAIResponsesStreamSummary> CreateResponseStreamingAsync(
         SigilClient client,
-        OpenAIResponseClient provider,
+        ResponsesClient provider,
         IEnumerable<ResponseItem> inputItems,
-        ResponseCreationOptions? requestOptions = null,
+        CreateResponseOptions? requestOptions = null,
         OpenAISigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -336,7 +338,11 @@ public static class OpenAIRecorder
         return await CreateResponseStreamingAsync(
             client,
             inputItems,
-            (items, opts, ct) => provider.CreateResponseStreamingAsync(items, opts, ct),
+            (items, opts, ct) =>
+            {
+                var callOptions = BuildResponseCreateOptions(items, opts);
+                return provider.CreateResponseStreamingAsync(callOptions, ct);
+            },
             requestOptions,
             effective with { ModelName = modelName },
             cancellationToken
@@ -346,8 +352,8 @@ public static class OpenAIRecorder
     public static async Task<OpenAIResponsesStreamSummary> CreateResponseStreamingAsync(
         SigilClient client,
         IEnumerable<ResponseItem> inputItems,
-        Func<IEnumerable<ResponseItem>, ResponseCreationOptions?, CancellationToken, IAsyncEnumerable<StreamingResponseUpdate>> invoke,
-        ResponseCreationOptions? requestOptions = null,
+        Func<IEnumerable<ResponseItem>, CreateResponseOptions?, CancellationToken, IAsyncEnumerable<StreamingResponseUpdate>> invoke,
+        CreateResponseOptions? requestOptions = null,
         OpenAISigilOptions? options = null,
         CancellationToken cancellationToken = default
     )
@@ -423,6 +429,78 @@ public static class OpenAIRecorder
         }
     }
 
+    public static async Task<OpenAIEmbeddingCollection> GenerateEmbeddingsAsync(
+        SigilClient client,
+        EmbeddingClient provider,
+        IEnumerable<string> inputs,
+        EmbeddingGenerationOptions? requestOptions = null,
+        OpenAISigilOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (provider == null)
+        {
+            throw new ArgumentNullException(nameof(provider));
+        }
+
+        var effective = options ?? new OpenAISigilOptions();
+        var modelName = ResolveInitialModelName(effective, provider.Model);
+
+        return await GenerateEmbeddingsAsync(
+            client,
+            inputs,
+            async (requestInputs, opts, ct) =>
+            {
+                var result = await provider.GenerateEmbeddingsAsync(requestInputs, opts, ct).ConfigureAwait(false);
+                return result.Value;
+            },
+            requestOptions,
+            effective with { ModelName = modelName },
+            cancellationToken
+        ).ConfigureAwait(false);
+    }
+
+    public static async Task<OpenAIEmbeddingCollection> GenerateEmbeddingsAsync(
+        SigilClient client,
+        IEnumerable<string> inputs,
+        Func<IEnumerable<string>, EmbeddingGenerationOptions?, CancellationToken, Task<OpenAIEmbeddingCollection>> invoke,
+        EmbeddingGenerationOptions? requestOptions = null,
+        OpenAISigilOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (client == null)
+        {
+            throw new ArgumentNullException(nameof(client));
+        }
+
+        if (invoke == null)
+        {
+            throw new ArgumentNullException(nameof(invoke));
+        }
+
+        var effective = options ?? new OpenAISigilOptions();
+        var inputList = inputs?.ToList() ?? throw new ArgumentNullException(nameof(inputs));
+        var modelName = ResolveInitialModelName(effective, fallback: null);
+        var recorder = client.StartEmbedding(OpenAIGenerationMapper.EmbeddingsStart(modelName, requestOptions, effective));
+
+        try
+        {
+            var response = await invoke(inputList, requestOptions, cancellationToken).ConfigureAwait(false);
+            recorder.SetResult(OpenAIGenerationMapper.EmbeddingsFromRequestResponse(modelName, inputList, requestOptions, response));
+            return response;
+        }
+        catch (Exception ex)
+        {
+            recorder.SetCallError(ex);
+            throw;
+        }
+        finally
+        {
+            recorder.End();
+        }
+    }
+
     private static string ResolveInitialModelName(OpenAISigilOptions options, string? fallback)
     {
         if (!string.IsNullOrWhiteSpace(options.ModelName))
@@ -436,5 +514,71 @@ public static class OpenAIRecorder
         }
 
         return "unknown";
+    }
+
+    private static CreateResponseOptions BuildResponseCreateOptions(
+        IEnumerable<ResponseItem> inputItems,
+        CreateResponseOptions? requestOptions
+    )
+    {
+        var options = CloneResponseCreateOptions(requestOptions);
+        options.InputItems.Clear();
+        foreach (var item in inputItems)
+        {
+            if (item != null)
+            {
+                options.InputItems.Add(item);
+            }
+        }
+        return options;
+    }
+
+    private static CreateResponseOptions CloneResponseCreateOptions(CreateResponseOptions? source)
+    {
+        if (source == null)
+        {
+            return new CreateResponseOptions();
+        }
+
+        var clone = new CreateResponseOptions
+        {
+            BackgroundModeEnabled = source.BackgroundModeEnabled,
+            ConversationOptions = source.ConversationOptions,
+            EndUserId = source.EndUserId,
+            Instructions = source.Instructions,
+            MaxOutputTokenCount = source.MaxOutputTokenCount,
+            MaxToolCallCount = source.MaxToolCallCount,
+            Model = source.Model,
+            ParallelToolCallsEnabled = source.ParallelToolCallsEnabled,
+            PreviousResponseId = source.PreviousResponseId,
+            ReasoningOptions = source.ReasoningOptions,
+            SafetyIdentifier = source.SafetyIdentifier,
+            ServiceTier = source.ServiceTier,
+            StoredOutputEnabled = source.StoredOutputEnabled,
+            StreamingEnabled = source.StreamingEnabled,
+            Temperature = source.Temperature,
+            TextOptions = source.TextOptions,
+            ToolChoice = source.ToolChoice,
+            TopLogProbabilityCount = source.TopLogProbabilityCount,
+            TopP = source.TopP,
+            TruncationMode = source.TruncationMode,
+        };
+
+        foreach (var included in source.IncludedProperties)
+        {
+            clone.IncludedProperties.Add(included);
+        }
+
+        foreach (var tool in source.Tools)
+        {
+            clone.Tools.Add(tool);
+        }
+
+        foreach (var metadata in source.Metadata)
+        {
+            clone.Metadata[metadata.Key] = metadata.Value;
+        }
+
+        return clone;
     }
 }

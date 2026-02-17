@@ -120,6 +120,55 @@ func ResponsesNew(
 	return resp, rec.Err()
 }
 
+// EmbeddingsNew calls the OpenAI embeddings API and records an embeddings span.
+// It mirrors providerClient.Embeddings.New but adds Sigil recording.
+func EmbeddingsNew(
+	ctx context.Context,
+	client *sigil.Client,
+	provider osdk.Client,
+	req osdk.EmbeddingNewParams,
+	opts ...Option,
+) (*osdk.CreateEmbeddingResponse, error) {
+	return embeddingsNew(ctx, client, req, func(ctx context.Context, request osdk.EmbeddingNewParams) (*osdk.CreateEmbeddingResponse, error) {
+		return provider.Embeddings.New(ctx, request)
+	}, opts...)
+}
+
+func embeddingsNew(
+	ctx context.Context,
+	client *sigil.Client,
+	req osdk.EmbeddingNewParams,
+	invoke func(context.Context, osdk.EmbeddingNewParams) (*osdk.CreateEmbeddingResponse, error),
+	opts ...Option,
+) (*osdk.CreateEmbeddingResponse, error) {
+	options := applyOptions(opts)
+
+	start := sigil.EmbeddingStart{
+		AgentName:    options.agentName,
+		AgentVersion: options.agentVersion,
+		Model:        sigil.ModelRef{Provider: options.providerName, Name: string(req.Model)},
+	}
+	if req.Dimensions.Valid() {
+		start.Dimensions = &req.Dimensions.Value
+	}
+	if req.EncodingFormat != "" {
+		start.EncodingFormat = string(req.EncodingFormat)
+	}
+
+	ctx, rec := client.StartEmbedding(ctx, start)
+	defer rec.End()
+
+	resp, err := invoke(ctx, req)
+	if err != nil {
+		rec.SetCallError(err)
+		return nil, err
+	}
+
+	rec.SetResult(EmbeddingsFromResponse(req, resp))
+	rec.End()
+	return resp, rec.Err()
+}
+
 // ResponsesNewStreaming calls the OpenAI streaming responses API and records the generation.
 // It mirrors providerClient.Responses.NewStreaming but adds Sigil recording.
 func ResponsesNewStreaming(

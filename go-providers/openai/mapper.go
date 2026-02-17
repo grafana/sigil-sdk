@@ -84,6 +84,30 @@ func ChatCompletionsFromRequestResponse(req osdk.ChatCompletionNewParams, resp *
 	return generation, nil
 }
 
+// EmbeddingsFromResponse maps an OpenAI embeddings request/response pair to sigil.EmbeddingResult.
+func EmbeddingsFromResponse(req osdk.EmbeddingNewParams, resp *osdk.CreateEmbeddingResponse) sigil.EmbeddingResult {
+	result := sigil.EmbeddingResult{
+		InputCount: embeddingInputCount(req.Input),
+		InputTexts: embeddingInputTexts(req.Input),
+	}
+
+	if resp == nil {
+		return result
+	}
+
+	result.InputTokens = resp.Usage.PromptTokens
+	result.ResponseModel = strings.TrimSpace(resp.Model)
+
+	if len(resp.Data) > 0 {
+		dimensions := int64(len(resp.Data[0].Embedding))
+		if dimensions > 0 {
+			result.Dimensions = &dimensions
+		}
+	}
+
+	return result
+}
+
 func mapRequestMessages(messages []osdk.ChatCompletionMessageParamUnion) ([]sigil.Message, string) {
 	if len(messages) == 0 {
 		return nil, ""
@@ -532,6 +556,41 @@ func derefString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func embeddingInputCount(input osdk.EmbeddingNewParamsInputUnion) int {
+	switch {
+	case input.OfString.Valid():
+		return 1
+	case len(input.OfArrayOfStrings) > 0:
+		return len(input.OfArrayOfStrings)
+	case len(input.OfArrayOfTokenArrays) > 0:
+		return len(input.OfArrayOfTokenArrays)
+	case len(input.OfArrayOfTokens) > 0:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func embeddingInputTexts(input osdk.EmbeddingNewParamsInputUnion) []string {
+	switch {
+	case input.OfString.Valid():
+		return []string{input.OfString.Value}
+	case len(input.OfArrayOfStrings) > 0:
+		return cloneStrings(input.OfArrayOfStrings)
+	default:
+		return nil
+	}
+}
+
+func cloneStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, len(values))
+	copy(out, values)
+	return out
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

@@ -220,6 +220,37 @@ test('built-in none exporter records generations without sending', async () => {
   }
 });
 
+test('embedding recorder does not enqueue generation exports', async () => {
+  const exporter = new MockGenerationExporter();
+  const client = newClient(exporter, {
+    batchSize: 1,
+    flushIntervalMs: 60_000,
+  });
+
+  try {
+    const recorder = client.startEmbedding({
+      model: {
+        provider: 'openai',
+        name: 'text-embedding-3-small',
+      },
+    });
+    recorder.setResult({
+      inputCount: 1,
+      inputTokens: 12,
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    await client.flush();
+
+    assert.equal(exporter.requests.length, 0);
+    const snapshot = client.debugSnapshot();
+    assert.equal(snapshot.generations.length, 0);
+  } finally {
+    await client.shutdown();
+  }
+});
+
 function newClient(generationExporter, overrides) {
   const defaults = defaultConfig();
   return new SigilClient({

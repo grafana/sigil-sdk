@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
 	"go.opentelemetry.io/otel/attribute"
@@ -698,6 +699,262 @@ func TestNilClientReturnsNoOpToolRecorder(t *testing.T) {
 	}
 }
 
+func TestNilClientReturnsNoOpEmbeddingRecorder(t *testing.T) {
+	var client *Client
+	ctx, rec := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	if ctx == nil {
+		t.Fatalf("expected non-nil context")
+	}
+	rec.SetCallError(errors.New("test"))
+	rec.SetResult(EmbeddingResult{
+		InputCount:  1,
+		InputTokens: 10,
+	})
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("expected nil error from no-op recorder, got %v", err)
+	}
+}
+
+func TestStartEmbeddingNilContextUsesBackgroundContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	//nolint:staticcheck // Intentional nil context to verify StartEmbedding fallback behavior.
+	callCtx, embeddingRecorder := client.StartEmbedding(nil, EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	if callCtx == nil {
+		t.Fatalf("expected non-nil context")
+	}
+	if !trace.SpanContextFromContext(callCtx).IsValid() {
+		t.Fatalf("expected valid span context in callCtx")
+	}
+
+	embeddingRecorder.End()
+	if err := embeddingRecorder.Err(); err != nil {
+		t.Fatalf("unexpected embedding recorder error: %v", err)
+	}
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrOperationName].AsString() != "embeddings" {
+		t.Fatalf("expected gen_ai.operation.name=embeddings")
+	}
+}
+
+func TestStartEmbeddingSetsSpanAttributesAndDoesNotEnqueueGeneration(t *testing.T) {
+	exporter := &capturingGenerationExporter{}
+	client, recorder, _ := newTestClient(t, Config{
+		testGenerationExporter: exporter,
+	})
+
+	_, embeddingRecorder := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model:          ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+		AgentName:      "agent-embed",
+		AgentVersion:   "v-embed",
+		Dimensions:     int64Ptr(256),
+		EncodingFormat: "float",
+	})
+	embeddingRecorder.SetResult(EmbeddingResult{
+		InputCount:    2,
+		InputTokens:   120,
+		ResponseModel: "text-embedding-3-small",
+		Dimensions:    int64Ptr(256),
+	})
+	embeddingRecorder.End()
+
+	if err := embeddingRecorder.Err(); err != nil {
+		t.Fatalf("unexpected embedding recorder error: %v", err)
+	}
+
+	if got := exporter.requestCount(); got != 0 {
+		t.Fatalf("expected no generation export requests for embeddings, got %d", got)
+	}
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if span.Name() != "embeddings text-embedding-3-small" {
+		t.Fatalf("unexpected embedding span name: %q", span.Name())
+	}
+	if attrs[spanAttrOperationName].AsString() != "embeddings" {
+		t.Fatalf("expected operation embeddings, got %q", attrs[spanAttrOperationName].AsString())
+	}
+	if attrs[spanAttrProviderName].AsString() != "openai" {
+		t.Fatalf("expected provider openai")
+	}
+	if attrs[spanAttrRequestModel].AsString() != "text-embedding-3-small" {
+		t.Fatalf("expected request model text-embedding-3-small")
+	}
+	if attrs[spanAttrAgentName].AsString() != "agent-embed" {
+		t.Fatalf("expected agent name agent-embed")
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "v-embed" {
+		t.Fatalf("expected agent version v-embed")
+	}
+	if attrs[spanAttrEmbeddingDimCount].AsInt64() != 256 {
+		t.Fatalf("expected embedding dim 256")
+	}
+	if got := attrs[spanAttrRequestEncodingFormats].AsStringSlice(); len(got) != 1 || got[0] != "float" {
+		t.Fatalf("expected encoding format [float], got %v", got)
+	}
+	if attrs[spanAttrInputTokens].AsInt64() != 120 {
+		t.Fatalf("expected input tokens 120")
+	}
+	if attrs[spanAttrEmbeddingInputCount].AsInt64() != 2 {
+		t.Fatalf("expected input count 2")
+	}
+	if attrs[spanAttrResponseModel].AsString() != "text-embedding-3-small" {
+		t.Fatalf("expected response model text-embedding-3-small")
+	}
+	if _, ok := attrs[spanAttrEmbeddingInputTexts]; ok {
+		t.Fatalf("did not expect embedding input text capture by default")
+	}
+}
+
+func TestStartEmbeddingCapturesAndTruncatesInputTextsWhenEnabled(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{
+		EmbeddingCapture: EmbeddingCaptureConfig{
+			CaptureInput:  true,
+			MaxInputItems: 2,
+			MaxTextLength: 6,
+		},
+	})
+
+	_, embeddingRecorder := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	embeddingRecorder.SetResult(EmbeddingResult{
+		InputCount: 3,
+		InputTexts: []string{
+			"hello",
+			"toolongvalue",
+			"ignored",
+		},
+	})
+	embeddingRecorder.End()
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	texts := attrs[spanAttrEmbeddingInputTexts].AsStringSlice()
+	if len(texts) != 2 {
+		t.Fatalf("expected 2 captured texts, got %d", len(texts))
+	}
+	if texts[0] != "hello" {
+		t.Fatalf("expected first captured text hello, got %q", texts[0])
+	}
+	if texts[1] != "too..." {
+		t.Fatalf("expected truncated text too..., got %q", texts[1])
+	}
+}
+
+func TestStartEmbeddingTruncationPreservesUTF8ForMultibyteInput(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{
+		EmbeddingCapture: EmbeddingCaptureConfig{
+			CaptureInput:  true,
+			MaxInputItems: 1,
+			MaxTextLength: 5, // 6 chars → truncate to 2 chars + "..." = 5 chars
+		},
+	})
+
+	_, embeddingRecorder := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	embeddingRecorder.SetResult(EmbeddingResult{
+		InputCount: 1,
+		InputTexts: []string{"你好世界你好"}, // 6 characters
+	})
+	embeddingRecorder.End()
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	texts := attrs[spanAttrEmbeddingInputTexts].AsStringSlice()
+	if len(texts) != 1 {
+		t.Fatalf("expected 1 captured text, got %d", len(texts))
+	}
+	if !utf8.ValidString(texts[0]) {
+		t.Fatalf("expected valid UTF-8 captured text, got %q", texts[0])
+	}
+	// With character-based truncation: 6 chars → first 2 chars + "..." = "你好..."
+	if texts[0] != "你好..." {
+		t.Fatalf("expected truncation to 你好..., got %q", texts[0])
+	}
+}
+
+func TestStartEmbeddingCallErrorSetsSpanStatusAndType(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, embeddingRecorder := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	embeddingRecorder.SetCallError(errors.New("provider unavailable"))
+	embeddingRecorder.End()
+
+	if err := embeddingRecorder.Err(); err != nil {
+		t.Fatalf("expected nil local embedding error for provider call error, got %v", err)
+	}
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	if got := span.Status().Code; got != codes.Error {
+		t.Fatalf("expected error status, got %v", got)
+	}
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrErrorType].AsString() != "provider_call_error" {
+		t.Fatalf("expected error.type=provider_call_error")
+	}
+}
+
+func TestStartEmbeddingInvalidResultSetsLocalValidationError(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, embeddingRecorder := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	embeddingRecorder.SetResult(EmbeddingResult{
+		InputCount:  -1,
+		InputTokens: -5,
+	})
+	embeddingRecorder.End()
+
+	if err := embeddingRecorder.Err(); err == nil {
+		t.Fatalf("expected local validation error")
+	}
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	if got := span.Status().Code; got != codes.Error {
+		t.Fatalf("expected error status, got %v", got)
+	}
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrErrorType].AsString() != "validation_error" {
+		t.Fatalf("expected error.type=validation_error")
+	}
+	if attrs[spanAttrErrorCategory].AsString() != "sdk_error" {
+		t.Fatalf("expected error.category=sdk_error")
+	}
+}
+
+func TestStartEmbeddingContextAgentFields(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithAgentName(context.Background(), "agent-from-ctx")
+	ctx = WithAgentVersion(ctx, "v-from-ctx")
+
+	_, embeddingRecorder := client.StartEmbedding(ctx, EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	embeddingRecorder.End()
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrAgentName].AsString() != "agent-from-ctx" {
+		t.Fatalf("expected context-derived agent name")
+	}
+	if attrs[spanAttrAgentVersion].AsString() != "v-from-ctx" {
+		t.Fatalf("expected context-derived agent version")
+	}
+}
+
 func TestEmptyToolNameReturnsNoOpRecorder(t *testing.T) {
 	client := NewClient(DefaultConfig())
 	_, rec := client.StartToolExecution(context.Background(), ToolExecutionStart{})
@@ -1154,6 +1411,12 @@ func (e *capturingGenerationExporter) Shutdown(_ context.Context) error {
 	return nil
 }
 
+func (e *capturingGenerationExporter) requestCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.requests)
+}
+
 func countGenerationSpans(spans []sdktrace.ReadOnlySpan) int {
 	count := 0
 	for _, span := range spans {
@@ -1196,16 +1459,33 @@ func onlyToolSpan(t *testing.T, spans []sdktrace.ReadOnlySpan) sdktrace.ReadOnly
 	return nil
 }
 
+func onlyEmbeddingSpan(t *testing.T, spans []sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
+	t.Helper()
+	for _, span := range spans {
+		if isEmbeddingSpan(span) {
+			return span
+		}
+	}
+	t.Fatalf("no embedding span found")
+	return nil
+}
+
 func isGenerationSpan(span sdktrace.ReadOnlySpan) bool {
 	attrs := spanAttributeMap(span)
 	op, ok := attrs[spanAttrOperationName]
-	return ok && op.AsString() != "execute_tool"
+	return ok && op.AsString() != "execute_tool" && op.AsString() != defaultEmbeddingOperationName
 }
 
 func isToolSpan(span sdktrace.ReadOnlySpan) bool {
 	attrs := spanAttributeMap(span)
 	op, ok := attrs[spanAttrOperationName]
 	return ok && op.AsString() == "execute_tool"
+}
+
+func isEmbeddingSpan(span sdktrace.ReadOnlySpan) bool {
+	attrs := spanAttributeMap(span)
+	op, ok := attrs[spanAttrOperationName]
+	return ok && op.AsString() == defaultEmbeddingOperationName
 }
 
 func spanAttributeMap(span sdktrace.ReadOnlySpan) map[string]attribute.Value {

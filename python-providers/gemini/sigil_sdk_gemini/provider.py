@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from sigil_sdk import (
     Artifact,
     ArtifactKind,
+    EmbeddingResult,
+    EmbeddingStart,
     Generation,
     GenerationMode,
     GenerationStart,
@@ -172,6 +174,101 @@ async def _models_generate_content_stream_async(
     return summary
 
 
+def _models_embed_content(
+    client,
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    provider_call: Callable[[str, list[GeminiContent], GenerateContentConfig | None], Any],
+    options: GeminiOptions | None = None,
+) -> Any:
+    opts = options or GeminiOptions()
+    recorder = client.start_embedding(_embedding_start_payload(model, config, opts))
+
+    try:
+        response = provider_call(model, contents, config)
+        recorder.set_result(_embedding_from_response(model, contents, config, response))
+    except Exception as exc:  # noqa: BLE001
+        recorder.set_call_error(exc)
+        raise
+    finally:
+        recorder.end()
+
+    if recorder.err() is not None:
+        raise recorder.err()
+
+    return response
+
+
+async def _models_embed_content_async(
+    client,
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    provider_call: Callable[
+        [str, list[GeminiContent], GenerateContentConfig | None],
+        Awaitable[Any],
+    ],
+    options: GeminiOptions | None = None,
+) -> Any:
+    opts = options or GeminiOptions()
+    recorder = client.start_embedding(_embedding_start_payload(model, config, opts))
+
+    try:
+        response = await provider_call(model, contents, config)
+        recorder.set_result(_embedding_from_response(model, contents, config, response))
+    except Exception as exc:  # noqa: BLE001
+        recorder.set_call_error(exc)
+        raise
+    finally:
+        recorder.end()
+
+    if recorder.err() is not None:
+        raise recorder.err()
+
+    return response
+
+
+def _embedding_from_response(
+    model: str,
+    contents: list[GeminiContent],
+    config: GenerateContentConfig | None,
+    response: Any,
+) -> EmbeddingResult:
+    requested_dimensions = _embedding_requested_dimensions(config)
+    result = EmbeddingResult(
+        input_count=_embedding_input_count(contents),
+        input_texts=_embedding_input_texts(contents),
+    )
+
+    if response is None:
+        if requested_dimensions is not None and requested_dimensions > 0:
+            result.dimensions = requested_dimensions
+        return result
+
+    embeddings = _as_list(_read(response, "embeddings"))
+    input_tokens = 0
+    for embedding in embeddings:
+        statistics = _read(embedding, "statistics")
+        token_count = _as_int_or_none(_read(statistics, "token_count"))
+        if token_count is None:
+            token_count = _as_int_or_none(_read(statistics, "tokenCount"))
+        if token_count is not None and token_count > 0:
+            input_tokens += token_count
+
+        values = _as_list(_read(embedding, "values"))
+        if result.dimensions is None and values:
+            result.dimensions = len(values)
+
+    if input_tokens > 0:
+        result.input_tokens = input_tokens
+
+    result.response_model = _as_str(_read(response, "model")) or _as_str(_read(response, "model_version"))
+    if result.dimensions is None and requested_dimensions is not None and requested_dimensions > 0:
+        result.dimensions = requested_dimensions
+    return result
+
+
 def _models_from_request_response(
     model: str,
     contents: list[GeminiContent],
@@ -331,6 +428,21 @@ def _start_payload(
     )
 
 
+def _embedding_start_payload(
+    model: str,
+    config: GenerateContentConfig | None,
+    options: GeminiOptions,
+) -> EmbeddingStart:
+    return EmbeddingStart(
+        agent_name=options.agent_name,
+        agent_version=options.agent_version,
+        model=ModelRef(provider=options.provider_name, name=model.strip()),
+        dimensions=_embedding_requested_dimensions(config),
+        tags=dict(options.tags),
+        metadata=dict(options.metadata),
+    )
+
+
 @dataclass(slots=True)
 class _RequestControls:
     max_tokens: int | None
@@ -371,6 +483,31 @@ def _request_controls(config: GenerateContentConfig | None) -> _RequestControls:
             )
         ),
     )
+
+
+def _embedding_requested_dimensions(config: GenerateContentConfig | None) -> int | None:
+    value = _read(config, "output_dimensionality")
+    if value is None:
+        value = _read(config, "outputDimensionality")
+    return _as_int_or_none(value)
+
+
+def _embedding_input_count(contents: list[GeminiContent]) -> int:
+    count = 0
+    for content in _as_list(contents):
+        if content is not None:
+            count += 1
+    return count
+
+
+def _embedding_input_texts(contents: list[GeminiContent]) -> list[str]:
+    out: list[str] = []
+    for content in _as_list(contents):
+        text = _extract_text(_read(content, "parts") if _read(content, "parts") is not None else content)
+        text = text.strip()
+        if text:
+            out.append(text)
+    return out
 
 
 def _map_input_messages(contents: list[GeminiContent]) -> list[Message]:
@@ -831,8 +968,11 @@ class _ModelsNamespace:
     generate_content_async = staticmethod(_models_generate_content_async)
     generate_content_stream = staticmethod(_models_generate_content_stream)
     generate_content_stream_async = staticmethod(_models_generate_content_stream_async)
+    embed_content = staticmethod(_models_embed_content)
+    embed_content_async = staticmethod(_models_embed_content_async)
     from_request_response = staticmethod(_models_from_request_response)
     from_stream = staticmethod(_models_from_stream)
+    embedding_from_response = staticmethod(_embedding_from_response)
 
 
 models = _ModelsNamespace()

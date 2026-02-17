@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.grafana.sigil.sdk.ExportGenerationResult;
 import com.grafana.sigil.sdk.ExportGenerationsRequest;
 import com.grafana.sigil.sdk.ExportGenerationsResponse;
+import com.grafana.sigil.sdk.EmbeddingResult;
 import com.grafana.sigil.sdk.Generation;
 import com.grafana.sigil.sdk.GenerationExportConfig;
 import com.grafana.sigil.sdk.GenerationExporter;
@@ -18,6 +19,8 @@ import com.openai.models.ReasoningEffort;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.embeddings.CreateEmbeddingResponse;
+import com.openai.models.embeddings.EmbeddingCreateParams;
 import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseStreamEvent;
@@ -132,6 +135,50 @@ class OpenAiMappingAndRecorderTests {
                     new OpenAiOptions())).isInstanceOf(RuntimeException.class).hasMessageContaining("responses provider blew up");
             assertThat(singleDebugGeneration(client).getCallError()).contains("responses provider blew up");
         }
+    }
+
+    @Test
+    void embeddingsWrapperDoesNotEnqueueGenerations() throws Exception {
+        CapturingExporter exporter = new CapturingExporter();
+        try (SigilClient client = newClient(exporter)) {
+            CreateEmbeddingResponse response = OpenAiEmbeddings.create(
+                    client,
+                    embeddingsRequestFixture(),
+                    _request -> embeddingsResponseFixture(),
+                    new OpenAiOptions());
+
+            assertThat(response.model()).isEqualTo("text-embedding-3-small");
+            assertThat(exporter.generations).isEmpty();
+        }
+    }
+
+    @Test
+    void embeddingsWrapperPropagatesProviderErrors() {
+        CapturingExporter exporter = new CapturingExporter();
+        assertThatThrownBy(() -> {
+            try (SigilClient client = newClient(exporter)) {
+                OpenAiEmbeddings.create(
+                        client,
+                        embeddingsRequestFixture(),
+                        _request -> {
+                            throw new RuntimeException("embedding provider blew up");
+                        },
+                        new OpenAiOptions());
+            }
+        }).isInstanceOf(RuntimeException.class).hasMessageContaining("embedding provider blew up");
+
+        assertThat(exporter.generations).isEmpty();
+    }
+
+    @Test
+    void embeddingsMapperExtractsInputCountsTokensAndDimensions() throws Exception {
+        EmbeddingResult mapped = OpenAiEmbeddings.fromRequestResponse(embeddingsRequestFixture(), embeddingsResponseFixture());
+
+        assertThat(mapped.getInputCount()).isEqualTo(2);
+        assertThat(mapped.getInputTokens()).isEqualTo(7L);
+        assertThat(mapped.getResponseModel()).isEqualTo("text-embedding-3-small");
+        assertThat(mapped.getDimensions()).isEqualTo(3L);
+        assertThat(mapped.getInputTexts()).containsExactly("alpha", "beta");
     }
 
     @Test
@@ -272,6 +319,42 @@ class OpenAiMappingAndRecorderTests {
                 }
                 """,
                 ChatCompletionChunk.class);
+    }
+
+    private static EmbeddingCreateParams embeddingsRequestFixture() {
+        return EmbeddingCreateParams.builder()
+                .model("text-embedding-3-small")
+                .inputOfArrayOfStrings(List.of("alpha", "beta"))
+                .dimensions(256L)
+                .encodingFormat(EmbeddingCreateParams.EncodingFormat.FLOAT)
+                .build();
+    }
+
+    private static CreateEmbeddingResponse embeddingsResponseFixture() throws IOException {
+        return json(
+                """
+                {
+                  "object": "list",
+                  "model": "text-embedding-3-small",
+                  "data": [
+                    {
+                      "index": 0,
+                      "object": "embedding",
+                      "embedding": [0.1, 0.2, 0.3]
+                    },
+                    {
+                      "index": 1,
+                      "object": "embedding",
+                      "embedding": [0.4, 0.5, 0.6]
+                    }
+                  ],
+                  "usage": {
+                    "prompt_tokens": 7,
+                    "total_tokens": 7
+                  }
+                }
+                """,
+                CreateEmbeddingResponse.class);
     }
 
     private static ResponseCreateParams responsesRequestFixture() {

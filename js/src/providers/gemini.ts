@@ -1,5 +1,5 @@
 import type { SigilClient } from '../client.js';
-import type { GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
+import type { EmbeddingResult, GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 import type { Content, GenerateContentConfig, GenerateContentResponse } from '@google/genai';
 
 const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
@@ -11,6 +11,8 @@ type GeminiContent = Content & AnyRecord;
 type GeminiContents = Array<GeminiContent | string>;
 type GeminiConfig = GenerateContentConfig & AnyRecord;
 type GeminiResponse = GenerateContentResponse & AnyRecord;
+type GeminiEmbedConfig = AnyRecord;
+type GeminiEmbedResponse = AnyRecord;
 
 /** Optional Sigil fields applied during Gemini helper mapping. */
 export interface GeminiOptions {
@@ -116,6 +118,86 @@ async function geminiGenerateContentStream(
   );
 }
 
+async function geminiEmbedContent(
+  client: SigilClient,
+  model: string,
+  contents: GeminiContents,
+  config: GeminiEmbedConfig | undefined,
+  providerCall: (
+    model: string,
+    contents: GeminiContents,
+    config: GeminiEmbedConfig | undefined
+  ) => Promise<GeminiEmbedResponse>,
+  options: GeminiOptions = {}
+): Promise<GeminiEmbedResponse> {
+  const requestedDimensions = readIntFromAny((config as AnyRecord | undefined)?.outputDimensionality)
+    ?? readIntFromAny((config as AnyRecord | undefined)?.output_dimensionality);
+
+  return client.startEmbedding(
+    {
+      agentName: options.agentName,
+      agentVersion: options.agentVersion,
+      model: {
+        provider: 'gemini',
+        name: model,
+      },
+      dimensions: requestedDimensions,
+      tags: options.tags,
+      metadata: options.metadata,
+    },
+    async (recorder) => {
+      const response = await providerCall(model, contents, config);
+      recorder.setResult(geminiEmbeddingFromResponse(model, contents, config, response));
+      return response;
+    }
+  );
+}
+
+function geminiEmbeddingFromResponse(
+  _model: string,
+  contents: GeminiContents,
+  config: GeminiEmbedConfig | undefined,
+  response: GeminiEmbedResponse | undefined
+): EmbeddingResult {
+  const result: EmbeddingResult = {
+    inputCount: embeddingInputCount(contents),
+    inputTexts: embeddingInputTexts(contents),
+  };
+
+  const requestedDimensions = readIntFromAny((config as AnyRecord | undefined)?.outputDimensionality)
+    ?? readIntFromAny((config as AnyRecord | undefined)?.output_dimensionality);
+
+  if (!isRecord(response)) {
+    if (requestedDimensions !== undefined && requestedDimensions > 0) {
+      result.dimensions = requestedDimensions;
+    }
+    return result;
+  }
+
+  const embeddings = Array.isArray(response.embeddings) ? response.embeddings : [];
+  let inputTokens = 0;
+  for (const embedding of embeddings) {
+    if (!isRecord(embedding)) {
+      continue;
+    }
+    const statistics = isRecord(embedding.statistics) ? embedding.statistics : undefined;
+    const tokenCount = readIntFromAny(statistics?.tokenCount) ?? readIntFromAny(statistics?.token_count);
+    if (tokenCount !== undefined && tokenCount > 0) {
+      inputTokens += tokenCount;
+    }
+    if (result.dimensions === undefined && Array.isArray(embedding.values) && embedding.values.length > 0) {
+      result.dimensions = embedding.values.length;
+    }
+  }
+  if (inputTokens > 0) {
+    result.inputTokens = inputTokens;
+  }
+  if (result.dimensions === undefined && requestedDimensions !== undefined && requestedDimensions > 0) {
+    result.dimensions = requestedDimensions;
+  }
+  return result;
+}
+
 function geminiFromRequestResponse(
   model: string,
   contents: GeminiContents,
@@ -219,9 +301,42 @@ function geminiFromStream(
 export const models = {
   generateContent: geminiGenerateContent,
   generateContentStream: geminiGenerateContentStream,
+  embedContent: geminiEmbedContent,
   fromRequestResponse: geminiFromRequestResponse,
   fromStream: geminiFromStream,
+  embeddingFromResponse: geminiEmbeddingFromResponse,
 } as const;
+
+function embeddingInputCount(contents: GeminiContents): number {
+  let count = 0;
+  for (const content of contents) {
+    if (content !== undefined && content !== null) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function embeddingInputTexts(contents: GeminiContents): string[] | undefined {
+  const output: string[] = [];
+  for (const content of contents) {
+    if (typeof content === 'string') {
+      const text = content.trim();
+      if (text.length > 0) {
+        output.push(text);
+      }
+      continue;
+    }
+    if (!isRecord(content)) {
+      continue;
+    }
+    const text = extractText(content.parts);
+    if (text.length > 0) {
+      output.push(text);
+    }
+  }
+  return output.length > 0 ? output : undefined;
+}
 
 function mapGeminiInput(contents: GeminiContents): Message[] {
   const input: Message[] = [];

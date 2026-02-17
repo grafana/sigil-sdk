@@ -90,6 +90,53 @@ with client.start_streaming_generation(
     rec.set_result(output=[assistant_text_message("partial stream summary")])
 ```
 
+## Embedding Observability
+
+Use `start_embedding(...)` for embedding API calls. Embedding recording emits OTel spans and SDK metrics only, and does not enqueue generation exports.
+
+```python
+from sigil_sdk import EmbeddingResult, EmbeddingStart, ModelRef
+
+with client.start_embedding(
+    EmbeddingStart(
+        agent_name="retrieval-worker",
+        agent_version="1.0.0",
+        model=ModelRef(provider="openai", name="text-embedding-3-small"),
+    )
+) as rec:
+    response = openai.embeddings.create(model="text-embedding-3-small", input=["hello", "world"])
+    rec.set_result(
+        EmbeddingResult(
+            input_count=2,
+            input_tokens=response.usage.prompt_tokens,
+            input_texts=["hello", "world"],  # captured only when embedding_capture.capture_input=True
+            response_model=response.model,
+        )
+    )
+```
+
+Input text capture is opt-in:
+
+```python
+from sigil_sdk import ClientConfig, EmbeddingCaptureConfig
+
+cfg = ClientConfig(
+    embedding_capture=EmbeddingCaptureConfig(
+        capture_input=True,
+        max_input_items=20,
+        max_text_length=1024,
+    )
+)
+```
+
+`capture_input` may expose PII/document content in spans. Keep it disabled by default and enable only for scoped debugging.
+
+TraceQL examples:
+
+- `traces{gen_ai.operation.name="embeddings"}`
+- `traces{gen_ai.operation.name="embeddings" && gen_ai.request.model="text-embedding-3-small"}`
+- `traces{gen_ai.operation.name="embeddings" && error.type!=""}`
+
 ## Tool Execution Span Recording
 
 Tool spans are recorded independently of generation export.

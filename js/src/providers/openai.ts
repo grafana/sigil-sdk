@@ -1,5 +1,5 @@
 import type OpenAI from 'openai';
-import type { GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
+import type { EmbeddingResult, GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 import type { SigilClient } from '../client.js';
 
 const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
@@ -14,6 +14,8 @@ type ResponsesCreateRequest = OpenAI.Responses.ResponseCreateParamsNonStreaming 
 type ResponsesStreamRequest = OpenAI.Responses.ResponseCreateParamsStreaming & AnyRecord;
 type ResponsesResponse = OpenAI.Responses.Response & AnyRecord;
 type ResponsesStreamEvent = OpenAI.Responses.ResponseStreamEvent;
+type EmbeddingsCreateRequest = AnyRecord;
+type EmbeddingsCreateResponse = AnyRecord;
 
 /** Optional Sigil fields applied during OpenAI helper mapping. */
 export interface OpenAIOptions {
@@ -394,6 +396,63 @@ function responsesFromStream(
   return result;
 }
 
+async function embeddingsCreate(
+  client: SigilClient,
+  request: EmbeddingsCreateRequest,
+  providerCall: (request: EmbeddingsCreateRequest) => Promise<EmbeddingsCreateResponse>,
+  options: OpenAIOptions = {}
+): Promise<EmbeddingsCreateResponse> {
+  const dimensions = readIntFromAny((request as AnyRecord).dimensions);
+  const rawEncodingFormat = (request as AnyRecord).encoding_format;
+  const encodingFormat = typeof rawEncodingFormat === 'string'
+    ? rawEncodingFormat.trim()
+    : '';
+
+  return client.startEmbedding(
+    {
+      agentName: options.agentName,
+      agentVersion: options.agentVersion,
+      model: {
+        provider: 'openai',
+        name: String((request as AnyRecord).model ?? ''),
+      },
+      dimensions,
+      encodingFormat: encodingFormat.length > 0 ? encodingFormat : undefined,
+      tags: options.tags,
+      metadata: options.metadata,
+    },
+    async (recorder) => {
+      const response = await providerCall(request);
+      recorder.setResult(embeddingsFromRequestResponse(request, response));
+      return response;
+    }
+  );
+}
+
+function embeddingsFromRequestResponse(
+  request: EmbeddingsCreateRequest,
+  response: EmbeddingsCreateResponse | undefined
+): EmbeddingResult {
+  const input = (request as AnyRecord).input;
+  const result: EmbeddingResult = {
+    inputCount: embeddingInputCount(input),
+    inputTexts: embeddingInputTexts(input),
+  };
+  if (!isRecord(response)) {
+    return result;
+  }
+
+  const usage = isRecord(response.usage) ? response.usage : undefined;
+  result.inputTokens = readIntFromAny(usage?.prompt_tokens) ?? readIntFromAny(usage?.total_tokens);
+  result.responseModel = typeof response.model === 'string' ? response.model : undefined;
+
+  const data = Array.isArray(response.data) ? response.data : [];
+  if (data.length > 0 && isRecord(data[0]) && Array.isArray(data[0].embedding)) {
+    result.dimensions = data[0].embedding.length;
+  }
+  return result;
+}
+
 export const chat = {
   completions: {
     create: chatCompletionsCreate,
@@ -408,6 +467,11 @@ export const responses = {
   stream: responsesStream,
   fromRequestResponse: responsesFromRequestResponse,
   fromStream: responsesFromStream,
+} as const;
+
+export const embeddings = {
+  create: embeddingsCreate,
+  fromRequestResponse: embeddingsFromRequestResponse,
 } as const;
 
 function mapChatRequestMessages(request: ChatCreateRequest | ChatStreamRequest): {
@@ -1017,6 +1081,52 @@ function extractText(value: unknown): string {
   }
 
   return '';
+}
+
+function embeddingInputCount(input: unknown): number {
+  if (typeof input === 'string') {
+    return 1;
+  }
+  if (Array.isArray(input)) {
+    if (input.length === 0) {
+      return 0;
+    }
+    if (input.every((item) => typeof item === 'number' && Number.isFinite(item))) {
+      return 1;
+    }
+    return input.length;
+  }
+  if (isRecord(input)) {
+    return 1;
+  }
+  return 0;
+}
+
+function embeddingInputTexts(input: unknown): string[] | undefined {
+  if (typeof input === 'string') {
+    const text = input.trim();
+    return text.length > 0 ? [text] : undefined;
+  }
+  if (Array.isArray(input)) {
+    const output: string[] = [];
+    for (const item of input) {
+      if (typeof item === 'string') {
+        const text = item.trim();
+        if (text.length > 0) {
+          output.push(text);
+        }
+        continue;
+      }
+      if (isRecord(item) && typeof item.text === 'string' && item.text.trim().length > 0) {
+        output.push(item.text.trim());
+      }
+    }
+    return output.length > 0 ? output : undefined;
+  }
+  if (isRecord(input) && typeof input.text === 'string' && input.text.trim().length > 0) {
+    return [input.text.trim()];
+  }
+  return undefined;
 }
 
 function readIntFromAny(value: unknown): number | undefined {

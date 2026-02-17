@@ -341,7 +341,7 @@ internal static class Program
             ResponseItem.CreateUserMessageItem($"Draft rollout plan {context.Turn}."),
         };
 
-        var requestOptions = new ResponseCreationOptions
+        var requestOptions = new CreateResponseOptions
         {
             Instructions = "Return concise rollout planning bullets.",
             MaxOutputTokenCount = 320,
@@ -409,7 +409,7 @@ internal static class Program
             ResponseItem.CreateUserMessageItem($"Stream ticket status {context.Turn}."),
         };
 
-        var requestOptions = new ResponseCreationOptions
+        var requestOptions = new CreateResponseOptions
         {
             Instructions = "Stream short operational deltas.",
             MaxOutputTokenCount = 220,
@@ -975,9 +975,9 @@ internal static class Program
         return source == "mistral" ? "core_custom" : "provider_wrapper";
     }
 
-    private static OpenAIResponse ReadOpenAIResponse(string json)
+    private static ResponseResult ReadOpenAIResponse(string json)
     {
-        return ModelReaderWriter.Read<OpenAIResponse>(BinaryData.FromString(json));
+        return ModelReaderWriter.Read<ResponseResult>(BinaryData.FromString(json));
     }
 
     private static StreamingResponseUpdate ReadStreamingResponseUpdate(string json)

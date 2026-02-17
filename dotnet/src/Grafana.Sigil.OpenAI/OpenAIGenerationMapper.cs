@@ -1,8 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using Grafana.Sigil;
-using OpenAI.Chat;
-using OpenAIResponses = OpenAI.Responses;
+using global::OpenAI.Chat;
+using global::OpenAI.Embeddings;
+using OpenAIResponses = global::OpenAI.Responses;
 
 namespace Grafana.Sigil.OpenAI;
 
@@ -77,8 +78,8 @@ public static class OpenAIGenerationMapper
     public static Generation ResponsesFromRequestResponse(
         string modelName,
         IReadOnlyList<OpenAIResponses.ResponseItem> inputItems,
-        OpenAIResponses.ResponseCreationOptions? requestOptions,
-        OpenAIResponses.OpenAIResponse response,
+        OpenAIResponses.CreateResponseOptions? requestOptions,
+        OpenAIResponses.ResponseResult response,
         OpenAISigilOptions? options = null
     )
     {
@@ -143,10 +144,91 @@ public static class OpenAIGenerationMapper
         return generation;
     }
 
+    public static EmbeddingStart EmbeddingsStart(
+        string modelName,
+        EmbeddingGenerationOptions? requestOptions,
+        OpenAISigilOptions? options = null
+    )
+    {
+        var effective = options ?? new OpenAISigilOptions();
+
+        var start = new EmbeddingStart
+        {
+            AgentName = effective.AgentName,
+            AgentVersion = effective.AgentVersion,
+            Model = new ModelRef
+            {
+                Provider = effective.ProviderName,
+                Name = modelName ?? string.Empty,
+            },
+            Tags = new Dictionary<string, string>(effective.Tags, StringComparer.Ordinal),
+            Metadata = new Dictionary<string, object?>(effective.Metadata, StringComparer.Ordinal),
+        };
+
+        if (requestOptions?.Dimensions is int dimensions && dimensions > 0)
+        {
+            start.Dimensions = dimensions;
+        }
+
+        return start;
+    }
+
+    public static EmbeddingResult EmbeddingsFromRequestResponse(
+        string modelName,
+        IReadOnlyList<string>? inputs,
+        EmbeddingGenerationOptions? requestOptions,
+        OpenAIEmbeddingCollection? response
+    )
+    {
+        var result = new EmbeddingResult
+        {
+            InputCount = inputs?.Count ?? 0,
+            InputTexts = EmbeddingInputTexts(inputs),
+        };
+
+        if (response == null)
+        {
+            result.ResponseModel = modelName ?? string.Empty;
+            if (requestOptions?.Dimensions is int requestedDimensions && requestedDimensions > 0)
+            {
+                result.Dimensions = requestedDimensions;
+            }
+
+            return result;
+        }
+
+        if (response.Usage != null)
+        {
+            result.InputTokens = response.Usage.InputTokenCount;
+        }
+
+        result.ResponseModel = string.IsNullOrWhiteSpace(response.Model) ? modelName : response.Model;
+
+        if (response.Count > 0)
+        {
+            var first = response[0];
+            if (first != null)
+            {
+                var vector = first.ToFloats();
+                if (vector.Length > 0)
+                {
+                    result.Dimensions = vector.Length;
+                }
+            }
+        }
+
+        if (!result.Dimensions.HasValue && requestOptions?.Dimensions is int fallbackDimensions && fallbackDimensions > 0)
+        {
+            result.Dimensions = fallbackDimensions;
+        }
+
+        return result;
+    }
+
     public static Generation ResponsesFromStream(
         string modelName,
         IReadOnlyList<OpenAIResponses.ResponseItem> inputItems,
-        OpenAIResponses.ResponseCreationOptions? requestOptions,
+        OpenAIResponses.CreateResponseOptions? requestOptions,
         OpenAIResponsesStreamSummary summary,
         OpenAISigilOptions? options = null
     )
@@ -182,7 +264,7 @@ public static class OpenAIGenerationMapper
         var assistantText = new StringBuilder();
         var assistantRefusal = new StringBuilder();
         var eventStopReason = string.Empty;
-        OpenAIResponses.OpenAIResponse? finalResponse = null;
+        OpenAIResponses.ResponseResult? finalResponse = null;
 
         foreach (var streamEvent in summary.Events)
         {
@@ -494,6 +576,22 @@ public static class OpenAIGenerationMapper
 
         GenerationValidator.Validate(generation);
         return generation;
+    }
+
+    private static List<string> EmbeddingInputTexts(IReadOnlyList<string>? inputs)
+    {
+        if (inputs == null || inputs.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        var mapped = new List<string>(inputs.Count);
+        foreach (var input in inputs)
+        {
+            mapped.Add(input ?? string.Empty);
+        }
+
+        return mapped;
     }
 
     private static (List<Message> input, string systemPrompt) MapResponsesInputItems(
@@ -869,7 +967,7 @@ public static class OpenAIGenerationMapper
     }
 
     private static List<ToolDefinition> MapResponsesTools(
-        OpenAIResponses.ResponseCreationOptions? requestOptions
+        OpenAIResponses.CreateResponseOptions? requestOptions
     )
     {
         var mapped = new List<ToolDefinition>();
@@ -934,7 +1032,7 @@ public static class OpenAIGenerationMapper
     }
 
     private static string NormalizeResponsesStopReason(
-        OpenAIResponses.OpenAIResponse? response
+        OpenAIResponses.ResponseResult? response
     )
     {
         if (response == null || response.Status == null)
@@ -975,7 +1073,7 @@ public static class OpenAIGenerationMapper
         IReadOnlyList<Message> input,
         IReadOnlyList<Message> output,
         IReadOnlyList<ToolDefinition> tools,
-        OpenAIResponses.OpenAIResponse response
+        OpenAIResponses.ResponseResult response
     )
     {
         var artifacts = new List<Artifact>(3);
@@ -1072,14 +1170,14 @@ public static class OpenAIGenerationMapper
     }
 
     private static bool? ResolveResponsesThinkingEnabled(
-        OpenAIResponses.ResponseCreationOptions? requestOptions
+        OpenAIResponses.CreateResponseOptions? requestOptions
     )
     {
         return requestOptions?.ReasoningOptions == null ? null : true;
     }
 
     private static long? ResolveResponsesThinkingBudget(
-        OpenAIResponses.ResponseCreationOptions? requestOptions
+        OpenAIResponses.CreateResponseOptions? requestOptions
     )
     {
         if (requestOptions?.ReasoningOptions == null)

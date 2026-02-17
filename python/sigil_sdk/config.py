@@ -53,11 +53,21 @@ class ApiConfig:
 
 
 @dataclass(slots=True)
+class EmbeddingCaptureConfig:
+    """Embedding input capture settings for span attributes."""
+
+    capture_input: bool = False
+    max_input_items: int = 20
+    max_text_length: int = 1024
+
+
+@dataclass(slots=True)
 class ClientConfig:
     """Top-level SDK runtime configuration."""
 
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    embedding_capture: EmbeddingCaptureConfig = field(default_factory=EmbeddingCaptureConfig)
     tracer: Optional[Tracer] = None
     meter: Optional[Meter] = None
     logger: Optional[logging.Logger] = None
@@ -113,6 +123,11 @@ def resolve_config(config: Optional[ClientConfig]) -> ClientConfig:
         out.generation_export.initial_backoff = timedelta(milliseconds=100)
     if out.generation_export.max_backoff.total_seconds() <= 0:
         out.generation_export.max_backoff = timedelta(milliseconds=100)
+
+    if out.embedding_capture.max_input_items <= 0:
+        out.embedding_capture.max_input_items = 20
+    if out.embedding_capture.max_text_length <= 0:
+        out.embedding_capture.max_text_length = 1024
 
     return out
 

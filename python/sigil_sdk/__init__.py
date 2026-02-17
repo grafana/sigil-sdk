@@ -1,7 +1,7 @@
 """Public exports for the Sigil Python SDK."""
 
 from .client import Client
-from .config import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfig, default_config
+from .config import ApiConfig, AuthConfig, ClientConfig, EmbeddingCaptureConfig, GenerationExportConfig, default_config
 from .context import (
     conversation_id_from_context,
     agent_name_from_context,
@@ -27,6 +27,8 @@ from .models import (
     ConversationRatingInput,
     ConversationRatingSummary,
     ConversationRatingValue,
+    EmbeddingResult,
+    EmbeddingStart,
     Generation,
     GenerationMode,
     GenerationStart,
@@ -51,7 +53,7 @@ from .models import (
     tool_result_message,
     user_text_message,
 )
-from .validation import validate_generation
+from .validation import validate_embedding_result, validate_embedding_start, validate_generation
 
 __all__ = [
     "Artifact",
@@ -65,6 +67,9 @@ __all__ = [
     "ConversationRatingInput",
     "ConversationRatingSummary",
     "ConversationRatingValue",
+    "EmbeddingCaptureConfig",
+    "EmbeddingResult",
+    "EmbeddingStart",
     "EnqueueError",
     "Generation",
     "GenerationExportConfig",
@@ -103,5 +108,7 @@ __all__ = [
     "with_agent_version",
     "with_conversation_id",
     "default_config",
+    "validate_embedding_result",
+    "validate_embedding_start",
     "validate_generation",
 ]

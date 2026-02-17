@@ -5,6 +5,7 @@ from .provider import (
     OpenAIOptions,
     ResponsesStreamSummary,
     chat,
+    embeddings,
     responses,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "OpenAIOptions",
     "ResponsesStreamSummary",
     "chat",
+    "embeddings",
     "responses",
 ]

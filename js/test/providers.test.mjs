@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { trace } from '@opentelemetry/api';
+import { SpanStatusCode, trace } from '@opentelemetry/api';
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { anthropic, defaultConfig, gemini, openai, SigilClient } from '../.test-dist/index.js';
 
 class CapturingExporter {
@@ -425,6 +426,129 @@ test('openai responses stream wrapper records STREAM mode with stream event arti
   assert.ok(generation.artifacts.some((artifact) => artifact.type === 'provider_event'));
 });
 
+test('openai embeddings wrapper records embedding span and does not enqueue generation', async () => {
+  const harness = newEmbeddingHarness();
+
+  try {
+    await openai.embeddings.create(
+      harness.client,
+      {
+        model: 'text-embedding-3-small',
+        input: ['hello', 'world'],
+        dimensions: 256,
+        encoding_format: 'float',
+      },
+      async () => ({
+        model: 'text-embedding-3-small',
+        usage: { prompt_tokens: 22 },
+        data: [{ embedding: [0.1, 0.2, 0.3] }],
+      })
+    );
+
+    await harness.client.flush();
+
+    assert.equal(harness.generationExporter.requests.length, 0);
+    assert.equal(harness.client.debugSnapshot().generations.length, 0);
+
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.attributes['gen_ai.provider.name'], 'openai');
+    assert.equal(span.attributes['gen_ai.request.model'], 'text-embedding-3-small');
+    assert.equal(span.attributes['gen_ai.embeddings.input_count'], 2);
+    assert.equal(span.attributes['gen_ai.usage.input_tokens'], 22);
+    assert.equal(span.attributes['gen_ai.embeddings.dimension.count'], 3);
+    assert.deepEqual(span.attributes['gen_ai.request.encoding_formats'], ['float']);
+  } finally {
+    await shutdownEmbeddingHarness(harness);
+  }
+});
+
+test('openai embeddings wrapper treats token-array input as a single item', async () => {
+  const harness = newEmbeddingHarness();
+
+  try {
+    await openai.embeddings.create(
+      harness.client,
+      {
+        model: 'text-embedding-3-small',
+        input: [101, 102, 103, 104],
+      },
+      async () => ({
+        model: 'text-embedding-3-small',
+        usage: { prompt_tokens: 4 },
+        data: [{ embedding: [0.1, 0.2] }],
+      })
+    );
+
+    await harness.client.flush();
+
+    assert.equal(harness.generationExporter.requests.length, 0);
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.attributes['gen_ai.embeddings.input_count'], 1);
+    assert.equal(span.attributes['gen_ai.usage.input_tokens'], 4);
+  } finally {
+    await shutdownEmbeddingHarness(harness);
+  }
+});
+
+test('gemini embeddings wrapper maps usage and dimensions to embedding span', async () => {
+  const harness = newEmbeddingHarness();
+
+  try {
+    await gemini.models.embedContent(
+      harness.client,
+      'gemini-embedding-001',
+      [{ role: 'user', parts: [{ text: 'hello-gemini' }] }],
+      { outputDimensionality: 384 },
+      async () => ({
+        embeddings: [
+          { values: [0.1, 0.2, 0.3, 0.4], statistics: { tokenCount: 9 } },
+          { values: [0.5, 0.6, 0.7, 0.8], statistics: { tokenCount: 6 } },
+        ],
+      })
+    );
+
+    await harness.client.flush();
+
+    assert.equal(harness.generationExporter.requests.length, 0);
+    assert.equal(harness.client.debugSnapshot().generations.length, 0);
+
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.attributes['gen_ai.provider.name'], 'gemini');
+    assert.equal(span.attributes['gen_ai.request.model'], 'gemini-embedding-001');
+    assert.equal(span.attributes['gen_ai.embeddings.input_count'], 1);
+    assert.equal(span.attributes['gen_ai.usage.input_tokens'], 15);
+    assert.equal(span.attributes['gen_ai.embeddings.dimension.count'], 4);
+  } finally {
+    await shutdownEmbeddingHarness(harness);
+  }
+});
+
+test('embedding provider wrapper errors set provider_call_error span status', async () => {
+  const harness = newEmbeddingHarness();
+
+  try {
+    await assert.rejects(
+      openai.embeddings.create(
+        harness.client,
+        {
+          model: 'text-embedding-3-small',
+          input: 'hello',
+        },
+        async () => {
+          throw new Error('provider failure openai embedding');
+        }
+      ),
+      /provider failure openai embedding/
+    );
+
+    const span = singleEmbeddingSpan(harness.spanExporter);
+    assert.equal(span.status.code, SpanStatusCode.ERROR);
+    assert.equal(span.attributes['error.type'], 'provider_call_error');
+  } finally {
+    await shutdownEmbeddingHarness(harness);
+  }
+});
+
 test('provider wrappers propagate provider errors and persist callError', async () => {
   for (const suite of [
     {
@@ -729,6 +853,56 @@ test('provider mappers expose thinking disabled when explicitly configured', () 
   assert.equal(geminiMapped.thinkingEnabled, false);
 });
 
+test('embedding mappers extract input counts, texts, usage, and dimensions', () => {
+  const openAIMapped = openai.embeddings.fromRequestResponse(
+    {
+      model: 'text-embedding-3-small',
+      input: ['hello', { text: 'world' }, [1, 2, 3]],
+    },
+    {
+      model: 'text-embedding-3-small',
+      usage: { prompt_tokens: 30 },
+      data: [{ embedding: [0.1, 0.2, 0.3] }],
+    }
+  );
+  assert.equal(openAIMapped.inputCount, 3);
+  assert.deepEqual(openAIMapped.inputTexts, ['hello', 'world']);
+  assert.equal(openAIMapped.inputTokens, 30);
+  assert.equal(openAIMapped.responseModel, 'text-embedding-3-small');
+  assert.equal(openAIMapped.dimensions, 3);
+
+  const openAITokenizedSingle = openai.embeddings.fromRequestResponse(
+    {
+      model: 'text-embedding-3-small',
+      input: [101, 102, 103],
+    },
+    {
+      model: 'text-embedding-3-small',
+      usage: { prompt_tokens: 3 },
+      data: [{ embedding: [0.1, 0.2] }],
+    }
+  );
+  assert.equal(openAITokenizedSingle.inputCount, 1);
+  assert.equal(openAITokenizedSingle.inputTexts, undefined);
+  assert.equal(openAITokenizedSingle.inputTokens, 3);
+
+  const geminiMapped = gemini.models.embeddingFromResponse(
+    'gemini-embedding-001',
+    ['alpha', { role: 'user', parts: [{ text: 'beta' }] }],
+    { outputDimensionality: 128 },
+    {
+      embeddings: [
+        { values: [0.1, 0.2], statistics: { tokenCount: 4 } },
+        { values: [0.3, 0.4], statistics: { tokenCount: 5 } },
+      ],
+    }
+  );
+  assert.equal(geminiMapped.inputCount, 2);
+  assert.deepEqual(geminiMapped.inputTexts, ['alpha', 'beta']);
+  assert.equal(geminiMapped.inputTokens, 9);
+  assert.equal(geminiMapped.dimensions, 2);
+});
+
 async function captureSingleGeneration(run) {
   const exporter = new CapturingExporter();
   const client = newClient(exporter);
@@ -762,4 +936,45 @@ function newClient(generationExporter) {
     },
     generationExporter,
   });
+}
+
+function newEmbeddingHarness() {
+  const spanExporter = new InMemorySpanExporter();
+  const traceProvider = new BasicTracerProvider({
+    spanProcessors: [new SimpleSpanProcessor(spanExporter)],
+  });
+  const tracer = traceProvider.getTracer('sigil-sdk-js-test');
+  const generationExporter = new CapturingExporter();
+  const defaults = defaultConfig();
+
+  const client = new SigilClient({
+    tracer,
+    generationExport: {
+      ...defaults.generationExport,
+      batchSize: 100,
+      flushIntervalMs: 60_000,
+      maxRetries: 1,
+      initialBackoffMs: 1,
+      maxBackoffMs: 1,
+    },
+    generationExporter,
+  });
+
+  return {
+    client,
+    spanExporter,
+    traceProvider,
+    generationExporter,
+  };
+}
+
+async function shutdownEmbeddingHarness(harness) {
+  await harness.client.shutdown();
+  await harness.traceProvider.shutdown();
+}
+
+function singleEmbeddingSpan(spanExporter) {
+  const spans = spanExporter.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'embeddings');
+  assert.equal(spans.length, 1);
+  return spans[0];
 }

@@ -15,6 +15,7 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string InstrumentationName = "github.com/grafana/sigil/sdks/dotnet";
     internal const string DefaultOperationNameSync = "generateText";
     internal const string DefaultOperationNameStream = "streamText";
+    internal const string DefaultOperationNameEmbedding = "embeddings";
 
     internal const string SpanAttrGenerationId = "sigil.generation.id";
     internal const string SpanAttrSdkName = "sigil.sdk.name";
@@ -37,6 +38,10 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrFinishReasons = "gen_ai.response.finish_reasons";
     internal const string SpanAttrInputTokens = "gen_ai.usage.input_tokens";
     internal const string SpanAttrOutputTokens = "gen_ai.usage.output_tokens";
+    internal const string SpanAttrEmbeddingInputCount = "gen_ai.embeddings.input_count";
+    internal const string SpanAttrEmbeddingInputTexts = "gen_ai.embeddings.input_texts";
+    internal const string SpanAttrEmbeddingDimCount = "gen_ai.embeddings.dimension.count";
+    internal const string SpanAttrRequestEncodingFormats = "gen_ai.request.encoding_formats";
     internal const string SpanAttrCacheReadTokens = "gen_ai.usage.cache_read_input_tokens";
     internal const string SpanAttrCacheWriteTokens = "gen_ai.usage.cache_write_input_tokens";
     internal const string SpanAttrCacheCreationTokens = "gen_ai.usage.cache_creation_input_tokens";
@@ -78,6 +83,7 @@ public sealed class SigilClient : IAsyncDisposable
     private readonly Histogram<double> _tokenUsageHistogram;
     private readonly Histogram<double> _ttftHistogram;
     private readonly Histogram<double> _toolCallsHistogram;
+    private readonly EmbeddingCaptureConfig _embeddingCapture;
     private readonly Action<string> _log;
     private readonly HttpClient _ratingHttpClient = new(new HttpClientHandler
     {
@@ -99,10 +105,13 @@ public sealed class SigilClient : IAsyncDisposable
     private readonly object _stateLock = new();
     private bool _shutdown;
 
+    internal EmbeddingCaptureConfig EmbeddingCapture => _embeddingCapture;
+
     public SigilClient(SigilClientConfig? config = null)
     {
         _config = ConfigResolver.Resolve(config);
         _log = _config.Logger!;
+        _embeddingCapture = InternalUtils.DeepClone(_config.EmbeddingCapture);
 
         _generationExporter = _config.GenerationExporter
             ?? _config.GenerationExport.Protocol switch
@@ -140,6 +149,43 @@ public sealed class SigilClient : IAsyncDisposable
     public GenerationRecorder StartStreamingGeneration(GenerationStart start)
     {
         return StartGenerationInternal(start, GenerationMode.Stream);
+    }
+
+    public EmbeddingRecorder StartEmbedding(EmbeddingStart start)
+    {
+        EnsureNotShutdown();
+
+        var seed = InternalUtils.DeepClone(start ?? new EmbeddingStart());
+
+        if (string.IsNullOrWhiteSpace(seed.AgentName))
+        {
+            seed.AgentName = SigilContext.AgentNameFromContext() ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(seed.AgentVersion))
+        {
+            seed.AgentVersion = SigilContext.AgentVersionFromContext() ?? string.Empty;
+        }
+
+        seed.StartedAt = seed.StartedAt.HasValue
+            ? InternalUtils.Utc(seed.StartedAt.Value)
+            : _config.UtcNow!();
+
+        var activity = _activitySource.StartActivity(
+            EmbeddingSpanName(seed.Model.Name),
+            ActivityKind.Client,
+            default(ActivityContext),
+            tags: null,
+            links: null,
+            seed.StartedAt.Value
+        );
+
+        if (activity != null)
+        {
+            ApplyEmbeddingStartSpanAttributes(activity, seed);
+        }
+
+        return new EmbeddingRecorder(this, seed, seed.StartedAt.Value, activity);
     }
 
     public ToolExecutionRecorder StartToolExecution(ToolExecutionStart start)
@@ -991,6 +1037,12 @@ public sealed class SigilClient : IAsyncDisposable
         return model.Length == 0 ? operation : operation + " " + model;
     }
 
+    internal static string EmbeddingSpanName(string modelName)
+    {
+        var model = modelName?.Trim() ?? string.Empty;
+        return model.Length == 0 ? DefaultOperationNameEmbedding : DefaultOperationNameEmbedding + " " + model;
+    }
+
     internal static string ToolSpanName(string toolName)
     {
         return "execute_tool " + toolName;
@@ -1106,6 +1158,67 @@ public sealed class SigilClient : IAsyncDisposable
         }
     }
 
+    internal static void ApplyEmbeddingStartSpanAttributes(Activity activity, EmbeddingStart start)
+    {
+        activity.SetTag(SpanAttrOperationName, DefaultOperationNameEmbedding);
+        activity.SetTag(SpanAttrSdkName, SdkName);
+
+        if (!string.IsNullOrWhiteSpace(start.Model.Provider))
+        {
+            activity.SetTag(SpanAttrProviderName, start.Model.Provider);
+        }
+        if (!string.IsNullOrWhiteSpace(start.Model.Name))
+        {
+            activity.SetTag(SpanAttrRequestModel, start.Model.Name);
+        }
+        if (!string.IsNullOrWhiteSpace(start.AgentName))
+        {
+            activity.SetTag(SpanAttrAgentName, start.AgentName);
+        }
+        if (!string.IsNullOrWhiteSpace(start.AgentVersion))
+        {
+            activity.SetTag(SpanAttrAgentVersion, start.AgentVersion);
+        }
+        if (start.Dimensions.HasValue)
+        {
+            activity.SetTag(SpanAttrEmbeddingDimCount, start.Dimensions.Value);
+        }
+        if (!string.IsNullOrWhiteSpace(start.EncodingFormat))
+        {
+            activity.SetTag(SpanAttrRequestEncodingFormats, new[] { start.EncodingFormat });
+        }
+    }
+
+    internal static void ApplyEmbeddingEndSpanAttributes(
+        Activity activity,
+        EmbeddingResult result,
+        EmbeddingCaptureConfig captureConfig
+    )
+    {
+        activity.SetTag(SpanAttrEmbeddingInputCount, result.InputCount);
+
+        if (result.InputTokens != 0)
+        {
+            activity.SetTag(SpanAttrInputTokens, result.InputTokens);
+        }
+        if (!string.IsNullOrWhiteSpace(result.ResponseModel))
+        {
+            activity.SetTag(SpanAttrResponseModel, result.ResponseModel);
+        }
+        if (result.Dimensions.HasValue)
+        {
+            activity.SetTag(SpanAttrEmbeddingDimCount, result.Dimensions.Value);
+        }
+        if (captureConfig.CaptureInput)
+        {
+            var inputTexts = CaptureEmbeddingInputTexts(result.InputTexts, captureConfig);
+            if (inputTexts.Count > 0)
+            {
+                activity.SetTag(SpanAttrEmbeddingInputTexts, inputTexts.ToArray());
+            }
+        }
+    }
+
     internal static void ApplyToolSpanAttributes(Activity activity, ToolExecutionStart tool)
     {
         activity.SetTag(SpanAttrOperationName, "execute_tool");
@@ -1215,6 +1328,43 @@ public sealed class SigilClient : IAsyncDisposable
         }
     }
 
+    internal void RecordEmbeddingMetrics(
+        EmbeddingStart seed,
+        EmbeddingResult result,
+        DateTimeOffset startedAt,
+        DateTimeOffset completedAt,
+        string errorType,
+        string errorCategory
+    )
+    {
+        var durationSeconds = Math.Max(0d, (completedAt - startedAt).TotalSeconds);
+        _operationDurationHistogram.Record(
+            durationSeconds,
+            new KeyValuePair<string, object?>[]
+            {
+                new(SpanAttrOperationName, DefaultOperationNameEmbedding),
+                new(SpanAttrProviderName, seed.Model.Provider ?? string.Empty),
+                new(SpanAttrRequestModel, seed.Model.Name ?? string.Empty),
+                new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
+                new(SpanAttrErrorType, errorType ?? string.Empty),
+                new(SpanAttrErrorCategory, errorCategory ?? string.Empty),
+            });
+
+        if (result.InputTokens != 0L)
+        {
+            _tokenUsageHistogram.Record(
+                result.InputTokens,
+                new KeyValuePair<string, object?>[]
+                {
+                    new(SpanAttrOperationName, DefaultOperationNameEmbedding),
+                    new(SpanAttrProviderName, seed.Model.Provider ?? string.Empty),
+                    new(SpanAttrRequestModel, seed.Model.Name ?? string.Empty),
+                    new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
+                    new(MetricAttrTokenType, MetricTokenTypeInput),
+                });
+        }
+    }
+
     internal void RecordToolExecutionMetrics(
         ToolExecutionStart seed,
         DateTimeOffset startedAt,
@@ -1298,6 +1448,7 @@ public sealed class SigilClient : IAsyncDisposable
             value,
             new KeyValuePair<string, object?>[]
             {
+                new(SpanAttrOperationName, OperationName(generation)),
                 new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
                 new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
                 new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
@@ -1476,6 +1627,103 @@ public sealed class SigilClient : IAsyncDisposable
             default:
                 return false;
         }
+    }
+
+    private static List<string> CaptureEmbeddingInputTexts(
+        IReadOnlyList<string> inputTexts,
+        EmbeddingCaptureConfig captureConfig
+    )
+    {
+        if (inputTexts == null || inputTexts.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        var maxItems = Math.Max(1, captureConfig.MaxInputItems);
+        var maxTextLength = Math.Max(1, captureConfig.MaxTextLength);
+        var count = Math.Min(maxItems, inputTexts.Count);
+        var captured = new List<string>(count);
+
+        for (var index = 0; index < count; index++)
+        {
+            var text = inputTexts[index] ?? string.Empty;
+            captured.Add(TruncateEmbeddingText(text, maxTextLength));
+        }
+
+        return captured;
+    }
+
+    private static string TruncateEmbeddingText(string text, int maxLength)
+    {
+        if (GetScalarCount(text) <= maxLength)
+        {
+            return text;
+        }
+
+        if (maxLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (maxLength <= 3)
+        {
+            return TruncateAtScalarBoundary(text, maxLength);
+        }
+
+        return TruncateAtScalarBoundary(text, maxLength - 3) + "...";
+    }
+
+    private static int GetScalarCount(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                i++; // Skip the low surrogate, count surrogate pair as one
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    private static string TruncateAtScalarBoundary(string text, int maxScalars)
+    {
+        if (maxScalars <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (GetScalarCount(text) <= maxScalars)
+        {
+            return text;
+        }
+
+        // Find the char index after maxScalars Unicode scalars
+        var charIndex = 0;
+        var scalarCount = 0;
+        while (charIndex < text.Length && scalarCount < maxScalars)
+        {
+            if (char.IsHighSurrogate(text[charIndex]) && charIndex + 1 < text.Length && char.IsLowSurrogate(text[charIndex + 1]))
+            {
+                charIndex += 2; // Surrogate pair is one scalar
+            }
+            else
+            {
+                charIndex++;
+            }
+
+            scalarCount++;
+        }
+
+        return text.Substring(0, charIndex);
     }
 
     internal static void RecordException(Activity activity, Exception error)
@@ -1772,6 +2020,144 @@ public sealed class GenerationRecorder
         }
 
         return merged;
+    }
+}
+
+public sealed class EmbeddingRecorder
+{
+    private readonly SigilClient? _client;
+    private readonly EmbeddingStart _seed;
+    private readonly DateTimeOffset _startedAt;
+    private readonly Activity? _activity;
+    private readonly bool _noop;
+
+    private readonly object _gate = new();
+    private bool _ended;
+    private Exception? _callError;
+    private EmbeddingResult _result = new();
+
+    public Exception? Error { get; private set; }
+
+    internal EmbeddingRecorder(
+        SigilClient? client,
+        EmbeddingStart seed,
+        DateTimeOffset startedAt,
+        Activity? activity,
+        bool noop = false
+    )
+    {
+        _client = client;
+        _seed = seed;
+        _startedAt = startedAt;
+        _activity = activity;
+        _noop = noop;
+    }
+
+    public void SetCallError(Exception error)
+    {
+        if (_noop || error == null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _callError = error;
+        }
+    }
+
+    public void SetResult(EmbeddingResult result)
+    {
+        if (_noop)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _result = InternalUtils.DeepClone(result ?? new EmbeddingResult());
+        }
+    }
+
+    public void End()
+    {
+        if (_noop)
+        {
+            return;
+        }
+
+        Exception? callError;
+        EmbeddingResult result;
+
+        lock (_gate)
+        {
+            if (_ended)
+            {
+                return;
+            }
+
+            _ended = true;
+            callError = _callError;
+            result = InternalUtils.DeepClone(_result);
+        }
+
+        Exception? localError = null;
+        try
+        {
+            GenerationValidator.ValidateEmbeddingStart(_seed);
+            GenerationValidator.ValidateEmbeddingResult(result);
+        }
+        catch (Exception ex)
+        {
+            localError = new ValidationException($"sigil: embedding validation failed: {ex.Message}");
+        }
+
+        var errorType = string.Empty;
+        var errorCategory = string.Empty;
+        if (callError != null)
+        {
+            errorType = "provider_call_error";
+            errorCategory = SigilClient.ErrorCategoryFromException(callError, true);
+        }
+        else if (localError != null)
+        {
+            errorType = "validation_error";
+            errorCategory = "sdk_error";
+        }
+
+        var completedAt = _client!._config.UtcNow!();
+        if (_activity != null)
+        {
+            _activity.DisplayName = SigilClient.EmbeddingSpanName(_seed.Model.Name);
+            SigilClient.ApplyEmbeddingStartSpanAttributes(_activity, _seed);
+            SigilClient.ApplyEmbeddingEndSpanAttributes(_activity, result, _client.EmbeddingCapture);
+
+            if (callError != null)
+            {
+                SigilClient.RecordException(_activity, callError);
+            }
+            if (localError != null)
+            {
+                SigilClient.RecordException(_activity, localError);
+            }
+
+            if (errorType.Length > 0)
+            {
+                _activity.SetTag(SigilClient.SpanAttrErrorType, errorType);
+                _activity.SetTag(SigilClient.SpanAttrErrorCategory, errorCategory);
+                _activity.SetStatus(ActivityStatusCode.Error, (callError ?? localError)?.Message);
+            }
+            else
+            {
+                _activity.SetStatus(ActivityStatusCode.Ok);
+            }
+
+            _activity.SetEndTime(completedAt.UtcDateTime);
+            _activity.Stop();
+        }
+
+        _client.RecordEmbeddingMetrics(_seed, result, _startedAt, completedAt, errorType, errorCategory);
+        Error = localError;
     }
 }
 

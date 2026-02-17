@@ -41,6 +41,64 @@ func GenerateContent(
 	return resp, rec.Err()
 }
 
+// EmbedContent calls the Gemini embed-content API and records an embeddings span.
+// It mirrors providerClient.Models.EmbedContent but adds Sigil recording.
+func EmbedContent(
+	ctx context.Context,
+	client *sigil.Client,
+	provider *genai.Client,
+	model string,
+	contents []*genai.Content,
+	config *genai.EmbedContentConfig,
+	opts ...Option,
+) (*genai.EmbedContentResponse, error) {
+	return embedContent(ctx, client, model, contents, config, func(
+		ctx context.Context,
+		model string,
+		contents []*genai.Content,
+		config *genai.EmbedContentConfig,
+	) (*genai.EmbedContentResponse, error) {
+		return provider.Models.EmbedContent(ctx, model, contents, config)
+	}, opts...)
+}
+
+func embedContent(
+	ctx context.Context,
+	client *sigil.Client,
+	model string,
+	contents []*genai.Content,
+	config *genai.EmbedContentConfig,
+	invoke func(context.Context, string, []*genai.Content, *genai.EmbedContentConfig) (*genai.EmbedContentResponse, error),
+	opts ...Option,
+) (*genai.EmbedContentResponse, error) {
+	options := applyOptions(opts)
+
+	start := sigil.EmbeddingStart{
+		AgentName:    options.agentName,
+		AgentVersion: options.agentVersion,
+		Model:        sigil.ModelRef{Provider: options.providerName, Name: model},
+	}
+	if config != nil && config.OutputDimensionality != nil {
+		dimensions := int64(*config.OutputDimensionality)
+		if dimensions > 0 {
+			start.Dimensions = &dimensions
+		}
+	}
+
+	ctx, rec := client.StartEmbedding(ctx, start)
+	defer rec.End()
+
+	resp, err := invoke(ctx, model, contents, config)
+	if err != nil {
+		rec.SetCallError(err)
+		return nil, err
+	}
+
+	rec.SetResult(EmbeddingFromResponse(model, contents, config, resp))
+	rec.End()
+	return resp, rec.Err()
+}
+
 // GenerateContentStream calls the Gemini streaming generate-content API and records the generation.
 // It mirrors providerClient.Models.GenerateContentStream but adds Sigil recording.
 // All responses are collected into StreamSummary; for per-response processing use the

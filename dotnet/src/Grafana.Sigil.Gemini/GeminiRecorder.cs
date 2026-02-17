@@ -214,6 +214,89 @@ public static class GeminiRecorder
         }
     }
 
+    public static async Task<EmbedContentResponse> EmbedContentAsync(
+        SigilClient client,
+        Client provider,
+        string model,
+        IReadOnlyList<Content>? contents,
+        EmbedContentConfig? config = null,
+        GeminiSigilOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (provider == null)
+        {
+            throw new ArgumentNullException(nameof(provider));
+        }
+
+        return await EmbedContentAsync(
+            client,
+            model,
+            contents,
+            (requestModel, requestContents, requestConfig, ct) => provider.Models.EmbedContentAsync(requestModel, requestContents, requestConfig, ct),
+            config,
+            options,
+            cancellationToken
+        ).ConfigureAwait(false);
+    }
+
+    public static async Task<EmbedContentResponse> EmbedContentAsync(
+        SigilClient client,
+        string model,
+        IReadOnlyList<Content>? contents,
+        Func<string, List<Content>, EmbedContentConfig?, CancellationToken, Task<EmbedContentResponse>> invoke,
+        EmbedContentConfig? config = null,
+        GeminiSigilOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (client == null)
+        {
+            throw new ArgumentNullException(nameof(client));
+        }
+
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new ArgumentException("model is required", nameof(model));
+        }
+
+        if (invoke == null)
+        {
+            throw new ArgumentNullException(nameof(invoke));
+        }
+
+        var effective = options ?? new GeminiSigilOptions();
+        var mappedContents = MapContents(contents);
+        var modelName = ResolveModelName(model, effective);
+        var recorder = client.StartEmbedding(new EmbeddingStart
+        {
+            AgentName = effective.AgentName,
+            AgentVersion = effective.AgentVersion,
+            Model = new ModelRef
+            {
+                Provider = effective.ProviderName,
+                Name = modelName,
+            },
+            Dimensions = config?.OutputDimensionality is int dimensions && dimensions > 0 ? dimensions : null,
+        });
+
+        try
+        {
+            var response = await invoke(model, mappedContents, config, cancellationToken).ConfigureAwait(false);
+            recorder.SetResult(GeminiGenerationMapper.EmbeddingFromResponse(modelName, mappedContents, config, response));
+            return response;
+        }
+        catch (Exception ex)
+        {
+            recorder.SetCallError(ex);
+            throw;
+        }
+        finally
+        {
+            recorder.End();
+        }
+    }
+
     private static List<Content> MapContents(IReadOnlyList<Content>? contents)
     {
         var mapped = new List<Content>();

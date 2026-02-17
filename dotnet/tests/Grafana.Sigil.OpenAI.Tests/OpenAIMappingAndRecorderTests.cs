@@ -1,6 +1,7 @@
 using System.ClientModel.Primitives;
 using System.Reflection;
 using OpenAI.Chat;
+using OpenAI.Embeddings;
 using OpenAI.Responses;
 using Xunit;
 
@@ -121,7 +122,7 @@ public sealed class OpenAIMappingAndRecorderTests
             ResponseItem.CreateFunctionCallOutputItem("call_weather", "{\"temp_c\":18}"),
         };
 
-        var requestOptions = new ResponseCreationOptions
+        var requestOptions = new CreateResponseOptions
         {
             Instructions = "You are concise.",
             MaxOutputTokenCount = 320,
@@ -213,7 +214,7 @@ public sealed class OpenAIMappingAndRecorderTests
             ResponseItem.CreateUserMessageItem("hello"),
         };
 
-        var requestOptions = new ResponseCreationOptions
+        var requestOptions = new CreateResponseOptions
         {
             Instructions = "Be concise.",
             ToolChoice = ResponseToolChoice.CreateRequiredChoice(),
@@ -263,7 +264,7 @@ public sealed class OpenAIMappingAndRecorderTests
         {
             ResponseItem.CreateUserMessageItem("hello"),
         };
-        var requestOptions = new ResponseCreationOptions
+        var requestOptions = new CreateResponseOptions
         {
             Instructions = "Be concise.",
         };
@@ -383,7 +384,7 @@ public sealed class OpenAIMappingAndRecorderTests
             client,
             responseItems,
             (_, _, _) => StreamResponsesUpdates(),
-            requestOptions: new ResponseCreationOptions
+            requestOptions: new CreateResponseOptions
             {
                 Instructions = "Be concise.",
             },
@@ -407,6 +408,101 @@ public sealed class OpenAIMappingAndRecorderTests
     }
 
     [Fact]
+    public void EmbeddingsFromRequestResponse_MapsInputCountUsageAndDimensions()
+    {
+        var inputs = new List<string>
+        {
+            "alpha",
+            "beta",
+        };
+        var requestOptions = new EmbeddingGenerationOptions
+        {
+            Dimensions = 256,
+        };
+        var response = OpenAIEmbeddingsModelFactory.OpenAIEmbeddingCollection(
+            new[]
+            {
+                OpenAIEmbeddingsModelFactory.OpenAIEmbedding(0, new[] { 0.1f, 0.2f, 0.3f }),
+            },
+            "text-embedding-3-small",
+            OpenAIEmbeddingsModelFactory.EmbeddingTokenUsage(inputTokenCount: 18, totalTokenCount: 18)
+        );
+
+        var result = OpenAIGenerationMapper.EmbeddingsFromRequestResponse(
+            "text-embedding-3-small",
+            inputs,
+            requestOptions,
+            response
+        );
+
+        Assert.Equal(2, result.InputCount);
+        Assert.Equal(18, result.InputTokens);
+        Assert.Equal("text-embedding-3-small", result.ResponseModel);
+        Assert.Equal(3, result.Dimensions);
+        Assert.Equal(inputs, result.InputTexts);
+    }
+
+    [Fact]
+    public async Task Recorder_EmbeddingsWrapper_DoesNotEnqueueAndPropagatesProviderErrors()
+    {
+        var exporter = new CapturingExporter();
+        await using var client = new SigilClient(new SigilClientConfig
+        {
+            GenerationExporter = exporter,
+            GenerationExport = new GenerationExportConfig
+            {
+                BatchSize = 1,
+                QueueSize = 10,
+                FlushInterval = TimeSpan.FromHours(1),
+            },
+        });
+
+        var inputs = new List<string> { "embed this" };
+        var requestOptions = new EmbeddingGenerationOptions
+        {
+            Dimensions = 128,
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => OpenAIRecorder.GenerateEmbeddingsAsync(
+            client,
+            inputs,
+            (_, _, _) => Task.FromException<OpenAIEmbeddingCollection>(new InvalidOperationException("embedding provider failed")),
+            requestOptions,
+            new OpenAISigilOptions
+            {
+                ModelName = "text-embedding-3-small",
+            }
+        ));
+
+        var response = OpenAIEmbeddingsModelFactory.OpenAIEmbeddingCollection(
+            new[]
+            {
+                OpenAIEmbeddingsModelFactory.OpenAIEmbedding(0, new[] { 0.1f, 0.2f }),
+            },
+            "text-embedding-3-small",
+            OpenAIEmbeddingsModelFactory.EmbeddingTokenUsage(inputTokenCount: 6, totalTokenCount: 6)
+        );
+
+        var wrapped = await OpenAIRecorder.GenerateEmbeddingsAsync(
+            client,
+            inputs,
+            (_, _, _) => Task.FromResult(response),
+            requestOptions,
+            new OpenAISigilOptions
+            {
+                ModelName = "text-embedding-3-small",
+            }
+        );
+
+        Assert.Equal("text-embedding-3-small", wrapped.Model);
+
+        await client.FlushAsync();
+        await client.ShutdownAsync();
+
+        Assert.Empty(exporter.Requests);
+    }
+
+    [Fact]
     public void RemovedRecorderApis_AreNotExposed()
     {
         var publicStaticMethods = typeof(OpenAIRecorder)
@@ -418,9 +514,9 @@ public sealed class OpenAIMappingAndRecorderTests
         Assert.DoesNotContain("ChatCompletionStreamAsync", publicStaticMethods);
     }
 
-    private static OpenAIResponse ReadResponse(string json)
+    private static ResponseResult ReadResponse(string json)
     {
-        return ModelReaderWriter.Read<OpenAIResponse>(BinaryData.FromString(json));
+        return ModelReaderWriter.Read<ResponseResult>(BinaryData.FromString(json));
     }
 
     private static StreamingResponseUpdate ReadStreamingEvent(string json)
