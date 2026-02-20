@@ -52,6 +52,13 @@ from .validation import validate_embedding_result, validate_embedding_start, val
 
 _span_attr_generation_id = "sigil.generation.id"
 _span_attr_sdk_name = "sigil.sdk.name"
+_span_attr_framework_run_id = "sigil.framework.run_id"
+_span_attr_framework_thread_id = "sigil.framework.thread_id"
+_span_attr_framework_parent_run_id = "sigil.framework.parent_run_id"
+_span_attr_framework_component_name = "sigil.framework.component_name"
+_span_attr_framework_run_type = "sigil.framework.run_type"
+_span_attr_framework_retry_attempt = "sigil.framework.retry_attempt"
+_span_attr_framework_langgraph_node = "sigil.framework.langgraph.node"
 _span_attr_conversation_id = "gen_ai.conversation.id"
 _span_attr_agent_name = "gen_ai.agent.name"
 _span_attr_agent_version = "gen_ai.agent.version"
@@ -1143,6 +1150,27 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
     thinking_budget = _thinking_budget_from_metadata(generation.metadata)
     if thinking_budget is not None:
         span.set_attribute(_span_attr_request_thinking_budget, thinking_budget)
+    framework_run_id = _metadata_string_value(generation.metadata, _span_attr_framework_run_id)
+    if framework_run_id is not None:
+        span.set_attribute(_span_attr_framework_run_id, framework_run_id)
+    framework_thread_id = _metadata_string_value(generation.metadata, _span_attr_framework_thread_id)
+    if framework_thread_id is not None:
+        span.set_attribute(_span_attr_framework_thread_id, framework_thread_id)
+    framework_parent_run_id = _metadata_string_value(generation.metadata, _span_attr_framework_parent_run_id)
+    if framework_parent_run_id is not None:
+        span.set_attribute(_span_attr_framework_parent_run_id, framework_parent_run_id)
+    framework_component_name = _metadata_string_value(generation.metadata, _span_attr_framework_component_name)
+    if framework_component_name is not None:
+        span.set_attribute(_span_attr_framework_component_name, framework_component_name)
+    framework_run_type = _metadata_string_value(generation.metadata, _span_attr_framework_run_type)
+    if framework_run_type is not None:
+        span.set_attribute(_span_attr_framework_run_type, framework_run_type)
+    framework_retry_attempt = _metadata_int_value(generation.metadata, _span_attr_framework_retry_attempt)
+    if framework_retry_attempt is not None:
+        span.set_attribute(_span_attr_framework_retry_attempt, framework_retry_attempt)
+    framework_langgraph_node = _metadata_string_value(generation.metadata, _span_attr_framework_langgraph_node)
+    if framework_langgraph_node is not None:
+        span.set_attribute(_span_attr_framework_langgraph_node, framework_langgraph_node)
     if generation.response_id:
         span.set_attribute(_span_attr_response_id, generation.response_id)
     if generation.response_model:
@@ -1231,6 +1259,47 @@ def _thinking_budget_from_metadata(metadata: dict[str, Any]) -> int | None:
         return None
 
     raw = metadata.get(_span_attr_request_thinking_budget)
+    if raw is None or isinstance(raw, bool):
+        return None
+
+    if isinstance(raw, int):
+        return raw
+
+    if isinstance(raw, float):
+        integer = int(raw)
+        if float(integer) == raw:
+            return integer
+        return None
+
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text == "":
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+
+    return None
+
+
+def _metadata_string_value(metadata: dict[str, Any], key: str) -> str | None:
+    if not metadata:
+        return None
+
+    raw = metadata.get(key)
+    if not isinstance(raw, str):
+        return None
+
+    text = raw.strip()
+    return text if text != "" else None
+
+
+def _metadata_int_value(metadata: dict[str, Any], key: str) -> int | None:
+    if not metadata:
+        return None
+
+    raw = metadata.get(key)
     if raw is None or isinstance(raw, bool):
         return None
 

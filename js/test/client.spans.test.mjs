@@ -45,6 +45,13 @@ test('generation result fields override seed and update span operation name', as
       thinkingEnabled: false,
       metadata: {
         'sigil.gen_ai.request.thinking.budget_tokens': 4096,
+        'sigil.framework.run_id': 'framework-run-1',
+        'sigil.framework.thread_id': 'framework-thread-1',
+        'sigil.framework.parent_run_id': 'framework-parent-1',
+        'sigil.framework.component_name': 'ChatOpenAI',
+        'sigil.framework.run_type': 'chat',
+        'sigil.framework.retry_attempt': 3,
+        'sigil.framework.langgraph.node': 'answer_node',
         'sigil.sdk.name': 'user-value',
       },
       stopReason: 'end_turn',
@@ -63,6 +70,13 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(generation.topP, 0.85);
     assert.equal(generation.toolChoice, 'required');
     assert.equal(generation.thinkingEnabled, false);
+    assert.equal(generation.metadata?.['sigil.framework.run_id'], 'framework-run-1');
+    assert.equal(generation.metadata?.['sigil.framework.thread_id'], 'framework-thread-1');
+    assert.equal(generation.metadata?.['sigil.framework.parent_run_id'], 'framework-parent-1');
+    assert.equal(generation.metadata?.['sigil.framework.component_name'], 'ChatOpenAI');
+    assert.equal(generation.metadata?.['sigil.framework.run_type'], 'chat');
+    assert.equal(generation.metadata?.['sigil.framework.retry_attempt'], 3);
+    assert.equal(generation.metadata?.['sigil.framework.langgraph.node'], 'answer_node');
     assert.equal(generation.metadata?.['sigil.sdk.name'], 'sdk-js');
 
     const span = singleGenerationSpan(harness.spanExporter);
@@ -77,6 +91,13 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(span.attributes['sigil.gen_ai.request.tool_choice'], 'required');
     assert.equal(span.attributes['sigil.gen_ai.request.thinking.enabled'], false);
     assert.equal(span.attributes['sigil.gen_ai.request.thinking.budget_tokens'], 4096);
+    assert.equal(span.attributes['sigil.framework.run_id'], 'framework-run-1');
+    assert.equal(span.attributes['sigil.framework.thread_id'], 'framework-thread-1');
+    assert.equal(span.attributes['sigil.framework.parent_run_id'], 'framework-parent-1');
+    assert.equal(span.attributes['sigil.framework.component_name'], 'ChatOpenAI');
+    assert.equal(span.attributes['sigil.framework.run_type'], 'chat');
+    assert.equal(span.attributes['sigil.framework.retry_attempt'], 3);
+    assert.equal(span.attributes['sigil.framework.langgraph.node'], 'answer_node');
     assert.equal(span.attributes['sigil.sdk.name'], 'sdk-js');
     assert.deepEqual(span.attributes['gen_ai.response.finish_reasons'], ['end_turn']);
   } finally {

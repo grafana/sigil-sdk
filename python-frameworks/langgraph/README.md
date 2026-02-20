@@ -1,0 +1,124 @@
+# Sigil Python Framework Module: LangGraph
+
+`sigil-sdk-langgraph` provides callback handlers that map LangGraph lifecycle events into Sigil generation recorder lifecycles.
+
+## Installation
+
+```bash
+pip install sigil-sdk sigil-sdk-langgraph
+pip install langgraph langchain-openai
+```
+
+## Usage
+
+```python
+from sigil_sdk import Client
+from sigil_sdk_langgraph import SigilLangGraphHandler, SigilAsyncLangGraphHandler
+
+client = Client()
+handler = SigilLangGraphHandler(client=client, provider_resolver="auto")
+async_handler = SigilAsyncLangGraphHandler(client=client, provider_resolver="auto")
+```
+
+## End-to-end example (graph invoke + stream)
+
+```python
+from typing import TypedDict
+
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
+from sigil_sdk import Client
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+
+class GraphState(TypedDict):
+    prompt: str
+    answer: str
+
+
+client = Client()
+handler = SigilLangGraphHandler(
+    client=client,
+    provider_resolver="auto",
+    agent_name="langgraph-example",
+    agent_version="1.0.0",
+)
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+
+def run_model(state: GraphState) -> GraphState:
+    response = llm.invoke(state["prompt"], config={"callbacks": [handler]})
+    return {"prompt": state["prompt"], "answer": response.content}
+
+
+workflow = StateGraph(GraphState)
+workflow.add_node("model", run_model)
+workflow.set_entry_point("model")
+workflow.add_edge("model", END)
+graph = workflow.compile()
+
+# Non-stream graph invocation.
+out = graph.invoke({"prompt": "Explain SLO burn rate in one paragraph.", "answer": ""})
+print(out["answer"])
+
+# Streamed graph events.
+for _event in graph.stream(
+    {"prompt": "List three practical alerting tips.", "answer": ""},
+):
+    pass
+
+client.shutdown()
+```
+
+## Persistent thread example (LangGraph checkpointer)
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+checkpointer = MemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+thread_config = {
+    "callbacks": [handler],
+    "configurable": {"thread_id": "customer-42"},
+}
+
+graph.invoke({"prompt": "Remember that my timezone is UTC+1.", "answer": ""}, config=thread_config)
+graph.invoke({"prompt": "What timezone did I just give you?", "answer": ""}, config=thread_config)
+```
+
+When `thread_id` is present, the handler records:
+
+- `conversation_id=<thread_id>`
+- `metadata["sigil.framework.run_id"]=<run id>`
+- `metadata["sigil.framework.thread_id"]=<thread id>`
+- generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id`
+
+## Behavior
+
+- Lifecycle mapping:
+  - `on_llm_start` / `on_chat_model_start` -> generation recorder
+  - `on_tool_start` / `on_tool_end` / `on_tool_error` -> `start_tool_execution`
+  - `on_chain_start` / `on_chain_end` / `on_chain_error` -> framework chain spans
+  - `on_retriever_start` / `on_retriever_end` / `on_retriever_error` -> framework retriever spans
+  - `on_llm_new_token` -> first-token timestamp for stream mode
+- Mode mapping: non-stream -> `SYNC`, stream -> `STREAM`.
+- Provider resolver parity:
+  - explicit provider metadata when available
+  - model-name inference (`gpt-`/`o1`/`o3`/`o4` -> `openai`, `claude-` -> `anthropic`, `gemini-` -> `gemini`)
+  - fallback -> `custom`
+- Framework tags/metadata are always set:
+  - `sigil.framework.name=langgraph`
+  - `sigil.framework.source=handler`
+  - `sigil.framework.language=python`
+  - `metadata["sigil.framework.run_id"]=<run id>`
+  - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+  - `metadata["sigil.framework.parent_run_id"]` (when available)
+  - `metadata["sigil.framework.component_name"]` (serialized component identity)
+  - `metadata["sigil.framework.run_type"]` (`llm`, `chat`, `tool`, `chain`, `retriever`)
+  - `metadata["sigil.framework.tags"]` (normalized callback tags)
+  - `metadata["sigil.framework.retry_attempt"]` (when available)
+  - `metadata["sigil.framework.langgraph.node"]` (when callback context exposes node identity)
+  - generation span attributes mirror low-cardinality framework metadata keys
+
+Call `client.shutdown()` during teardown to flush buffered telemetry.

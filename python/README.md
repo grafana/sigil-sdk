@@ -22,6 +22,57 @@ pip install sigil-sdk-anthropic
 pip install sigil-sdk-gemini
 ```
 
+Optional framework modules:
+
+```bash
+pip install sigil-sdk-langchain
+pip install sigil-sdk-langgraph
+```
+
+Framework handler usage:
+
+```python
+from sigil_sdk import Client
+from sigil_sdk_langchain import SigilLangChainHandler
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+client = Client()
+chain_handler = SigilLangChainHandler(client=client, provider_resolver="auto")
+graph_handler = SigilLangGraphHandler(client=client, provider_resolver="auto")
+```
+
+Both handlers inject framework tags/metadata on recorded generations:
+
+- `sigil.framework.name` (`langchain` or `langgraph`)
+- `sigil.framework.source=handler`
+- `sigil.framework.language=python`
+- `metadata["sigil.framework.run_id"]`
+- `metadata["sigil.framework.thread_id"]` (when present in callback metadata/config)
+- `metadata["sigil.framework.parent_run_id"]` (when available)
+- `metadata["sigil.framework.component_name"]`
+- `metadata["sigil.framework.run_type"]`
+- `metadata["sigil.framework.tags"]`
+- `metadata["sigil.framework.retry_attempt"]` (when available)
+- `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
+
+When present in generation metadata, low-cardinality framework keys are also copied onto generation span attributes.
+
+For LangGraph persistence, pass `configurable.thread_id` and reuse it across invocations:
+
+```python
+thread_config = {
+    "callbacks": [graph_handler],
+    "configurable": {"thread_id": "customer-42"},
+}
+graph.invoke({"prompt": "Remember my timezone is UTC+1.", "answer": ""}, config=thread_config)
+graph.invoke({"prompt": "What timezone did I give you?", "answer": ""}, config=thread_config)
+```
+
+Full framework examples:
+
+- LangChain: `../python-frameworks/langchain/README.md`
+- LangGraph: `../python-frameworks/langgraph/README.md`
+
 ## Quick Start (Sync Generation)
 
 ```python

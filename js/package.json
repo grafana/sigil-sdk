@@ -10,6 +10,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./langchain": {
+      "types": "./dist/frameworks/langchain/index.d.ts",
+      "import": "./dist/frameworks/langchain/index.js"
+    },
+    "./langgraph": {
+      "types": "./dist/frameworks/langgraph/index.d.ts",
+      "import": "./dist/frameworks/langgraph/index.js"
     }
   },
   "files": [
@@ -33,6 +41,8 @@
     "@google/genai": "^1.41.0",
     "@grpc/grpc-js": "^1.14.1",
     "@grpc/proto-loader": "^0.8.0",
+    "@langchain/core": "^0.3.80",
+    "@langchain/langgraph": "^0.4.4",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-metrics-otlp-grpc": "^0.212.0",
     "@opentelemetry/exporter-metrics-otlp-http": "^0.212.0",

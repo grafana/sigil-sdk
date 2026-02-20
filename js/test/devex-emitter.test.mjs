@@ -5,6 +5,7 @@ import {
   buildTagsAndMetadata,
   chooseMode,
   createSourceState,
+  emitFrameworks,
   resolveThread,
   sourceTagFor,
 } from '../scripts/devex-emitter.mjs';
@@ -47,4 +48,64 @@ test('thread rotation resets turn and assigns a new conversation id', async () =
   thread = resolveThread(state, 3, 'openai', 0);
   assert.equal(thread.turn, 0);
   assert.notEqual(thread.conversationId, firstConversationId);
+});
+
+test('framework emit path invokes both langchain and langgraph handlers for provider sources', async () => {
+  const calls = [];
+  class FakeHandler {
+    constructor(_client, _options) {}
+    async handleChatModelStart(_serialized, _messages, runID) {
+      calls.push(`start:${runID}`);
+    }
+    async handleLLMEnd(_output, runID) {
+      calls.push(`end:${runID}`);
+    }
+  }
+
+  await emitFrameworks(
+    {
+      langchain: { SigilLangChainHandler: FakeHandler },
+      langgraph: { SigilLangGraphHandler: FakeHandler },
+    },
+    {},
+    'openai',
+    'SYNC',
+    {
+      turn: 3,
+      agentName: 'agent',
+      agentVersion: 'v1',
+      tags: { 'sigil.devex.provider': 'openai' },
+      metadata: { provider_shape: 'framework' },
+    }
+  );
+
+  assert.equal(calls.length, 4);
+});
+
+test('framework emit path skips non-provider custom source', async () => {
+  let called = false;
+  class FakeHandler {
+    constructor(_client, _options) {
+      called = true;
+    }
+  }
+
+  await emitFrameworks(
+    {
+      langchain: { SigilLangChainHandler: FakeHandler },
+      langgraph: { SigilLangGraphHandler: FakeHandler },
+    },
+    {},
+    'mistral',
+    'SYNC',
+    {
+      turn: 3,
+      agentName: 'agent',
+      agentVersion: 'v1',
+      tags: { 'sigil.devex.provider': 'mistral' },
+      metadata: { provider_shape: 'framework' },
+    }
+  );
+
+  assert.equal(called, false);
 });

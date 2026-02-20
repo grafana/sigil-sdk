@@ -11,3 +11,8 @@ This directory contains public SDK usage docs for the TypeScript/JavaScript pack
 - `providers/openai.md`
 - `providers/anthropic.md`
 - `providers/gemini.md`
+
+## Framework Guides
+
+- `frameworks/langchain.md`
+- `frameworks/langgraph.md`

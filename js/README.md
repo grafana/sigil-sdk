@@ -143,6 +143,52 @@ await client.startToolExecution(
 - Anthropic: `docs/providers/anthropic.md`
 - Gemini: `docs/providers/gemini.md`
 
+## Framework Handlers
+
+Use module subpath exports for framework callback integrations:
+
+- LangChain: `@grafana/sigil-sdk-js/langchain`
+- LangGraph: `@grafana/sigil-sdk-js/langgraph`
+- LangChain guide: `docs/frameworks/langchain.md`
+- LangGraph guide: `docs/frameworks/langgraph.md`
+
+```ts
+import { SigilClient } from "@grafana/sigil-sdk-js";
+import { SigilLangChainHandler } from "@grafana/sigil-sdk-js/langchain";
+import { SigilLangGraphHandler } from "@grafana/sigil-sdk-js/langgraph";
+
+const client = new SigilClient();
+const chainHandler = new SigilLangChainHandler(client, { providerResolver: "auto" });
+const graphHandler = new SigilLangGraphHandler(client, { providerResolver: "auto" });
+```
+
+Each framework handler injects:
+
+- `sigil.framework.name` (`langchain` or `langgraph`)
+- `sigil.framework.source=handler`
+- `sigil.framework.language=javascript`
+- `metadata["sigil.framework.run_id"]`
+- `metadata["sigil.framework.thread_id"]` (when present in callback metadata/config)
+- `metadata["sigil.framework.parent_run_id"]` (when available)
+- `metadata["sigil.framework.component_name"]`
+- `metadata["sigil.framework.run_type"]`
+- `metadata["sigil.framework.tags"]`
+- `metadata["sigil.framework.retry_attempt"]` (when available)
+- `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
+
+When present in generation metadata, low-cardinality framework keys are also copied onto generation span attributes.
+
+For LangGraph persistence, pass `configurable.thread_id` and reuse it across invocations:
+
+```ts
+const threadConfig = {
+  callbacks: [graphHandler],
+  configurable: { thread_id: 'customer-42' },
+};
+await graph.invoke({ prompt: 'Remember my timezone is UTC+1.', answer: '' }, threadConfig);
+await graph.invoke({ prompt: 'What timezone did I give you?', answer: '' }, threadConfig);
+```
+
 ## Behavior
 
 - Generation modes are explicit: `SYNC` and `STREAM`.
