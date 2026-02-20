@@ -58,7 +58,12 @@ client.shutdown()
 
 ## Behavior
 
-- Lifecycle mapping: `on_*_start` -> start recorder, `on_llm_new_token` -> first-token timestamp, `on_llm_end`/`on_llm_error` -> finalize recorder.
+- Lifecycle mapping:
+  - `on_llm_start` / `on_chat_model_start` -> generation recorder
+  - `on_tool_start` / `on_tool_end` / `on_tool_error` -> `start_tool_execution`
+  - `on_chain_start` / `on_chain_end` / `on_chain_error` -> framework chain spans
+  - `on_retriever_start` / `on_retriever_end` / `on_retriever_error` -> framework retriever spans
+  - `on_llm_new_token` -> first-token timestamp for stream mode
 - Mode mapping: non-stream -> `SYNC`, stream -> `STREAM`.
 - Provider resolver parity:
   - explicit provider metadata when available
@@ -70,6 +75,11 @@ client.shutdown()
   - `sigil.framework.language=python`
   - `metadata["sigil.framework.run_id"]=<run id>`
   - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
-  - generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id` (when present)
+  - `metadata["sigil.framework.parent_run_id"]` (when available)
+  - `metadata["sigil.framework.component_name"]` (serialized component identity)
+  - `metadata["sigil.framework.run_type"]` (`llm`, `chat`, `tool`, `chain`, `retriever`)
+  - `metadata["sigil.framework.tags"]` (normalized callback tags)
+  - `metadata["sigil.framework.retry_attempt"]` (when available)
+  - generation span attributes mirror low-cardinality framework metadata keys
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

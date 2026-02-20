@@ -1,4 +1,11 @@
-import type { GenerationRecorder, GenerationResult, Message, TokenUsage } from '../types.js';
+import { SpanKind, SpanStatusCode, trace, type Span, type Tracer } from '@opentelemetry/api';
+import type {
+  GenerationRecorder,
+  GenerationResult,
+  Message,
+  TokenUsage,
+  ToolExecutionRecorder,
+} from '../types.js';
 import type { SigilClient } from '../client.js';
 
 type AnyRecord = Record<string, unknown>;
@@ -8,6 +15,21 @@ type ProviderResolverFn = (context: {
   serialized?: unknown;
   invocationParams?: unknown;
 }) => string;
+
+const frameworkInstrumentationName = 'github.com/grafana/sigil/sdks/js/frameworks';
+const spanAttrOperationName = 'gen_ai.operation.name';
+const spanAttrConversationID = 'gen_ai.conversation.id';
+const spanAttrFrameworkName = 'sigil.framework.name';
+const spanAttrFrameworkSource = 'sigil.framework.source';
+const spanAttrFrameworkLanguage = 'sigil.framework.language';
+const spanAttrFrameworkRunID = 'sigil.framework.run_id';
+const spanAttrFrameworkParentRunID = 'sigil.framework.parent_run_id';
+const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
+const spanAttrFrameworkRunType = 'sigil.framework.run_type';
+const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
+const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
+const spanAttrErrorType = 'error.type';
+const spanAttrErrorCategory = 'error.category';
 
 export interface FrameworkHandlerOptions {
   agentName?: string;
@@ -27,8 +49,28 @@ interface RunState {
   outputChunks: string[];
 }
 
+interface ToolRunState {
+  recorder: ToolExecutionRecorder;
+  arguments?: unknown;
+  captureOutputs: boolean;
+}
+
+interface FrameworkContext {
+  conversationId: string;
+  metadata: Record<string, unknown>;
+  tags: Record<string, string>;
+  componentName: string;
+  parentRunId: string;
+  runType: string;
+  retryAttempt: number | undefined;
+  langgraphNode: string;
+}
+
 export class SigilFrameworkHandler {
   private readonly runs = new Map<string, RunState>();
+  private readonly toolRuns = new Map<string, ToolRunState>();
+  private readonly chainSpans = new Map<string, Span>();
+  private readonly retrieverSpans = new Map<string, Span>();
   private readonly agentName?: string;
   private readonly agentVersion?: string;
   private readonly providerResolver: 'auto' | ProviderResolverFn;
@@ -58,8 +100,11 @@ export class SigilFrameworkHandler {
     serialized: unknown,
     prompts: unknown,
     runId: string,
+    parentRunId?: string,
     extraParams?: AnyRecord,
-    callbackMetadata?: AnyRecord
+    callbackTags?: string[],
+    callbackMetadata?: AnyRecord,
+    runName?: string
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.runs.has(runKey)) {
@@ -71,10 +116,22 @@ export class SigilFrameworkHandler {
     const provider = resolveProvider(this.provider, this.providerResolver, modelName, serialized, invocationParams);
     const stream = isStreaming(invocationParams);
     const input = this.captureInputs ? mapPromptInputs(prompts) : [];
+    const context = this.buildFrameworkContext({
+      runId: runKey,
+      parentRunId,
+      runType: 'llm',
+      runName,
+      serialized,
+      invocationParams,
+      extraParams,
+      callbackTags,
+      callbackMetadata,
+    });
 
+    const payload = this.startPayload(runKey, provider, modelName, context);
     const recorder = stream
-      ? this.client.startStreamingGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata))
-      : this.client.startGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata));
+      ? this.client.startStreamingGeneration(payload)
+      : this.client.startGeneration(payload);
 
     this.runs.set(runKey, {
       recorder,
@@ -88,8 +145,11 @@ export class SigilFrameworkHandler {
     serialized: unknown,
     messages: unknown,
     runId: string,
+    parentRunId?: string,
     extraParams?: AnyRecord,
-    callbackMetadata?: AnyRecord
+    callbackTags?: string[],
+    callbackMetadata?: AnyRecord,
+    runName?: string
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.runs.has(runKey)) {
@@ -101,10 +161,22 @@ export class SigilFrameworkHandler {
     const provider = resolveProvider(this.provider, this.providerResolver, modelName, serialized, invocationParams);
     const stream = isStreaming(invocationParams);
     const input = this.captureInputs ? mapChatInputs(messages) : [];
+    const context = this.buildFrameworkContext({
+      runId: runKey,
+      parentRunId,
+      runType: 'chat',
+      runName,
+      serialized,
+      invocationParams,
+      extraParams,
+      callbackTags,
+      callbackMetadata,
+    });
 
+    const payload = this.startPayload(runKey, provider, modelName, context);
     const recorder = stream
-      ? this.client.startStreamingGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata))
-      : this.client.startGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata));
+      ? this.client.startStreamingGeneration(payload)
+      : this.client.startGeneration(payload);
 
     this.runs.set(runKey, {
       recorder,
@@ -195,40 +267,328 @@ export class SigilFrameworkHandler {
     }
   }
 
-  private startPayload(
-    runId: string,
-    provider: string,
-    modelName: string,
+  protected onToolStart(
     serialized: unknown,
-    invocationParams: AnyRecord | undefined,
-    extraParams: AnyRecord | undefined,
-    callbackMetadata: AnyRecord | undefined
-  ) {
-    const threadId = resolveFrameworkThreadId(serialized, invocationParams, extraParams, callbackMetadata);
-    const conversationId = threadId.length > 0 ? threadId : runId;
-    const metadata: Record<string, unknown> = {
-      ...this.extraMetadata,
-      'sigil.framework.run_id': runId,
-    };
-    if (threadId.length > 0) {
-      metadata['sigil.framework.thread_id'] = threadId;
+    input: unknown,
+    runId: string,
+    parentRunId?: string,
+    callbackTags?: string[],
+    callbackMetadata?: AnyRecord,
+    runName?: string,
+    extraParams?: AnyRecord
+  ): void {
+    const runKey = String(runId);
+    if (runKey.length === 0 || this.toolRuns.has(runKey)) {
+      return;
     }
 
+    const invocationParams = asRecord(extraParams?.invocation_params);
+    const context = this.buildFrameworkContext({
+      runId: runKey,
+      parentRunId,
+      runType: 'tool',
+      runName,
+      serialized,
+      invocationParams,
+      extraParams,
+      callbackTags,
+      callbackMetadata,
+    });
+    const toolName = resolveToolName(serialized, context.componentName);
+    const recorder = this.client.startToolExecution({
+      toolName,
+      toolDescription: resolveToolDescription(serialized),
+      conversationId: context.conversationId,
+      agentName: this.agentName,
+      agentVersion: this.agentVersion,
+      includeContent: this.captureInputs || this.captureOutputs,
+    });
+
+    this.toolRuns.set(runKey, {
+      recorder,
+      arguments: this.captureInputs ? resolveToolArguments(input, extraParams) : undefined,
+      captureOutputs: this.captureOutputs,
+    });
+  }
+
+  protected onToolEnd(output: unknown, runId: string): void {
+    const runState = this.toolRuns.get(String(runId));
+    if (runState === undefined) {
+      return;
+    }
+    this.toolRuns.delete(String(runId));
+
+    try {
+      const result: Record<string, unknown> = {};
+      if (runState.arguments !== undefined) {
+        result.arguments = runState.arguments;
+      }
+      if (runState.captureOutputs) {
+        result.result = output;
+      }
+      runState.recorder.setResult(result);
+    } finally {
+      runState.recorder.end();
+    }
+
+    const recorderError = runState.recorder.getError();
+    if (recorderError !== undefined) {
+      throw recorderError;
+    }
+  }
+
+  protected onToolError(error: unknown, runId: string): void {
+    const runState = this.toolRuns.get(String(runId));
+    if (runState === undefined) {
+      return;
+    }
+    this.toolRuns.delete(String(runId));
+
+    try {
+      runState.recorder.setCallError(error);
+    } finally {
+      runState.recorder.end();
+    }
+
+    const recorderError = runState.recorder.getError();
+    if (recorderError !== undefined) {
+      throw recorderError;
+    }
+  }
+
+  protected onChainStart(
+    serialized: unknown,
+    runId: string,
+    parentRunId?: string,
+    callbackTags?: string[],
+    callbackMetadata?: AnyRecord,
+    callbackRunType?: string,
+    runName?: string,
+    extraParams?: AnyRecord
+  ): void {
+    const runKey = String(runId);
+    if (runKey.length === 0 || this.chainSpans.has(runKey)) {
+      return;
+    }
+
+    const invocationParams = asRecord(extraParams?.invocation_params);
+    const context = this.buildFrameworkContext({
+      runId: runKey,
+      parentRunId,
+      runType: notEmpty(callbackRunType) ? String(callbackRunType).trim() : 'chain',
+      runName,
+      serialized,
+      invocationParams,
+      extraParams,
+      callbackTags,
+      callbackMetadata,
+    });
+    const spanName = notEmpty(context.componentName)
+      ? `${this.frameworkName}.chain ${context.componentName}`
+      : `${this.frameworkName}.chain`;
+    const span = this.getFrameworkTracer().startSpan(spanName, { kind: SpanKind.INTERNAL });
+    this.setFrameworkSpanAttributes(span, context, 'framework_chain');
+    this.chainSpans.set(runKey, span);
+  }
+
+  protected onChainEnd(runId: string): void {
+    this.endFrameworkSpan(this.chainSpans, runId, undefined);
+  }
+
+  protected onChainError(error: unknown, runId: string): void {
+    this.endFrameworkSpan(this.chainSpans, runId, error);
+  }
+
+  protected onRetrieverStart(
+    serialized: unknown,
+    runId: string,
+    parentRunId?: string,
+    callbackTags?: string[],
+    callbackMetadata?: AnyRecord,
+    runName?: string,
+    extraParams?: AnyRecord
+  ): void {
+    const runKey = String(runId);
+    if (runKey.length === 0 || this.retrieverSpans.has(runKey)) {
+      return;
+    }
+
+    const invocationParams = asRecord(extraParams?.invocation_params);
+    const context = this.buildFrameworkContext({
+      runId: runKey,
+      parentRunId,
+      runType: 'retriever',
+      runName,
+      serialized,
+      invocationParams,
+      extraParams,
+      callbackTags,
+      callbackMetadata,
+    });
+    const spanName = notEmpty(context.componentName)
+      ? `${this.frameworkName}.retriever ${context.componentName}`
+      : `${this.frameworkName}.retriever`;
+    const span = this.getFrameworkTracer().startSpan(spanName, { kind: SpanKind.INTERNAL });
+    this.setFrameworkSpanAttributes(span, context, 'framework_retriever');
+    this.retrieverSpans.set(runKey, span);
+  }
+
+  protected onRetrieverEnd(runId: string): void {
+    this.endFrameworkSpan(this.retrieverSpans, runId, undefined);
+  }
+
+  protected onRetrieverError(error: unknown, runId: string): void {
+    this.endFrameworkSpan(this.retrieverSpans, runId, error);
+  }
+
+  private startPayload(runId: string, provider: string, modelName: string, context: FrameworkContext) {
     return {
-      conversationId,
+      conversationId: context.conversationId,
       agentName: this.agentName,
       agentVersion: this.agentVersion,
       model: {
         provider,
         name: modelName,
       },
-      tags: {
-        ...this.extraTags,
-        'sigil.framework.name': this.frameworkName,
-        'sigil.framework.source': 'handler',
-        'sigil.framework.language': this.frameworkLanguage,
-      },
+      tags: context.tags,
+      metadata: context.metadata,
+    };
+  }
+
+  private getFrameworkTracer(): Tracer {
+    const internalClient = this.client as unknown as { tracer?: Tracer };
+    return internalClient.tracer ?? trace.getTracer(frameworkInstrumentationName);
+  }
+
+  private setFrameworkSpanAttributes(span: Span, context: FrameworkContext, operationName: string): void {
+    span.setAttribute(spanAttrOperationName, operationName);
+    span.setAttribute(spanAttrFrameworkName, this.frameworkName);
+    span.setAttribute(spanAttrFrameworkSource, 'handler');
+    span.setAttribute(spanAttrFrameworkLanguage, this.frameworkLanguage);
+    span.setAttribute(spanAttrFrameworkRunID, asString(context.metadata[spanAttrFrameworkRunID]));
+    if (notEmpty(context.conversationId)) {
+      span.setAttribute(spanAttrConversationID, context.conversationId);
+    }
+    if (notEmpty(context.parentRunId)) {
+      span.setAttribute(spanAttrFrameworkParentRunID, context.parentRunId);
+    }
+    if (notEmpty(context.componentName)) {
+      span.setAttribute(spanAttrFrameworkComponentName, context.componentName);
+    }
+    if (notEmpty(context.runType)) {
+      span.setAttribute(spanAttrFrameworkRunType, context.runType);
+    }
+    if (context.retryAttempt !== undefined) {
+      span.setAttribute(spanAttrFrameworkRetryAttempt, context.retryAttempt);
+    }
+    if (notEmpty(context.langgraphNode)) {
+      span.setAttribute(spanAttrFrameworkLangGraphNode, context.langgraphNode);
+    }
+  }
+
+  private endFrameworkSpan(
+    spans: Map<string, Span>,
+    runId: string,
+    error: unknown
+  ): void {
+    const runKey = String(runId);
+    const span = spans.get(runKey);
+    if (span === undefined) {
+      return;
+    }
+    spans.delete(runKey);
+    if (error === undefined) {
+      span.setStatus({ code: SpanStatusCode.OK });
+      span.end();
+      return;
+    }
+
+    span.setAttribute(spanAttrErrorType, 'framework_error');
+    span.setAttribute(spanAttrErrorCategory, 'sdk_error');
+    span.recordException(asError(error));
+    span.setStatus({ code: SpanStatusCode.ERROR, message: asError(error).message });
+    span.end();
+  }
+
+  private buildFrameworkContext(params: {
+    runId: string;
+    parentRunId?: string;
+    runType: string;
+    runName?: string;
+    serialized: unknown;
+    invocationParams?: AnyRecord;
+    extraParams?: AnyRecord;
+    callbackTags?: string[];
+    callbackMetadata?: AnyRecord;
+  }): FrameworkContext {
+    const threadId = resolveFrameworkThreadId(
+      params.serialized,
+      params.invocationParams,
+      params.extraParams,
+      params.callbackMetadata
+    );
+    const conversationId = threadId.length > 0 ? threadId : params.runId;
+    const componentName = resolveComponentName(
+      params.serialized,
+      params.callbackMetadata,
+      params.extraParams,
+      params.runName
+    );
+    const retryAttempt = resolveFrameworkRetryAttempt(
+      params.callbackMetadata,
+      params.extraParams,
+      params.invocationParams,
+      params.serialized
+    );
+    const parentRunId = normalizeRunID(params.parentRunId);
+    const runType = params.runType.trim();
+    const frameworkTags = normalizeFrameworkTags(
+      params.callbackTags ?? read(params.extraParams, 'tags') ?? read(params.callbackMetadata, 'tags')
+    );
+    const langgraphNode = this.frameworkName === 'langgraph'
+      ? resolveLangGraphNode(params.callbackMetadata, params.extraParams, params.invocationParams, params.serialized)
+      : '';
+
+    const metadata: Record<string, unknown> = {
+      ...this.extraMetadata,
+      [spanAttrFrameworkRunID]: params.runId,
+      [spanAttrFrameworkRunType]: runType,
+    };
+    if (threadId.length > 0) {
+      metadata['sigil.framework.thread_id'] = threadId;
+    }
+    if (parentRunId.length > 0) {
+      metadata[spanAttrFrameworkParentRunID] = parentRunId;
+    }
+    if (componentName.length > 0) {
+      metadata[spanAttrFrameworkComponentName] = componentName;
+    }
+    if (frameworkTags.length > 0) {
+      metadata['sigil.framework.tags'] = frameworkTags;
+    }
+    if (retryAttempt !== undefined) {
+      metadata[spanAttrFrameworkRetryAttempt] = retryAttempt;
+    }
+    if (langgraphNode.length > 0) {
+      metadata[spanAttrFrameworkLangGraphNode] = langgraphNode;
+    }
+
+    const tags: Record<string, string> = {
+      ...this.extraTags,
+      'sigil.framework.name': this.frameworkName,
+      'sigil.framework.source': 'handler',
+      'sigil.framework.language': this.frameworkLanguage,
+    };
+
+    return {
+      conversationId,
       metadata,
+      tags,
+      componentName,
+      parentRunId,
+      runType,
+      retryAttempt,
+      langgraphNode,
     };
   }
 }
@@ -334,6 +694,166 @@ function threadIdFromPayload(payload: unknown): string {
     }
   }
   return '';
+}
+
+function resolveComponentName(
+  serialized: unknown,
+  callbackMetadata: AnyRecord | undefined,
+  extraParams: AnyRecord | undefined,
+  runName: string | undefined
+): string {
+  const candidates = [
+    asString(read(serialized, 'name')),
+    idPath(read(serialized, 'id')),
+    idPath(read(serialized, 'lc_id')),
+    asString(read(read(serialized, 'kwargs'), 'name')),
+    asString(read(callbackMetadata, 'component_name')),
+    asString(read(extraParams, 'component_name')),
+    asString(runName),
+  ];
+  for (const candidate of candidates) {
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function resolveLangGraphNode(
+  callbackMetadata: AnyRecord | undefined,
+  extraParams: AnyRecord | undefined,
+  invocationParams: AnyRecord | undefined,
+  serialized: unknown
+): string {
+  for (const payload of [callbackMetadata, extraParams, invocationParams, asRecord(serialized)]) {
+    const candidate = langGraphNodeFromPayload(payload);
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function langGraphNodeFromPayload(payload: unknown): string {
+  const candidates = [
+    asString(read(payload, 'langgraph_node')),
+    asString(read(payload, 'langgraph_node_name')),
+    asString(read(payload, 'node_name')),
+    asString(read(payload, 'node')),
+    asString(read(read(payload, 'metadata'), 'langgraph_node')),
+    asString(read(read(payload, 'metadata'), 'langgraph_node_name')),
+    asString(read(read(payload, 'configurable'), 'langgraph_node')),
+    asString(read(read(payload, 'configurable'), 'langgraph_node_name')),
+    asString(read(read(read(payload, 'config'), 'metadata'), 'langgraph_node')),
+    asString(read(read(read(payload, 'config'), 'configurable'), 'langgraph_node')),
+    asString(read(read(read(payload, 'config'), 'configurable'), '__pregel_node')),
+  ];
+  for (const candidate of candidates) {
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function resolveFrameworkRetryAttempt(...payloads: unknown[]): number | undefined {
+  for (const payload of payloads) {
+    const value = retryAttemptFromPayload(payload);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function retryAttemptFromPayload(payload: unknown): number | undefined {
+  const candidates = [
+    read(payload, 'retry_attempt'),
+    read(payload, 'retryAttempt'),
+    read(payload, 'attempt'),
+    read(payload, 'retry'),
+    read(read(payload, 'metadata'), 'retry_attempt'),
+    read(read(payload, 'metadata'), 'retryAttempt'),
+    read(read(payload, 'configurable'), 'retry_attempt'),
+    read(read(payload, 'configurable'), 'retryAttempt'),
+  ];
+  for (const candidate of candidates) {
+    const parsed = asMaybeInt(candidate);
+    if (parsed !== undefined) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function normalizeFrameworkTags(raw: unknown): string[] {
+  const values = Array.isArray(raw) ? raw : [raw];
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    output.push(trimmed);
+  }
+  return output;
+}
+
+function normalizeRunID(runId: string | undefined): string {
+  if (typeof runId !== 'string') {
+    return '';
+  }
+  return runId.trim();
+}
+
+function resolveToolName(serialized: unknown, componentName: string): string {
+  const candidates = [
+    asString(read(serialized, 'name')),
+    asString(read(serialized, 'tool_name')),
+    componentName,
+    'framework_tool',
+  ];
+  for (const candidate of candidates) {
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return 'framework_tool';
+}
+
+function resolveToolDescription(serialized: unknown): string | undefined {
+  const description = asString(read(serialized, 'description'));
+  if (description.length > 0) {
+    return description;
+  }
+  return undefined;
+}
+
+function resolveToolArguments(input: unknown, extraParams: AnyRecord | undefined): unknown {
+  const explicitInputs = read(extraParams, 'inputs');
+  if (explicitInputs !== undefined) {
+    return explicitInputs;
+  }
+  if (typeof input === 'string') {
+    return input.trim();
+  }
+  return input;
+}
+
+function idPath(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return '';
+  }
+  const parts = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return parts.join('.');
 }
 
 function mapPromptInputs(prompts: unknown): Message[] {
@@ -551,6 +1071,30 @@ function asInt(value: unknown): number {
   return 0;
 }
 
+function asMaybeInt(value: unknown): number | undefined {
+  if (value === undefined || value === null || typeof value === 'boolean') {
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      return undefined;
+    }
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(parsed)) {
+      return undefined;
+    }
+    return parsed;
+  }
+  return undefined;
+}
+
 function asBoolean(value: unknown): boolean {
   if (typeof value === 'boolean') {
     return value;
@@ -565,6 +1109,20 @@ function asBoolean(value: unknown): boolean {
   return false;
 }
 
+function asError(value: unknown): Error {
+  if (value instanceof Error) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return new Error(value);
+  }
+  return new Error('framework callback error');
+}
+
 function isRecord(value: unknown): value is AnyRecord {
   return typeof value === 'object' && value !== null;
+}
+
+function notEmpty(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
 }

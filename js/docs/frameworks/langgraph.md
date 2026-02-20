@@ -96,6 +96,9 @@ When `thread_id` is present, the handler records:
 - `handleLLMNewToken` sets first-token timestamp and accumulates streamed output.
 - `handleLLMEnd` maps output + usage and ends recorder.
 - `handleLLMError` sets call error and ends recorder.
+- `handleToolStart` / `handleToolEnd` / `handleToolError` maps into `startToolExecution(...)`.
+- `handleChainStart` / `handleChainEnd` / `handleChainError` emits framework chain spans.
+- `handleRetrieverStart` / `handleRetrieverEnd` / `handleRetrieverError` emits framework retriever spans.
 
 Framework tags and metadata are always injected:
 
@@ -104,6 +107,13 @@ Framework tags and metadata are always injected:
 - `sigil.framework.language=javascript`
 - `metadata["sigil.framework.run_id"]=<framework run id>`
 - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+- `metadata["sigil.framework.parent_run_id"]=<parent run id>` (when available)
+- `metadata["sigil.framework.component_name"]=<serialized component name>`
+- `metadata["sigil.framework.run_type"]=<llm|chat|tool|chain|retriever>`
+- `metadata["sigil.framework.tags"]=<normalized callback tags>`
+- `metadata["sigil.framework.retry_attempt"]=<attempt>` (when available)
+- `metadata["sigil.framework.langgraph.node"]=<node id>` (when callback context exposes it)
+- generation span attributes mirror low-cardinality framework metadata keys
 
 Provider resolver behavior:
 

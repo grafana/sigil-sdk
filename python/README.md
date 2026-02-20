@@ -48,8 +48,14 @@ Both handlers inject framework tags/metadata on recorded generations:
 - `sigil.framework.language=python`
 - `metadata["sigil.framework.run_id"]`
 - `metadata["sigil.framework.thread_id"]` (when present in callback metadata/config)
+- `metadata["sigil.framework.parent_run_id"]` (when available)
+- `metadata["sigil.framework.component_name"]`
+- `metadata["sigil.framework.run_type"]`
+- `metadata["sigil.framework.tags"]`
+- `metadata["sigil.framework.retry_attempt"]` (when available)
+- `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
 
-When present in generation metadata, these framework IDs are also copied onto generation span attributes.
+When present in generation metadata, low-cardinality framework keys are also copied onto generation span attributes.
 
 For LangGraph persistence, pass `configurable.thread_id` and reuse it across invocations:
 

@@ -429,6 +429,11 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
                 "sigil.gen_ai.request.thinking.budget_tokens": 4096,
                 "sigil.framework.run_id": "framework-run-1",
                 "sigil.framework.thread_id": "framework-thread-1",
+                "sigil.framework.parent_run_id": "framework-parent-1",
+                "sigil.framework.component_name": "ChatOpenAI",
+                "sigil.framework.run_type": "chat",
+                "sigil.framework.retry_attempt": 3,
+                "sigil.framework.langgraph.node": "answer_node",
                 "sigil.sdk.name": "user-value",
             },
             stop_reason="end_turn",
@@ -446,6 +451,11 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert rec.last_generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 4096
         assert rec.last_generation.metadata["sigil.framework.run_id"] == "framework-run-1"
         assert rec.last_generation.metadata["sigil.framework.thread_id"] == "framework-thread-1"
+        assert rec.last_generation.metadata["sigil.framework.parent_run_id"] == "framework-parent-1"
+        assert rec.last_generation.metadata["sigil.framework.component_name"] == "ChatOpenAI"
+        assert rec.last_generation.metadata["sigil.framework.run_type"] == "chat"
+        assert rec.last_generation.metadata["sigil.framework.retry_attempt"] == 3
+        assert rec.last_generation.metadata["sigil.framework.langgraph.node"] == "answer_node"
         assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
 
         span = span_exporter.get_finished_spans()[-1]
@@ -457,6 +467,11 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert span.attributes.get("sigil.gen_ai.request.thinking.budget_tokens") == 4096
         assert span.attributes.get("sigil.framework.run_id") == "framework-run-1"
         assert span.attributes.get("sigil.framework.thread_id") == "framework-thread-1"
+        assert span.attributes.get("sigil.framework.parent_run_id") == "framework-parent-1"
+        assert span.attributes.get("sigil.framework.component_name") == "ChatOpenAI"
+        assert span.attributes.get("sigil.framework.run_type") == "chat"
+        assert span.attributes.get("sigil.framework.retry_attempt") == 3
+        assert span.attributes.get("sigil.framework.langgraph.node") == "answer_node"
         assert span.attributes.get("sigil.sdk.name") == "sdk-python"
         assert span.attributes.get("gen_ai.response.finish_reasons") == ("end_turn",)
     finally:

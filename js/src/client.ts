@@ -55,6 +55,11 @@ const spanAttrGenerationID = 'sigil.generation.id';
 const spanAttrSDKName = 'sigil.sdk.name';
 const spanAttrFrameworkRunID = 'sigil.framework.run_id';
 const spanAttrFrameworkThreadID = 'sigil.framework.thread_id';
+const spanAttrFrameworkParentRunID = 'sigil.framework.parent_run_id';
+const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
+const spanAttrFrameworkRunType = 'sigil.framework.run_type';
+const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
+const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
 const spanAttrConversationID = 'gen_ai.conversation.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
@@ -1187,6 +1192,26 @@ function setGenerationSpanAttributes(
   if (frameworkThreadId !== undefined) {
     span.setAttribute(spanAttrFrameworkThreadID, frameworkThreadId);
   }
+  const frameworkParentRunId = metadataStringValue(generation.metadata, spanAttrFrameworkParentRunID);
+  if (frameworkParentRunId !== undefined) {
+    span.setAttribute(spanAttrFrameworkParentRunID, frameworkParentRunId);
+  }
+  const frameworkComponentName = metadataStringValue(generation.metadata, spanAttrFrameworkComponentName);
+  if (frameworkComponentName !== undefined) {
+    span.setAttribute(spanAttrFrameworkComponentName, frameworkComponentName);
+  }
+  const frameworkRunType = metadataStringValue(generation.metadata, spanAttrFrameworkRunType);
+  if (frameworkRunType !== undefined) {
+    span.setAttribute(spanAttrFrameworkRunType, frameworkRunType);
+  }
+  const frameworkRetryAttempt = metadataIntValue(generation.metadata, spanAttrFrameworkRetryAttempt);
+  if (frameworkRetryAttempt !== undefined) {
+    span.setAttribute(spanAttrFrameworkRetryAttempt, frameworkRetryAttempt);
+  }
+  const frameworkLangGraphNode = metadataStringValue(generation.metadata, spanAttrFrameworkLangGraphNode);
+  if (frameworkLangGraphNode !== undefined) {
+    span.setAttribute(spanAttrFrameworkLangGraphNode, frameworkLangGraphNode);
+  }
   if (notEmpty(generation.responseId)) {
     span.setAttribute(spanAttrResponseID, generation.responseId);
   }
@@ -1558,6 +1583,34 @@ function metadataStringValue(metadata: Record<string, unknown> | undefined, key:
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function metadataIntValue(metadata: Record<string, unknown> | undefined, key: string): number | undefined {
+  if (metadata === undefined) {
+    return undefined;
+  }
+  const value = metadata[key];
+  if (value === undefined || value === null || typeof value === 'boolean') {
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      return undefined;
+    }
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(parsed)) {
+      return undefined;
+    }
+    return parsed;
+  }
+  return undefined;
 }
 
 function countToolCallParts(messages: Message[]): number {

@@ -6,6 +6,9 @@ import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_langchain import SigilAsyncLangChainHandler, SigilLangChainHandler
@@ -28,9 +31,10 @@ class _CapturingExporter:
         return
 
 
-def _new_client(exporter: _CapturingExporter) -> Client:
+def _new_client(exporter: _CapturingExporter, tracer=None) -> Client:
     return Client(
         ClientConfig(
+            tracer=tracer,
             generation_export=GenerationExportConfig(batch_size=10, flush_interval=timedelta(seconds=60)),
             generation_exporter=exporter,
         )
@@ -43,6 +47,7 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
 
     try:
         run_id = uuid4()
+        parent_run_id = uuid4()
         handler = SigilLangChainHandler(
             client=client,
             agent_name="agent-langchain",
@@ -56,7 +61,9 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             {"name": "ChatOpenAI"},
             [[{"type": "human", "content": "hello"}]],
             run_id=run_id,
-            invocation_params={"model": "gpt-5"},
+            parent_run_id=parent_run_id,
+            tags=["prod", "blue"],
+            invocation_params={"model": "gpt-5", "retry_attempt": 2},
             metadata={"thread_id": "chain-thread-42"},
         )
         handler.on_llm_end(
@@ -87,6 +94,11 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
         assert generation.conversation_id == "chain-thread-42"
         assert generation.metadata["sigil.framework.run_id"] == str(run_id)
         assert generation.metadata["sigil.framework.thread_id"] == "chain-thread-42"
+        assert generation.metadata["sigil.framework.parent_run_id"] == str(parent_run_id)
+        assert generation.metadata["sigil.framework.component_name"] == "ChatOpenAI"
+        assert generation.metadata["sigil.framework.run_type"] == "chat"
+        assert generation.metadata["sigil.framework.retry_attempt"] == 2
+        assert generation.metadata["sigil.framework.tags"] == ["prod", "blue"]
         assert generation.metadata["seed"] == 7
         assert generation.usage.input_tokens == 10
         assert generation.usage.output_tokens == 5
@@ -191,3 +203,69 @@ def test_langchain_async_handler_records_generation() -> None:
         assert generation.model.provider == "openai"
     finally:
         client.shutdown()
+
+
+def test_langchain_tool_chain_and_retriever_callbacks_emit_spans() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        handler = SigilLangChainHandler(client=client)
+        parent_run_id = uuid4()
+
+        tool_run_id = uuid4()
+        handler.on_tool_start(
+            {"name": "weather", "description": "Get weather"},
+            '{"city":"Paris"}',
+            run_id=tool_run_id,
+            parent_run_id=parent_run_id,
+            metadata={"thread_id": "chain-thread-42"},
+        )
+        handler.on_tool_end({"temp_c": 18}, run_id=tool_run_id)
+
+        chain_run_id = uuid4()
+        handler.on_chain_start(
+            {"name": "PlanChain"},
+            {},
+            run_id=chain_run_id,
+            parent_run_id=parent_run_id,
+            tags=["workflow"],
+            metadata={"thread_id": "chain-thread-42"},
+            run_type="chain",
+        )
+        handler.on_chain_end({}, run_id=chain_run_id)
+
+        retriever_run_id = uuid4()
+        handler.on_retriever_start(
+            {"name": "VectorRetriever"},
+            "where is my data",
+            run_id=retriever_run_id,
+            parent_run_id=parent_run_id,
+            metadata={"thread_id": "chain-thread-42"},
+        )
+        handler.on_retriever_error(RuntimeError("retriever failed"), run_id=retriever_run_id)
+
+        spans = span_exporter.get_finished_spans()
+        tool_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "execute_tool")
+        chain_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "framework_chain")
+        retriever_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "framework_retriever")
+
+        assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
+        assert tool_span.attributes.get("gen_ai.conversation.id") == "chain-thread-42"
+
+        assert chain_span.attributes.get("sigil.framework.run_type") == "chain"
+        assert chain_span.attributes.get("sigil.framework.component_name") == "PlanChain"
+        assert chain_span.attributes.get("sigil.framework.parent_run_id") == str(parent_run_id)
+        assert chain_span.status.status_code.name == "OK"
+
+        assert retriever_span.attributes.get("sigil.framework.run_type") == "retriever"
+        assert retriever_span.attributes.get("sigil.framework.component_name") == "VectorRetriever"
+        assert retriever_span.status.status_code.name == "ERROR"
+        assert retriever_span.attributes.get("error.type") == "framework_error"
+    finally:
+        client.shutdown()
+        provider.shutdown()
