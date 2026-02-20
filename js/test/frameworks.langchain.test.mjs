@@ -102,6 +102,47 @@ test('langchain handler records stream mode and token fallback output', async ()
   assert.equal(generation.output[0].content, 'hello world');
 });
 
+test('langchain handler records first token timestamp once per run', async () => {
+  const defaults = defaultConfig();
+  const client = new SigilClient({
+    generationExport: {
+      ...defaults.generationExport,
+      batchSize: 10,
+      flushIntervalMs: 60_000,
+    },
+    generationExporter: new CapturingExporter(),
+  });
+
+  try {
+    const handler = new SigilLangChainHandler(client);
+    await handler.handleLLMStart(
+      { kwargs: { model: 'gpt-5' } },
+      ['stream this'],
+      'run-ttft',
+      undefined,
+      { invocation_params: { model: 'gpt-5', stream: true } }
+    );
+
+    const runState = handler.runs.get('run-ttft');
+    assert.ok(runState);
+
+    let firstTokenCalls = 0;
+    const originalSetFirstTokenAt = runState.recorder.setFirstTokenAt.bind(runState.recorder);
+    runState.recorder.setFirstTokenAt = (timestamp) => {
+      firstTokenCalls += 1;
+      originalSetFirstTokenAt(timestamp);
+    };
+
+    await handler.handleLLMNewToken('hello', undefined, 'run-ttft');
+    await handler.handleLLMNewToken(' world', undefined, 'run-ttft');
+    await handler.handleLLMEnd({ llm_output: { model_name: 'gpt-5' } }, 'run-ttft');
+
+    assert.equal(firstTokenCalls, 1);
+  } finally {
+    await client.shutdown();
+  }
+});
+
 test('langchain provider mapping covers openai anthopic gemini and fallback', async () => {
   const providers = [];
 

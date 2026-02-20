@@ -47,6 +47,7 @@ interface RunState {
   input: Message[];
   captureOutputs: boolean;
   outputChunks: string[];
+  firstTokenRecorded: boolean;
 }
 
 interface ToolRunState {
@@ -138,6 +139,7 @@ export class SigilFrameworkHandler {
       input,
       captureOutputs: this.captureOutputs,
       outputChunks: [],
+      firstTokenRecorded: false,
     });
   }
 
@@ -183,6 +185,7 @@ export class SigilFrameworkHandler {
       input,
       captureOutputs: this.captureOutputs,
       outputChunks: [],
+      firstTokenRecorded: false,
     });
   }
 
@@ -200,7 +203,10 @@ export class SigilFrameworkHandler {
       runState.outputChunks.push(token);
     }
 
-    runState.recorder.setFirstTokenAt(new Date());
+    if (!runState.firstTokenRecorded) {
+      runState.firstTokenRecorded = true;
+      runState.recorder.setFirstTokenAt(new Date());
+    }
   }
 
   protected onLLMEnd(output: unknown, runId: string): void {

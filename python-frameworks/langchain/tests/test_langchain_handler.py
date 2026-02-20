@@ -10,6 +10,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
+from sigil_sdk.client import GenerationRecorder
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_langchain import SigilAsyncLangChainHandler, SigilLangChainHandler
 
@@ -133,6 +134,39 @@ def test_langchain_stream_lifecycle_uses_stream_mode_and_chunk_fallback() -> Non
         assert generation.model.provider == "anthropic"
         assert generation.output[0].parts[0].text == "hello world"
     finally:
+        client.shutdown()
+
+
+def test_langchain_stream_records_first_token_timestamp_once() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    first_token_calls = 0
+    original_set_first_token_at = GenerationRecorder.set_first_token_at
+
+    def _tracking_set_first_token_at(self, first_token_at):
+        nonlocal first_token_calls
+        first_token_calls += 1
+        return original_set_first_token_at(self, first_token_at)
+
+    GenerationRecorder.set_first_token_at = _tracking_set_first_token_at
+
+    try:
+        run_id = uuid4()
+        handler = SigilLangChainHandler(client=client)
+
+        handler.on_llm_start(
+            {"kwargs": {"model": "gpt-5"}},
+            ["stream this"],
+            run_id=run_id,
+            invocation_params={"stream": True, "model": "gpt-5"},
+        )
+        handler.on_llm_new_token("hello", run_id=run_id)
+        handler.on_llm_new_token(" world", run_id=run_id)
+        handler.on_llm_end({"llm_output": {"model_name": "gpt-5"}}, run_id=run_id)
+
+        assert first_token_calls == 1
+    finally:
+        GenerationRecorder.set_first_token_at = original_set_first_token_at
         client.shutdown()
 
 
