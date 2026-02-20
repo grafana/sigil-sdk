@@ -7,6 +7,8 @@ import os
 import random
 import signal
 import time
+from typing import Any
+from uuid import uuid4
 
 from sigil_sdk import (
     AuthConfig,
@@ -68,6 +70,16 @@ except ModuleNotFoundError as openai_import_error:  # pragma: no cover - exercis
     ChatCompletionsStreamSummary = OpenAIOptions = ResponsesStreamSummary = object  # type: ignore[assignment]
     chat = _MissingProviderNamespace("sigil_sdk_openai", openai_import_error)
     responses = _MissingProviderNamespace("sigil_sdk_openai", openai_import_error)
+
+try:
+    from sigil_sdk_langchain import SigilLangChainHandler
+except ModuleNotFoundError as langchain_import_error:  # pragma: no cover - exercised by sdk-core tests
+    SigilLangChainHandler = _MissingProviderNamespace("sigil_sdk_langchain", langchain_import_error)  # type: ignore[assignment]
+
+try:
+    from sigil_sdk_langgraph import SigilLangGraphHandler
+except ModuleNotFoundError as langgraph_import_error:  # pragma: no cover - exercised by sdk-core tests
+    SigilLangGraphHandler = _MissingProviderNamespace("sigil_sdk_langgraph", langgraph_import_error)  # type: ignore[assignment]
 
 LANGUAGE = "python"
 SOURCES = ("openai", "anthropic", "gemini", "mistral")
@@ -739,6 +751,91 @@ def emit_for_source(client: Client, cfg: RuntimeConfig, source: str, mode: str, 
     emit_custom_sync(client, cfg, context)
 
 
+def _framework_model_for_source(source: str) -> str:
+    if source == "openai":
+        return "gpt-5"
+    if source == "anthropic":
+        return "claude-sonnet-4-5"
+    if source == "gemini":
+        return "gemini-2.5-pro"
+    return "custom-framework-model"
+
+
+def _emit_framework_handler(
+    handler_cls: Any,
+    client: Client,
+    source: str,
+    mode: str,
+    context: EmitContext,
+) -> None:
+    model_name = _framework_model_for_source(source)
+    run_id = uuid4()
+    invocation_params = {"model": model_name, "stream": mode == "STREAM"}
+    handler = handler_cls(
+        client=client,
+        provider_resolver="auto",
+        agent_name=context.agent_name,
+        agent_version=context.agent_version,
+        extra_tags=context.tags,
+        extra_metadata=context.metadata,
+    )
+
+    if mode == "STREAM":
+        handler.on_llm_start(
+            {"kwargs": {"model": model_name}},
+            [f"stream framework status {context.turn}"],
+            run_id=run_id,
+            invocation_params=invocation_params,
+        )
+        handler.on_llm_new_token("framework ", run_id=run_id)
+        handler.on_llm_new_token(f"{context.turn}", run_id=run_id)
+        handler.on_llm_end(
+            {
+                "llm_output": {
+                    "model_name": model_name,
+                    "token_usage": {
+                        "prompt_tokens": 12 + (context.turn % 4),
+                        "completion_tokens": 6 + (context.turn % 3),
+                    },
+                }
+            },
+            run_id=run_id,
+        )
+        return
+
+    handler.on_chat_model_start(
+        {"name": "ChatModel"},
+        [[{"type": "human", "content": f"summarize framework path {context.turn}"}]],
+        run_id=run_id,
+        invocation_params=invocation_params,
+    )
+    handler.on_llm_end(
+        {
+            "generations": [[{"text": f"framework output {context.turn}"}]],
+            "llm_output": {
+                "model_name": model_name,
+                "finish_reason": "stop",
+                "token_usage": {
+                    "prompt_tokens": 12 + (context.turn % 4),
+                    "completion_tokens": 6 + (context.turn % 3),
+                    "total_tokens": 18 + (context.turn % 7),
+                },
+            },
+        },
+        run_id=run_id,
+    )
+
+
+def emit_frameworks(client: Client, source: str, mode: str, context: EmitContext) -> None:
+    if source not in {"openai", "anthropic", "gemini"}:
+        return
+
+    if callable(SigilLangChainHandler):
+        _emit_framework_handler(SigilLangChainHandler, client, source, mode, context)
+    if callable(SigilLangGraphHandler):
+        _emit_framework_handler(SigilLangGraphHandler, client, source, mode, context)
+
+
 def _request_stop(_signum: int, _frame: object) -> None:
     global STOP_REQUESTED
     STOP_REQUESTED = True
@@ -792,6 +889,7 @@ def run_emitter(config: RuntimeConfig | None = None) -> None:
                 )
 
                 emit_for_source(client, cfg, source, mode, context)
+                emit_frameworks(client, source, mode, context)
                 thread.turn += 1
 
             cycles += 1

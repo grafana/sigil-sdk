@@ -143,3 +143,51 @@ def test_gemini_stream_uses_models_namespace_and_responses_summary(monkeypatch) 
     options = calls["options"]
     assert isinstance(options, dict)
     assert options["conversation_id"] == "conv-gemini"
+
+
+def test_emit_frameworks_invokes_langchain_and_langgraph_handlers(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class _FakeHandler:
+        def __init__(self, *, client, **kwargs):
+            del client
+            del kwargs
+
+        def on_chat_model_start(self, _serialized, _messages, *, run_id, **_kwargs):
+            calls.append(("start", str(run_id)))
+
+        def on_llm_end(self, _response, *, run_id, **_kwargs):
+            calls.append(("end", str(run_id)))
+
+    monkeypatch.setattr(emitter, "SigilLangChainHandler", _FakeHandler)
+    monkeypatch.setattr(emitter, "SigilLangGraphHandler", _FakeHandler)
+
+    context = emitter.EmitContext(
+        conversation_id="conv-framework",
+        turn=3,
+        slot=0,
+        agent_name="devex-python-openai-planner",
+        agent_version="devex-1",
+        tags={"sigil.devex.provider": "openai"},
+        metadata={"provider_shape": "framework"},
+    )
+
+    emitter.emit_frameworks(object(), "openai", "SYNC", context)
+    assert len(calls) == 4
+
+
+def test_emit_frameworks_skips_non_provider_sources(monkeypatch) -> None:
+    monkeypatch.setattr(emitter, "SigilLangChainHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+    monkeypatch.setattr(emitter, "SigilLangGraphHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+
+    context = emitter.EmitContext(
+        conversation_id="conv-framework",
+        turn=3,
+        slot=0,
+        agent_name="devex-python-mistral-planner",
+        agent_version="devex-1",
+        tags={"sigil.devex.provider": "mistral"},
+        metadata={"provider_shape": "framework"},
+    )
+
+    emitter.emit_frameworks(object(), "mistral", "SYNC", context)

@@ -5,12 +5,23 @@ const LANGUAGE = 'javascript';
 const SOURCES = ['openai', 'anthropic', 'gemini', 'mistral'];
 const PERSONAS = ['planner', 'retriever', 'executor'];
 let sdkModulePromise;
+let frameworkModulePromise;
 
 async function loadSdkModule() {
   if (sdkModulePromise === undefined) {
     sdkModulePromise = import('../dist/index.js');
   }
   return sdkModulePromise;
+}
+
+async function loadFrameworkModules() {
+  if (frameworkModulePromise === undefined) {
+    frameworkModulePromise = Promise.all([
+      import('../dist/frameworks/langchain/index.js'),
+      import('../dist/frameworks/langgraph/index.js'),
+    ]).then(([langchain, langgraph]) => ({ langchain, langgraph }));
+  }
+  return frameworkModulePromise;
 }
 
 export function intFromEnv(key, defaultValue) {
@@ -630,8 +641,91 @@ export async function emitSource(sdk, client, cfg, source, mode, context) {
   await emitCustomSync(client, cfg, context);
 }
 
+function frameworkModelForSource(source) {
+  switch (source) {
+    case 'openai':
+      return 'gpt-5';
+    case 'anthropic':
+      return 'claude-sonnet-4-5';
+    case 'gemini':
+      return 'gemini-2.5-pro';
+    default:
+      return 'custom-framework-model';
+  }
+}
+
+async function emitFrameworkHandler(HandlerClass, client, source, mode, context) {
+  const model = frameworkModelForSource(source);
+  const runID = `run-${source}-${context.turn}-${Math.trunc(Math.random() * 100_000)}`;
+  const handler = new HandlerClass(client, {
+    providerResolver: 'auto',
+    agentName: context.agentName,
+    agentVersion: context.agentVersion,
+    extraTags: context.tags,
+    extraMetadata: context.metadata,
+  });
+
+  if (mode === 'STREAM') {
+    await handler.handleLLMStart(
+      { kwargs: { model } },
+      [`stream framework status ${context.turn}`],
+      runID,
+      undefined,
+      { invocation_params: { model, stream: true } }
+    );
+    await handler.handleLLMNewToken('framework ', undefined, runID);
+    await handler.handleLLMNewToken(`${context.turn}`, undefined, runID);
+    await handler.handleLLMEnd(
+      {
+        llm_output: {
+          model_name: model,
+          token_usage: {
+            prompt_tokens: 12 + (context.turn % 4),
+            completion_tokens: 6 + (context.turn % 3),
+          },
+        },
+      },
+      runID
+    );
+    return;
+  }
+
+  await handler.handleChatModelStart(
+    { name: 'ChatModel' },
+    [[{ type: 'human', content: `summarize framework path ${context.turn}` }]],
+    runID,
+    undefined,
+    { invocation_params: { model, stream: false } }
+  );
+  await handler.handleLLMEnd(
+    {
+      generations: [[{ text: `framework output ${context.turn}` }]],
+      llm_output: {
+        model_name: model,
+        finish_reason: 'stop',
+        token_usage: {
+          prompt_tokens: 12 + (context.turn % 4),
+          completion_tokens: 6 + (context.turn % 3),
+          total_tokens: 18 + (context.turn % 7),
+        },
+      },
+    },
+    runID
+  );
+}
+
+export async function emitFrameworks(frameworks, client, source, mode, context) {
+  if (source !== 'openai' && source !== 'anthropic' && source !== 'gemini') {
+    return;
+  }
+
+  await emitFrameworkHandler(frameworks.langchain.SigilLangChainHandler, client, source, mode, context);
+  await emitFrameworkHandler(frameworks.langgraph.SigilLangGraphHandler, client, source, mode, context);
+}
+
 export async function runEmitter(config = loadConfig()) {
   const sdk = await loadSdkModule();
+  const frameworks = await loadFrameworkModules();
   const client = new sdk.SigilClient({
     generationExport: {
       protocol: 'grpc',
@@ -671,6 +765,14 @@ export async function runEmitter(config = loadConfig()) {
         const agentVersion = 'devex-1';
 
         await emitSource(sdk, client, config, source, mode, {
+          ...context,
+          conversationId: thread.conversationId,
+          turn: thread.turn,
+          slot,
+          agentName,
+          agentVersion,
+        });
+        await emitFrameworks(frameworks, client, source, mode, {
           ...context,
           conversationId: thread.conversationId,
           turn: thread.turn,

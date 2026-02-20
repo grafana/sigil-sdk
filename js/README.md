@@ -143,6 +143,32 @@ await client.startToolExecution(
 - Anthropic: `docs/providers/anthropic.md`
 - Gemini: `docs/providers/gemini.md`
 
+## Framework Handlers
+
+Use module subpath exports for framework callback integrations:
+
+- LangChain: `@grafana/sigil-sdk-js/langchain`
+- LangGraph: `@grafana/sigil-sdk-js/langgraph`
+- LangChain guide: `docs/frameworks/langchain.md`
+- LangGraph guide: `docs/frameworks/langgraph.md`
+
+```ts
+import { SigilClient } from "@grafana/sigil-sdk-js";
+import { SigilLangChainHandler } from "@grafana/sigil-sdk-js/langchain";
+import { SigilLangGraphHandler } from "@grafana/sigil-sdk-js/langgraph";
+
+const client = new SigilClient();
+const chainHandler = new SigilLangChainHandler(client, { providerResolver: "auto" });
+const graphHandler = new SigilLangGraphHandler(client, { providerResolver: "auto" });
+```
+
+Each framework handler injects:
+
+- `sigil.framework.name` (`langchain` or `langgraph`)
+- `sigil.framework.source=handler`
+- `sigil.framework.language=javascript`
+- `metadata["sigil.framework.run_id"]`
+
 ## Behavior
 
 - Generation modes are explicit: `SYNC` and `STREAM`.

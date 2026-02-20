@@ -22,6 +22,37 @@ pip install sigil-sdk-anthropic
 pip install sigil-sdk-gemini
 ```
 
+Optional framework modules:
+
+```bash
+pip install sigil-sdk-langchain
+pip install sigil-sdk-langgraph
+```
+
+Framework handler usage:
+
+```python
+from sigil_sdk import Client
+from sigil_sdk_langchain import SigilLangChainHandler
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+client = Client()
+chain_handler = SigilLangChainHandler(client=client, provider_resolver="auto")
+graph_handler = SigilLangGraphHandler(client=client, provider_resolver="auto")
+```
+
+Both handlers inject framework tags/metadata on recorded generations:
+
+- `sigil.framework.name` (`langchain` or `langgraph`)
+- `sigil.framework.source=handler`
+- `sigil.framework.language=python`
+- `metadata["sigil.framework.run_id"]`
+
+Full framework examples:
+
+- LangChain: `../python-frameworks/langchain/README.md`
+- LangGraph: `../python-frameworks/langgraph/README.md`
+
 ## Quick Start (Sync Generation)
 
 ```python
