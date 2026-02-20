@@ -15,9 +15,11 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     prompts: unknown,
     runId: string,
     _parentRunId?: string,
-    extraParams?: Record<string, unknown>
+    extraParams?: Record<string, unknown>,
+    _tags?: string[],
+    metadata?: Record<string, unknown>
   ): Promise<void> {
-    this.onLLMStart(serialized, prompts, runId, extraParams);
+    this.onLLMStart(serialized, prompts, runId, extraParams, metadata);
   }
 
   async handleChatModelStart(
@@ -25,9 +27,11 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     messages: unknown,
     runId: string,
     _parentRunId?: string,
-    extraParams?: Record<string, unknown>
+    extraParams?: Record<string, unknown>,
+    _tags?: string[],
+    metadata?: Record<string, unknown>
   ): Promise<void> {
-    this.onChatModelStart(serialized, messages, runId, extraParams);
+    this.onChatModelStart(serialized, messages, runId, extraParams, metadata);
   }
 
   async handleLLMNewToken(

@@ -22,8 +22,12 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
     const handler = new SigilLangGraphHandler(client, {
       agentName: 'agent-langgraph',
       agentVersion: 'v1',
-      extraTags: { env: 'test' },
-      extraMetadata: { seed: 9 },
+      extraTags: { env: 'test', 'sigil.framework.name': 'override' },
+      extraMetadata: {
+        seed: 9,
+        'sigil.framework.run_id': 'override-run',
+        'sigil.framework.thread_id': 'override-thread',
+      },
     });
 
     await handler.handleChatModelStart(
@@ -31,7 +35,9 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
       [[{ type: 'human', content: 'hello' }]],
       'run-sync',
       undefined,
-      { invocation_params: { model: 'gpt-5' } }
+      { invocation_params: { model: 'gpt-5' } },
+      undefined,
+      { thread_id: 'graph-thread-42' }
     );
     await handler.handleLLMEnd(
       {
@@ -56,7 +62,9 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
   assert.equal(generation.tags['sigil.framework.source'], 'handler');
   assert.equal(generation.tags['sigil.framework.language'], 'javascript');
   assert.equal(generation.tags.env, 'test');
+  assert.equal(generation.conversationId, 'graph-thread-42');
   assert.equal(generation.metadata['sigil.framework.run_id'], 'run-sync');
+  assert.equal(generation.metadata['sigil.framework.thread_id'], 'graph-thread-42');
   assert.equal(generation.metadata.seed, 9);
 });
 

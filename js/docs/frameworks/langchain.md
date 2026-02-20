@@ -65,6 +65,8 @@ Framework tags and metadata are always injected:
 - `sigil.framework.source=handler`
 - `sigil.framework.language=javascript`
 - `metadata["sigil.framework.run_id"]=<framework run id>`
+- `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+- generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id` (when present)
 
 Provider resolver behavior:
 

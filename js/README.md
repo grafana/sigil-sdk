@@ -168,6 +168,20 @@ Each framework handler injects:
 - `sigil.framework.source=handler`
 - `sigil.framework.language=javascript`
 - `metadata["sigil.framework.run_id"]`
+- `metadata["sigil.framework.thread_id"]` (when present in callback metadata/config)
+
+When present in generation metadata, these framework IDs are also copied onto generation span attributes.
+
+For LangGraph persistence, pass `configurable.thread_id` and reuse it across invocations:
+
+```ts
+const threadConfig = {
+  callbacks: [graphHandler],
+  configurable: { thread_id: 'customer-42' },
+};
+await graph.invoke({ prompt: 'Remember my timezone is UTC+1.', answer: '' }, threadConfig);
+await graph.invoke({ prompt: 'What timezone did I give you?', answer: '' }, threadConfig);
+```
 
 ## Behavior
 

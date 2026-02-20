@@ -427,6 +427,8 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
             thinking_enabled=False,
             metadata={
                 "sigil.gen_ai.request.thinking.budget_tokens": 4096,
+                "sigil.framework.run_id": "framework-run-1",
+                "sigil.framework.thread_id": "framework-thread-1",
                 "sigil.sdk.name": "user-value",
             },
             stop_reason="end_turn",
@@ -442,6 +444,8 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert rec.last_generation.tool_choice == "required"
         assert rec.last_generation.thinking_enabled is False
         assert rec.last_generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 4096
+        assert rec.last_generation.metadata["sigil.framework.run_id"] == "framework-run-1"
+        assert rec.last_generation.metadata["sigil.framework.thread_id"] == "framework-thread-1"
         assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
 
         span = span_exporter.get_finished_spans()[-1]
@@ -451,6 +455,8 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert span.attributes.get("sigil.gen_ai.request.tool_choice") == "required"
         assert span.attributes.get("sigil.gen_ai.request.thinking.enabled") is False
         assert span.attributes.get("sigil.gen_ai.request.thinking.budget_tokens") == 4096
+        assert span.attributes.get("sigil.framework.run_id") == "framework-run-1"
+        assert span.attributes.get("sigil.framework.thread_id") == "framework-thread-1"
         assert span.attributes.get("sigil.sdk.name") == "sdk-python"
         assert span.attributes.get("gen_ai.response.finish_reasons") == ("end_turn",)
     finally:

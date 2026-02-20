@@ -78,6 +78,7 @@ class _SigilLangGraphBase:
         prompts: list[str],
         run_id: UUID,
         invocation_params: dict[str, Any] | None,
+        callback_kwargs: dict[str, Any] | None = None,
     ) -> None:
         run_key = str(run_id)
         if run_key in self._runs:
@@ -95,18 +96,25 @@ class _SigilLangGraphBase:
         mode = GenerationMode.STREAM if _is_streaming(invocation_params) else GenerationMode.SYNC
         input_messages = [user_text_message(prompt) for prompt in prompts if prompt.strip() != ""] if self._capture_inputs else []
 
-        tags = {
-            "sigil.framework.name": _framework_name,
-            "sigil.framework.source": _framework_source,
-            "sigil.framework.language": _framework_language,
-        }
-        tags.update(self._extra_tags)
+        tags = dict(self._extra_tags)
+        tags["sigil.framework.name"] = _framework_name
+        tags["sigil.framework.source"] = _framework_source
+        tags["sigil.framework.language"] = _framework_language
 
-        metadata: dict[str, Any] = {"sigil.framework.run_id": run_key}
-        metadata.update(self._extra_metadata)
+        thread_id = _resolve_framework_thread_id(
+            serialized=serialized,
+            invocation_params=invocation_params,
+            callback_kwargs=callback_kwargs,
+        )
+        conversation_id = thread_id if thread_id != "" else run_key
+
+        metadata: dict[str, Any] = dict(self._extra_metadata)
+        metadata["sigil.framework.run_id"] = run_key
+        if thread_id != "":
+            metadata["sigil.framework.thread_id"] = thread_id
 
         start = GenerationStart(
-            conversation_id=run_key,
+            conversation_id=conversation_id,
             agent_name=self._agent_name,
             agent_version=self._agent_version,
             mode=mode,
@@ -129,6 +137,7 @@ class _SigilLangGraphBase:
         messages: list[list[Any]],
         run_id: UUID,
         invocation_params: dict[str, Any] | None,
+        callback_kwargs: dict[str, Any] | None = None,
     ) -> None:
         run_key = str(run_id)
         if run_key in self._runs:
@@ -146,18 +155,25 @@ class _SigilLangGraphBase:
         mode = GenerationMode.STREAM if _is_streaming(invocation_params) else GenerationMode.SYNC
         input_messages = _map_chat_inputs(messages) if self._capture_inputs else []
 
-        tags = {
-            "sigil.framework.name": _framework_name,
-            "sigil.framework.source": _framework_source,
-            "sigil.framework.language": _framework_language,
-        }
-        tags.update(self._extra_tags)
+        tags = dict(self._extra_tags)
+        tags["sigil.framework.name"] = _framework_name
+        tags["sigil.framework.source"] = _framework_source
+        tags["sigil.framework.language"] = _framework_language
 
-        metadata: dict[str, Any] = {"sigil.framework.run_id": run_key}
-        metadata.update(self._extra_metadata)
+        thread_id = _resolve_framework_thread_id(
+            serialized=serialized,
+            invocation_params=invocation_params,
+            callback_kwargs=callback_kwargs,
+        )
+        conversation_id = thread_id if thread_id != "" else run_key
+
+        metadata: dict[str, Any] = dict(self._extra_metadata)
+        metadata["sigil.framework.run_id"] = run_key
+        if thread_id != "":
+            metadata["sigil.framework.thread_id"] = thread_id
 
         start = GenerationStart(
-            conversation_id=run_key,
+            conversation_id=conversation_id,
             agent_name=self._agent_name,
             agent_version=self._agent_version,
             mode=mode,
@@ -260,13 +276,14 @@ class SigilLangGraphHandler(_SigilLangGraphBase, BaseCallbackHandler):
         *,
         run_id: UUID,
         invocation_params: dict[str, Any] | None = None,
-        **_kwargs: Any,
+        **kwargs: Any,
     ) -> None:
         self._on_llm_start(
             serialized=serialized,
             prompts=prompts,
             run_id=run_id,
             invocation_params=invocation_params,
+            callback_kwargs=kwargs,
         )
 
     def on_chat_model_start(
@@ -276,13 +293,14 @@ class SigilLangGraphHandler(_SigilLangGraphBase, BaseCallbackHandler):
         *,
         run_id: UUID,
         invocation_params: dict[str, Any] | None = None,
-        **_kwargs: Any,
+        **kwargs: Any,
     ) -> None:
         self._on_chat_model_start(
             serialized=serialized,
             messages=messages,
             run_id=run_id,
             invocation_params=invocation_params,
+            callback_kwargs=kwargs,
         )
 
     def on_llm_new_token(
@@ -323,13 +341,14 @@ class SigilAsyncLangGraphHandler(_SigilLangGraphBase, AsyncCallbackHandler):
         *,
         run_id: UUID,
         invocation_params: dict[str, Any] | None = None,
-        **_kwargs: Any,
+        **kwargs: Any,
     ) -> None:
         self._on_llm_start(
             serialized=serialized,
             prompts=prompts,
             run_id=run_id,
             invocation_params=invocation_params,
+            callback_kwargs=kwargs,
         )
 
     async def on_chat_model_start(
@@ -339,13 +358,14 @@ class SigilAsyncLangGraphHandler(_SigilLangGraphBase, AsyncCallbackHandler):
         *,
         run_id: UUID,
         invocation_params: dict[str, Any] | None = None,
-        **_kwargs: Any,
+        **kwargs: Any,
     ) -> None:
         self._on_chat_model_start(
             serialized=serialized,
             messages=messages,
             run_id=run_id,
             invocation_params=invocation_params,
+            callback_kwargs=kwargs,
         )
 
     async def on_llm_new_token(
@@ -443,6 +463,40 @@ def _is_streaming(invocation_params: dict[str, Any] | None) -> bool:
     if _as_bool(_read(invocation_params, "stream")):
         return True
     return _as_bool(_read(invocation_params, "streaming"))
+
+
+def _resolve_framework_thread_id(
+    *,
+    serialized: dict[str, Any] | None,
+    invocation_params: dict[str, Any] | None,
+    callback_kwargs: dict[str, Any] | None,
+) -> str:
+    for payload in (callback_kwargs, invocation_params, serialized):
+        thread_id = _thread_id_from_payload(payload)
+        if thread_id != "":
+            return thread_id
+    return ""
+
+
+def _thread_id_from_payload(payload: Any) -> str:
+    candidates = (
+        _as_str(_read(payload, "thread_id")),
+        _as_str(_read(payload, "threadId")),
+        _as_str(_read(_read(payload, "metadata"), "thread_id")),
+        _as_str(_read(_read(payload, "metadata"), "threadId")),
+        _as_str(_read(_read(payload, "configurable"), "thread_id")),
+        _as_str(_read(_read(payload, "configurable"), "threadId")),
+        _as_str(_read(_read(payload, "config"), "thread_id")),
+        _as_str(_read(_read(payload, "config"), "threadId")),
+        _as_str(_read(_read(_read(payload, "config"), "metadata"), "thread_id")),
+        _as_str(_read(_read(_read(payload, "config"), "metadata"), "threadId")),
+        _as_str(_read(_read(_read(payload, "config"), "configurable"), "thread_id")),
+        _as_str(_read(_read(_read(payload, "config"), "configurable"), "threadId")),
+    )
+    for candidate in candidates:
+        if candidate != "":
+            return candidate
+    return ""
 
 
 def _map_chat_inputs(messages: list[list[Any]]) -> list[Message]:

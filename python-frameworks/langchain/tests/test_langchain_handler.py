@@ -48,8 +48,8 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             agent_name="agent-langchain",
             agent_version="v1",
             provider_resolver="auto",
-            extra_tags={"env": "test"},
-            extra_metadata={"seed": 7},
+            extra_tags={"env": "test", "sigil.framework.name": "override"},
+            extra_metadata={"seed": 7, "sigil.framework.run_id": "override-run", "sigil.framework.thread_id": "override-thread"},
         )
 
         handler.on_chat_model_start(
@@ -57,6 +57,7 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             [[{"type": "human", "content": "hello"}]],
             run_id=run_id,
             invocation_params={"model": "gpt-5"},
+            metadata={"thread_id": "chain-thread-42"},
         )
         handler.on_llm_end(
             {
@@ -83,7 +84,9 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
         assert generation.tags["sigil.framework.source"] == "handler"
         assert generation.tags["sigil.framework.language"] == "python"
         assert generation.tags["env"] == "test"
+        assert generation.conversation_id == "chain-thread-42"
         assert generation.metadata["sigil.framework.run_id"] == str(run_id)
+        assert generation.metadata["sigil.framework.thread_id"] == "chain-thread-42"
         assert generation.metadata["seed"] == 7
         assert generation.usage.input_tokens == 10
         assert generation.usage.output_tokens == 5

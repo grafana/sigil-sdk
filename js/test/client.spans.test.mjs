@@ -45,6 +45,8 @@ test('generation result fields override seed and update span operation name', as
       thinkingEnabled: false,
       metadata: {
         'sigil.gen_ai.request.thinking.budget_tokens': 4096,
+        'sigil.framework.run_id': 'framework-run-1',
+        'sigil.framework.thread_id': 'framework-thread-1',
         'sigil.sdk.name': 'user-value',
       },
       stopReason: 'end_turn',
@@ -63,6 +65,8 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(generation.topP, 0.85);
     assert.equal(generation.toolChoice, 'required');
     assert.equal(generation.thinkingEnabled, false);
+    assert.equal(generation.metadata?.['sigil.framework.run_id'], 'framework-run-1');
+    assert.equal(generation.metadata?.['sigil.framework.thread_id'], 'framework-thread-1');
     assert.equal(generation.metadata?.['sigil.sdk.name'], 'sdk-js');
 
     const span = singleGenerationSpan(harness.spanExporter);
@@ -77,6 +81,8 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(span.attributes['sigil.gen_ai.request.tool_choice'], 'required');
     assert.equal(span.attributes['sigil.gen_ai.request.thinking.enabled'], false);
     assert.equal(span.attributes['sigil.gen_ai.request.thinking.budget_tokens'], 4096);
+    assert.equal(span.attributes['sigil.framework.run_id'], 'framework-run-1');
+    assert.equal(span.attributes['sigil.framework.thread_id'], 'framework-thread-1');
     assert.equal(span.attributes['sigil.sdk.name'], 'sdk-js');
     assert.deepEqual(span.attributes['gen_ai.response.finish_reasons'], ['end_turn']);
   } finally {

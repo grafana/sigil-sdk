@@ -58,7 +58,8 @@ export class SigilFrameworkHandler {
     serialized: unknown,
     prompts: unknown,
     runId: string,
-    extraParams?: AnyRecord
+    extraParams?: AnyRecord,
+    callbackMetadata?: AnyRecord
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.runs.has(runKey)) {
@@ -72,8 +73,8 @@ export class SigilFrameworkHandler {
     const input = this.captureInputs ? mapPromptInputs(prompts) : [];
 
     const recorder = stream
-      ? this.client.startStreamingGeneration(this.startPayload(runKey, provider, modelName))
-      : this.client.startGeneration(this.startPayload(runKey, provider, modelName));
+      ? this.client.startStreamingGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata))
+      : this.client.startGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata));
 
     this.runs.set(runKey, {
       recorder,
@@ -87,7 +88,8 @@ export class SigilFrameworkHandler {
     serialized: unknown,
     messages: unknown,
     runId: string,
-    extraParams?: AnyRecord
+    extraParams?: AnyRecord,
+    callbackMetadata?: AnyRecord
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.runs.has(runKey)) {
@@ -101,8 +103,8 @@ export class SigilFrameworkHandler {
     const input = this.captureInputs ? mapChatInputs(messages) : [];
 
     const recorder = stream
-      ? this.client.startStreamingGeneration(this.startPayload(runKey, provider, modelName))
-      : this.client.startGeneration(this.startPayload(runKey, provider, modelName));
+      ? this.client.startStreamingGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata))
+      : this.client.startGeneration(this.startPayload(runKey, provider, modelName, serialized, invocationParams, extraParams, callbackMetadata));
 
     this.runs.set(runKey, {
       recorder,
@@ -193,9 +195,27 @@ export class SigilFrameworkHandler {
     }
   }
 
-  private startPayload(runId: string, provider: string, modelName: string) {
+  private startPayload(
+    runId: string,
+    provider: string,
+    modelName: string,
+    serialized: unknown,
+    invocationParams: AnyRecord | undefined,
+    extraParams: AnyRecord | undefined,
+    callbackMetadata: AnyRecord | undefined
+  ) {
+    const threadId = resolveFrameworkThreadId(serialized, invocationParams, extraParams, callbackMetadata);
+    const conversationId = threadId.length > 0 ? threadId : runId;
+    const metadata: Record<string, unknown> = {
+      ...this.extraMetadata,
+      'sigil.framework.run_id': runId,
+    };
+    if (threadId.length > 0) {
+      metadata['sigil.framework.thread_id'] = threadId;
+    }
+
     return {
-      conversationId: runId,
+      conversationId,
       agentName: this.agentName,
       agentVersion: this.agentVersion,
       model: {
@@ -203,15 +223,12 @@ export class SigilFrameworkHandler {
         name: modelName,
       },
       tags: {
+        ...this.extraTags,
         'sigil.framework.name': this.frameworkName,
         'sigil.framework.source': 'handler',
         'sigil.framework.language': this.frameworkLanguage,
-        ...this.extraTags,
       },
-      metadata: {
-        'sigil.framework.run_id': runId,
-        ...this.extraMetadata,
-      },
+      metadata,
     };
   }
 }
@@ -279,6 +296,44 @@ function isStreaming(invocationParams: AnyRecord | undefined): boolean {
     return false;
   }
   return asBoolean(read(invocationParams, 'stream')) || asBoolean(read(invocationParams, 'streaming'));
+}
+
+function resolveFrameworkThreadId(
+  serialized: unknown,
+  invocationParams: AnyRecord | undefined,
+  extraParams: AnyRecord | undefined,
+  callbackMetadata: AnyRecord | undefined
+): string {
+  for (const payload of [callbackMetadata, extraParams, invocationParams, serialized]) {
+    const threadId = threadIdFromPayload(payload);
+    if (threadId.length > 0) {
+      return threadId;
+    }
+  }
+  return '';
+}
+
+function threadIdFromPayload(payload: unknown): string {
+  const candidates = [
+    asString(read(payload, 'thread_id')),
+    asString(read(payload, 'threadId')),
+    asString(read(read(payload, 'metadata'), 'thread_id')),
+    asString(read(read(payload, 'metadata'), 'threadId')),
+    asString(read(read(payload, 'configurable'), 'thread_id')),
+    asString(read(read(payload, 'configurable'), 'threadId')),
+    asString(read(read(payload, 'config'), 'thread_id')),
+    asString(read(read(payload, 'config'), 'threadId')),
+    asString(read(read(read(payload, 'config'), 'metadata'), 'thread_id')),
+    asString(read(read(read(payload, 'config'), 'metadata'), 'threadId')),
+    asString(read(read(read(payload, 'config'), 'configurable'), 'thread_id')),
+    asString(read(read(read(payload, 'config'), 'configurable'), 'threadId')),
+  ];
+  for (const candidate of candidates) {
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return '';
 }
 
 function mapPromptInputs(prompts: unknown): Message[] {

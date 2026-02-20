@@ -70,6 +70,30 @@ for _event in graph.stream(
 client.shutdown()
 ```
 
+## Persistent thread example (LangGraph checkpointer)
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+checkpointer = MemorySaver()
+graph = workflow.compile(checkpointer=checkpointer)
+
+thread_config = {
+    "callbacks": [handler],
+    "configurable": {"thread_id": "customer-42"},
+}
+
+graph.invoke({"prompt": "Remember that my timezone is UTC+1.", "answer": ""}, config=thread_config)
+graph.invoke({"prompt": "What timezone did I just give you?", "answer": ""}, config=thread_config)
+```
+
+When `thread_id` is present, the handler records:
+
+- `conversation_id=<thread_id>`
+- `metadata["sigil.framework.run_id"]=<run id>`
+- `metadata["sigil.framework.thread_id"]=<thread id>`
+- generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id`
+
 ## Behavior
 
 - Lifecycle mapping: `on_*_start` -> start recorder, `on_llm_new_token` -> first-token timestamp, `on_llm_end`/`on_llm_error` -> finalize recorder.
@@ -83,5 +107,6 @@ client.shutdown()
   - `sigil.framework.source=handler`
   - `sigil.framework.language=python`
   - `metadata["sigil.framework.run_id"]=<run id>`
+  - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

@@ -69,5 +69,7 @@ client.shutdown()
   - `sigil.framework.source=handler`
   - `sigil.framework.language=python`
   - `metadata["sigil.framework.run_id"]=<run id>`
+  - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+  - generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id` (when present)
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

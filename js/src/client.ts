@@ -53,6 +53,8 @@ import {
 
 const spanAttrGenerationID = 'sigil.generation.id';
 const spanAttrSDKName = 'sigil.sdk.name';
+const spanAttrFrameworkRunID = 'sigil.framework.run_id';
+const spanAttrFrameworkThreadID = 'sigil.framework.thread_id';
 const spanAttrConversationID = 'gen_ai.conversation.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
@@ -1177,6 +1179,14 @@ function setGenerationSpanAttributes(
   if (thinkingBudget !== undefined) {
     span.setAttribute(spanAttrRequestThinkingBudget, thinkingBudget);
   }
+  const frameworkRunId = metadataStringValue(generation.metadata, spanAttrFrameworkRunID);
+  if (frameworkRunId !== undefined) {
+    span.setAttribute(spanAttrFrameworkRunID, frameworkRunId);
+  }
+  const frameworkThreadId = metadataStringValue(generation.metadata, spanAttrFrameworkThreadID);
+  if (frameworkThreadId !== undefined) {
+    span.setAttribute(spanAttrFrameworkThreadID, frameworkThreadId);
+  }
   if (notEmpty(generation.responseId)) {
     span.setAttribute(spanAttrResponseID, generation.responseId);
   }
@@ -1536,6 +1546,18 @@ function thinkingBudgetFromMetadata(metadata: Record<string, unknown> | undefine
     return parsed;
   }
   return undefined;
+}
+
+function metadataStringValue(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
+  if (metadata === undefined) {
+    return undefined;
+  }
+  const value = metadata[key];
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function countToolCallParts(messages: Message[]): number {
