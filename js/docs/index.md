@@ -16,3 +16,6 @@ This directory contains public SDK usage docs for the TypeScript/JavaScript pack
 
 - `frameworks/langchain.md`
 - `frameworks/langgraph.md`
+- `frameworks/openai-agents.md`
+- `frameworks/llamaindex.md`
+- `frameworks/google-adk.md`

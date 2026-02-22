@@ -13,11 +13,10 @@ pip install langchain-openai
 
 ```python
 from sigil_sdk import Client
-from sigil_sdk_langchain import SigilLangChainHandler, SigilAsyncLangChainHandler
+from sigil_sdk_langchain import with_sigil_langchain_callbacks
 
 client = Client()
-handler = SigilLangChainHandler(client=client, provider_resolver="auto")
-async_handler = SigilAsyncLangChainHandler(client=client, provider_resolver="auto")
+config = with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto")
 ```
 
 ## End-to-end example (invoke + stream)
@@ -25,7 +24,7 @@ async_handler = SigilAsyncLangChainHandler(client=client, provider_resolver="aut
 ```python
 from langchain_openai import ChatOpenAI
 from sigil_sdk import Client
-from sigil_sdk_langchain import SigilLangChainHandler
+from sigil_sdk_langchain import SigilLangChainHandler, with_sigil_langchain_callbacks
 
 client = Client()
 handler = SigilLangChainHandler(
@@ -40,18 +39,21 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 # Non-stream call -> SYNC generation mode.
 result = llm.invoke(
     "Summarize why retry budgets matter.",
-    config={"callbacks": [handler]},
+    config=with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto"),
 )
 print(result.content)
 
 # Stream call -> STREAM generation mode + TTFT tracking.
 for chunk in llm.stream(
     "Give me three short reliability tips.",
-    config={"callbacks": [handler]},
+    config=with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto"),
 ):
     if chunk.content:
         print(chunk.content, end="", flush=True)
 print()
+
+# Advanced usage: explicit handler wiring remains supported.
+_ = llm.invoke("manual handler wiring", config={"callbacks": [handler]})
 
 client.shutdown()
 ```

@@ -10,6 +10,10 @@ Cross-language parity tracks are available for:
 - TypeScript/JavaScript: `sdks/js`
 - .NET/C#: `sdks/dotnet`
 
+Framework modules:
+
+- Google ADK helper: `../go-frameworks/google-adk/README.md`
+
 ## Core model
 
 - `Generation` is the canonical entity.

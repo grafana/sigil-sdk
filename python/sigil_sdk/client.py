@@ -59,6 +59,7 @@ _span_attr_framework_component_name = "sigil.framework.component_name"
 _span_attr_framework_run_type = "sigil.framework.run_type"
 _span_attr_framework_retry_attempt = "sigil.framework.retry_attempt"
 _span_attr_framework_langgraph_node = "sigil.framework.langgraph.node"
+_span_attr_framework_event_id = "sigil.framework.event_id"
 _span_attr_conversation_id = "gen_ai.conversation.id"
 _span_attr_agent_name = "gen_ai.agent.name"
 _span_attr_agent_version = "gen_ai.agent.version"
@@ -1171,6 +1172,9 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
     framework_langgraph_node = _metadata_string_value(generation.metadata, _span_attr_framework_langgraph_node)
     if framework_langgraph_node is not None:
         span.set_attribute(_span_attr_framework_langgraph_node, framework_langgraph_node)
+    framework_event_id = _metadata_string_value(generation.metadata, _span_attr_framework_event_id)
+    if framework_event_id is not None:
+        span.set_attribute(_span_attr_framework_event_id, framework_event_id)
     if generation.response_id:
         span.set_attribute(_span_attr_response_id, generation.response_id)
     if generation.response_model:

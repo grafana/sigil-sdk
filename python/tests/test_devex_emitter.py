@@ -145,7 +145,7 @@ def test_gemini_stream_uses_models_namespace_and_responses_summary(monkeypatch) 
     assert options["conversation_id"] == "conv-gemini"
 
 
-def test_emit_frameworks_invokes_langchain_and_langgraph_handlers(monkeypatch) -> None:
+def test_emit_frameworks_invokes_all_framework_handlers_for_provider_sources(monkeypatch) -> None:
     calls: list[tuple[str, str]] = []
 
     class _FakeHandler:
@@ -161,6 +161,9 @@ def test_emit_frameworks_invokes_langchain_and_langgraph_handlers(monkeypatch) -
 
     monkeypatch.setattr(emitter, "SigilLangChainHandler", _FakeHandler)
     monkeypatch.setattr(emitter, "SigilLangGraphHandler", _FakeHandler)
+    monkeypatch.setattr(emitter, "SigilOpenAIAgentsHandler", _FakeHandler)
+    monkeypatch.setattr(emitter, "SigilLlamaIndexHandler", _FakeHandler)
+    monkeypatch.setattr(emitter, "SigilGoogleAdkHandler", _FakeHandler)
 
     context = emitter.EmitContext(
         conversation_id="conv-framework",
@@ -173,12 +176,15 @@ def test_emit_frameworks_invokes_langchain_and_langgraph_handlers(monkeypatch) -
     )
 
     emitter.emit_frameworks(object(), "openai", "SYNC", context)
-    assert len(calls) == 4
+    assert len(calls) == 10
 
 
 def test_emit_frameworks_skips_non_provider_sources(monkeypatch) -> None:
     monkeypatch.setattr(emitter, "SigilLangChainHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
     monkeypatch.setattr(emitter, "SigilLangGraphHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+    monkeypatch.setattr(emitter, "SigilOpenAIAgentsHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+    monkeypatch.setattr(emitter, "SigilLlamaIndexHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+    monkeypatch.setattr(emitter, "SigilGoogleAdkHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
 
     context = emitter.EmitContext(
         conversation_id="conv-framework",

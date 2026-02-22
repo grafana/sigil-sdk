@@ -12,7 +12,12 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.client import GenerationRecorder
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_langchain import SigilAsyncLangChainHandler, SigilLangChainHandler
+from sigil_sdk_langchain import (
+    SigilAsyncLangChainHandler,
+    SigilLangChainHandler,
+    create_sigil_langchain_handler,
+    with_sigil_langchain_callbacks,
+)
 
 
 class _CapturingExporter:
@@ -303,3 +308,40 @@ def test_langchain_tool_chain_and_retriever_callbacks_emit_spans() -> None:
     finally:
         client.shutdown()
         provider.shutdown()
+
+
+def test_langchain_attach_helpers_preserve_existing_callbacks() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        created = create_sigil_langchain_handler(client=client)
+        assert isinstance(created, SigilLangChainHandler)
+
+        existing = object()
+        config = with_sigil_langchain_callbacks(
+            {"callbacks": [existing], "retry": 2},
+            client=client,
+            agent_name="langchain-helper",
+        )
+
+        assert config["retry"] == 2
+        callbacks = config["callbacks"]
+        assert isinstance(callbacks, list)
+        assert callbacks[0] is existing
+        assert isinstance(callbacks[1], SigilLangChainHandler)
+    finally:
+        client.shutdown()
+
+
+def test_langchain_attach_helpers_do_not_duplicate_existing_sigil_handler() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        existing = SigilLangChainHandler(client=client)
+        config = with_sigil_langchain_callbacks({"callbacks": [existing]}, client=client)
+        callbacks = config["callbacks"]
+        assert isinstance(callbacks, list)
+        assert len(callbacks) == 1
+        assert callbacks[0] is existing
+    finally:
+        client.shutdown()

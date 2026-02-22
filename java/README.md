@@ -15,6 +15,7 @@ The Java SDK records normalized generation payloads, correlates them with traces
 - `:providers:openai`: OpenAI wrapper + mapper helpers
 - `:providers:anthropic`: Anthropic wrapper + mapper helpers
 - `:providers:gemini`: Gemini wrapper + mapper helpers
+- `:frameworks:google-adk`: Google ADK framework lifecycle adapter
 - `:benchmarks`: JMH benchmark suite
 
 ## Core Model
@@ -212,6 +213,10 @@ Provider modules are wrapper-first for ergonomics, with explicit mapper APIs for
 - OpenAI: `providers/openai/README.md`
 - Anthropic: `providers/anthropic/README.md`
 - Gemini: `providers/gemini/README.md`
+
+Framework helpers:
+
+- Google ADK: `frameworks/google-adk/README.md`
 
 ## Best Practices
 

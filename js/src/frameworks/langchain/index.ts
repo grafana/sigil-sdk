@@ -3,6 +3,8 @@ import { SigilFrameworkHandler, type FrameworkHandlerOptions } from '../shared.j
 
 export type { FrameworkHandlerOptions };
 
+type CallbackConfig = Record<string, unknown> & { callbacks?: unknown };
+
 export class SigilLangChainHandler extends SigilFrameworkHandler {
   name = 'sigil_langchain_handler';
 
@@ -112,4 +114,33 @@ export class SigilLangChainHandler extends SigilFrameworkHandler {
   async handleRetrieverError(error: unknown, runId: string): Promise<void> {
     this.onRetrieverError(error, runId);
   }
+}
+
+export function createSigilLangChainHandler(
+  client: SigilClient,
+  options: FrameworkHandlerOptions = {}
+): SigilLangChainHandler {
+  return new SigilLangChainHandler(client, options);
+}
+
+export function withSigilLangChainCallbacks<T extends CallbackConfig>(
+  config: T | undefined,
+  client: SigilClient,
+  options: FrameworkHandlerOptions = {}
+): T & { callbacks: unknown[] } {
+  const handler = createSigilLangChainHandler(client, options);
+  const base = { ...(config ?? {}) } as CallbackConfig;
+  const existingValue = base.callbacks;
+  const callbacks = Array.isArray(existingValue)
+    ? [...existingValue]
+    : existingValue === undefined
+      ? []
+      : [existingValue];
+  if (!callbacks.some((callback) => callback instanceof SigilLangChainHandler)) {
+    callbacks.push(handler);
+  }
+  return {
+    ...base,
+    callbacks,
+  } as T & { callbacks: unknown[] };
 }

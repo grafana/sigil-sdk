@@ -27,41 +27,57 @@ Optional framework modules:
 ```bash
 pip install sigil-sdk-langchain
 pip install sigil-sdk-langgraph
+pip install sigil-sdk-openai-agents
+pip install sigil-sdk-llamaindex
+pip install sigil-sdk-google-adk
 ```
 
 Framework handler usage:
 
 ```python
 from sigil_sdk import Client
-from sigil_sdk_langchain import SigilLangChainHandler
-from sigil_sdk_langgraph import SigilLangGraphHandler
+from sigil_sdk_langchain import with_sigil_langchain_callbacks
+from sigil_sdk_langgraph import with_sigil_langgraph_callbacks
+from sigil_sdk_openai_agents import with_sigil_openai_agents_hooks
+from sigil_sdk_llamaindex import with_sigil_llamaindex_callbacks
+from sigil_sdk_google_adk import with_sigil_google_adk_callbacks
 
 client = Client()
-chain_handler = SigilLangChainHandler(client=client, provider_resolver="auto")
-graph_handler = SigilLangGraphHandler(client=client, provider_resolver="auto")
+chain_config = with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto")
+graph_config = with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto")
+openai_agents_run_options = with_sigil_openai_agents_hooks(None, client=client, provider_resolver="auto")
+llamaindex_config = with_sigil_llamaindex_callbacks(None, client=client, provider_resolver="auto")
+google_adk_agent_config = with_sigil_google_adk_callbacks(None, client=client, provider_resolver="auto")
 ```
 
-Both handlers inject framework tags/metadata on recorded generations:
+Framework handlers inject framework tags/metadata on recorded generations:
 
-- `sigil.framework.name` (`langchain` or `langgraph`)
+- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, or `google-adk`)
 - `sigil.framework.source=handler`
 - `sigil.framework.language=python`
 - `metadata["sigil.framework.run_id"]`
-- `metadata["sigil.framework.thread_id"]` (when present in callback metadata/config)
+- `metadata["sigil.framework.thread_id"]` (when present)
 - `metadata["sigil.framework.parent_run_id"]` (when available)
 - `metadata["sigil.framework.component_name"]`
 - `metadata["sigil.framework.run_type"]`
 - `metadata["sigil.framework.tags"]`
 - `metadata["sigil.framework.retry_attempt"]` (when available)
+- `metadata["sigil.framework.event_id"]` (when available)
 - `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
 
-When present in generation metadata, low-cardinality framework keys are also copied onto generation span attributes.
+Conversation mapping is conversation-first:
+
+- `conversation_id` / `session_id` / `group_id` from framework context first
+- then `thread_id`
+- deterministic fallback `sigil:framework:<framework_name>:<run_id>`
+
+When present in generation metadata, low-cardinality framework keys are copied onto generation span attributes.
 
 For LangGraph persistence, pass `configurable.thread_id` and reuse it across invocations:
 
 ```python
 thread_config = {
-    "callbacks": [graph_handler],
+    **with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto"),
     "configurable": {"thread_id": "customer-42"},
 }
 graph.invoke({"prompt": "Remember my timezone is UTC+1.", "answer": ""}, config=thread_config)
@@ -72,6 +88,9 @@ Full framework examples:
 
 - LangChain: `../python-frameworks/langchain/README.md`
 - LangGraph: `../python-frameworks/langgraph/README.md`
+- OpenAI Agents: `../python-frameworks/openai-agents/README.md`
+- LlamaIndex: `../python-frameworks/llamaindex/README.md`
+- Google ADK: `../python-frameworks/google-adk/README.md`
 
 ## Quick Start (Sync Generation)
 

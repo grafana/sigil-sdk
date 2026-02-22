@@ -13,11 +13,10 @@ pip install langgraph langchain-openai
 
 ```python
 from sigil_sdk import Client
-from sigil_sdk_langgraph import SigilLangGraphHandler, SigilAsyncLangGraphHandler
+from sigil_sdk_langgraph import with_sigil_langgraph_callbacks
 
 client = Client()
-handler = SigilLangGraphHandler(client=client, provider_resolver="auto")
-async_handler = SigilAsyncLangGraphHandler(client=client, provider_resolver="auto")
+config = with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto")
 ```
 
 ## End-to-end example (graph invoke + stream)
@@ -28,7 +27,7 @@ from typing import TypedDict
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from sigil_sdk import Client
-from sigil_sdk_langgraph import SigilLangGraphHandler
+from sigil_sdk_langgraph import SigilLangGraphHandler, with_sigil_langgraph_callbacks
 
 
 class GraphState(TypedDict):
@@ -47,7 +46,10 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 
 def run_model(state: GraphState) -> GraphState:
-    response = llm.invoke(state["prompt"], config={"callbacks": [handler]})
+    response = llm.invoke(
+        state["prompt"],
+        config=with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto"),
+    )
     return {"prompt": state["prompt"], "answer": response.content}
 
 
@@ -79,12 +81,18 @@ checkpointer = MemorySaver()
 graph = workflow.compile(checkpointer=checkpointer)
 
 thread_config = {
-    "callbacks": [handler],
+    **with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto"),
     "configurable": {"thread_id": "customer-42"},
 }
 
 graph.invoke({"prompt": "Remember that my timezone is UTC+1.", "answer": ""}, config=thread_config)
 graph.invoke({"prompt": "What timezone did I just give you?", "answer": ""}, config=thread_config)
+
+# Advanced usage: explicit handler wiring remains supported.
+_ = graph.invoke(
+    {"prompt": "manual handler wiring", "answer": ""},
+    config={"callbacks": [handler]},
+)
 ```
 
 When `thread_id` is present, the handler records:

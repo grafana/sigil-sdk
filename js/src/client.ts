@@ -60,6 +60,7 @@ const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
 const spanAttrFrameworkRunType = 'sigil.framework.run_type';
 const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
 const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
+const spanAttrFrameworkEventID = 'sigil.framework.event_id';
 const spanAttrConversationID = 'gen_ai.conversation.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
@@ -1211,6 +1212,10 @@ function setGenerationSpanAttributes(
   const frameworkLangGraphNode = metadataStringValue(generation.metadata, spanAttrFrameworkLangGraphNode);
   if (frameworkLangGraphNode !== undefined) {
     span.setAttribute(spanAttrFrameworkLangGraphNode, frameworkLangGraphNode);
+  }
+  const frameworkEventID = metadataStringValue(generation.metadata, spanAttrFrameworkEventID);
+  if (frameworkEventID !== undefined) {
+    span.setAttribute(spanAttrFrameworkEventID, frameworkEventID);
   }
   if (notEmpty(generation.responseId)) {
     span.setAttribute(spanAttrResponseID, generation.responseId);

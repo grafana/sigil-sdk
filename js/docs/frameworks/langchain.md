@@ -12,10 +12,13 @@ pnpm add @grafana/sigil-sdk-js @langchain/core @langchain/openai
 
 ```ts
 import { SigilClient } from '@grafana/sigil-sdk-js';
-import { SigilLangChainHandler } from '@grafana/sigil-sdk-js/langchain';
+import { withSigilLangChainCallbacks } from '@grafana/sigil-sdk-js/langchain';
 
 const client = new SigilClient();
-const handler = new SigilLangChainHandler(client, { providerResolver: 'auto' });
+const config = withSigilLangChainCallbacks(undefined, client, {
+  providerResolver: 'auto',
+  agentName: 'langchain-app',
+});
 ```
 
 ## End-to-end example (invoke + stream)
@@ -23,7 +26,10 @@ const handler = new SigilLangChainHandler(client, { providerResolver: 'auto' });
 ```ts
 import { ChatOpenAI } from '@langchain/openai';
 import { SigilClient } from '@grafana/sigil-sdk-js';
-import { SigilLangChainHandler } from '@grafana/sigil-sdk-js/langchain';
+import {
+  SigilLangChainHandler,
+  withSigilLangChainCallbacks,
+} from '@grafana/sigil-sdk-js/langchain';
 
 const client = new SigilClient();
 const handler = new SigilLangChainHandler(client, {
@@ -35,19 +41,25 @@ const handler = new SigilLangChainHandler(client, {
 const llm = new ChatOpenAI({ model: 'gpt-4o-mini', temperature: 0 });
 
 // Non-stream call -> SYNC generation mode.
-const result = await llm.invoke('Summarize why retry budgets matter.', {
-  callbacks: [handler],
-});
+const result = await llm.invoke(
+  'Summarize why retry budgets matter.',
+  withSigilLangChainCallbacks(undefined, client, { providerResolver: 'auto' })
+);
 console.log(result.content);
 
 // Stream call -> STREAM generation mode + TTFT tracking.
-const stream = await llm.stream('Give me three short reliability tips.', {
-  callbacks: [handler],
-});
+const stream = await llm.stream(
+  'Give me three short reliability tips.',
+  withSigilLangChainCallbacks(undefined, client, { providerResolver: 'auto' })
+);
 for await (const chunk of stream) {
   if (chunk.content) process.stdout.write(String(chunk.content));
 }
 process.stdout.write('\n');
+
+// Advanced usage: instantiate and pass a handler manually.
+const handler = new SigilLangChainHandler(client, { providerResolver: 'auto' });
+await llm.invoke('manual handler wiring', { callbacks: [handler] });
 
 await client.shutdown();
 ```
@@ -74,7 +86,14 @@ Framework tags and metadata are always injected:
 - `metadata["sigil.framework.run_type"]=<llm|chat|tool|chain|retriever>`
 - `metadata["sigil.framework.tags"]=<normalized callback tags>`
 - `metadata["sigil.framework.retry_attempt"]=<attempt>` (when available)
+- `metadata["sigil.framework.event_id"]=<event id>` (when available)
 - generation span attributes mirror low-cardinality framework metadata keys
+
+Conversation mapping is conversation-first:
+
+- `conversation_id` / `session_id` / `group_id` first
+- then `thread_id`
+- deterministic fallback `sigil:framework:langchain:<run_id>`
 
 Provider resolver behavior:
 

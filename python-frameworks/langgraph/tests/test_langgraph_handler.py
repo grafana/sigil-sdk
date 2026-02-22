@@ -11,7 +11,12 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_langgraph import SigilAsyncLangGraphHandler, SigilLangGraphHandler
+from sigil_sdk_langgraph import (
+    SigilAsyncLangGraphHandler,
+    SigilLangGraphHandler,
+    create_sigil_langgraph_handler,
+    with_sigil_langgraph_callbacks,
+)
 
 
 class _CapturingExporter:
@@ -271,3 +276,26 @@ def test_langgraph_tool_chain_and_retriever_callbacks_emit_spans() -> None:
     finally:
         client.shutdown()
         provider.shutdown()
+
+
+def test_langgraph_attach_helpers_preserve_existing_callbacks() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        created = create_sigil_langgraph_handler(client=client)
+        assert isinstance(created, SigilLangGraphHandler)
+
+        existing = object()
+        config = with_sigil_langgraph_callbacks(
+            {"callbacks": [existing], "durable": True},
+            client=client,
+            agent_name="langgraph-helper",
+        )
+
+        assert config["durable"] is True
+        callbacks = config["callbacks"]
+        assert isinstance(callbacks, list)
+        assert callbacks[0] is existing
+        assert isinstance(callbacks[1], SigilLangGraphHandler)
+    finally:
+        client.shutdown()

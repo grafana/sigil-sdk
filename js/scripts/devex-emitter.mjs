@@ -19,7 +19,16 @@ async function loadFrameworkModules() {
     frameworkModulePromise = Promise.all([
       import('../dist/frameworks/langchain/index.js'),
       import('../dist/frameworks/langgraph/index.js'),
-    ]).then(([langchain, langgraph]) => ({ langchain, langgraph }));
+      import('../dist/frameworks/openai-agents/index.js'),
+      import('../dist/frameworks/llamaindex/index.js'),
+      import('../dist/frameworks/google-adk/index.js'),
+    ]).then(([langchain, langgraph, openaiAgents, llamaindex, googleAdk]) => ({
+      langchain,
+      langgraph,
+      openaiAgents,
+      llamaindex,
+      googleAdk,
+    }));
   }
   return frameworkModulePromise;
 }
@@ -657,6 +666,11 @@ function frameworkModelForSource(source) {
 async function emitFrameworkHandler(HandlerClass, client, source, mode, context) {
   const model = frameworkModelForSource(source);
   const runID = `run-${source}-${context.turn}-${Math.trunc(Math.random() * 100_000)}`;
+  const frameworkMetadata = {
+    conversation_id: context.conversationId,
+    thread_id: context.conversationId,
+    event_id: `framework-event-${runID}`,
+  };
   const handler = new HandlerClass(client, {
     providerResolver: 'auto',
     agentName: context.agentName,
@@ -671,7 +685,9 @@ async function emitFrameworkHandler(HandlerClass, client, source, mode, context)
       [`stream framework status ${context.turn}`],
       runID,
       undefined,
-      { invocation_params: { model, stream: true } }
+      { invocation_params: { model, stream: true } },
+      ['framework'],
+      frameworkMetadata
     );
     await handler.handleLLMNewToken('framework ', undefined, runID);
     await handler.handleLLMNewToken(`${context.turn}`, undefined, runID);
@@ -695,7 +711,9 @@ async function emitFrameworkHandler(HandlerClass, client, source, mode, context)
     [[{ type: 'human', content: `summarize framework path ${context.turn}` }]],
     runID,
     undefined,
-    { invocation_params: { model, stream: false } }
+    { invocation_params: { model, stream: false } },
+    ['framework'],
+    frameworkMetadata
   );
   await handler.handleLLMEnd(
     {
@@ -721,6 +739,9 @@ export async function emitFrameworks(frameworks, client, source, mode, context) 
 
   await emitFrameworkHandler(frameworks.langchain.SigilLangChainHandler, client, source, mode, context);
   await emitFrameworkHandler(frameworks.langgraph.SigilLangGraphHandler, client, source, mode, context);
+  await emitFrameworkHandler(frameworks.openaiAgents.SigilOpenAIAgentsHandler, client, source, mode, context);
+  await emitFrameworkHandler(frameworks.llamaindex.SigilLlamaIndexHandler, client, source, mode, context);
+  await emitFrameworkHandler(frameworks.googleAdk.SigilGoogleAdkHandler, client, source, mode, context);
 }
 
 export async function runEmitter(config = loadConfig()) {

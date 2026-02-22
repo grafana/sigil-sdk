@@ -50,7 +50,7 @@ test('thread rotation resets turn and assigns a new conversation id', async () =
   assert.notEqual(thread.conversationId, firstConversationId);
 });
 
-test('framework emit path invokes both langchain and langgraph handlers for provider sources', async () => {
+test('framework emit path invokes all framework handlers for provider sources', async () => {
   const calls = [];
   class FakeHandler {
     constructor(_client, _options) {}
@@ -66,11 +66,15 @@ test('framework emit path invokes both langchain and langgraph handlers for prov
     {
       langchain: { SigilLangChainHandler: FakeHandler },
       langgraph: { SigilLangGraphHandler: FakeHandler },
+      openaiAgents: { SigilOpenAIAgentsHandler: FakeHandler },
+      llamaindex: { SigilLlamaIndexHandler: FakeHandler },
+      googleAdk: { SigilGoogleAdkHandler: FakeHandler },
     },
     {},
     'openai',
     'SYNC',
     {
+      conversationId: 'conv-framework',
       turn: 3,
       agentName: 'agent',
       agentVersion: 'v1',
@@ -79,7 +83,7 @@ test('framework emit path invokes both langchain and langgraph handlers for prov
     }
   );
 
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 10);
 });
 
 test('framework emit path skips non-provider custom source', async () => {
@@ -94,11 +98,15 @@ test('framework emit path skips non-provider custom source', async () => {
     {
       langchain: { SigilLangChainHandler: FakeHandler },
       langgraph: { SigilLangGraphHandler: FakeHandler },
+      openaiAgents: { SigilOpenAIAgentsHandler: FakeHandler },
+      llamaindex: { SigilLlamaIndexHandler: FakeHandler },
+      googleAdk: { SigilGoogleAdkHandler: FakeHandler },
     },
     {},
     'mistral',
     'SYNC',
     {
+      conversationId: 'conv-framework',
       turn: 3,
       agentName: 'agent',
       agentVersion: 'v1',

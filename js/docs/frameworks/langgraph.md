@@ -12,10 +12,10 @@ pnpm add @grafana/sigil-sdk-js @langchain/core @langchain/langgraph @langchain/o
 
 ```ts
 import { SigilClient } from '@grafana/sigil-sdk-js';
-import { SigilLangGraphHandler } from '@grafana/sigil-sdk-js/langgraph';
+import { withSigilLangGraphCallbacks } from '@grafana/sigil-sdk-js/langgraph';
 
 const client = new SigilClient();
-const handler = new SigilLangGraphHandler(client, { providerResolver: 'auto' });
+const config = withSigilLangGraphCallbacks(undefined, client, { providerResolver: 'auto' });
 ```
 
 ## End-to-end example (graph invoke + stream)
@@ -24,7 +24,10 @@ const handler = new SigilLangGraphHandler(client, { providerResolver: 'auto' });
 import { ChatOpenAI } from '@langchain/openai';
 import { END, START, StateGraph, Annotation } from '@langchain/langgraph';
 import { SigilClient } from '@grafana/sigil-sdk-js';
-import { SigilLangGraphHandler } from '@grafana/sigil-sdk-js/langgraph';
+import {
+  SigilLangGraphHandler,
+  withSigilLangGraphCallbacks,
+} from '@grafana/sigil-sdk-js/langgraph';
 
 const GraphState = Annotation.Root({
   prompt: Annotation<string>(),
@@ -41,7 +44,10 @@ const llm = new ChatOpenAI({ model: 'gpt-4o-mini', temperature: 0 });
 
 const graph = new StateGraph(GraphState)
   .addNode('model', async (state) => {
-    const response = await llm.invoke(state.prompt, { callbacks: [handler] });
+    const response = await llm.invoke(
+      state.prompt,
+      withSigilLangGraphCallbacks(undefined, client, { providerResolver: 'auto' })
+    );
     return { answer: String(response.content) };
   })
   .addEdge(START, 'model')
@@ -56,6 +62,10 @@ console.log(out.answer);
 for await (const _event of graph.stream({ prompt: 'List three practical alerting tips.', answer: '' })) {
   // Consume events to drive streamed model execution.
 }
+
+// Advanced usage: instantiate and pass a handler manually.
+const handler = new SigilLangGraphHandler(client, { providerResolver: 'auto' });
+await llm.invoke('manual handler wiring', { callbacks: [handler] });
 
 await client.shutdown();
 ```
@@ -75,7 +85,7 @@ const persistedGraph = new StateGraph(GraphState)
   .addEdge('model', END)
   .compile({ checkpointer });
 const threadConfig = {
-  callbacks: [handler],
+  ...withSigilLangGraphCallbacks(undefined, client, { providerResolver: 'auto' }),
   configurable: { thread_id: 'customer-42' },
 };
 
@@ -89,6 +99,8 @@ When `thread_id` is present, the handler records:
 - `metadata["sigil.framework.run_id"]=<run id>`
 - `metadata["sigil.framework.thread_id"]=<thread id>`
 - generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id`
+
+When `conversation_id` / `session_id` / `group_id` is present, that value is used as primary `conversationId`.
 
 ## Contract
 
@@ -112,8 +124,11 @@ Framework tags and metadata are always injected:
 - `metadata["sigil.framework.run_type"]=<llm|chat|tool|chain|retriever>`
 - `metadata["sigil.framework.tags"]=<normalized callback tags>`
 - `metadata["sigil.framework.retry_attempt"]=<attempt>` (when available)
+- `metadata["sigil.framework.event_id"]=<event id>` (when available)
 - `metadata["sigil.framework.langgraph.node"]=<node id>` (when callback context exposes it)
 - generation span attributes mirror low-cardinality framework metadata keys
+
+Fallback conversation mapping uses `sigil:framework:langgraph:<run_id>` when no framework session key is available.
 
 Provider resolver behavior:
 

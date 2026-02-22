@@ -3,6 +3,8 @@ import { SigilFrameworkHandler, type FrameworkHandlerOptions } from '../shared.j
 
 export type { FrameworkHandlerOptions };
 
+type CallbackConfig = Record<string, unknown> & { callbacks?: unknown };
+
 export class SigilLangGraphHandler extends SigilFrameworkHandler {
   name = 'sigil_langgraph_handler';
 
@@ -112,4 +114,33 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
   async handleRetrieverError(error: unknown, runId: string): Promise<void> {
     this.onRetrieverError(error, runId);
   }
+}
+
+export function createSigilLangGraphHandler(
+  client: SigilClient,
+  options: FrameworkHandlerOptions = {}
+): SigilLangGraphHandler {
+  return new SigilLangGraphHandler(client, options);
+}
+
+export function withSigilLangGraphCallbacks<T extends CallbackConfig>(
+  config: T | undefined,
+  client: SigilClient,
+  options: FrameworkHandlerOptions = {}
+): T & { callbacks: unknown[] } {
+  const handler = createSigilLangGraphHandler(client, options);
+  const base = { ...(config ?? {}) } as CallbackConfig;
+  const existingValue = base.callbacks;
+  const callbacks = Array.isArray(existingValue)
+    ? [...existingValue]
+    : existingValue === undefined
+      ? []
+      : [existingValue];
+  if (!callbacks.some((callback) => callback instanceof SigilLangGraphHandler)) {
+    callbacks.push(handler);
+  }
+  return {
+    ...base,
+    callbacks,
+  } as T & { callbacks: unknown[] };
 }

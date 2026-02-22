@@ -16,6 +16,13 @@ type ProviderResolverFn = (context: {
   invocationParams?: unknown;
 }) => string;
 
+type FrameworkName =
+  | 'langchain'
+  | 'langgraph'
+  | 'openai-agents'
+  | 'llamaindex'
+  | 'google-adk';
+
 const frameworkInstrumentationName = 'github.com/grafana/sigil/sdks/js/frameworks';
 const spanAttrOperationName = 'gen_ai.operation.name';
 const spanAttrConversationID = 'gen_ai.conversation.id';
@@ -23,13 +30,18 @@ const spanAttrFrameworkName = 'sigil.framework.name';
 const spanAttrFrameworkSource = 'sigil.framework.source';
 const spanAttrFrameworkLanguage = 'sigil.framework.language';
 const spanAttrFrameworkRunID = 'sigil.framework.run_id';
+const spanAttrFrameworkThreadID = 'sigil.framework.thread_id';
 const spanAttrFrameworkParentRunID = 'sigil.framework.parent_run_id';
 const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
 const spanAttrFrameworkRunType = 'sigil.framework.run_type';
+const spanAttrFrameworkTags = 'sigil.framework.tags';
 const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
 const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
+const spanAttrFrameworkEventID = 'sigil.framework.event_id';
 const spanAttrErrorType = 'error.type';
 const spanAttrErrorCategory = 'error.category';
+const frameworkSource = 'handler';
+const maxFrameworkMetadataDepth = 5;
 
 export interface FrameworkHandlerOptions {
   agentName?: string;
@@ -58,6 +70,7 @@ interface ToolRunState {
 
 interface FrameworkContext {
   conversationId: string;
+  threadId: string;
   metadata: Record<string, unknown>;
   tags: Record<string, string>;
   componentName: string;
@@ -65,6 +78,7 @@ interface FrameworkContext {
   runType: string;
   retryAttempt: number | undefined;
   langgraphNode: string;
+  eventId: string;
 }
 
 export class SigilFrameworkHandler {
@@ -83,7 +97,7 @@ export class SigilFrameworkHandler {
 
   constructor(
     private readonly client: SigilClient,
-    private readonly frameworkName: 'langchain' | 'langgraph',
+    private readonly frameworkName: FrameworkName,
     private readonly frameworkLanguage: 'javascript',
     options: FrameworkHandlerOptions = {}
   ) {
@@ -469,11 +483,14 @@ export class SigilFrameworkHandler {
   private setFrameworkSpanAttributes(span: Span, context: FrameworkContext, operationName: string): void {
     span.setAttribute(spanAttrOperationName, operationName);
     span.setAttribute(spanAttrFrameworkName, this.frameworkName);
-    span.setAttribute(spanAttrFrameworkSource, 'handler');
+    span.setAttribute(spanAttrFrameworkSource, frameworkSource);
     span.setAttribute(spanAttrFrameworkLanguage, this.frameworkLanguage);
     span.setAttribute(spanAttrFrameworkRunID, asString(context.metadata[spanAttrFrameworkRunID]));
     if (notEmpty(context.conversationId)) {
       span.setAttribute(spanAttrConversationID, context.conversationId);
+    }
+    if (notEmpty(context.threadId)) {
+      span.setAttribute(spanAttrFrameworkThreadID, context.threadId);
     }
     if (notEmpty(context.parentRunId)) {
       span.setAttribute(spanAttrFrameworkParentRunID, context.parentRunId);
@@ -489,6 +506,9 @@ export class SigilFrameworkHandler {
     }
     if (notEmpty(context.langgraphNode)) {
       span.setAttribute(spanAttrFrameworkLangGraphNode, context.langgraphNode);
+    }
+    if (notEmpty(context.eventId)) {
+      span.setAttribute(spanAttrFrameworkEventID, context.eventId);
     }
   }
 
@@ -527,13 +547,14 @@ export class SigilFrameworkHandler {
     callbackTags?: string[];
     callbackMetadata?: AnyRecord;
   }): FrameworkContext {
-    const threadId = resolveFrameworkThreadId(
+    const conversation = resolveFrameworkConversationContext(
+      this.frameworkName,
+      params.runId,
       params.serialized,
       params.invocationParams,
       params.extraParams,
       params.callbackMetadata
     );
-    const conversationId = threadId.length > 0 ? threadId : params.runId;
     const componentName = resolveComponentName(
       params.serialized,
       params.callbackMetadata,
@@ -554,40 +575,51 @@ export class SigilFrameworkHandler {
     const langgraphNode = this.frameworkName === 'langgraph'
       ? resolveLangGraphNode(params.callbackMetadata, params.extraParams, params.invocationParams, params.serialized)
       : '';
+    const eventId = resolveFrameworkEventID(
+      params.callbackMetadata,
+      params.extraParams,
+      params.invocationParams,
+      params.serialized
+    );
 
-    const metadata: Record<string, unknown> = {
+    const rawMetadata: Record<string, unknown> = {
       ...this.extraMetadata,
       [spanAttrFrameworkRunID]: params.runId,
       [spanAttrFrameworkRunType]: runType,
     };
-    if (threadId.length > 0) {
-      metadata['sigil.framework.thread_id'] = threadId;
+    if (conversation.threadId.length > 0) {
+      rawMetadata[spanAttrFrameworkThreadID] = conversation.threadId;
     }
     if (parentRunId.length > 0) {
-      metadata[spanAttrFrameworkParentRunID] = parentRunId;
+      rawMetadata[spanAttrFrameworkParentRunID] = parentRunId;
     }
     if (componentName.length > 0) {
-      metadata[spanAttrFrameworkComponentName] = componentName;
+      rawMetadata[spanAttrFrameworkComponentName] = componentName;
     }
     if (frameworkTags.length > 0) {
-      metadata['sigil.framework.tags'] = frameworkTags;
+      rawMetadata[spanAttrFrameworkTags] = frameworkTags;
     }
     if (retryAttempt !== undefined) {
-      metadata[spanAttrFrameworkRetryAttempt] = retryAttempt;
+      rawMetadata[spanAttrFrameworkRetryAttempt] = retryAttempt;
     }
     if (langgraphNode.length > 0) {
-      metadata[spanAttrFrameworkLangGraphNode] = langgraphNode;
+      rawMetadata[spanAttrFrameworkLangGraphNode] = langgraphNode;
     }
+    if (eventId.length > 0) {
+      rawMetadata[spanAttrFrameworkEventID] = eventId;
+    }
+    const metadata = normalizeFrameworkMetadata(rawMetadata);
 
     const tags: Record<string, string> = {
       ...this.extraTags,
       'sigil.framework.name': this.frameworkName,
-      'sigil.framework.source': 'handler',
+      'sigil.framework.source': frameworkSource,
       'sigil.framework.language': this.frameworkLanguage,
     };
 
     return {
-      conversationId,
+      conversationId: conversation.conversationId,
+      threadId: conversation.threadId,
       metadata,
       tags,
       componentName,
@@ -595,6 +627,7 @@ export class SigilFrameworkHandler {
       runType,
       retryAttempt,
       langgraphNode,
+      eventId,
     };
   }
 }
@@ -679,6 +712,37 @@ function resolveFrameworkThreadId(
   return '';
 }
 
+function resolveFrameworkConversationContext(
+  frameworkName: FrameworkName,
+  runId: string,
+  serialized: unknown,
+  invocationParams: AnyRecord | undefined,
+  extraParams: AnyRecord | undefined,
+  callbackMetadata: AnyRecord | undefined
+): { conversationId: string; threadId: string } {
+  for (const payload of [callbackMetadata, extraParams, invocationParams, serialized]) {
+    const conversationId = conversationIdFromPayload(payload);
+    if (conversationId.length > 0) {
+      const threadId = threadIdFromPayload(payload);
+      if (threadId.length > 0) {
+        return { conversationId, threadId };
+      }
+      return {
+        conversationId,
+        threadId: resolveFrameworkThreadId(serialized, invocationParams, extraParams, callbackMetadata),
+      };
+    }
+  }
+
+  const threadId = resolveFrameworkThreadId(serialized, invocationParams, extraParams, callbackMetadata);
+  if (threadId.length > 0) {
+    return { conversationId: threadId, threadId };
+  }
+
+  // Deterministic fallback when frameworks do not expose session/conversation identity.
+  return { conversationId: `sigil:framework:${frameworkName}:${runId}`, threadId: '' };
+}
+
 function threadIdFromPayload(payload: unknown): string {
   const candidates = [
     asString(read(payload, 'thread_id')),
@@ -693,6 +757,41 @@ function threadIdFromPayload(payload: unknown): string {
     asString(read(read(read(payload, 'config'), 'metadata'), 'threadId')),
     asString(read(read(read(payload, 'config'), 'configurable'), 'thread_id')),
     asString(read(read(read(payload, 'config'), 'configurable'), 'threadId')),
+  ];
+  for (const candidate of candidates) {
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+function conversationIdFromPayload(payload: unknown): string {
+  const candidates = [
+    asString(read(payload, 'conversation_id')),
+    asString(read(payload, 'conversationId')),
+    asString(read(payload, 'session_id')),
+    asString(read(payload, 'sessionId')),
+    asString(read(payload, 'group_id')),
+    asString(read(payload, 'groupId')),
+    asString(read(read(payload, 'metadata'), 'conversation_id')),
+    asString(read(read(payload, 'metadata'), 'conversationId')),
+    asString(read(read(payload, 'metadata'), 'session_id')),
+    asString(read(read(payload, 'metadata'), 'sessionId')),
+    asString(read(read(payload, 'metadata'), 'group_id')),
+    asString(read(read(payload, 'metadata'), 'groupId')),
+    asString(read(read(payload, 'configurable'), 'conversation_id')),
+    asString(read(read(payload, 'configurable'), 'conversationId')),
+    asString(read(read(payload, 'configurable'), 'session_id')),
+    asString(read(read(payload, 'configurable'), 'sessionId')),
+    asString(read(read(payload, 'configurable'), 'group_id')),
+    asString(read(read(payload, 'configurable'), 'groupId')),
+    asString(read(read(payload, 'config'), 'conversation_id')),
+    asString(read(read(payload, 'config'), 'conversationId')),
+    asString(read(read(payload, 'config'), 'session_id')),
+    asString(read(read(payload, 'config'), 'sessionId')),
+    asString(read(read(payload, 'config'), 'group_id')),
+    asString(read(read(payload, 'config'), 'groupId')),
   ];
   for (const candidate of candidates) {
     if (candidate.length > 0) {
@@ -772,6 +871,27 @@ function resolveFrameworkRetryAttempt(...payloads: unknown[]): number | undefine
   return undefined;
 }
 
+function resolveFrameworkEventID(...payloads: unknown[]): string {
+  for (const payload of payloads) {
+    const candidates = [
+      asString(read(payload, 'event_id')),
+      asString(read(payload, 'eventId')),
+      asString(read(payload, 'invocation_id')),
+      asString(read(payload, 'invocationId')),
+      asString(read(read(payload, 'metadata'), 'event_id')),
+      asString(read(read(payload, 'metadata'), 'eventId')),
+      asString(read(read(payload, 'metadata'), 'invocation_id')),
+      asString(read(read(payload, 'metadata'), 'invocationId')),
+    ];
+    for (const candidate of candidates) {
+      if (candidate.length > 0) {
+        return candidate;
+      }
+    }
+  }
+  return '';
+}
+
 function retryAttemptFromPayload(payload: unknown): number | undefined {
   const candidates = [
     read(payload, 'retry_attempt'),
@@ -808,6 +928,73 @@ function normalizeFrameworkTags(raw: unknown): string[] {
     output.push(trimmed);
   }
   return output;
+}
+
+function normalizeFrameworkMetadata(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const seen = new WeakSet<object>();
+  for (const [key, value] of Object.entries(raw)) {
+    const normalizedKey = key.trim();
+    if (normalizedKey.length === 0) {
+      continue;
+    }
+    const normalizedValue = normalizeFrameworkMetadataValue(value, 0, seen);
+    if (normalizedValue !== undefined) {
+      out[normalizedKey] = normalizedValue;
+    }
+  }
+  return out;
+}
+
+function normalizeFrameworkMetadataValue(
+  value: unknown,
+  depth: number,
+  seen: WeakSet<object>
+): unknown {
+  if (depth > maxFrameworkMetadataDepth || value === undefined) {
+    return undefined;
+  }
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : undefined;
+  }
+  if (typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => normalizeFrameworkMetadataValue(item, depth + 1, seen))
+      .filter((item) => item !== undefined);
+    return normalized;
+  }
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (seen.has(value)) {
+    return '[circular]';
+  }
+  seen.add(value);
+  try {
+    const normalizedObject: Record<string, unknown> = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      const nestedKey = key.trim();
+      if (nestedKey.length === 0) {
+        continue;
+      }
+      const normalizedNestedValue = normalizeFrameworkMetadataValue(nestedValue, depth + 1, seen);
+      if (normalizedNestedValue !== undefined) {
+        normalizedObject[nestedKey] = normalizedNestedValue;
+      }
+    }
+    return normalizedObject;
+  } finally {
+    seen.delete(value);
+  }
 }
 
 function normalizeRunID(runId: string | undefined): string {

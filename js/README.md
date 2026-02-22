@@ -149,40 +149,63 @@ Use module subpath exports for framework callback integrations:
 
 - LangChain: `@grafana/sigil-sdk-js/langchain`
 - LangGraph: `@grafana/sigil-sdk-js/langgraph`
+- OpenAI Agents: `@grafana/sigil-sdk-js/openai-agents`
+- LlamaIndex: `@grafana/sigil-sdk-js/llamaindex`
+- Google ADK: `@grafana/sigil-sdk-js/google-adk`
 - LangChain guide: `docs/frameworks/langchain.md`
 - LangGraph guide: `docs/frameworks/langgraph.md`
+- OpenAI Agents guide: `docs/frameworks/openai-agents.md`
+- LlamaIndex guide: `docs/frameworks/llamaindex.md`
+- Google ADK guide: `docs/frameworks/google-adk.md`
 
 ```ts
 import { SigilClient } from "@grafana/sigil-sdk-js";
-import { SigilLangChainHandler } from "@grafana/sigil-sdk-js/langchain";
-import { SigilLangGraphHandler } from "@grafana/sigil-sdk-js/langgraph";
+import { withSigilLangChainCallbacks } from "@grafana/sigil-sdk-js/langchain";
+import { withSigilLangGraphCallbacks } from "@grafana/sigil-sdk-js/langgraph";
+import { withSigilOpenAIAgentsHooks } from "@grafana/sigil-sdk-js/openai-agents";
+import { withSigilLlamaIndexCallbacks } from "@grafana/sigil-sdk-js/llamaindex";
+import { withSigilGoogleAdkPlugins } from "@grafana/sigil-sdk-js/google-adk";
+import { Runner } from "@openai/agents";
+import { CallbackManager } from "llamaindex";
 
 const client = new SigilClient();
-const chainHandler = new SigilLangChainHandler(client, { providerResolver: "auto" });
-const graphHandler = new SigilLangGraphHandler(client, { providerResolver: "auto" });
+const langChainConfig = withSigilLangChainCallbacks(undefined, client, { providerResolver: "auto" });
+const langGraphConfig = withSigilLangGraphCallbacks(undefined, client, { providerResolver: "auto" });
+const runner = new Runner();
+const openAIAgentsHooks = withSigilOpenAIAgentsHooks(runner, client, { providerResolver: "auto" });
+const callbackManager = new CallbackManager();
+const llamaIndexConfig = withSigilLlamaIndexCallbacks({ callbackManager }, client, { providerResolver: "auto" });
+const googleAdkRunnerConfig = withSigilGoogleAdkPlugins(undefined, client, { providerResolver: "auto" });
 ```
 
 Each framework handler injects:
 
-- `sigil.framework.name` (`langchain` or `langgraph`)
+- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, or `google-adk`)
 - `sigil.framework.source=handler`
 - `sigil.framework.language=javascript`
 - `metadata["sigil.framework.run_id"]`
-- `metadata["sigil.framework.thread_id"]` (when present in callback metadata/config)
+- `metadata["sigil.framework.thread_id"]` (when present)
 - `metadata["sigil.framework.parent_run_id"]` (when available)
 - `metadata["sigil.framework.component_name"]`
 - `metadata["sigil.framework.run_type"]`
 - `metadata["sigil.framework.tags"]`
 - `metadata["sigil.framework.retry_attempt"]` (when available)
+- `metadata["sigil.framework.event_id"]` (when available)
 - `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
 
-When present in generation metadata, low-cardinality framework keys are also copied onto generation span attributes.
+Conversation mapping is conversation-first:
+
+- `conversation_id` / `session_id` / `group_id` from framework context first
+- then `thread_id`
+- deterministic fallback `sigil:framework:<framework_name>:<run_id>`
+
+When present in generation metadata, low-cardinality framework keys are copied onto generation span attributes.
 
 For LangGraph persistence, pass `configurable.thread_id` and reuse it across invocations:
 
 ```ts
 const threadConfig = {
-  callbacks: [graphHandler],
+  ...withSigilLangGraphCallbacks(undefined, client, { providerResolver: "auto" }),
   configurable: { thread_id: 'customer-42' },
 };
 await graph.invoke({ prompt: 'Remember my timezone is UTC+1.', answer: '' }, threadConfig);

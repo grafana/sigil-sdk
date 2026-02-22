@@ -81,6 +81,21 @@ try:
 except ModuleNotFoundError as langgraph_import_error:  # pragma: no cover - exercised by sdk-core tests
     SigilLangGraphHandler = _MissingProviderNamespace("sigil_sdk_langgraph", langgraph_import_error)  # type: ignore[assignment]
 
+try:
+    from sigil_sdk_openai_agents import SigilOpenAIAgentsHandler
+except ModuleNotFoundError as openai_agents_import_error:  # pragma: no cover - exercised by sdk-core tests
+    SigilOpenAIAgentsHandler = _MissingProviderNamespace("sigil_sdk_openai_agents", openai_agents_import_error)  # type: ignore[assignment]
+
+try:
+    from sigil_sdk_llamaindex import SigilLlamaIndexHandler
+except ModuleNotFoundError as llamaindex_import_error:  # pragma: no cover - exercised by sdk-core tests
+    SigilLlamaIndexHandler = _MissingProviderNamespace("sigil_sdk_llamaindex", llamaindex_import_error)  # type: ignore[assignment]
+
+try:
+    from sigil_sdk_google_adk import SigilGoogleAdkHandler
+except ModuleNotFoundError as google_adk_import_error:  # pragma: no cover - exercised by sdk-core tests
+    SigilGoogleAdkHandler = _MissingProviderNamespace("sigil_sdk_google_adk", google_adk_import_error)  # type: ignore[assignment]
+
 LANGUAGE = "python"
 SOURCES = ("openai", "anthropic", "gemini", "mistral")
 PERSONAS = ("planner", "retriever", "executor")
@@ -771,6 +786,11 @@ def _emit_framework_handler(
     model_name = _framework_model_for_source(source)
     run_id = uuid4()
     invocation_params = {"model": model_name, "stream": mode == "STREAM"}
+    callback_metadata = {
+        "conversation_id": context.conversation_id,
+        "thread_id": context.conversation_id,
+        "event_id": f"framework-event-{run_id}",
+    }
     handler = handler_cls(
         client=client,
         provider_resolver="auto",
@@ -786,6 +806,8 @@ def _emit_framework_handler(
             [f"stream framework status {context.turn}"],
             run_id=run_id,
             invocation_params=invocation_params,
+            metadata=callback_metadata,
+            tags=["framework"],
         )
         handler.on_llm_new_token("framework ", run_id=run_id)
         handler.on_llm_new_token(f"{context.turn}", run_id=run_id)
@@ -808,6 +830,8 @@ def _emit_framework_handler(
         [[{"type": "human", "content": f"summarize framework path {context.turn}"}]],
         run_id=run_id,
         invocation_params=invocation_params,
+        metadata=callback_metadata,
+        tags=["framework"],
     )
     handler.on_llm_end(
         {
@@ -834,6 +858,12 @@ def emit_frameworks(client: Client, source: str, mode: str, context: EmitContext
         _emit_framework_handler(SigilLangChainHandler, client, source, mode, context)
     if callable(SigilLangGraphHandler):
         _emit_framework_handler(SigilLangGraphHandler, client, source, mode, context)
+    if callable(SigilOpenAIAgentsHandler):
+        _emit_framework_handler(SigilOpenAIAgentsHandler, client, source, mode, context)
+    if callable(SigilLlamaIndexHandler):
+        _emit_framework_handler(SigilLlamaIndexHandler, client, source, mode, context)
+    if callable(SigilGoogleAdkHandler):
+        _emit_framework_handler(SigilGoogleAdkHandler, client, source, mode, context)
 
 
 def _request_stop(_signum: int, _frame: object) -> None:

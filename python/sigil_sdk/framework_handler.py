@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import math
 from typing import Any, Callable
 from uuid import UUID
 
@@ -42,8 +43,11 @@ _span_attr_framework_run_type = "sigil.framework.run_type"
 _span_attr_framework_tags = "sigil.framework.tags"
 _span_attr_framework_retry_attempt = "sigil.framework.retry_attempt"
 _span_attr_framework_langgraph_node = "sigil.framework.langgraph.node"
+_span_attr_framework_event_id = "sigil.framework.event_id"
 _span_attr_error_type = "error.type"
 _span_attr_error_category = "error.category"
+_max_framework_metadata_depth = 5
+_metadata_drop = object()
 
 
 @dataclass(slots=True)
@@ -60,6 +64,23 @@ class _ToolRunState:
     recorder: Any
     arguments: Any
     capture_outputs: bool
+
+
+def merge_framework_callback_kwargs(
+    callback_kwargs: dict[str, Any],
+    *,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    run_name: str | None = None,
+) -> dict[str, Any]:
+    merged = dict(callback_kwargs)
+    if tags is not None:
+        merged["tags"] = tags
+    if metadata is not None:
+        merged["metadata"] = metadata
+    if run_name is not None and run_name.strip() != "":
+        merged["run_name"] = run_name
+    return merged
 
 
 class SigilFrameworkHandlerBase:
@@ -131,7 +152,9 @@ class SigilFrameworkHandlerBase:
         tags["sigil.framework.source"] = self._framework_source
         tags["sigil.framework.language"] = self._framework_language
 
-        thread_id = _resolve_framework_thread_id(
+        conversation_id, thread_id = _resolve_framework_conversation_id(
+            framework_name=self._framework_name,
+            run_key=run_key,
             serialized=serialized,
             invocation_params=invocation_params,
             callback_kwargs=callback_kwargs,
@@ -141,7 +164,7 @@ class SigilFrameworkHandlerBase:
         callback_tags = _normalize_framework_tags(_read(callback_kwargs, "tags"))
         retry_attempt = _resolve_framework_retry_attempt(callback_kwargs, invocation_params, serialized)
         langgraph_node = _resolve_langgraph_node(callback_kwargs, invocation_params, serialized)
-        conversation_id = thread_id if thread_id != "" else run_key
+        event_id = _resolve_framework_event_id(callback_kwargs, invocation_params, serialized)
 
         metadata: dict[str, Any] = dict(self._extra_metadata)
         metadata[_span_attr_framework_run_id] = run_key
@@ -158,6 +181,9 @@ class SigilFrameworkHandlerBase:
             metadata[_span_attr_framework_retry_attempt] = retry_attempt
         if langgraph_node != "":
             metadata[_span_attr_framework_langgraph_node] = langgraph_node
+        if event_id != "":
+            metadata[_span_attr_framework_event_id] = event_id
+        metadata = _normalize_framework_metadata(metadata)
 
         start = GenerationStart(
             conversation_id=conversation_id,
@@ -207,7 +233,9 @@ class SigilFrameworkHandlerBase:
         tags["sigil.framework.source"] = self._framework_source
         tags["sigil.framework.language"] = self._framework_language
 
-        thread_id = _resolve_framework_thread_id(
+        conversation_id, thread_id = _resolve_framework_conversation_id(
+            framework_name=self._framework_name,
+            run_key=run_key,
             serialized=serialized,
             invocation_params=invocation_params,
             callback_kwargs=callback_kwargs,
@@ -217,7 +245,7 @@ class SigilFrameworkHandlerBase:
         callback_tags = _normalize_framework_tags(_read(callback_kwargs, "tags"))
         retry_attempt = _resolve_framework_retry_attempt(callback_kwargs, invocation_params, serialized)
         langgraph_node = _resolve_langgraph_node(callback_kwargs, invocation_params, serialized)
-        conversation_id = thread_id if thread_id != "" else run_key
+        event_id = _resolve_framework_event_id(callback_kwargs, invocation_params, serialized)
 
         metadata: dict[str, Any] = dict(self._extra_metadata)
         metadata[_span_attr_framework_run_id] = run_key
@@ -234,6 +262,9 @@ class SigilFrameworkHandlerBase:
             metadata[_span_attr_framework_retry_attempt] = retry_attempt
         if langgraph_node != "":
             metadata[_span_attr_framework_langgraph_node] = langgraph_node
+        if event_id != "":
+            metadata[_span_attr_framework_event_id] = event_id
+        metadata = _normalize_framework_metadata(metadata)
 
         start = GenerationStart(
             conversation_id=conversation_id,
@@ -343,12 +374,13 @@ class SigilFrameworkHandlerBase:
         if run_key in self._tool_runs:
             return
 
-        thread_id = _resolve_framework_thread_id(
+        conversation_id, thread_id = _resolve_framework_conversation_id(
+            framework_name=self._framework_name,
+            run_key=run_key,
             serialized=serialized,
             invocation_params=None,
             callback_kwargs=callback_kwargs,
         )
-        conversation_id = thread_id if thread_id != "" else run_key
         tool_name = _resolve_tool_name(serialized, callback_kwargs)
         include_content = self._capture_inputs or self._capture_outputs
 
@@ -477,16 +509,18 @@ class SigilFrameworkHandlerBase:
         operation_name: str,
         fallback_component: str,
     ) -> Span:
-        thread_id = _resolve_framework_thread_id(
+        conversation_id, thread_id = _resolve_framework_conversation_id(
+            framework_name=self._framework_name,
+            run_key=run_key,
             serialized=serialized,
             invocation_params=invocation_params,
             callback_kwargs=callback_kwargs,
         )
         parent_run_key = _normalize_run_key(parent_run_id)
-        conversation_id = thread_id if thread_id != "" else run_key
         component_name = _resolve_component_name(serialized, callback_kwargs)
         retry_attempt = _resolve_framework_retry_attempt(callback_kwargs, invocation_params, serialized)
         langgraph_node = _resolve_langgraph_node(callback_kwargs, invocation_params, serialized)
+        event_id = _resolve_framework_event_id(callback_kwargs, invocation_params, serialized)
 
         span_name = f"{self._framework_name}.{fallback_component}"
         component = component_name if component_name != "" else fallback_component
@@ -512,6 +546,8 @@ class SigilFrameworkHandlerBase:
             span.set_attribute(_span_attr_framework_retry_attempt, retry_attempt)
         if langgraph_node != "":
             span.set_attribute(_span_attr_framework_langgraph_node, langgraph_node)
+        if event_id != "":
+            span.set_attribute(_span_attr_framework_event_id, event_id)
 
         return span
 
@@ -625,6 +661,38 @@ def _resolve_framework_thread_id(
     return ""
 
 
+def _resolve_framework_conversation_id(
+    *,
+    framework_name: str,
+    run_key: str,
+    serialized: dict[str, Any] | None,
+    invocation_params: dict[str, Any] | None,
+    callback_kwargs: dict[str, Any] | None,
+) -> tuple[str, str]:
+    for payload in (callback_kwargs, invocation_params, serialized):
+        conversation_id = _conversation_id_from_payload(payload)
+        if conversation_id != "":
+            thread_id = _thread_id_from_payload(payload)
+            if thread_id != "":
+                return conversation_id, thread_id
+            return conversation_id, _resolve_framework_thread_id(
+                serialized=serialized,
+                invocation_params=invocation_params,
+                callback_kwargs=callback_kwargs,
+            )
+
+    thread_id = _resolve_framework_thread_id(
+        serialized=serialized,
+        invocation_params=invocation_params,
+        callback_kwargs=callback_kwargs,
+    )
+    if thread_id != "":
+        return thread_id, thread_id
+
+    # Deterministic fallback when framework context does not expose a stable conversation key.
+    return f"sigil:framework:{framework_name}:{run_key}", ""
+
+
 def _thread_id_from_payload(payload: Any) -> str:
     candidates = (
         _as_str(_read(payload, "thread_id")),
@@ -639,6 +707,39 @@ def _thread_id_from_payload(payload: Any) -> str:
         _as_str(_read(_read(_read(payload, "config"), "metadata"), "threadId")),
         _as_str(_read(_read(_read(payload, "config"), "configurable"), "thread_id")),
         _as_str(_read(_read(_read(payload, "config"), "configurable"), "threadId")),
+    )
+    for candidate in candidates:
+        if candidate != "":
+            return candidate
+    return ""
+
+
+def _conversation_id_from_payload(payload: Any) -> str:
+    candidates = (
+        _as_str(_read(payload, "conversation_id")),
+        _as_str(_read(payload, "conversationId")),
+        _as_str(_read(payload, "session_id")),
+        _as_str(_read(payload, "sessionId")),
+        _as_str(_read(payload, "group_id")),
+        _as_str(_read(payload, "groupId")),
+        _as_str(_read(_read(payload, "metadata"), "conversation_id")),
+        _as_str(_read(_read(payload, "metadata"), "conversationId")),
+        _as_str(_read(_read(payload, "metadata"), "session_id")),
+        _as_str(_read(_read(payload, "metadata"), "sessionId")),
+        _as_str(_read(_read(payload, "metadata"), "group_id")),
+        _as_str(_read(_read(payload, "metadata"), "groupId")),
+        _as_str(_read(_read(payload, "configurable"), "conversation_id")),
+        _as_str(_read(_read(payload, "configurable"), "conversationId")),
+        _as_str(_read(_read(payload, "configurable"), "session_id")),
+        _as_str(_read(_read(payload, "configurable"), "sessionId")),
+        _as_str(_read(_read(payload, "configurable"), "group_id")),
+        _as_str(_read(_read(payload, "configurable"), "groupId")),
+        _as_str(_read(_read(payload, "config"), "conversation_id")),
+        _as_str(_read(_read(payload, "config"), "conversationId")),
+        _as_str(_read(_read(payload, "config"), "session_id")),
+        _as_str(_read(_read(payload, "config"), "sessionId")),
+        _as_str(_read(_read(payload, "config"), "group_id")),
+        _as_str(_read(_read(payload, "config"), "groupId")),
     )
     for candidate in candidates:
         if candidate != "":
@@ -706,12 +807,95 @@ def _normalize_framework_tags(value: Any) -> list[str]:
     return output
 
 
+def _normalize_framework_metadata(value: dict[str, Any]) -> dict[str, Any]:
+    output: dict[str, Any] = {}
+    seen: set[int] = set()
+    for raw_key, raw_item in value.items():
+        if not isinstance(raw_key, str):
+            continue
+        key = raw_key.strip()
+        if key == "":
+            continue
+        normalized_item = _normalize_framework_metadata_value(raw_item, depth=0, seen=seen)
+        if normalized_item is _metadata_drop:
+            continue
+        output[key] = normalized_item
+    return output
+
+
+def _normalize_framework_metadata_value(value: Any, *, depth: int, seen: set[int]) -> Any:
+    if depth > _max_framework_metadata_depth:
+        return _metadata_drop
+
+    if value is None:
+        return None
+
+    if isinstance(value, (str, bool, int)):
+        return value
+
+    if isinstance(value, float):
+        return value if math.isfinite(value) else _metadata_drop
+
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+
+    if isinstance(value, (list, tuple)):
+        output: list[Any] = []
+        for item in value:
+            normalized_item = _normalize_framework_metadata_value(item, depth=depth + 1, seen=seen)
+            if normalized_item is _metadata_drop:
+                continue
+            output.append(normalized_item)
+        return output
+
+    if isinstance(value, dict):
+        value_id = id(value)
+        if value_id in seen:
+            return "[circular]"
+        seen.add(value_id)
+        output: dict[str, Any] = {}
+        for raw_key, raw_item in value.items():
+            if not isinstance(raw_key, str):
+                continue
+            key = raw_key.strip()
+            if key == "":
+                continue
+            normalized_item = _normalize_framework_metadata_value(raw_item, depth=depth + 1, seen=seen)
+            if normalized_item is _metadata_drop:
+                continue
+            output[key] = normalized_item
+        seen.remove(value_id)
+        return output
+
+    return _metadata_drop
+
+
 def _resolve_framework_retry_attempt(*payloads: Any) -> int | None:
     for payload in payloads:
         value = _retry_attempt_from_payload(payload)
         if value is not None:
             return value
     return None
+
+
+def _resolve_framework_event_id(*payloads: Any) -> str:
+    for payload in payloads:
+        if payload is None:
+            continue
+        candidates = (
+            _as_str(_read(payload, "event_id")),
+            _as_str(_read(payload, "eventId")),
+            _as_str(_read(payload, "invocation_id")),
+            _as_str(_read(payload, "invocationId")),
+            _as_str(_read(_read(payload, "metadata"), "event_id")),
+            _as_str(_read(_read(payload, "metadata"), "eventId")),
+            _as_str(_read(_read(payload, "metadata"), "invocation_id")),
+            _as_str(_read(_read(payload, "metadata"), "invocationId")),
+        )
+        for candidate in candidates:
+            if candidate != "":
+                return candidate
+    return ""
 
 
 def _retry_attempt_from_payload(payload: Any) -> int | None:
