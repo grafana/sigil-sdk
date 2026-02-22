@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Grafana.Sigil/Grafana.Sigil.csproj" />
-    <PackageReference Include="Anthropic" Version="12.5.0" />
+    <PackageReference Include="Anthropic" Version="12.7.0" />
   </ItemGroup>
 
   <ItemGroup>
