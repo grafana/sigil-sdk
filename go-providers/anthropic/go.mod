@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go-providers/anthropic
 go 1.25.6
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.22.1
+	github.com/anthropics/anthropic-sdk-go v1.25.0
 	github.com/grafana/sigil/sdks/go v0.0.0
 )
 
