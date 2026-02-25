@@ -41,8 +41,9 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "mockwebserver" }
 javax-annotation = { module = "javax.annotation:javax.annotation-api", version.ref = "javaxAnnotation" }
 
+<<<<<<< HEAD
 openai-java = { module = "com.openai:openai-java", version = "4.22.0" }
-anthropic-java = { module = "com.anthropic:anthropic-java", version = "2.14.0" }
+anthropic-java = { module = "com.anthropic:anthropic-java", version = "2.15.0" }
 google-genai = { module = "com.google.genai:google-genai", version = "1.40.0" }
 
 [plugins]
