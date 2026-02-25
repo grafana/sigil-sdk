@@ -326,7 +326,7 @@ func TestFromRequestResponseMapsThinkingDisabled(t *testing.T) {
 }
 
 func testRequest() asdk.BetaMessageNewParams {
-	toolResult := asdk.NewBetaToolResultBlock("toolu_1")
+	toolResult := asdk.NewBetaToolResultBlock("toolu_1", "", false)
 	toolResult.OfToolResult.Content = []asdk.BetaToolResultBlockParamContentUnion{
 		{
 			OfText: &asdk.BetaTextBlockParam{
