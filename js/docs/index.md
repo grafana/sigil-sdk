@@ -19,3 +19,4 @@ This directory contains public SDK usage docs for the TypeScript/JavaScript pack
 - `frameworks/openai-agents.md`
 - `frameworks/llamaindex.md`
 - `frameworks/google-adk.md`
+- `frameworks/vercel-ai-sdk.md`

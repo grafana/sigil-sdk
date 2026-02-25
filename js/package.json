@@ -30,6 +30,10 @@
     "./google-adk": {
       "types": "./dist/frameworks/google-adk/index.d.ts",
       "import": "./dist/frameworks/google-adk/index.js"
+    },
+    "./vercel-ai-sdk": {
+      "types": "./dist/frameworks/vercel-ai-sdk/index.d.ts",
+      "import": "./dist/frameworks/vercel-ai-sdk/index.js"
     }
   },
   "files": [
