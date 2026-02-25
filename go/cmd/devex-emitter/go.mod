@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go/cmd/devex-emitter
 go 1.25.6
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.25.0
+	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/grafana/sigil/sdks/go v0.0.0
 	github.com/grafana/sigil/sdks/go-providers/anthropic v0.0.0
 	github.com/grafana/sigil/sdks/go-providers/gemini v0.0.0
@@ -44,6 +44,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect

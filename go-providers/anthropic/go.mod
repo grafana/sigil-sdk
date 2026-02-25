@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go-providers/anthropic
 go 1.25.6
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.25.0
+	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/grafana/sigil/sdks/go v0.0.0
 )
 
@@ -22,6 +22,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	go.opentelemetry.io/otel/trace v1.40.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
