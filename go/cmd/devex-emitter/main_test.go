@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -142,5 +143,68 @@ func TestInstallTelemetryProvidersExportsSpans(t *testing.T) {
 	}
 	if serviceName != traceServiceName {
 		t.Fatalf("expected service.name %q, got %q", traceServiceName, serviceName)
+	}
+}
+
+func TestEmitSyntheticLifecycleSpansProducesTraceRichSpanCount(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	previousMeterProvider := otel.GetMeterProvider()
+	exporter := tracetest.NewInMemoryExporter()
+	tracerProvider, meterProvider := installTelemetryProviders(exporter, sdkmetric.NewManualReader())
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		otel.SetMeterProvider(previousMeterProvider)
+		_ = tracerProvider.Shutdown(context.Background())
+		_ = meterProvider.Shutdown(context.Background())
+	})
+
+	ctx, root := otel.Tracer("devex-emitter-test").Start(context.Background(), "root")
+	syntheticCount := emitSyntheticLifecycleSpans(ctx, rand.New(rand.NewSource(42)))
+	root.End()
+	if err := tracerProvider.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("force flush: %v", err)
+	}
+
+	if syntheticCount < minSyntheticSpans || syntheticCount > maxSyntheticSpans {
+		t.Fatalf("expected synthetic count in [%d,%d], got %d", minSyntheticSpans, maxSyntheticSpans, syntheticCount)
+	}
+
+	spans := exporter.GetSpans()
+	if len(spans) != syntheticCount+1 {
+		t.Fatalf("expected root + synthetic spans (%d), got %d", syntheticCount+1, len(spans))
+	}
+
+	syntheticSeen := 0
+	for _, span := range spans {
+		if span.Name == "root" {
+			continue
+		}
+		syntheticSeen++
+		foundCategory := false
+		var simulatedDurationMs int64 = -1
+		for _, kv := range span.Attributes {
+			if string(kv.Key) == "sigil.synthetic.category" && kv.Value.AsString() != "" {
+				foundCategory = true
+			}
+			if string(kv.Key) == "sigil.synthetic.simulated_duration_ms" {
+				simulatedDurationMs = kv.Value.AsInt64()
+			}
+		}
+		if !span.EndTime.After(span.StartTime) {
+			t.Fatalf("expected synthetic span %q to have end time after start time", span.Name)
+		}
+		if !foundCategory {
+			t.Fatalf("expected synthetic span %q to include sigil.synthetic.category attribute", span.Name)
+		}
+		if simulatedDurationMs <= 0 {
+			t.Fatalf("expected synthetic span %q to include positive simulated duration attribute", span.Name)
+		}
+		actualDurationMs := span.EndTime.Sub(span.StartTime).Milliseconds()
+		if actualDurationMs != simulatedDurationMs {
+			t.Fatalf("expected synthetic span %q duration to match simulated duration: actual=%dms simulated=%dms", span.Name, actualDurationMs, simulatedDurationMs)
+		}
+	}
+	if syntheticSeen != syntheticCount {
+		t.Fatalf("expected %d synthetic spans, saw %d", syntheticCount, syntheticSeen)
 	}
 }

@@ -21,9 +21,11 @@ import (
 	oresponses "github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -36,6 +38,8 @@ const (
 	traceServiceEnv     = "sigil-devex"
 	traceShutdownGrace  = 5 * time.Second
 	metricFlushInterval = 2 * time.Second
+	minSyntheticSpans   = 15
+	maxSyntheticSpans   = 30
 )
 
 type runtimeConfig struct {
@@ -149,6 +153,24 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 	agentVersion := "devex-1"
 
 	ctx := context.Background()
+	tracer := otel.Tracer("sigil.devex.synthetic")
+	ctx, conversationSpan := tracer.Start(
+		ctx,
+		fmt.Sprintf("conversation.%s.turn", src),
+		oteltrace.WithAttributes(
+			attribute.String("sigil.synthetic.trace_type", "llm_conversation"),
+			attribute.String("sigil.devex.provider", string(src)),
+			attribute.String("sigil.devex.mode", string(mode)),
+			attribute.String("sigil.devex.conversation_id", thread.conversationID),
+			attribute.Int("sigil.devex.turn", thread.turn),
+			attribute.Int("sigil.devex.slot", slot),
+			attribute.String("sigil.devex.scenario", envelope.tags["sigil.devex.scenario"]),
+		),
+	)
+	defer conversationSpan.End()
+	syntheticCount := emitSyntheticLifecycleSpans(ctx, randSeed)
+	conversationSpan.SetAttributes(attribute.Int("sigil.synthetic.span_count", syntheticCount))
+
 	switch src {
 	case sourceOpenAI:
 		if mode == sigil.GenerationModeStream {
@@ -182,6 +204,122 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 		return emitCustomSync(ctx, client, provider, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn, randSeed)
 	default:
 		return fmt.Errorf("unknown source %q", src)
+	}
+}
+
+func emitSyntheticLifecycleSpans(ctx context.Context, randSeed *rand.Rand) int {
+	if randSeed == nil {
+		randSeed = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	operations := []struct {
+		name      string
+		category  string
+		component string
+	}{
+		{name: "auth.validate_session", category: "auth", component: "auth-service"},
+		{name: "auth.refresh_token", category: "auth", component: "auth-service"},
+		{name: "db.load_conversation_context", category: "database", component: "postgres"},
+		{name: "db.store_generation_metadata", category: "database", component: "postgres"},
+		{name: "cache.redis_get", category: "cache", component: "redis"},
+		{name: "cache.redis_set", category: "cache", component: "redis"},
+		{name: "retrieval.vector_search", category: "retrieval", component: "vector-db"},
+		{name: "retrieval.rerank_documents", category: "retrieval", component: "reranker"},
+		{name: "tools.web_search.call", category: "tool_call", component: "tool-runner"},
+		{name: "tools.sql_query.call", category: "tool_call", component: "tool-runner"},
+		{name: "tools.code_interpreter.call", category: "tool_call", component: "tool-runner"},
+		{name: "policy.safety_screen", category: "guardrail", component: "safety-service"},
+		{name: "prompt.assemble_context", category: "prompting", component: "prompt-builder"},
+		{name: "llm.request", category: "model", component: "provider-gateway"},
+		{name: "llm.first_token_wait", category: "model", component: "provider-gateway"},
+		{name: "output.stream_chunks", category: "streaming", component: "stream-router"},
+		{name: "external.crm_lookup", category: "external_service", component: "crm-api"},
+		{name: "external.calendar_lookup", category: "external_service", component: "calendar-api"},
+		{name: "external.slack_post", category: "external_service", component: "slack-api"},
+		{name: "observability.emit_metrics", category: "telemetry", component: "metrics-pipeline"},
+	}
+
+	spanCount := minSyntheticSpans + randSeed.Intn(maxSyntheticSpans-minSyntheticSpans+1)
+	tracer := otel.Tracer("sigil.devex.synthetic")
+
+	for i := 0; i < spanCount; i++ {
+		op := operations[randSeed.Intn(len(operations))]
+		duration := syntheticDuration(op.category, randSeed)
+		endTime := time.Now()
+		startTime := endTime.Add(-duration)
+
+		_, span := tracer.Start(
+			ctx,
+			op.name,
+			oteltrace.WithTimestamp(startTime),
+			oteltrace.WithAttributes(
+				attribute.String("sigil.synthetic.category", op.category),
+				attribute.String("sigil.synthetic.component", op.component),
+				attribute.Int("sigil.synthetic.step_index", i),
+				attribute.Int64("sigil.synthetic.simulated_duration_ms", duration.Milliseconds()),
+			),
+		)
+
+		if op.category == "database" {
+			span.SetAttributes(
+				attribute.String("db.system", "postgresql"),
+				attribute.String("db.operation", []string{"SELECT", "INSERT", "UPDATE"}[randSeed.Intn(3)]),
+			)
+		}
+		if op.category == "tool_call" {
+			toolNames := []string{"web_search", "sql_query", "code_interpreter", "ticket_lookup"}
+			span.SetAttributes(attribute.String("gen_ai.tool.name", toolNames[randSeed.Intn(len(toolNames))]))
+		}
+		if op.category == "external_service" {
+			host := []string{"crm.internal", "calendar.internal", "slack.com"}[randSeed.Intn(3)]
+			span.SetAttributes(attribute.String("server.address", host))
+		}
+		if op.category == "model" {
+			span.SetAttributes(
+				attribute.String("gen_ai.operation.name", []string{"generateText", "streamText"}[randSeed.Intn(2)]),
+				attribute.String("gen_ai.request.model", []string{"gpt-5", "claude-sonnet-4-5", "gemini-2.5-pro"}[randSeed.Intn(3)]),
+			)
+		}
+
+		// Keep failures sparse but present so UI/testing can exercise error states.
+		if randSeed.Intn(100) < 12 {
+			errorType := []string{"timeout", "rate_limit", "upstream_503", "validation_error"}[randSeed.Intn(4)]
+			span.SetStatus(codes.Error, errorType)
+			span.SetAttributes(
+				attribute.String("error.type", errorType),
+				attribute.Bool("error", true),
+			)
+		}
+
+		span.End(oteltrace.WithTimestamp(endTime))
+	}
+
+	return spanCount
+}
+
+func syntheticDuration(category string, randSeed *rand.Rand) time.Duration {
+	switch category {
+	case "auth":
+		return time.Duration(8+randSeed.Intn(24)) * time.Millisecond
+	case "database":
+		return time.Duration(18+randSeed.Intn(120)) * time.Millisecond
+	case "cache":
+		return time.Duration(2+randSeed.Intn(10)) * time.Millisecond
+	case "retrieval":
+		return time.Duration(25+randSeed.Intn(150)) * time.Millisecond
+	case "tool_call":
+		return time.Duration(45+randSeed.Intn(260)) * time.Millisecond
+	case "guardrail":
+		return time.Duration(15+randSeed.Intn(70)) * time.Millisecond
+	case "prompting":
+		return time.Duration(10+randSeed.Intn(40)) * time.Millisecond
+	case "model":
+		return time.Duration(90+randSeed.Intn(520)) * time.Millisecond
+	case "streaming":
+		return time.Duration(25+randSeed.Intn(130)) * time.Millisecond
+	case "external_service":
+		return time.Duration(40+randSeed.Intn(220)) * time.Millisecond
+	default:
+		return time.Duration(10+randSeed.Intn(100)) * time.Millisecond
 	}
 }
 
