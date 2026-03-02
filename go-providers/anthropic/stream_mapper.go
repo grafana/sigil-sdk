@@ -1,7 +1,9 @@
 package anthropic
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
@@ -32,13 +34,13 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 	options := applyOptions(opts)
 	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapRequestControls(req)
 
-	assistantParts := make([]sigil.Part, 0, len(summary.Events))
-	toolParts := make([]sigil.Part, 0, 1)
 	usage := sigil.TokenUsage{}
 	stopReason := ""
 	modelName := string(req.Model)
 	responseID := ""
 	serverToolUsage := asdk.BetaServerToolUsage{}
+
+	blocks := newStreamBlockAccumulator()
 
 	for _, event := range summary.Events {
 		switch event.Type {
@@ -49,23 +51,10 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 			if event.Message.Model != "" {
 				modelName = string(event.Message.Model)
 			}
-			for _, message := range mapResponseMessages(event.Message.Content) {
-				if message.Role == sigil.RoleTool {
-					toolParts = append(toolParts, message.Parts...)
-					continue
-				}
-				assistantParts = append(assistantParts, message.Parts...)
-			}
 		case "content_block_start":
-			part, ok := mapRawContentBlock(event.ContentBlock)
-			if !ok {
-				continue
-			}
-			if part.Kind == sigil.PartKindToolResult {
-				toolParts = append(toolParts, part)
-				continue
-			}
-			assistantParts = append(assistantParts, part)
+			blocks.startBlock(int(event.Index), event.ContentBlock)
+		case "content_block_delta":
+			blocks.applyDelta(int(event.Index), event.Delta)
 		case "message_delta":
 			usage = mapDeltaUsage(event.Usage)
 			serverToolUsage = event.Usage.ServerToolUse
@@ -74,6 +63,8 @@ func FromStream(req asdk.BetaMessageNewParams, summary StreamSummary, opts ...Op
 			}
 		}
 	}
+
+	assistantParts, toolParts := blocks.build()
 	metadata := mergeThinkingBudgetMetadata(options.metadata, thinkingBudget)
 	metadata = mergeServerToolUsageMetadata(metadata, serverToolUsage)
 
@@ -164,30 +155,176 @@ func appendStreamEventsArtifact(generation sigil.Generation, events []asdk.BetaR
 	return generation, nil
 }
 
-func mapRawContentBlock(block asdk.BetaRawContentBlockStartEventContentBlockUnion) (sigil.Part, bool) {
-	switch block.Type {
+// streamBlock tracks a single content block being assembled from streaming events.
+type streamBlock struct {
+	index        int
+	blockType    string
+	providerType string
+
+	// text/thinking accumulation
+	text     strings.Builder
+	thinking strings.Builder
+
+	// tool_use fields from content_block_start
+	toolID   string
+	toolName string
+	toolJSON strings.Builder // partial_json deltas
+
+	// tool_result fields from content_block_start
+	toolResultID  string
+	isError       bool
+	resultContent any
+}
+
+// streamBlockAccumulator collects content blocks in index order across
+// content_block_start and content_block_delta events.
+type streamBlockAccumulator struct {
+	blocks   map[int]*streamBlock
+	maxIndex int
+}
+
+func newStreamBlockAccumulator() *streamBlockAccumulator {
+	return &streamBlockAccumulator{
+		blocks:   make(map[int]*streamBlock),
+		maxIndex: -1,
+	}
+}
+
+func (a *streamBlockAccumulator) startBlock(index int, cb asdk.BetaRawContentBlockStartEventContentBlockUnion) {
+	b := &streamBlock{
+		index:        index,
+		blockType:    cb.Type,
+		providerType: cb.Type,
+	}
+
+	switch cb.Type {
 	case "text":
-		if block.Text == "" {
-			return sigil.Part{}, false
+		b.text.WriteString(cb.Text)
+	case "thinking", "redacted_thinking":
+		if cb.Type == "thinking" {
+			b.thinking.WriteString(cb.Thinking)
+		} else {
+			b.thinking.WriteString(cb.Data)
 		}
-		return sigil.TextPart(block.Text), true
-	case "thinking":
-		part := sigil.ThinkingPart(block.Thinking)
-		part.Metadata.ProviderType = block.Type
-		return part, true
-	case "redacted_thinking":
-		part := sigil.ThinkingPart(block.Data)
-		part.Metadata.ProviderType = block.Type
-		return part, true
 	case "tool_use", "server_tool_use", "mcp_tool_use":
-		inputJSON, _ := marshalAny(block.Input)
+		b.toolID = cb.ID
+		b.toolName = cb.Name
+		if cb.Input != nil {
+			if raw, err := json.Marshal(cb.Input); err == nil && string(raw) != "{}" {
+				b.toolJSON.Write(raw)
+			}
+		}
+	default:
+		if isToolResultType(cb.Type) {
+			b.toolResultID = cb.ToolUseID
+			b.isError = cb.IsError
+			b.resultContent = cb.Content
+		}
+	}
+
+	a.blocks[index] = b
+	if index > a.maxIndex {
+		a.maxIndex = index
+	}
+}
+
+func (a *streamBlockAccumulator) applyDelta(index int, delta asdk.BetaRawMessageStreamEventUnionDelta) {
+	b, ok := a.blocks[index]
+	if !ok {
+		b = &streamBlock{index: index}
+		a.blocks[index] = b
+		if index > a.maxIndex {
+			a.maxIndex = index
+		}
+	}
+
+	switch {
+	case delta.Text != "":
+		if b.blockType == "" {
+			b.blockType = "text"
+			b.providerType = "text"
+		}
+		b.text.WriteString(delta.Text)
+	case delta.Thinking != "":
+		if b.blockType == "" {
+			b.blockType = "thinking"
+			b.providerType = "thinking"
+		}
+		b.thinking.WriteString(delta.Thinking)
+	case delta.PartialJSON != "":
+		if b.blockType == "" {
+			b.blockType = "tool_use"
+			b.providerType = "tool_use"
+		}
+		b.toolJSON.WriteString(delta.PartialJSON)
+	}
+}
+
+// build produces the final assistant and tool parts in block-index order.
+func (a *streamBlockAccumulator) build() (assistantParts, toolParts []sigil.Part) {
+	for i := 0; i <= a.maxIndex; i++ {
+		b, ok := a.blocks[i]
+		if !ok {
+			continue
+		}
+		part, isTool, ok := b.toPart()
+		if !ok {
+			continue
+		}
+		if isTool {
+			toolParts = append(toolParts, part)
+		} else {
+			assistantParts = append(assistantParts, part)
+		}
+	}
+	return
+}
+
+func (b *streamBlock) toPart() (sigil.Part, bool, bool) {
+	switch b.blockType {
+	case "text":
+		text := strings.TrimSpace(b.text.String())
+		if text == "" {
+			return sigil.Part{}, false, false
+		}
+		return sigil.TextPart(text), false, true
+	case "thinking", "redacted_thinking":
+		content := b.thinking.String()
+		if strings.TrimSpace(content) == "" {
+			return sigil.Part{}, false, false
+		}
+		part := sigil.ThinkingPart(content)
+		part.Metadata.ProviderType = b.providerType
+		return part, false, true
+	case "tool_use", "server_tool_use", "mcp_tool_use":
+		var inputJSON []byte
+		if accumulated := b.toolJSON.String(); accumulated != "" {
+			inputJSON = []byte(accumulated)
+		}
 		part := sigil.ToolCallPart(sigil.ToolCall{
-			ID:        block.ID,
-			Name:      block.Name,
+			ID:        b.toolID,
+			Name:      b.toolName,
 			InputJSON: inputJSON,
 		})
-		part.Metadata.ProviderType = block.Type
-		return part, true
+		part.Metadata.ProviderType = b.providerType
+		return part, false, true
+	default:
+		if isToolResultType(b.blockType) {
+			contentJSON, _ := marshalAny(b.resultContent)
+			part := sigil.ToolResultPart(sigil.ToolResult{
+				ToolCallID:  b.toolResultID,
+				IsError:     b.isError,
+				ContentJSON: contentJSON,
+			})
+			part.Metadata.ProviderType = b.providerType
+			return part, true, true
+		}
+		return sigil.Part{}, false, false
+	}
+}
+
+func isToolResultType(t string) bool {
+	switch t {
 	case "tool_result",
 		"web_search_tool_result",
 		"web_fetch_tool_result",
@@ -196,15 +333,7 @@ func mapRawContentBlock(block asdk.BetaRawContentBlockStartEventContentBlockUnio
 		"text_editor_code_execution_tool_result",
 		"tool_search_tool_result",
 		"mcp_tool_result":
-		contentJSON, _ := marshalAny(block.Content)
-		part := sigil.ToolResultPart(sigil.ToolResult{
-			ToolCallID:  block.ToolUseID,
-			IsError:     block.IsError,
-			ContentJSON: contentJSON,
-		})
-		part.Metadata.ProviderType = block.Type
-		return part, true
-	default:
-		return sigil.Part{}, false
+		return true
 	}
+	return false
 }

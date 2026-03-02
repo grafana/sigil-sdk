@@ -133,14 +133,16 @@ func TestFromStream(t *testing.T) {
 				},
 			},
 			{
-				Type: "content_block_start",
+				Type:  "content_block_start",
+				Index: 0,
 				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
 					Type:     "thinking",
 					Thinking: "look up tool",
 				},
 			},
 			{
-				Type: "content_block_start",
+				Type:  "content_block_start",
+				Index: 1,
 				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
 					Type:  "tool_use",
 					ID:    "toolu_2",
@@ -149,7 +151,8 @@ func TestFromStream(t *testing.T) {
 				},
 			},
 			{
-				Type: "content_block_start",
+				Type:  "content_block_start",
+				Index: 2,
 				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
 					Type: "text",
 					Text: "It's 18C and sunny.",
@@ -236,6 +239,219 @@ func TestFromStream(t *testing.T) {
 	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
+	}
+}
+
+func TestFromStream_DeltaAccumulation(t *testing.T) {
+	req := testRequest()
+	summary := StreamSummary{
+		Events: []asdk.BetaRawMessageStreamEventUnion{
+			{
+				Type: "message_start",
+				Message: asdk.BetaMessage{
+					ID:    "msg_delta_1",
+					Model: asdk.Model("claude-sonnet-4-5"),
+				},
+			},
+			// Block 0: thinking via deltas
+			{
+				Type:  "content_block_start",
+				Index: 0,
+				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
+					Type: "thinking",
+				},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 0,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Thinking: "let me "},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 0,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Thinking: "think about this"},
+			},
+			// Block 1: text via deltas (real streaming behavior)
+			{
+				Type:  "content_block_start",
+				Index: 1,
+				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
+					Type: "text",
+				},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 1,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Text: "Hello, "},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 1,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Text: "world!"},
+			},
+			// Block 2: tool_use with partial_json deltas
+			// Real Anthropic streams send "input": {} on start, which
+			// deserializes as a non-nil empty map.
+			{
+				Type:  "content_block_start",
+				Index: 2,
+				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
+					Type:  "tool_use",
+					ID:    "toolu_1",
+					Name:  "weather",
+					Input: map[string]any{},
+				},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 2,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{PartialJSON: `{"city"`},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 2,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{PartialJSON: `:"Berlin"}`},
+			},
+			{
+				Type: "message_delta",
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{
+					StopReason: asdk.BetaStopReasonToolUse,
+				},
+				Usage: asdk.BetaMessageDeltaUsage{
+					InputTokens:  100,
+					OutputTokens: 50,
+				},
+			},
+		},
+	}
+
+	generation, err := FromStream(req, summary,
+		WithConversationID("conv-delta"),
+		WithAgentName("agent-delta"),
+	)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+
+	if generation.ResponseID != "msg_delta_1" {
+		t.Fatalf("expected response id msg_delta_1, got %q", generation.ResponseID)
+	}
+	if generation.StopReason != "tool_use" {
+		t.Fatalf("expected tool_use stop reason, got %q", generation.StopReason)
+	}
+	if len(generation.Output) != 1 {
+		t.Fatalf("expected 1 output message, got %d", len(generation.Output))
+	}
+
+	output := generation.Output[0]
+	if output.Role != sigil.RoleAssistant {
+		t.Fatalf("expected assistant role, got %q", output.Role)
+	}
+	if len(output.Parts) != 3 {
+		t.Fatalf("expected 3 parts (thinking + text + tool_use), got %d", len(output.Parts))
+	}
+
+	// Thinking part (accumulated from deltas)
+	if output.Parts[0].Kind != sigil.PartKindThinking {
+		t.Fatalf("expected thinking part, got %q", output.Parts[0].Kind)
+	}
+	if output.Parts[0].Thinking != "let me think about this" {
+		t.Fatalf("expected accumulated thinking, got %q", output.Parts[0].Thinking)
+	}
+
+	// Text part (accumulated from deltas)
+	if output.Parts[1].Kind != sigil.PartKindText {
+		t.Fatalf("expected text part, got %q", output.Parts[1].Kind)
+	}
+	if output.Parts[1].Text != "Hello, world!" {
+		t.Fatalf("expected accumulated text 'Hello, world!', got %q", output.Parts[1].Text)
+	}
+
+	// Tool use part (accumulated from partial_json deltas)
+	if output.Parts[2].Kind != sigil.PartKindToolCall {
+		t.Fatalf("expected tool_call part, got %q", output.Parts[2].Kind)
+	}
+	if output.Parts[2].ToolCall.Name != "weather" {
+		t.Fatalf("expected tool name weather, got %q", output.Parts[2].ToolCall.Name)
+	}
+	if output.Parts[2].ToolCall.ID != "toolu_1" {
+		t.Fatalf("expected tool id toolu_1, got %q", output.Parts[2].ToolCall.ID)
+	}
+	if string(output.Parts[2].ToolCall.InputJSON) != `{"city":"Berlin"}` {
+		t.Fatalf("expected tool input JSON, got %q", string(output.Parts[2].ToolCall.InputJSON))
+	}
+}
+
+func TestFromStream_DeltaWithoutContentBlockStart(t *testing.T) {
+	req := testRequest()
+	summary := StreamSummary{
+		Events: []asdk.BetaRawMessageStreamEventUnion{
+			{
+				Type: "message_start",
+				Message: asdk.BetaMessage{
+					ID:    "msg_fallback_1",
+					Model: asdk.Model("claude-sonnet-4-5"),
+				},
+			},
+			// No content_block_start for index 0 — text deltas arrive directly
+			{
+				Type:  "content_block_delta",
+				Index: 0,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Text: "orphan "},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 0,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Text: "text"},
+			},
+			// No content_block_start for index 1 — thinking deltas only
+			{
+				Type:  "content_block_delta",
+				Index: 1,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Thinking: "hmm"},
+			},
+			{
+				Type: "message_delta",
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{
+					StopReason: asdk.BetaStopReasonEndTurn,
+				},
+				Usage: asdk.BetaMessageDeltaUsage{
+					InputTokens:  10,
+					OutputTokens: 5,
+				},
+			},
+		},
+	}
+
+	generation, err := FromStream(req, summary,
+		WithConversationID("conv-fallback"),
+		WithAgentName("agent-fallback"),
+	)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+
+	if len(generation.Output) == 0 {
+		t.Fatal("expected output messages but got none")
+	}
+
+	output := generation.Output[0]
+	if len(output.Parts) != 2 {
+		t.Fatalf("expected 2 parts (text + thinking), got %d", len(output.Parts))
+	}
+
+	if output.Parts[0].Kind != sigil.PartKindText {
+		t.Fatalf("expected text part at index 0, got %q", output.Parts[0].Kind)
+	}
+	if output.Parts[0].Text != "orphan text" {
+		t.Fatalf("expected 'orphan text', got %q", output.Parts[0].Text)
+	}
+
+	if output.Parts[1].Kind != sigil.PartKindThinking {
+		t.Fatalf("expected thinking part at index 1, got %q", output.Parts[1].Kind)
+	}
+	if output.Parts[1].Thinking != "hmm" {
+		t.Fatalf("expected 'hmm', got %q", output.Parts[1].Thinking)
 	}
 }
 
