@@ -135,6 +135,50 @@ func TestResolveHeadersWithAuthRejectsInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestMergeAuthConfigBasicFields(t *testing.T) {
+	base := AuthConfig{
+		Mode:     ExportAuthModeBearer,
+		TenantID: "base-tenant",
+	}
+	override := AuthConfig{
+		Mode:          ExportAuthModeBasic,
+		TenantID:      "override-tenant",
+		BasicUser:     "probe-user",
+		BasicPassword: "secret",
+	}
+	got := mergeAuthConfig(base, override)
+
+	if got.Mode != ExportAuthModeBasic {
+		t.Fatalf("Mode=%q, want %q", got.Mode, ExportAuthModeBasic)
+	}
+	if got.TenantID != "override-tenant" {
+		t.Fatalf("TenantID=%q, want %q", got.TenantID, "override-tenant")
+	}
+	if got.BasicUser != "probe-user" {
+		t.Fatalf("BasicUser=%q, want %q", got.BasicUser, "probe-user")
+	}
+	if got.BasicPassword != "secret" {
+		t.Fatalf("BasicPassword=%q, want %q", got.BasicPassword, "secret")
+	}
+}
+
+func TestMergeAuthConfigPreservesBaseBasicFields(t *testing.T) {
+	base := AuthConfig{
+		Mode:          ExportAuthModeBasic,
+		BasicUser:     "base-user",
+		BasicPassword: "base-secret",
+	}
+	override := AuthConfig{}
+	got := mergeAuthConfig(base, override)
+
+	if got.BasicUser != "base-user" {
+		t.Fatalf("BasicUser=%q, want %q", got.BasicUser, "base-user")
+	}
+	if got.BasicPassword != "base-secret" {
+		t.Fatalf("BasicPassword=%q, want %q", got.BasicPassword, "base-secret")
+	}
+}
+
 func TestNewClientPanicsOnInvalidAuthConfig(t *testing.T) {
 	defer func() {
 		recovered := recover()

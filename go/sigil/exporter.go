@@ -266,6 +266,12 @@ func mergeAuthConfig(base, override AuthConfig) AuthConfig {
 	if override.BearerToken != "" {
 		out.BearerToken = override.BearerToken
 	}
+	if override.BasicUser != "" {
+		out.BasicUser = override.BasicUser
+	}
+	if override.BasicPassword != "" {
+		out.BasicPassword = override.BasicPassword
+	}
 	return out
 }
 
