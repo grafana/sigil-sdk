@@ -40,6 +40,8 @@ const (
 	metricFlushInterval = 2 * time.Second
 	minSyntheticSpans   = 15
 	maxSyntheticSpans   = 30
+	minTraceLookback    = 2 * time.Second
+	maxTraceLookback    = 4 * time.Second
 )
 
 type runtimeConfig struct {
@@ -154,9 +156,16 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 
 	ctx := context.Background()
 	tracer := otel.Tracer("sigil.devex.synthetic")
+	traceEnd := time.Now()
+	traceLookback := minTraceLookback
+	if randSeed != nil {
+		traceLookback += time.Duration(randSeed.Int63n(int64(maxTraceLookback-minTraceLookback) + 1))
+	}
+	traceStart := traceEnd.Add(-traceLookback)
 	ctx, conversationSpan := tracer.Start(
 		ctx,
 		fmt.Sprintf("conversation.%s.turn", src),
+		oteltrace.WithTimestamp(traceStart),
 		oteltrace.WithAttributes(
 			attribute.String("sigil.synthetic.trace_type", "llm_conversation"),
 			attribute.String("sigil.devex.provider", string(src)),
@@ -168,7 +177,7 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 		),
 	)
 	defer conversationSpan.End()
-	syntheticCount := emitSyntheticLifecycleSpans(ctx, randSeed)
+	syntheticCount := emitSyntheticLifecycleSpans(ctx, randSeed, traceStart, traceEnd)
 	conversationSpan.SetAttributes(attribute.Int("sigil.synthetic.span_count", syntheticCount))
 
 	switch src {
@@ -207,9 +216,12 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 	}
 }
 
-func emitSyntheticLifecycleSpans(ctx context.Context, randSeed *rand.Rand) int {
+func emitSyntheticLifecycleSpans(ctx context.Context, randSeed *rand.Rand, traceStart, traceEnd time.Time) int {
 	if randSeed == nil {
 		randSeed = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	if !traceEnd.After(traceStart) {
+		traceEnd = traceStart.Add(1 * time.Second)
 	}
 	operations := []struct {
 		name      string
@@ -244,7 +256,13 @@ func emitSyntheticLifecycleSpans(ctx context.Context, randSeed *rand.Rand) int {
 	for i := 0; i < spanCount; i++ {
 		op := operations[randSeed.Intn(len(operations))]
 		duration := syntheticDuration(op.category, randSeed)
-		endTime := time.Now()
+		windowStart := traceStart.Add(duration)
+		if !traceEnd.After(windowStart) {
+			windowStart = traceStart
+			duration = traceEnd.Sub(traceStart) / 2
+		}
+		randomOffset := time.Duration(randSeed.Int63n(int64(traceEnd.Sub(windowStart)) + 1))
+		endTime := windowStart.Add(randomOffset)
 		startTime := endTime.Add(-duration)
 
 		_, span := tracer.Start(
