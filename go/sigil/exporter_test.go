@@ -167,6 +167,92 @@ func TestShutdownFlushesPendingGenerations(t *testing.T) {
 	}
 }
 
+func TestMergeGenerationExportConfigInsecure(t *testing.T) {
+	testCases := []struct {
+		name             string
+		baseInsecure     bool
+		overrideInsecure bool
+		wantInsecure     bool
+	}{
+		{
+			name:             "override false replaces base true",
+			baseInsecure:     true,
+			overrideInsecure: false,
+			wantInsecure:     false,
+		},
+		{
+			name:             "override true replaces base false",
+			baseInsecure:     false,
+			overrideInsecure: true,
+			wantInsecure:     true,
+		},
+		{
+			name:             "both true remains true",
+			baseInsecure:     true,
+			overrideInsecure: true,
+			wantInsecure:     true,
+		},
+		{
+			name:             "both false remains false",
+			baseInsecure:     false,
+			overrideInsecure: false,
+			wantInsecure:     false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			base := GenerationExportConfig{Insecure: testCase.baseInsecure}
+			override := GenerationExportConfig{Insecure: testCase.overrideInsecure}
+			got := mergeGenerationExportConfig(base, override)
+			if got.Insecure != testCase.wantInsecure {
+				t.Fatalf("insecure=%v, want %v", got.Insecure, testCase.wantInsecure)
+			}
+		})
+	}
+}
+
+func TestNewHTTPGenerationExporterUsesEndpointScheme(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+		insecure bool
+		wantURL  string
+	}{
+		{
+			name:     "explicit http endpoint remains http",
+			endpoint: "http://localhost:8080/api/v1/generations:export",
+			insecure: false,
+			wantURL:  "http://localhost:8080/api/v1/generations:export",
+		},
+		{
+			name:     "host endpoint uses insecure flag when no scheme",
+			endpoint: "localhost:8080/api/v1/generations:export",
+			insecure: true,
+			wantURL:  "http://localhost:8080/api/v1/generations:export",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			exporter, err := newHTTPGenerationExporter(GenerationExportConfig{
+				Endpoint: testCase.endpoint,
+				Insecure: testCase.insecure,
+			})
+			if err != nil {
+				t.Fatalf("newHTTPGenerationExporter failed: %v", err)
+			}
+			httpExporter, ok := exporter.(*httpGenerationExporter)
+			if !ok {
+				t.Fatalf("unexpected exporter type %T", exporter)
+			}
+			if httpExporter.endpoint != testCase.wantURL {
+				t.Fatalf("endpoint=%q, want %q", httpExporter.endpoint, testCase.wantURL)
+			}
+		})
+	}
+}
+
 func waitForCondition(timeout time.Duration, condition func() bool) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
