@@ -159,7 +159,9 @@ func TestEmitSyntheticLifecycleSpansProducesTraceRichSpanCount(t *testing.T) {
 	})
 
 	ctx, root := otel.Tracer("devex-emitter-test").Start(context.Background(), "root")
-	syntheticCount := emitSyntheticLifecycleSpans(ctx, rand.New(rand.NewSource(42)))
+	traceEnd := time.Now()
+	traceStart := traceEnd.Add(-3 * time.Second)
+	syntheticCount := emitSyntheticLifecycleSpans(ctx, rand.New(rand.NewSource(42)), traceStart, traceEnd)
 	root.End()
 	if err := tracerProvider.ForceFlush(context.Background()); err != nil {
 		t.Fatalf("force flush: %v", err)
@@ -202,6 +204,12 @@ func TestEmitSyntheticLifecycleSpansProducesTraceRichSpanCount(t *testing.T) {
 		actualDurationMs := span.EndTime.Sub(span.StartTime).Milliseconds()
 		if actualDurationMs != simulatedDurationMs {
 			t.Fatalf("expected synthetic span %q duration to match simulated duration: actual=%dms simulated=%dms", span.Name, actualDurationMs, simulatedDurationMs)
+		}
+		if span.StartTime.Before(traceStart) {
+			t.Fatalf("expected synthetic span %q start time (%s) to be inside trace window start (%s)", span.Name, span.StartTime, traceStart)
+		}
+		if span.EndTime.After(traceEnd) {
+			t.Fatalf("expected synthetic span %q end time (%s) to be inside trace window end (%s)", span.Name, span.EndTime, traceEnd)
 		}
 	}
 	if syntheticSeen != syntheticCount {
