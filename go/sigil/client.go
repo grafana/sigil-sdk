@@ -47,12 +47,17 @@ const (
 	ExportAuthModeNone   ExportAuthMode = "none"
 	ExportAuthModeTenant ExportAuthMode = "tenant"
 	ExportAuthModeBearer ExportAuthMode = "bearer"
+	ExportAuthModeBasic  ExportAuthMode = "basic"
 )
 
 type AuthConfig struct {
 	Mode        ExportAuthMode
 	TenantID    string
 	BearerToken string
+	// BasicUser is the username for basic auth. When empty, TenantID is used.
+	BasicUser string
+	// BasicPassword is the password/token for basic auth.
+	BasicPassword string
 }
 
 type GenerationExportProtocol string
