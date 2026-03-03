@@ -55,7 +55,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@google/genai": "^1.41.0",
-    "@google/adk": "^0.3.0",
+    "@google/adk": "^0.4.0",
     "@grpc/grpc-js": "^1.14.1",
     "@grpc/proto-loader": "^0.8.0",
     "@langchain/core": "^1.0.0",
