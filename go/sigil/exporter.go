@@ -115,7 +115,7 @@ type httpGenerationExporter struct {
 }
 
 func newHTTPGenerationExporter(cfg GenerationExportConfig) (generationExporter, error) {
-	endpoint, path, _, err := splitEndpoint(cfg.Endpoint)
+	endpoint, path, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func newHTTPGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 	urlString := endpoint
 	if !strings.HasPrefix(urlString, "http://") && !strings.HasPrefix(urlString, "https://") {
 		scheme := "https://"
-		if cfg.Insecure {
+		if cfg.Insecure || insecureEndpoint {
 			scheme = "http://"
 		}
 		urlString = scheme + endpoint
@@ -209,9 +209,7 @@ func mergeGenerationExportConfig(base, override GenerationExportConfig) Generati
 		out.Headers = cloneTags(override.Headers)
 	}
 	out.Auth = mergeAuthConfig(out.Auth, override.Auth)
-	if override.Insecure {
-		out.Insecure = true
-	}
+	out.Insecure = override.Insecure
 	if override.BatchSize > 0 {
 		out.BatchSize = override.BatchSize
 	}
