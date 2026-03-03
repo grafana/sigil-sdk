@@ -2,7 +2,6 @@ package sigil
 
 import (
 	"context"
-	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -53,67 +52,6 @@ func TestResolveHeadersWithAuthExplicitHeaderWins(t *testing.T) {
 	}
 }
 
-func TestResolveHeadersWithAuthBasicMode(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(nil, AuthConfig{
-		Mode:          ExportAuthModeBasic,
-		TenantID:      "42",
-		BasicPassword: "secret",
-	})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	wantAuth := "Basic " + base64Encode("42:secret")
-	if headers[authorizationHeaderName] != wantAuth {
-		t.Fatalf("expected %q, got %q", wantAuth, headers[authorizationHeaderName])
-	}
-	if headers[tenantHeaderName] != "42" {
-		t.Fatalf("expected tenant header 42, got %q", headers[tenantHeaderName])
-	}
-}
-
-func TestResolveHeadersWithAuthBasicModeExplicitUser(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(nil, AuthConfig{
-		Mode:          ExportAuthModeBasic,
-		TenantID:      "42",
-		BasicUser:     "probe-user",
-		BasicPassword: "secret",
-	})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	wantAuth := "Basic " + base64Encode("probe-user:secret")
-	if headers[authorizationHeaderName] != wantAuth {
-		t.Fatalf("expected %q, got %q", wantAuth, headers[authorizationHeaderName])
-	}
-	if headers[tenantHeaderName] != "42" {
-		t.Fatalf("expected tenant header 42, got %q", headers[tenantHeaderName])
-	}
-}
-
-func TestResolveHeadersWithAuthBasicModeExplicitHeaderWins(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(map[string]string{
-		"Authorization": "Basic override",
-		"X-Scope-OrgID": "override-tenant",
-	}, AuthConfig{
-		Mode:          ExportAuthModeBasic,
-		TenantID:      "42",
-		BasicPassword: "secret",
-	})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	if headers["Authorization"] != "Basic override" {
-		t.Fatalf("expected explicit header to win, got %q", headers["Authorization"])
-	}
-	if headers["X-Scope-OrgID"] != "override-tenant" {
-		t.Fatalf("expected explicit tenant header to win, got %q", headers["X-Scope-OrgID"])
-	}
-}
-
-func base64Encode(s string) string {
-	return base64.StdEncoding.EncodeToString([]byte(s))
-}
-
 func TestResolveHeadersWithAuthRejectsInvalidConfig(t *testing.T) {
 	testCases := []AuthConfig{
 		{Mode: ExportAuthModeTenant},
@@ -123,8 +61,6 @@ func TestResolveHeadersWithAuthRejectsInvalidConfig(t *testing.T) {
 		{Mode: ExportAuthModeTenant, TenantID: "tenant-a", BearerToken: "token"},
 		{Mode: ExportAuthModeBearer, TenantID: "tenant-a", BearerToken: "token"},
 		{Mode: ExportAuthMode("unknown"), TenantID: "tenant-a"},
-		{Mode: ExportAuthModeBasic},
-		{Mode: ExportAuthModeBasic, BasicPassword: "secret"},
 	}
 
 	for _, testCase := range testCases {

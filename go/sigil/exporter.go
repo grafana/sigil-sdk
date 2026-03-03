@@ -3,7 +3,6 @@ package sigil
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -315,29 +314,6 @@ func resolveHeadersWithAuth(headers map[string]string, auth AuthConfig) (map[str
 			out = make(map[string]string, 1)
 		}
 		out[authorizationHeaderName] = formatBearerTokenValue(bearerToken)
-		return out, nil
-	case ExportAuthModeBasic:
-		password := strings.TrimSpace(auth.BasicPassword)
-		if password == "" {
-			return nil, errors.New("auth mode basic requires basic_password")
-		}
-		user := strings.TrimSpace(auth.BasicUser)
-		if user == "" {
-			user = tenantID
-		}
-		if user == "" {
-			return nil, errors.New("auth mode basic requires basic_user or tenant_id")
-		}
-		out := cloneTags(headers)
-		if out == nil {
-			out = make(map[string]string, 2)
-		}
-		if !hasHeaderKey(out, authorizationHeaderName) {
-			out[authorizationHeaderName] = "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
-		}
-		if tenantID != "" && !hasHeaderKey(out, tenantHeaderName) {
-			out[tenantHeaderName] = tenantID
-		}
 		return out, nil
 	default:
 		return nil, fmt.Errorf("unsupported auth mode %q", mode)
