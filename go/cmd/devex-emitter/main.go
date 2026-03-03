@@ -38,8 +38,8 @@ const (
 	traceServiceEnv     = "sigil-devex"
 	traceShutdownGrace  = 5 * time.Second
 	metricFlushInterval = 2 * time.Second
-	minSyntheticSpans   = 15
-	maxSyntheticSpans   = 30
+	minSyntheticSpans   = 6
+	maxSyntheticSpans   = 12
 	minTraceLookback    = 2 * time.Second
 	maxTraceLookback    = 4 * time.Second
 )
