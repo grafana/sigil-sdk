@@ -78,7 +78,10 @@ func newGRPCGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 		return nil, err
 	}
 
-	transportCreds := credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	transportCreds := credentials.NewTLS(&tls.Config{
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"h2"},
+	})
 	if cfg.Insecure || insecureEndpoint {
 		transportCreds = insecure.NewCredentials()
 	}
