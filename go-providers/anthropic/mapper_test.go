@@ -32,6 +32,7 @@ func TestFromRequestResponse(t *testing.T) {
 
 	generation, err := FromRequestResponse(req, resp,
 		WithConversationID("conv-9b2f"),
+		WithConversationTitle("Paris weather"),
 		WithAgentName("agent-anthropic"),
 		WithAgentVersion("v-anthropic"),
 		WithTag("tenant", "t-123"),
@@ -48,6 +49,9 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 	if generation.ConversationID != "conv-9b2f" {
 		t.Fatalf("expected conversation id conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.ConversationTitle != "Paris weather" {
+		t.Fatalf("expected conversation title Paris weather, got %q", generation.ConversationTitle)
 	}
 	if generation.AgentName != "agent-anthropic" {
 		t.Fatalf("expected agent-anthropic, got %q", generation.AgentName)

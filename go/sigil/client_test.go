@@ -53,10 +53,11 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	}
 
 	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
-		ID:             "gen_test_externalize",
-		ConversationID: "conv-1",
-		AgentName:      "agent-support",
-		AgentVersion:   "v1.2.3",
+		ID:                "gen_test_externalize",
+		ConversationID:    "conv-1",
+		ConversationTitle: "Ticket triage",
+		AgentName:         "agent-support",
+		AgentVersion:      "v1.2.3",
 		Model: ModelRef{
 			Provider: "anthropic",
 			Name:     "claude-sonnet-4-5",
@@ -90,6 +91,9 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	if generationRecorder.lastGeneration.AgentVersion != "v1.2.3" {
 		t.Fatalf("expected agent version v1.2.3, got %q", generationRecorder.lastGeneration.AgentVersion)
 	}
+	if generationRecorder.lastGeneration.ConversationTitle != "Ticket triage" {
+		t.Fatalf("expected conversation title Ticket triage, got %q", generationRecorder.lastGeneration.ConversationTitle)
+	}
 
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
@@ -98,6 +102,9 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	}
 	if attrs[spanAttrConversationID].AsString() != "conv-1" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-1")
+	}
+	if attrs[spanAttrConversationTitle].AsString() != "Ticket triage" {
+		t.Fatalf("expected sigil.conversation.title=Ticket triage")
 	}
 	if attrs[spanAttrAgentName].AsString() != "agent-support" {
 		t.Fatalf("expected gen_ai.agent.name=agent-support")
@@ -982,13 +989,14 @@ func TestEmptyToolNameReturnsNoOpRecorder(t *testing.T) {
 func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 	callCtx, toolRecorder := client.StartToolExecution(context.Background(), ToolExecutionStart{
-		ToolName:        "weather",
-		ToolCallID:      "call_weather",
-		ToolType:        "function",
-		ToolDescription: "Get weather",
-		ConversationID:  "conv-tool",
-		AgentName:       "agent-tools",
-		AgentVersion:    "2026.02.12",
+		ToolName:          "weather",
+		ToolCallID:        "call_weather",
+		ToolType:          "function",
+		ToolDescription:   "Get weather",
+		ConversationID:    "conv-tool",
+		ConversationTitle: "Weather lookup",
+		AgentName:         "agent-tools",
+		AgentVersion:      "2026.02.12",
 	})
 
 	if !trace.SpanContextFromContext(callCtx).IsValid() {
@@ -1025,6 +1033,9 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 	}
 	if attrs[spanAttrConversationID].AsString() != "conv-tool" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-tool")
+	}
+	if attrs[spanAttrConversationTitle].AsString() != "Weather lookup" {
+		t.Fatalf("expected sigil.conversation.title=Weather lookup")
 	}
 	if attrs[spanAttrAgentName].AsString() != "agent-tools" {
 		t.Fatalf("expected gen_ai.agent.name=agent-tools")
@@ -1154,6 +1165,25 @@ func TestConversationIDFromContext(t *testing.T) {
 	}
 }
 
+func TestConversationTitleFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationTitle(context.Background(), "Conversation from context")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationTitle].AsString() != "Conversation from context" {
+		t.Fatalf("expected sigil.conversation.title=Conversation from context, got %q", attrs[spanAttrConversationTitle].AsString())
+	}
+}
+
 func TestAgentNameAndVersionFromContext(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -1197,6 +1227,26 @@ func TestExplicitConversationIDOverridesContext(t *testing.T) {
 	}
 }
 
+func TestExplicitConversationTitleOverridesContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationTitle(context.Background(), "context-title")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		ConversationTitle: "explicit-title",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
+		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+	}
+}
+
 func TestExplicitAgentNameAndVersionOverrideContext(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -1235,6 +1285,39 @@ func TestToolExecutionConversationIDFromContext(t *testing.T) {
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationID].AsString() != "conv-tool-ctx" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-tool-ctx, got %q", attrs[spanAttrConversationID].AsString())
+	}
+}
+
+func TestToolExecutionConversationTitleFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationTitle(context.Background(), "tool conversation")
+	_, toolRecorder := client.StartToolExecution(ctx, ToolExecutionStart{
+		ToolName: "weather",
+	})
+	toolRecorder.End()
+
+	span := onlyToolSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationTitle].AsString() != "tool conversation" {
+		t.Fatalf("expected sigil.conversation.title=tool conversation, got %q", attrs[spanAttrConversationTitle].AsString())
+	}
+}
+
+func TestToolExecutionExplicitConversationTitleOverridesContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithConversationTitle(context.Background(), "context-title")
+	_, toolRecorder := client.StartToolExecution(ctx, ToolExecutionStart{
+		ToolName:          "weather",
+		ConversationTitle: "explicit-title",
+	})
+	toolRecorder.End()
+
+	span := onlyToolSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
+		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 

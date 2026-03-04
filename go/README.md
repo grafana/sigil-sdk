@@ -22,6 +22,7 @@ Framework modules:
   - `SYNC` -> `generateText`
   - `STREAM` -> `streamText`
 - `ModelRef` bundles `provider + model`.
+- `ConversationTitle` is an optional human-readable label for the conversation.
 - `AgentName` and `AgentVersion` are optional generation/tool identity fields.
 - `SystemPrompt` is separate from messages.
 - `ToolDefinition.Deferred` records whether a tool is marked as deferred.
@@ -57,6 +58,7 @@ Framework modules:
 - Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Context helpers are available for defaults:
   - `WithConversationID(ctx, id)`
+  - `WithConversationTitle(ctx, title)`
   - `WithAgentName(ctx, name)`
   - `WithAgentVersion(ctx, version)`
 

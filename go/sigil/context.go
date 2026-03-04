@@ -3,6 +3,7 @@ package sigil
 import "context"
 
 type conversationIDContextKey struct{}
+type conversationTitleContextKey struct{}
 type agentNameContextKey struct{}
 type agentVersionContextKey struct{}
 
@@ -17,6 +18,19 @@ func WithConversationID(ctx context.Context, id string) context.Context {
 func ConversationIDFromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(conversationIDContextKey{}).(string)
 	return id, ok && id != ""
+}
+
+// WithConversationTitle stores a conversation title in the context.
+// StartGeneration, StartStreamingGeneration, and StartToolExecution read it when
+// the explicit field is empty.
+func WithConversationTitle(ctx context.Context, title string) context.Context {
+	return context.WithValue(ctx, conversationTitleContextKey{}, title)
+}
+
+// ConversationTitleFromContext retrieves the conversation title stored by WithConversationTitle.
+func ConversationTitleFromContext(ctx context.Context) (string, bool) {
+	title, ok := ctx.Value(conversationTitleContextKey{}).(string)
+	return title, ok && title != ""
 }
 
 // WithAgentName stores an agent name in the context.

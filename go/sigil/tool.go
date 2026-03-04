@@ -4,14 +4,15 @@ import "time"
 
 // ToolExecutionStart seeds a tool execution span before the tool call runs.
 type ToolExecutionStart struct {
-	ToolName        string
-	ToolCallID      string
-	ToolType        string
-	ToolDescription string
-	ConversationID  string
-	AgentName       string
-	AgentVersion    string
-	StartedAt       time.Time
+	ToolName          string
+	ToolCallID        string
+	ToolType          string
+	ToolDescription   string
+	ConversationID    string
+	ConversationTitle string
+	AgentName         string
+	AgentVersion      string
+	StartedAt         time.Time
 	// IncludeContent enables gen_ai.tool.call.arguments and gen_ai.tool.call.result attributes.
 	IncludeContent bool
 }

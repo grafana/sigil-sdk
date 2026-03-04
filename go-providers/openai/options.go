@@ -4,12 +4,13 @@ package openai
 type Option func(*mapperOptions)
 
 type mapperOptions struct {
-	providerName   string
-	conversationID string
-	agentName      string
-	agentVersion   string
-	tags           map[string]string
-	metadata       map[string]any
+	providerName      string
+	conversationID    string
+	conversationTitle string
+	agentName         string
+	agentVersion      string
+	tags              map[string]string
+	metadata          map[string]any
 
 	includeRequestArtifact  bool
 	includeResponseArtifact bool
@@ -42,6 +43,13 @@ func WithProviderName(provider string) Option {
 func WithConversationID(conversationID string) Option {
 	return func(options *mapperOptions) {
 		options.conversationID = conversationID
+	}
+}
+
+// WithConversationTitle sets Generation.ConversationTitle.
+func WithConversationTitle(conversationTitle string) Option {
+	return func(options *mapperOptions) {
+		options.conversationTitle = conversationTitle
 	}
 }
 

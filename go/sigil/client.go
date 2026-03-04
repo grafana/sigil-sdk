@@ -104,6 +104,7 @@ const (
 
 	spanAttrGenerationID           = "sigil.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
+	spanAttrConversationTitle      = "sigil.conversation.title"
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
 	spanAttrErrorType              = "error.type"
@@ -387,6 +388,11 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 			seed.ConversationID = id
 		}
 	}
+	if seed.ConversationTitle == "" {
+		if title, ok := ConversationTitleFromContext(ctx); ok {
+			seed.ConversationTitle = title
+		}
+	}
 	if seed.AgentName == "" {
 		if name, ok := AgentNameFromContext(ctx); ok {
 			seed.AgentName = name
@@ -407,32 +413,34 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	seed.StartedAt = startedAt
 
 	callCtx, span := c.startSpan(ctx, Generation{
-		ID:              seed.ID,
-		ConversationID:  seed.ConversationID,
-		AgentName:       seed.AgentName,
-		AgentVersion:    seed.AgentVersion,
-		Mode:            seed.Mode,
-		OperationName:   seed.OperationName,
-		Model:           seed.Model,
-		MaxTokens:       cloneInt64Ptr(seed.MaxTokens),
-		Temperature:     cloneFloat64Ptr(seed.Temperature),
-		TopP:            cloneFloat64Ptr(seed.TopP),
-		ToolChoice:      cloneStringPtr(seed.ToolChoice),
-		ThinkingEnabled: cloneBoolPtr(seed.ThinkingEnabled),
+		ID:                seed.ID,
+		ConversationID:    seed.ConversationID,
+		ConversationTitle: seed.ConversationTitle,
+		AgentName:         seed.AgentName,
+		AgentVersion:      seed.AgentVersion,
+		Mode:              seed.Mode,
+		OperationName:     seed.OperationName,
+		Model:             seed.Model,
+		MaxTokens:         cloneInt64Ptr(seed.MaxTokens),
+		Temperature:       cloneFloat64Ptr(seed.Temperature),
+		TopP:              cloneFloat64Ptr(seed.TopP),
+		ToolChoice:        cloneStringPtr(seed.ToolChoice),
+		ThinkingEnabled:   cloneBoolPtr(seed.ThinkingEnabled),
 	}, trace.SpanKindClient, startedAt)
 	span.SetAttributes(generationSpanAttributes(Generation{
-		ID:              seed.ID,
-		ConversationID:  seed.ConversationID,
-		AgentName:       seed.AgentName,
-		AgentVersion:    seed.AgentVersion,
-		Mode:            seed.Mode,
-		OperationName:   seed.OperationName,
-		Model:           seed.Model,
-		MaxTokens:       cloneInt64Ptr(seed.MaxTokens),
-		Temperature:     cloneFloat64Ptr(seed.Temperature),
-		TopP:            cloneFloat64Ptr(seed.TopP),
-		ToolChoice:      cloneStringPtr(seed.ToolChoice),
-		ThinkingEnabled: cloneBoolPtr(seed.ThinkingEnabled),
+		ID:                seed.ID,
+		ConversationID:    seed.ConversationID,
+		ConversationTitle: seed.ConversationTitle,
+		AgentName:         seed.AgentName,
+		AgentVersion:      seed.AgentVersion,
+		Mode:              seed.Mode,
+		OperationName:     seed.OperationName,
+		Model:             seed.Model,
+		MaxTokens:         cloneInt64Ptr(seed.MaxTokens),
+		Temperature:       cloneFloat64Ptr(seed.Temperature),
+		TopP:              cloneFloat64Ptr(seed.TopP),
+		ToolChoice:        cloneStringPtr(seed.ToolChoice),
+		ThinkingEnabled:   cloneBoolPtr(seed.ThinkingEnabled),
 	})...)
 
 	return callCtx, &GenerationRecorder{
@@ -513,6 +521,11 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 	if seed.ConversationID == "" {
 		if id, ok := ConversationIDFromContext(ctx); ok {
 			seed.ConversationID = id
+		}
+	}
+	if seed.ConversationTitle == "" {
+		if title, ok := ConversationTitleFromContext(ctx); ok {
+			seed.ConversationTitle = title
 		}
 	}
 	if seed.AgentName == "" {
@@ -919,6 +932,9 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if g.ConversationID == "" {
 		g.ConversationID = r.seed.ConversationID
 	}
+	if g.ConversationTitle == "" {
+		g.ConversationTitle = r.seed.ConversationTitle
+	}
 	if g.AgentName == "" {
 		g.AgentName = r.seed.AgentName
 	}
@@ -1131,6 +1147,9 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	}
 	if conversationID := strings.TrimSpace(g.ConversationID); conversationID != "" {
 		attrs = append(attrs, attribute.String(spanAttrConversationID, conversationID))
+	}
+	if conversationTitle := strings.TrimSpace(g.ConversationTitle); conversationTitle != "" {
+		attrs = append(attrs, attribute.String(spanAttrConversationTitle, conversationTitle))
 	}
 	if agentName := strings.TrimSpace(g.AgentName); agentName != "" {
 		attrs = append(attrs, attribute.String(spanAttrAgentName, agentName))
@@ -1628,6 +1647,9 @@ func toolSpanAttributes(start ToolExecutionStart) []attribute.KeyValue {
 	}
 	if conversationID := strings.TrimSpace(start.ConversationID); conversationID != "" {
 		attrs = append(attrs, attribute.String(spanAttrConversationID, conversationID))
+	}
+	if conversationTitle := strings.TrimSpace(start.ConversationTitle); conversationTitle != "" {
+		attrs = append(attrs, attribute.String(spanAttrConversationTitle, conversationTitle))
 	}
 	if agentName := strings.TrimSpace(start.AgentName); agentName != "" {
 		attrs = append(attrs, attribute.String(spanAttrAgentName, agentName))
