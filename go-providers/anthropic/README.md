@@ -28,6 +28,7 @@ This helper currently supports Anthropic Messages APIs only. Native Anthropic em
 ```go
 resp, err := anthropic.Message(ctx, sigilClient, providerClient, req,
 	anthropic.WithConversationID("conv-1"),
+	anthropic.WithConversationTitle("Weather follow-up"),
 	anthropic.WithAgentName("assistant-anthropic"),
 	anthropic.WithAgentVersion("1.0.0"),
 )

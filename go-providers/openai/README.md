@@ -29,6 +29,7 @@ This module maps official OpenAI Go SDK request/response payloads into typed Sig
 ```go
 resp, err := openai.ChatCompletionsNew(ctx, sigilClient, providerClient, req,
 	openai.WithConversationID("conv-1"),
+	openai.WithConversationTitle("Weather follow-up"),
 	openai.WithAgentName("assistant-openai"),
 	openai.WithAgentVersion("1.0.0"),
 )
@@ -43,6 +44,7 @@ _ = resp.Choices[0].Message.Content
 ```go
 resp, err := openai.ResponsesNew(ctx, sigilClient, providerClient, req,
 	openai.WithConversationID("conv-1"),
+	openai.WithConversationTitle("Weather follow-up"),
 	openai.WithAgentName("assistant-openai"),
 	openai.WithAgentVersion("1.0.0"),
 )

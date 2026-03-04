@@ -75,6 +75,7 @@ func TestFromRequestResponse(t *testing.T) {
 
 	generation, err := ChatCompletionsFromRequestResponse(req, resp,
 		WithConversationID("conv-9b2f"),
+		WithConversationTitle("Paris weather"),
 		WithAgentName("agent-openai"),
 		WithAgentVersion("v-openai"),
 		WithTag("tenant", "t-123"),
@@ -91,6 +92,9 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 	if generation.ConversationID != "conv-9b2f" {
 		t.Fatalf("expected conv-9b2f, got %q", generation.ConversationID)
+	}
+	if generation.ConversationTitle != "Paris weather" {
+		t.Fatalf("expected conversation title Paris weather, got %q", generation.ConversationTitle)
 	}
 	if generation.AgentName != "agent-openai" {
 		t.Fatalf("expected agent-openai, got %q", generation.AgentName)

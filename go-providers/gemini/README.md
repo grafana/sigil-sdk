@@ -24,6 +24,7 @@ typed Sigil `Generation` model.
 ```go
 resp, err := gemini.GenerateContent(ctx, sigilClient, providerClient, model, contents, config,
 	gemini.WithConversationID("conv-1"),
+	gemini.WithConversationTitle("Weather follow-up"),
 	gemini.WithAgentName("assistant-gemini"),
 	gemini.WithAgentVersion("1.0.0"),
 )

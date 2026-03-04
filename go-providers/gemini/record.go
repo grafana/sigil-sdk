@@ -24,10 +24,11 @@ func GenerateContent(
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
-		ConversationID: options.conversationID,
-		AgentName:      options.agentName,
-		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: model},
+		ConversationID:    options.conversationID,
+		ConversationTitle: options.conversationTitle,
+		AgentName:         options.agentName,
+		AgentVersion:      options.agentVersion,
+		Model:             sigil.ModelRef{Provider: options.providerName, Name: model},
 	})
 	defer rec.End()
 
@@ -115,10 +116,11 @@ func GenerateContentStream(
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-		ConversationID: options.conversationID,
-		AgentName:      options.agentName,
-		AgentVersion:   options.agentVersion,
-		Model:          sigil.ModelRef{Provider: options.providerName, Name: model},
+		ConversationID:    options.conversationID,
+		ConversationTitle: options.conversationTitle,
+		AgentName:         options.agentName,
+		AgentVersion:      options.agentVersion,
+		Model:             sigil.ModelRef{Provider: options.providerName, Name: model},
 	})
 	defer rec.End()
 

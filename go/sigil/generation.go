@@ -36,11 +36,12 @@ type ToolDefinition struct {
 // It can represent both request/response and streaming outcomes.
 type Generation struct {
 	// ID is the Sigil generation identifier. If empty, End assigns one.
-	ID             string         `json:"id,omitempty"`
-	ConversationID string         `json:"conversation_id,omitempty"`
-	AgentName      string         `json:"agent_name,omitempty"`
-	AgentVersion   string         `json:"agent_version,omitempty"`
-	Mode           GenerationMode `json:"mode,omitempty"`
+	ID                string         `json:"id,omitempty"`
+	ConversationID    string         `json:"conversation_id,omitempty"`
+	ConversationTitle string         `json:"conversation_title,omitempty"`
+	AgentName         string         `json:"agent_name,omitempty"`
+	AgentVersion      string         `json:"agent_version,omitempty"`
+	Mode              GenerationMode `json:"mode,omitempty"`
 	// OperationName maps to gen_ai.operation.name.
 	// Defaults are mode-aware:
 	//   - SYNC   -> "generateText"
@@ -76,23 +77,24 @@ type Generation struct {
 // GenerationStart seeds generation fields before the provider call executes.
 // Any zero-valued fields can be filled later by End.
 type GenerationStart struct {
-	ID              string
-	ConversationID  string
-	AgentName       string
-	AgentVersion    string
-	Mode            GenerationMode
-	OperationName   string
-	Model           ModelRef
-	SystemPrompt    string
-	Tools           []ToolDefinition
-	MaxTokens       *int64
-	Temperature     *float64
-	TopP            *float64
-	ToolChoice      *string
-	ThinkingEnabled *bool
-	Tags            map[string]string
-	Metadata        map[string]any
-	StartedAt       time.Time
+	ID                string
+	ConversationID    string
+	ConversationTitle string
+	AgentName         string
+	AgentVersion      string
+	Mode              GenerationMode
+	OperationName     string
+	Model             ModelRef
+	SystemPrompt      string
+	Tools             []ToolDefinition
+	MaxTokens         *int64
+	Temperature       *float64
+	TopP              *float64
+	ToolChoice        *string
+	ThinkingEnabled   *bool
+	Tags              map[string]string
+	Metadata          map[string]any
+	StartedAt         time.Time
 }
 
 func (g Generation) Validate() error {
@@ -108,56 +110,58 @@ func defaultOperationNameForMode(mode GenerationMode) string {
 
 func cloneGeneration(in Generation) Generation {
 	return Generation{
-		ID:              in.ID,
-		ConversationID:  in.ConversationID,
-		AgentName:       in.AgentName,
-		AgentVersion:    in.AgentVersion,
-		Mode:            in.Mode,
-		OperationName:   in.OperationName,
-		TraceID:         in.TraceID,
-		SpanID:          in.SpanID,
-		Model:           in.Model,
-		ResponseID:      in.ResponseID,
-		ResponseModel:   in.ResponseModel,
-		SystemPrompt:    in.SystemPrompt,
-		Input:           cloneMessages(in.Input),
-		Output:          cloneMessages(in.Output),
-		Tools:           cloneTools(in.Tools),
-		MaxTokens:       cloneInt64Ptr(in.MaxTokens),
-		Temperature:     cloneFloat64Ptr(in.Temperature),
-		TopP:            cloneFloat64Ptr(in.TopP),
-		ToolChoice:      cloneStringPtr(in.ToolChoice),
-		ThinkingEnabled: cloneBoolPtr(in.ThinkingEnabled),
-		Usage:           in.Usage,
-		StopReason:      in.StopReason,
-		StartedAt:       in.StartedAt,
-		CompletedAt:     in.CompletedAt,
-		Tags:            cloneTags(in.Tags),
-		Metadata:        cloneMetadata(in.Metadata),
-		Artifacts:       cloneArtifacts(in.Artifacts),
-		CallError:       in.CallError,
+		ID:                in.ID,
+		ConversationID:    in.ConversationID,
+		ConversationTitle: in.ConversationTitle,
+		AgentName:         in.AgentName,
+		AgentVersion:      in.AgentVersion,
+		Mode:              in.Mode,
+		OperationName:     in.OperationName,
+		TraceID:           in.TraceID,
+		SpanID:            in.SpanID,
+		Model:             in.Model,
+		ResponseID:        in.ResponseID,
+		ResponseModel:     in.ResponseModel,
+		SystemPrompt:      in.SystemPrompt,
+		Input:             cloneMessages(in.Input),
+		Output:            cloneMessages(in.Output),
+		Tools:             cloneTools(in.Tools),
+		MaxTokens:         cloneInt64Ptr(in.MaxTokens),
+		Temperature:       cloneFloat64Ptr(in.Temperature),
+		TopP:              cloneFloat64Ptr(in.TopP),
+		ToolChoice:        cloneStringPtr(in.ToolChoice),
+		ThinkingEnabled:   cloneBoolPtr(in.ThinkingEnabled),
+		Usage:             in.Usage,
+		StopReason:        in.StopReason,
+		StartedAt:         in.StartedAt,
+		CompletedAt:       in.CompletedAt,
+		Tags:              cloneTags(in.Tags),
+		Metadata:          cloneMetadata(in.Metadata),
+		Artifacts:         cloneArtifacts(in.Artifacts),
+		CallError:         in.CallError,
 	}
 }
 
 func cloneGenerationStart(in GenerationStart) GenerationStart {
 	return GenerationStart{
-		ID:              in.ID,
-		ConversationID:  in.ConversationID,
-		AgentName:       in.AgentName,
-		AgentVersion:    in.AgentVersion,
-		Mode:            in.Mode,
-		OperationName:   in.OperationName,
-		Model:           in.Model,
-		SystemPrompt:    in.SystemPrompt,
-		Tools:           cloneTools(in.Tools),
-		MaxTokens:       cloneInt64Ptr(in.MaxTokens),
-		Temperature:     cloneFloat64Ptr(in.Temperature),
-		TopP:            cloneFloat64Ptr(in.TopP),
-		ToolChoice:      cloneStringPtr(in.ToolChoice),
-		ThinkingEnabled: cloneBoolPtr(in.ThinkingEnabled),
-		Tags:            cloneTags(in.Tags),
-		Metadata:        cloneMetadata(in.Metadata),
-		StartedAt:       in.StartedAt,
+		ID:                in.ID,
+		ConversationID:    in.ConversationID,
+		ConversationTitle: in.ConversationTitle,
+		AgentName:         in.AgentName,
+		AgentVersion:      in.AgentVersion,
+		Mode:              in.Mode,
+		OperationName:     in.OperationName,
+		Model:             in.Model,
+		SystemPrompt:      in.SystemPrompt,
+		Tools:             cloneTools(in.Tools),
+		MaxTokens:         cloneInt64Ptr(in.MaxTokens),
+		Temperature:       cloneFloat64Ptr(in.Temperature),
+		TopP:              cloneFloat64Ptr(in.TopP),
+		ToolChoice:        cloneStringPtr(in.ToolChoice),
+		ThinkingEnabled:   cloneBoolPtr(in.ThinkingEnabled),
+		Tags:              cloneTags(in.Tags),
+		Metadata:          cloneMetadata(in.Metadata),
+		StartedAt:         in.StartedAt,
 	}
 }
 
