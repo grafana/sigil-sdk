@@ -409,3 +409,85 @@ func TestEmbeddingFromResponseFallsBackToRequestedDimensions(t *testing.T) {
 		t.Fatalf("expected dimensions 12, got %v", result.Dimensions)
 	}
 }
+
+func TestFromRequestResponsePreservesWhitespace(t *testing.T) {
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("  user literal \\\\n\\\\n  ", genai.RoleUser),
+	}
+	config := &genai.GenerateContentConfig{
+		SystemInstruction: genai.NewContentFromText("  system prompt  ", genai.RoleUser),
+	}
+	resp := &genai.GenerateContentResponse{
+		ResponseID:   "resp_whitespace",
+		ModelVersion: "gemini-2.5-pro-001",
+		Candidates: []*genai.Candidate{
+			{
+				FinishReason: genai.FinishReasonStop,
+				Content:      genai.NewContentFromText("\n  assistant output  \n", genai.RoleModel),
+			},
+		},
+	}
+
+	generation, err := FromRequestResponse(model, contents, config, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if generation.SystemPrompt != "  system prompt  " {
+		t.Fatalf("unexpected system prompt %q", generation.SystemPrompt)
+	}
+	if len(generation.Input) != 1 || len(generation.Input[0].Parts) != 1 {
+		t.Fatalf("expected single input text part, got %#v", generation.Input)
+	}
+	if generation.Input[0].Parts[0].Text != "  user literal \\\\n\\\\n  " {
+		t.Fatalf("unexpected input text %q", generation.Input[0].Parts[0].Text)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected single output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "\n  assistant output  \n" {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestFromStreamPreservesWhitespaceOnlyOutput(t *testing.T) {
+	model := "gemini-2.5-pro"
+	summary := StreamSummary{
+		Responses: []*genai.GenerateContentResponse{
+			{
+				ResponseID:   "resp_stream_whitespace",
+				ModelVersion: "gemini-2.5-pro-001",
+				Candidates: []*genai.Candidate{
+					{
+						FinishReason: genai.FinishReasonStop,
+						Content:      genai.NewContentFromText("   ", genai.RoleModel),
+					},
+				},
+			},
+		},
+	}
+
+	generation, err := FromStream(model, nil, nil, summary)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected single output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "   " {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestExtractSystemPromptPreservesEmptySegments(t *testing.T) {
+	config := &genai.GenerateContentConfig{
+		SystemInstruction: genai.NewContentFromParts([]*genai.Part{
+			genai.NewPartFromText(""),
+			genai.NewPartFromText("second"),
+		}, genai.RoleUser),
+	}
+	if got := extractSystemPrompt(config); got != "\n\nsecond" {
+		t.Fatalf("expected preserved empty segment separator, got %q", got)
+	}
+}

@@ -170,7 +170,7 @@ func mapContents(contents []*genai.Content) []sigil.Message {
 				continue
 			}
 
-			if text := strings.TrimSpace(part.Text); text != "" {
+			if text := part.Text; text != "" {
 				if part.Thought && role == sigil.RoleAssistant {
 					roleParts = append(roleParts, sigil.ThinkingPart(text))
 				} else {
@@ -233,7 +233,7 @@ func embeddingInputTexts(contents []*genai.Content) []string {
 	}
 	out := make([]string, 0, len(contents))
 	for _, content := range contents {
-		text := strings.TrimSpace(embeddingContentText(content))
+		text := embeddingContentText(content)
 		if text != "" {
 			out = append(out, text)
 		}
@@ -253,7 +253,7 @@ func embeddingContentText(content *genai.Content) string {
 		if part == nil {
 			continue
 		}
-		if text := strings.TrimSpace(part.Text); text != "" {
+		if text := part.Text; text != "" {
 			chunks = append(chunks, text)
 		}
 	}
@@ -354,9 +354,7 @@ func extractSystemPrompt(config *genai.GenerateContentConfig) string {
 		if part == nil {
 			continue
 		}
-		if text := strings.TrimSpace(part.Text); text != "" {
-			parts = append(parts, text)
-		}
+		parts = append(parts, part.Text)
 	}
 	return strings.Join(parts, "\n\n")
 }

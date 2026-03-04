@@ -103,10 +103,10 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 	}
 
 	fieldCount := 0
-	if strings.TrimSpace(part.Text) != "" {
+	if part.Text != "" {
 		fieldCount++
 	}
-	if strings.TrimSpace(part.Thinking) != "" {
+	if part.Thinking != "" {
 		fieldCount++
 	}
 	if part.ToolCall != nil {
@@ -122,14 +122,14 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 
 	switch part.Kind {
 	case PartKindText:
-		if strings.TrimSpace(part.Text) == "" {
+		if part.Text == "" {
 			return fmt.Errorf("%s[%d].parts[%d].text is required", path, messageIndex, partIndex)
 		}
 	case PartKindThinking:
 		if role != RoleAssistant {
 			return fmt.Errorf("%s[%d].parts[%d].thinking only allowed for assistant role", path, messageIndex, partIndex)
 		}
-		if strings.TrimSpace(part.Thinking) == "" {
+		if part.Thinking == "" {
 			return fmt.Errorf("%s[%d].parts[%d].thinking is required", path, messageIndex, partIndex)
 		}
 	case PartKindToolCall:

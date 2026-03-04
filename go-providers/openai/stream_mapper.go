@@ -94,7 +94,7 @@ func ChatCompletionsFromStream(req osdk.ChatCompletionNewParams, summary ChatCom
 	}
 
 	assistantParts := make([]sigil.Part, 0, 1+len(order))
-	if generated := strings.TrimSpace(text.String()); generated != "" {
+	if generated := text.String(); generated != "" {
 		assistantParts = append(assistantParts, sigil.TextPart(generated))
 	}
 	for _, index := range order {

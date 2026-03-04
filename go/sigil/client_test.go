@@ -17,6 +17,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+func TestDefaultConfigGenerationExportMessageAndPayloadLimits(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.GenerationExport.GRPCMaxSendMessageBytes != defaultGRPCMaxSendMessageBytes {
+		t.Fatalf("expected grpc max send %d, got %d", defaultGRPCMaxSendMessageBytes, cfg.GenerationExport.GRPCMaxSendMessageBytes)
+	}
+	if cfg.GenerationExport.GRPCMaxReceiveMessageBytes != defaultGRPCMaxReceiveMessageBytes {
+		t.Fatalf("expected grpc max receive %d, got %d", defaultGRPCMaxReceiveMessageBytes, cfg.GenerationExport.GRPCMaxReceiveMessageBytes)
+	}
+	if cfg.GenerationExport.PayloadMaxBytes != defaultGenerationPayloadMaxBytes {
+		t.Fatalf("expected payload max bytes %d, got %d", defaultGenerationPayloadMaxBytes, cfg.GenerationExport.PayloadMaxBytes)
+	}
+}
+
 func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{
 		Now: func() time.Time {

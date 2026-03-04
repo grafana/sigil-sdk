@@ -747,6 +747,7 @@ type ToolDefinition struct {
 	Description     string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Type            string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
 	InputSchemaJson []byte                 `protobuf:"bytes,4,opt,name=input_schema_json,json=inputSchemaJson,proto3" json:"input_schema_json,omitempty"`
+	Deferred        bool                   `protobuf:"varint,5,opt,name=deferred,proto3" json:"deferred,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -807,6 +808,13 @@ func (x *ToolDefinition) GetInputSchemaJson() []byte {
 		return x.InputSchemaJson
 	}
 	return nil
+}
+
+func (x *ToolDefinition) GetDeferred() bool {
+	if x != nil {
+		return x.Deferred
+	}
+	return false
 }
 
 type TokenUsage struct {
@@ -1279,12 +1287,13 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\aMessage\x12)\n" +
 	"\x04role\x18\x01 \x01(\x0e2\x15.sigil.v1.MessageRoleR\x04role\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12$\n" +
-	"\x05parts\x18\x03 \x03(\v2\x0e.sigil.v1.PartR\x05parts\"\x86\x01\n" +
+	"\x05parts\x18\x03 \x03(\v2\x0e.sigil.v1.PartR\x05parts\"\xa2\x01\n" +
 	"\x0eToolDefinition\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12*\n" +
-	"\x11input_schema_json\x18\x04 \x01(\fR\x0finputSchemaJson\"\x92\x02\n" +
+	"\x11input_schema_json\x18\x04 \x01(\fR\x0finputSchemaJson\x12\x1a\n" +
+	"\bdeferred\x18\x05 \x01(\bR\bdeferred\"\x92\x02\n" +
 	"\n" +
 	"TokenUsage\x12!\n" +
 	"\finput_tokens\x18\x01 \x01(\x03R\vinputTokens\x12#\n" +

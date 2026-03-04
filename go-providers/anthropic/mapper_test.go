@@ -109,6 +109,12 @@ func TestFromRequestResponse(t *testing.T) {
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
 	}
+	if len(generation.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(generation.Tools))
+	}
+	if !generation.Tools[0].Deferred {
+		t.Fatalf("expected mapped tool deferred=true")
+	}
 
 	hasToolRole := false
 	for _, message := range generation.Input {
@@ -239,6 +245,12 @@ func TestFromStream(t *testing.T) {
 	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
+	}
+	if len(generation.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(generation.Tools))
+	}
+	if !generation.Tools[0].Deferred {
+		t.Fatalf("expected mapped tool deferred=true")
 	}
 }
 
@@ -541,6 +553,163 @@ func TestFromRequestResponseMapsThinkingDisabled(t *testing.T) {
 	}
 }
 
+func TestFromRequestResponseMapsToolDeferredDefaultFalse(t *testing.T) {
+	req := testRequest()
+	req.Tools = []asdk.BetaToolUnionParam{
+		asdk.BetaToolUnionParamOfTool(asdk.BetaToolInputSchemaParam{
+			Type: "object",
+			Properties: map[string]any{
+				"city": map[string]any{
+					"type": "string",
+				},
+			},
+			Required: []string{"city"},
+		}, "weather"),
+	}
+
+	resp := &asdk.BetaMessage{
+		ID:         "msg_1",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			{Type: "text", Text: "done"},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+	if len(generation.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(generation.Tools))
+	}
+	if generation.Tools[0].Deferred {
+		t.Fatalf("expected mapped tool deferred=false when defer_loading is unset")
+	}
+}
+
+func TestFromRequestResponsePreservesWhitespaceInTextAndSystemPrompt(t *testing.T) {
+	req := asdk.BetaMessageNewParams{
+		MaxTokens: 1,
+		Model:     asdk.Model("claude-sonnet-4-5"),
+		System: []asdk.BetaTextBlockParam{
+			{Text: "  first system  ", Type: "text"},
+			{Text: "  second system  ", Type: "text"},
+		},
+		Messages: []asdk.BetaMessageParam{
+			{
+				Role: asdk.BetaMessageParamRoleUser,
+				Content: []asdk.BetaContentBlockParamUnion{
+					asdk.NewBetaTextBlock("  user content with literal \\\\n\\\\n  "),
+				},
+			},
+		},
+	}
+
+	resp := &asdk.BetaMessage{
+		ID:         "msg_whitespace",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			{Type: "text", Text: "\n  assistant content  \n"},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if generation.SystemPrompt != "  first system  \n\n  second system  " {
+		t.Fatalf("unexpected system prompt %q", generation.SystemPrompt)
+	}
+	if len(generation.Input) != 1 || len(generation.Input[0].Parts) != 1 {
+		t.Fatalf("expected one input text part, got %#v", generation.Input)
+	}
+	if generation.Input[0].Parts[0].Text != "  user content with literal \\\\n\\\\n  " {
+		t.Fatalf("unexpected input text %q", generation.Input[0].Parts[0].Text)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected one output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "\n  assistant content  \n" {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestFromStreamPreservesWhitespaceOnlyParts(t *testing.T) {
+	req := asdk.BetaMessageNewParams{
+		MaxTokens: 1,
+		Model:     asdk.Model("claude-sonnet-4-5"),
+	}
+
+	summary := StreamSummary{
+		Events: []asdk.BetaRawMessageStreamEventUnion{
+			{
+				Type: "message_start",
+				Message: asdk.BetaMessage{
+					ID:    "msg_stream_whitespace",
+					Model: asdk.Model("claude-sonnet-4-5"),
+				},
+			},
+			{
+				Type:  "content_block_start",
+				Index: 0,
+				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
+					Type: "thinking",
+				},
+			},
+			{
+				Type:  "content_block_delta",
+				Index: 0,
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{Thinking: "   "},
+			},
+			{
+				Type:  "content_block_start",
+				Index: 1,
+				ContentBlock: asdk.BetaRawContentBlockStartEventContentBlockUnion{
+					Type: "text",
+					Text: "  ",
+				},
+			},
+			{
+				Type: "message_delta",
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{
+					StopReason: asdk.BetaStopReasonEndTurn,
+				},
+				Usage: asdk.BetaMessageDeltaUsage{
+					InputTokens:  1,
+					OutputTokens: 1,
+				},
+			},
+		},
+	}
+
+	generation, err := FromStream(req, summary)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 2 {
+		t.Fatalf("expected two output parts, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Thinking != "   " {
+		t.Fatalf("unexpected thinking %q", generation.Output[0].Parts[0].Thinking)
+	}
+	if generation.Output[0].Parts[1].Text != "  " {
+		t.Fatalf("unexpected text %q", generation.Output[0].Parts[1].Text)
+	}
+}
+
+func TestMapSystemPromptPreservesEmptySegments(t *testing.T) {
+	got := mapSystemPrompt([]asdk.BetaTextBlockParam{
+		{Text: "", Type: "text"},
+		{Text: "second", Type: "text"},
+	})
+	if got != "\n\nsecond" {
+		t.Fatalf("expected preserved empty segment separator, got %q", got)
+	}
+}
+
 func testRequest() asdk.BetaMessageNewParams {
 	toolResult := asdk.NewBetaToolResultBlock("toolu_1", "", false)
 	toolResult.OfToolResult.Content = []asdk.BetaToolResultBlockParamContentUnion{
@@ -551,6 +720,17 @@ func testRequest() asdk.BetaMessageNewParams {
 			},
 		},
 	}
+
+	weatherTool := asdk.BetaToolUnionParamOfTool(asdk.BetaToolInputSchemaParam{
+		Type: "object",
+		Properties: map[string]any{
+			"city": map[string]any{
+				"type": "string",
+			},
+		},
+		Required: []string{"city"},
+	}, "weather")
+	weatherTool.OfTool.DeferLoading = param.NewOpt(true)
 
 	return asdk.BetaMessageNewParams{
 		MaxTokens:   512,
@@ -586,16 +766,6 @@ func testRequest() asdk.BetaMessageNewParams {
 				},
 			},
 		},
-		Tools: []asdk.BetaToolUnionParam{
-			asdk.BetaToolUnionParamOfTool(asdk.BetaToolInputSchemaParam{
-				Type: "object",
-				Properties: map[string]any{
-					"city": map[string]any{
-						"type": "string",
-					},
-				},
-				Required: []string{"city"},
-			}, "weather"),
-		},
+		Tools: []asdk.BetaToolUnionParam{weatherTool},
 	}
 }

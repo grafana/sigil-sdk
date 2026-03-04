@@ -283,14 +283,14 @@ func (a *streamBlockAccumulator) build() (assistantParts, toolParts []sigil.Part
 func (b *streamBlock) toPart() (sigil.Part, bool, bool) {
 	switch b.blockType {
 	case "text":
-		text := strings.TrimSpace(b.text.String())
+		text := b.text.String()
 		if text == "" {
 			return sigil.Part{}, false, false
 		}
 		return sigil.TextPart(text), false, true
 	case "thinking", "redacted_thinking":
 		content := b.thinking.String()
-		if strings.TrimSpace(content) == "" {
+		if content == "" {
 			return sigil.Part{}, false, false
 		}
 		part := sigil.ThinkingPart(content)

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -41,6 +42,76 @@ func TestSDKExportsGenerationOverGRPC_AllPropertiesRoundTrip(t *testing.T) {
 
 	if !proto.Equal(expected, received) {
 		t.Fatalf("grpc roundtrip mismatch\nexpected=%s\nreceived=%s", protojson.Format(expected), protojson.Format(received))
+	}
+}
+
+func TestSDKExportsGenerationOverGRPCAboveDefaultMessageLimit(t *testing.T) {
+	ingest := &capturingIngestServer{}
+
+	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(defaultGRPCMaxReceiveMessageBytes),
+		grpc.MaxSendMsgSize(defaultGRPCMaxSendMessageBytes),
+	)
+	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen grpc: %v", err)
+	}
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	client := NewClient(Config{
+		Tracer: noop.NewTracerProvider().Tracer("test"),
+		GenerationExport: GenerationExportConfig{
+			Protocol:                   GenerationExportProtocolGRPC,
+			Endpoint:                   listener.Addr().String(),
+			Insecure:                   true,
+			GRPCMaxSendMessageBytes:    defaultGRPCMaxSendMessageBytes,
+			GRPCMaxReceiveMessageBytes: defaultGRPCMaxReceiveMessageBytes,
+			PayloadMaxBytes:            8 << 20,
+			BatchSize:                  1,
+			QueueSize:                  10,
+			FlushInterval:              time.Hour,
+			MaxRetries:                 1,
+			InitialBackoff:             time.Millisecond,
+			MaxBackoff:                 10 * time.Millisecond,
+		},
+	})
+
+	largeText := strings.Repeat("x", 5<<20)
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model: ModelRef{
+			Provider: "openai",
+			Name:     "gpt-5",
+		},
+	})
+	rec.SetResult(Generation{
+		Input:  []Message{UserTextMessage(largeText)},
+		Output: []Message{AssistantTextMessage("ok")},
+	}, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("expected large grpc payload export to succeed, got %v", err)
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := client.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("shutdown client: %v", err)
+	}
+
+	request := ingest.singleRequest(t)
+	if len(request.Generations) != 1 {
+		t.Fatalf("expected one generation in captured request, got %d", len(request.Generations))
+	}
+	if got := request.Generations[0].GetInput()[0].GetParts()[0].GetText(); got != largeText {
+		t.Fatalf("unexpected large input text size=%d", len(got))
 	}
 }
 
@@ -242,7 +313,7 @@ func payloadFromSeed(seed uint64) (GenerationStart, Generation) {
 		},
 		SystemPrompt: "system-" + randomASCII(rnd, 10),
 		Tools: []ToolDefinition{
-			{Name: "tool-" + randomASCII(rnd, 5), Description: "desc-" + randomASCII(rnd, 6), Type: "function", InputSchema: []byte(`{"type":"object"}`)},
+			{Name: "tool-" + randomASCII(rnd, 5), Description: "desc-" + randomASCII(rnd, 6), Type: "function", InputSchema: []byte(`{"type":"object"}`), Deferred: seed%2 == 0},
 		},
 		MaxTokens:       int64Ptr(int64(rnd.Intn(1024) + 1)),
 		Temperature:     float64Ptr(float64(rnd.Intn(100)) / 100),

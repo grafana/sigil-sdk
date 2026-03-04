@@ -69,18 +69,24 @@ const (
 )
 
 type GenerationExportConfig struct {
-	Protocol        GenerationExportProtocol
-	Endpoint        string
-	Headers         map[string]string
-	Auth            AuthConfig
-	Insecure        bool
-	BatchSize       int
-	FlushInterval   time.Duration
-	QueueSize       int
-	MaxRetries      int
-	InitialBackoff  time.Duration
-	MaxBackoff      time.Duration
-	PayloadMaxBytes int
+	Protocol GenerationExportProtocol
+	Endpoint string
+	Headers  map[string]string
+	Auth     AuthConfig
+	Insecure bool
+	// GRPCMaxSendMessageBytes controls the gRPC per-message send cap used by
+	// the SDK generation exporter.
+	GRPCMaxSendMessageBytes int
+	// GRPCMaxReceiveMessageBytes controls the gRPC per-message receive cap used
+	// by the SDK generation exporter.
+	GRPCMaxReceiveMessageBytes int
+	BatchSize                  int
+	FlushInterval              time.Duration
+	QueueSize                  int
+	MaxRetries                 int
+	InitialBackoff             time.Duration
+	MaxBackoff                 time.Duration
+	PayloadMaxBytes            int
 }
 
 type APIConfig struct {
@@ -89,6 +95,10 @@ type APIConfig struct {
 
 const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
 const (
+	defaultGRPCMaxSendMessageBytes    = 16 << 20
+	defaultGRPCMaxReceiveMessageBytes = 16 << 20
+	defaultGenerationPayloadMaxBytes  = 16 << 20
+
 	sdkMetadataKeyName = "sigil.sdk.name"
 	sdkName            = "sdk-go"
 
@@ -152,17 +162,19 @@ var (
 func DefaultConfig() Config {
 	return Config{
 		GenerationExport: GenerationExportConfig{
-			Protocol:        GenerationExportProtocolGRPC,
-			Endpoint:        "localhost:4317",
-			Auth:            AuthConfig{Mode: ExportAuthModeNone},
-			Insecure:        true,
-			BatchSize:       100,
-			FlushInterval:   time.Second,
-			QueueSize:       2000,
-			MaxRetries:      5,
-			InitialBackoff:  100 * time.Millisecond,
-			MaxBackoff:      5 * time.Second,
-			PayloadMaxBytes: 4 << 20,
+			Protocol:                   GenerationExportProtocolGRPC,
+			Endpoint:                   "localhost:4317",
+			Auth:                       AuthConfig{Mode: ExportAuthModeNone},
+			Insecure:                   true,
+			GRPCMaxSendMessageBytes:    defaultGRPCMaxSendMessageBytes,
+			GRPCMaxReceiveMessageBytes: defaultGRPCMaxReceiveMessageBytes,
+			BatchSize:                  100,
+			FlushInterval:              time.Second,
+			QueueSize:                  2000,
+			MaxRetries:                 5,
+			InitialBackoff:             100 * time.Millisecond,
+			MaxBackoff:                 5 * time.Second,
+			PayloadMaxBytes:            defaultGenerationPayloadMaxBytes,
 		},
 		API: APIConfig{
 			Endpoint: "http://localhost:8080",
