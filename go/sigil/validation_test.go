@@ -107,3 +107,28 @@ func TestValidateGenerationAllowsConversationAndResponseFields(t *testing.T) {
 		t.Fatalf("expected valid generation, got %v", err)
 	}
 }
+
+func TestValidateGenerationAllowsWhitespaceOnlyTextAndThinking(t *testing.T) {
+	g := Generation{
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+		Input: []Message{
+			{
+				Role:  RoleUser,
+				Parts: []Part{TextPart("   ")},
+			},
+		},
+		Output: []Message{
+			{
+				Role:  RoleAssistant,
+				Parts: []Part{ThinkingPart(" \n\t ")},
+			},
+		},
+	}
+
+	if err := ValidateGeneration(g); err != nil {
+		t.Fatalf("expected valid generation, got %v", err)
+	}
+}

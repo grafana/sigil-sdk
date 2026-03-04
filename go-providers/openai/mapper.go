@@ -48,7 +48,7 @@ func ChatCompletionsFromRequestResponse(req osdk.ChatCompletionNewParams, resp *
 	}
 
 	requestModel := string(req.Model)
-	responseModel := strings.TrimSpace(resp.Model)
+	responseModel := resp.Model
 	if responseModel == "" {
 		responseModel = requestModel
 	}
@@ -96,7 +96,7 @@ func EmbeddingsFromResponse(req osdk.EmbeddingNewParams, resp *osdk.CreateEmbedd
 	}
 
 	result.InputTokens = resp.Usage.PromptTokens
-	result.ResponseModel = strings.TrimSpace(resp.Model)
+	result.ResponseModel = resp.Model
 
 	if len(resp.Data) > 0 {
 		dimensions := int64(len(resp.Data[0].Embedding))
@@ -119,9 +119,9 @@ func mapRequestMessages(messages []osdk.ChatCompletionMessageParamUnion) ([]sigi
 	for i := range messages {
 		switch {
 		case messages[i].OfSystem != nil:
-			systemPrompts = appendNonEmpty(systemPrompts, extractTextFromSystem(messages[i].OfSystem))
+			systemPrompts = append(systemPrompts, extractTextFromSystem(messages[i].OfSystem))
 		case messages[i].OfDeveloper != nil:
-			systemPrompts = appendNonEmpty(systemPrompts, extractTextFromDeveloper(messages[i].OfDeveloper))
+			systemPrompts = append(systemPrompts, extractTextFromDeveloper(messages[i].OfDeveloper))
 		case messages[i].OfUser != nil:
 			parts := mapUserParts(messages[i].OfUser)
 			if len(parts) > 0 {
@@ -156,10 +156,10 @@ func mapResponseMessages(choices []osdk.ChatCompletionChoice) []sigil.Message {
 	message := choices[0].Message
 	parts := make([]sigil.Part, 0, 1+len(message.ToolCalls))
 
-	if text := strings.TrimSpace(message.Content); text != "" {
+	if text := message.Content; text != "" {
 		parts = append(parts, sigil.TextPart(text))
 	}
-	if refusal := strings.TrimSpace(message.Refusal); refusal != "" {
+	if refusal := message.Refusal; refusal != "" {
 		parts = append(parts, sigil.TextPart(refusal))
 	}
 	for _, call := range message.ToolCalls {
@@ -187,12 +187,12 @@ func mapResponseMessages(choices []osdk.ChatCompletionChoice) []sigil.Message {
 func mapUserParts(message *osdk.ChatCompletionUserMessageParam) []sigil.Part {
 	parts := make([]sigil.Part, 0, 2)
 	if message.Content.OfString.Valid() {
-		if text := strings.TrimSpace(message.Content.OfString.Value); text != "" {
+		if text := message.Content.OfString.Value; text != "" {
 			parts = append(parts, sigil.TextPart(text))
 		}
 	}
 	for _, contentPart := range message.Content.OfArrayOfContentParts {
-		text := strings.TrimSpace(derefString(contentPart.GetText()))
+		text := derefString(contentPart.GetText())
 		if text != "" {
 			parts = append(parts, sigil.TextPart(text))
 		}
@@ -203,20 +203,20 @@ func mapUserParts(message *osdk.ChatCompletionUserMessageParam) []sigil.Part {
 func mapAssistantParamParts(message *osdk.ChatCompletionAssistantMessageParam) []sigil.Part {
 	parts := make([]sigil.Part, 0, 2+len(message.ToolCalls))
 	if message.Content.OfString.Valid() {
-		if text := strings.TrimSpace(message.Content.OfString.Value); text != "" {
+		if text := message.Content.OfString.Value; text != "" {
 			parts = append(parts, sigil.TextPart(text))
 		}
 	}
 	for _, contentPart := range message.Content.OfArrayOfContentParts {
-		if text := strings.TrimSpace(derefString(contentPart.GetText())); text != "" {
+		if text := derefString(contentPart.GetText()); text != "" {
 			parts = append(parts, sigil.TextPart(text))
 		}
-		if refusal := strings.TrimSpace(derefString(contentPart.GetRefusal())); refusal != "" {
+		if refusal := derefString(contentPart.GetRefusal()); refusal != "" {
 			parts = append(parts, sigil.TextPart(refusal))
 		}
 	}
 	if message.Refusal.Valid() {
-		if refusal := strings.TrimSpace(message.Refusal.Value); refusal != "" {
+		if refusal := message.Refusal.Value; refusal != "" {
 			parts = append(parts, sigil.TextPart(refusal))
 		}
 	}
@@ -226,7 +226,7 @@ func mapAssistantParamParts(message *osdk.ChatCompletionAssistantMessageParam) [
 			continue
 		}
 		part := sigil.ToolCallPart(sigil.ToolCall{
-			ID:        strings.TrimSpace(derefString(call.GetID())),
+			ID:        derefString(call.GetID()),
 			Name:      function.Name,
 			InputJSON: parseJSONOrString(function.Arguments),
 		})
@@ -239,13 +239,11 @@ func mapAssistantParamParts(message *osdk.ChatCompletionAssistantMessageParam) [
 func mapToolMessage(message *osdk.ChatCompletionToolMessageParam) *sigil.Part {
 	content := ""
 	if message.Content.OfString.Valid() {
-		content = strings.TrimSpace(message.Content.OfString.Value)
+		content = message.Content.OfString.Value
 	} else {
 		chunks := make([]string, 0, len(message.Content.OfArrayOfContentParts))
 		for _, part := range message.Content.OfArrayOfContentParts {
-			if text := strings.TrimSpace(part.Text); text != "" {
-				chunks = append(chunks, text)
-			}
+			chunks = append(chunks, part.Text)
 		}
 		content = strings.Join(chunks, "\n")
 	}
@@ -266,7 +264,7 @@ func mapFunctionMessage(message *osdk.ChatCompletionFunctionMessageParam) *sigil
 	if !message.Content.Valid() {
 		return nil
 	}
-	content := strings.TrimSpace(message.Content.Value)
+	content := message.Content.Value
 	if content == "" {
 		return nil
 	}
@@ -503,48 +501,35 @@ func coerceInt64Pointer(value any) *int64 {
 
 func extractTextFromSystem(message *osdk.ChatCompletionSystemMessageParam) string {
 	if message.Content.OfString.Valid() {
-		return strings.TrimSpace(message.Content.OfString.Value)
+		return message.Content.OfString.Value
 	}
 	parts := make([]string, 0, len(message.Content.OfArrayOfContentParts))
 	for _, part := range message.Content.OfArrayOfContentParts {
-		if text := strings.TrimSpace(part.Text); text != "" {
-			parts = append(parts, text)
-		}
+		parts = append(parts, part.Text)
 	}
 	return strings.Join(parts, "\n")
 }
 
 func extractTextFromDeveloper(message *osdk.ChatCompletionDeveloperMessageParam) string {
 	if message.Content.OfString.Valid() {
-		return strings.TrimSpace(message.Content.OfString.Value)
+		return message.Content.OfString.Value
 	}
 	parts := make([]string, 0, len(message.Content.OfArrayOfContentParts))
 	for _, part := range message.Content.OfArrayOfContentParts {
-		if text := strings.TrimSpace(part.Text); text != "" {
-			parts = append(parts, text)
-		}
+		parts = append(parts, part.Text)
 	}
 	return strings.Join(parts, "\n")
 }
 
-func appendNonEmpty(values []string, value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return values
-	}
-	return append(values, value)
-}
-
 func parseJSONOrString(value string) []byte {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if value == "" {
 		return nil
 	}
-	data := []byte(trimmed)
+	data := []byte(value)
 	if json.Valid(data) {
 		return data
 	}
-	quoted, err := json.Marshal(trimmed)
+	quoted, err := json.Marshal(value)
 	if err != nil {
 		return nil
 	}

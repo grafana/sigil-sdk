@@ -83,6 +83,7 @@ message ToolDefinition {
   string description = 2;
   string type = 3;
   bytes input_schema_json = 4;
+  bool deferred = 5;
 }
 
 message TokenUsage {

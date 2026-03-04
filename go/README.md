@@ -24,6 +24,7 @@ Framework modules:
 - `ModelRef` bundles `provider + model`.
 - `AgentName` and `AgentVersion` are optional generation/tool identity fields.
 - `SystemPrompt` is separate from messages.
+- `ToolDefinition.Deferred` records whether a tool is marked as deferred.
 - Request controls are optional first-class fields:
   - `MaxTokens`
   - `Temperature`
@@ -82,6 +83,9 @@ cfg.GenerationExport.QueueSize = 2000
 cfg.GenerationExport.MaxRetries = 5
 cfg.GenerationExport.InitialBackoff = 100 * time.Millisecond
 cfg.GenerationExport.MaxBackoff = 5 * time.Second
+cfg.GenerationExport.GRPCMaxSendMessageBytes = 16 << 20
+cfg.GenerationExport.GRPCMaxReceiveMessageBytes = 16 << 20
+cfg.GenerationExport.PayloadMaxBytes = 16 << 20
 
 // Sigil API base used by helpers like SubmitConversationRating.
 cfg.API.Endpoint = "http://localhost:8080"

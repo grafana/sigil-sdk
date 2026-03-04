@@ -167,7 +167,7 @@ func mapResponseMessages(content []asdk.BetaContentBlockUnion) []sigil.Message {
 
 func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	if block.OfText != nil {
-		text := strings.TrimSpace(block.OfText.Text)
+		text := block.OfText.Text
 		if text == "" {
 			return sigil.Part{}, false
 		}
@@ -291,7 +291,7 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	typ := derefString(block.GetType())
 	switch typ {
 	case "text":
-		text := strings.TrimSpace(derefString(block.GetText()))
+		text := derefString(block.GetText())
 		if text == "" {
 			return sigil.Part{}, false
 		}
@@ -337,7 +337,7 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 func mapResponseBlock(block asdk.BetaContentBlockUnion) (sigil.Part, bool) {
 	switch block.Type {
 	case "text":
-		text := strings.TrimSpace(block.Text)
+		text := block.Text
 		if text == "" {
 			return sigil.Part{}, false
 		}
@@ -397,6 +397,9 @@ func mapTools(tools []asdk.BetaToolUnionParam) []sigil.ToolDefinition {
 			Description: derefString(tools[i].GetDescription()),
 			Type:        derefString(tools[i].GetType()),
 		}
+		if deferred := tools[i].GetDeferLoading(); deferred != nil {
+			definition.Deferred = *deferred
+		}
 
 		if schema := tools[i].GetInputSchema(); schema != nil {
 			raw, err := marshalAny(*schema)
@@ -418,11 +421,7 @@ func mapSystemPrompt(system []asdk.BetaTextBlockParam) string {
 
 	parts := make([]string, 0, len(system))
 	for i := range system {
-		text := strings.TrimSpace(system[i].Text)
-		if text == "" {
-			continue
-		}
-		parts = append(parts, text)
+		parts = append(parts, system[i].Text)
 	}
 
 	return strings.Join(parts, "\n\n")

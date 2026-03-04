@@ -548,3 +548,213 @@ func TestEmbeddingsFromResponseWithTokenInputDoesNotCaptureTexts(t *testing.T) {
 		t.Fatalf("expected no input texts for tokenized input, got %v", result.InputTexts)
 	}
 }
+
+func TestChatCompletionsFromRequestResponsePreservesWhitespace(t *testing.T) {
+	req := osdk.ChatCompletionNewParams{
+		Model: shared.ChatModel("gpt-4o-mini"),
+		Messages: []osdk.ChatCompletionMessageParamUnion{
+			osdk.SystemMessage("  system prompt  "),
+			osdk.UserMessage("  user literal \\\\n\\\\n  "),
+		},
+	}
+	resp := &osdk.ChatCompletion{
+		ID:    "chatcmpl_whitespace",
+		Model: "gpt-4o-mini",
+		Choices: []osdk.ChatCompletionChoice{
+			{
+				FinishReason: "stop",
+				Message: osdk.ChatCompletionMessage{
+					Content: "\n  assistant output  \n",
+				},
+			},
+		},
+	}
+
+	generation, err := ChatCompletionsFromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if generation.SystemPrompt != "  system prompt  " {
+		t.Fatalf("unexpected system prompt %q", generation.SystemPrompt)
+	}
+	if len(generation.Input) != 1 || len(generation.Input[0].Parts) != 1 {
+		t.Fatalf("expected single input text part, got %#v", generation.Input)
+	}
+	if generation.Input[0].Parts[0].Text != "  user literal \\\\n\\\\n  " {
+		t.Fatalf("unexpected input text %q", generation.Input[0].Parts[0].Text)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected single output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "\n  assistant output  \n" {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestChatCompletionsFromStreamPreservesWhitespaceOnlyOutput(t *testing.T) {
+	req := osdk.ChatCompletionNewParams{
+		Model: shared.ChatModel("gpt-4o-mini"),
+	}
+
+	summary := ChatCompletionsStreamSummary{
+		Chunks: []osdk.ChatCompletionChunk{
+			{
+				ID:    "chatcmpl_stream_whitespace",
+				Model: "gpt-4o-mini",
+				Choices: []osdk.ChatCompletionChunkChoice{
+					{
+						Delta: osdk.ChatCompletionChunkChoiceDelta{
+							Content: "   ",
+						},
+						FinishReason: "stop",
+					},
+				},
+				Usage: osdk.CompletionUsage{
+					PromptTokens:     1,
+					CompletionTokens: 1,
+					TotalTokens:      2,
+				},
+			},
+		},
+	}
+
+	generation, err := ChatCompletionsFromStream(req, summary)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected single output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "   " {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestResponsesFromRequestResponsePreservesWhitespace(t *testing.T) {
+	req := oresponses.ResponseNewParams{
+		Model:        shared.ResponsesModel("gpt-5"),
+		Instructions: param.NewOpt("  system instructions  "),
+		Input:        oresponses.ResponseNewParamsInputUnion{OfString: param.NewOpt("  user literal \\\\n\\\\n  ")},
+	}
+	resp := &oresponses.Response{
+		ID:     "resp_whitespace",
+		Model:  shared.ResponsesModel("gpt-5"),
+		Status: oresponses.ResponseStatusCompleted,
+		Output: []oresponses.ResponseOutputItemUnion{
+			{
+				Type: "message",
+				Content: []oresponses.ResponseOutputMessageContentUnion{
+					{Type: "output_text", Text: "\n  assistant output  \n"},
+				},
+			},
+		},
+	}
+
+	generation, err := ResponsesFromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("responses from request/response: %v", err)
+	}
+	if generation.SystemPrompt != "  system instructions  " {
+		t.Fatalf("unexpected system prompt %q", generation.SystemPrompt)
+	}
+	if len(generation.Input) != 1 || len(generation.Input[0].Parts) != 1 {
+		t.Fatalf("expected single input text part, got %#v", generation.Input)
+	}
+	if generation.Input[0].Parts[0].Text != "  user literal \\\\n\\\\n  " {
+		t.Fatalf("unexpected input text %q", generation.Input[0].Parts[0].Text)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected single output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "\n  assistant output  \n" {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestResponsesFromStreamPreservesWhitespaceOnlyOutput(t *testing.T) {
+	req := oresponses.ResponseNewParams{
+		Model: shared.ResponsesModel("gpt-5"),
+	}
+	summary := ResponsesStreamSummary{
+		Events: []oresponses.ResponseStreamEventUnion{
+			{
+				Type:  "response.output_text.delta",
+				Delta: "  ",
+			},
+			{
+				Type: "response.completed",
+			},
+		},
+	}
+
+	generation, err := ResponsesFromStream(req, summary)
+	if err != nil {
+		t.Fatalf("responses from stream: %v", err)
+	}
+	if len(generation.Output) != 1 || len(generation.Output[0].Parts) != 1 {
+		t.Fatalf("expected single output text part, got %#v", generation.Output)
+	}
+	if generation.Output[0].Parts[0].Text != "  " {
+		t.Fatalf("unexpected output text %q", generation.Output[0].Parts[0].Text)
+	}
+}
+
+func TestMapRequestMessagesPreservesEmptySystemEntries(t *testing.T) {
+	system := osdk.ChatCompletionSystemMessageParam{
+		Content: osdk.ChatCompletionSystemMessageParamContentUnion{
+			OfString: param.NewOpt(""),
+		},
+	}
+	developer := osdk.ChatCompletionDeveloperMessageParam{
+		Content: osdk.ChatCompletionDeveloperMessageParamContentUnion{
+			OfString: param.NewOpt("developer instruction"),
+		},
+	}
+
+	input, systemPrompt := mapRequestMessages([]osdk.ChatCompletionMessageParamUnion{
+		{OfSystem: &system},
+		{OfDeveloper: &developer},
+	})
+
+	if len(input) != 0 {
+		t.Fatalf("expected no mapped user/assistant/tool input messages, got %#v", input)
+	}
+	if systemPrompt != "\n\ndeveloper instruction" {
+		t.Fatalf("expected preserved empty system entry before developer prompt, got %q", systemPrompt)
+	}
+}
+
+func TestMapToolMessagePreservesEmptyParts(t *testing.T) {
+	part := mapToolMessage(&osdk.ChatCompletionToolMessageParam{
+		ToolCallID: "call_1",
+		Content: osdk.ChatCompletionToolMessageParamContentUnion{
+			OfArrayOfContentParts: []osdk.ChatCompletionContentPartTextParam{
+				{Text: ""},
+				{Text: ""},
+			},
+		},
+	})
+
+	if part == nil {
+		t.Fatalf("expected tool result part for empty text segments")
+	}
+	if part.ToolResult == nil {
+		t.Fatalf("expected tool result payload, got %#v", part)
+	}
+	if part.ToolResult.Content != "\n" {
+		t.Fatalf("expected newline-preserved content, got %q", part.ToolResult.Content)
+	}
+}
+
+func TestParseJSONOrStringPreservesWhitespace(t *testing.T) {
+	if got := string(parseJSONOrString("  {\"city\":\"Paris\"}  ")); got != "  {\"city\":\"Paris\"}  " {
+		t.Fatalf("expected JSON bytes to preserve whitespace, got %q", got)
+	}
+	if got := string(parseJSONOrString("  raw value  ")); got != "\"  raw value  \"" {
+		t.Fatalf("expected quoted raw string with whitespace preserved, got %q", got)
+	}
+	if got := parseJSONOrString(""); got != nil {
+		t.Fatalf("expected nil for empty string, got %q", string(got))
+	}
+}

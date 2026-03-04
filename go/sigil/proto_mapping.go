@@ -172,6 +172,7 @@ func mapToolsToProto(tools []ToolDefinition) []*sigilv1.ToolDefinition {
 			Description:     tools[i].Description,
 			Type:            tools[i].Type,
 			InputSchemaJson: append([]byte(nil), tools[i].InputSchema...),
+			Deferred:        tools[i].Deferred,
 		})
 	}
 	return out

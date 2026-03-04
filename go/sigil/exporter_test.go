@@ -212,6 +212,25 @@ func TestMergeGenerationExportConfigInsecure(t *testing.T) {
 	}
 }
 
+func TestMergeGenerationExportConfigGRPCMessageLimits(t *testing.T) {
+	base := GenerationExportConfig{
+		GRPCMaxSendMessageBytes:    2 << 20,
+		GRPCMaxReceiveMessageBytes: 3 << 20,
+	}
+	override := GenerationExportConfig{
+		GRPCMaxSendMessageBytes:    8 << 20,
+		GRPCMaxReceiveMessageBytes: 9 << 20,
+	}
+	got := mergeGenerationExportConfig(base, override)
+
+	if got.GRPCMaxSendMessageBytes != 8<<20 {
+		t.Fatalf("expected grpc max send 8MiB, got %d", got.GRPCMaxSendMessageBytes)
+	}
+	if got.GRPCMaxReceiveMessageBytes != 9<<20 {
+		t.Fatalf("expected grpc max receive 9MiB, got %d", got.GRPCMaxReceiveMessageBytes)
+	}
+}
+
 func TestNewHTTPGenerationExporterUsesEndpointScheme(t *testing.T) {
 	testCases := []struct {
 		name     string

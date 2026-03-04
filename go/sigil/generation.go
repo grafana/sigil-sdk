@@ -29,6 +29,7 @@ type ToolDefinition struct {
 	Description string          `json:"description,omitempty"`
 	Type        string          `json:"type,omitempty"`
 	InputSchema json.RawMessage `json:"input_schema,omitempty"`
+	Deferred    bool            `json:"deferred,omitempty"`
 }
 
 // Generation is the normalized, provider-agnostic generation payload.

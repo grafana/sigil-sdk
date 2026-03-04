@@ -33,7 +33,7 @@ func ResponsesFromRequestResponse(req responses.ResponseNewParams, resp *respons
 	maxTokens, temperature, topP, toolChoice, thinkingEnabled, thinkingBudget := mapResponsesRequestControls(requestPayload)
 
 	requestModel := string(req.Model)
-	responseModel := strings.TrimSpace(string(resp.Model))
+	responseModel := string(resp.Model)
 	if responseModel == "" {
 		responseModel = requestModel
 	}
@@ -119,11 +119,11 @@ func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStrea
 
 	for i := range summary.Events {
 		event := summary.Events[i]
-		eventType := strings.TrimSpace(event.Type)
+		eventType := event.Type
 
 		if event.Response.ID != "" {
 			responseID = event.Response.ID
-			if model := strings.TrimSpace(string(event.Response.Model)); model != "" {
+			if model := string(event.Response.Model); model != "" {
 				responseModel = model
 			}
 			usage = mapResponsesUsage(event.Response.Usage)
@@ -170,7 +170,7 @@ func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStrea
 	}
 
 	output := []sigil.Message{}
-	if generated := strings.TrimSpace(text.String()); generated != "" {
+	if generated := text.String(); generated != "" {
 		output = append(output, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(generated)}})
 	}
 
@@ -250,7 +250,7 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 	systemPrompts := make([]string, 0, 2)
 
 	if instructions, ok := payload["instructions"].(string); ok {
-		systemPrompts = appendNonEmpty(systemPrompts, instructions)
+		systemPrompts = append(systemPrompts, instructions)
 	}
 
 	rawInput, hasInput := payload["input"]
@@ -260,7 +260,7 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 
 	switch typed := rawInput.(type) {
 	case string:
-		if text := strings.TrimSpace(typed); text != "" {
+		if text := typed; text != "" {
 			input = append(input, sigil.Message{Role: sigil.RoleUser, Parts: []sigil.Part{sigil.TextPart(text)}})
 		}
 	case []any:
@@ -274,7 +274,7 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 			role := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", item["role"])))
 
 			if itemType == "message" && (role == "system" || role == "developer") {
-				systemPrompts = appendNonEmpty(systemPrompts, extractResponsesText(item["content"]))
+				systemPrompts = append(systemPrompts, extractResponsesText(item["content"]))
 				continue
 			}
 
@@ -283,11 +283,11 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 				if content == "" {
 					content = jsonValueText(item["output"])
 				}
-				if strings.TrimSpace(content) == "" {
+				if content == "" {
 					continue
 				}
 				part := sigil.ToolResultPart(sigil.ToolResult{
-					ToolCallID:  strings.TrimSpace(fmt.Sprintf("%v", item["call_id"])),
+					ToolCallID:  fmt.Sprintf("%v", item["call_id"]),
 					Content:     content,
 					ContentJSON: parseJSONOrString(content),
 				})
@@ -298,7 +298,7 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 
 			if itemType == "message" || role != "" {
 				content := extractResponsesText(item["content"])
-				if strings.TrimSpace(content) == "" {
+				if content == "" {
 					continue
 				}
 
@@ -329,7 +329,7 @@ func mapResponsesOutput(items []responses.ResponseOutputItemUnion) []sigil.Messa
 		switch item.Type {
 		case "message":
 			text := extractResponsesOutputMessageText(item.Content)
-			if strings.TrimSpace(text) == "" {
+			if text == "" {
 				continue
 			}
 			out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(text)}})
@@ -345,7 +345,7 @@ func mapResponsesOutput(items []responses.ResponseOutputItemUnion) []sigil.Messa
 			part.Metadata.ProviderType = "tool_call"
 			out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{part}})
 		default:
-			fallback := strings.TrimSpace(extractResponsesOutputFallback(item))
+			fallback := extractResponsesOutputFallback(item)
 			if fallback != "" {
 				out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(fallback)}})
 			}
@@ -369,13 +369,13 @@ func mapResponsesTools(value any) []sigil.ToolDefinition {
 		}
 		toolType := strings.TrimSpace(fmt.Sprintf("%v", tool["type"]))
 		if toolType == "function" {
-			name := strings.TrimSpace(fmt.Sprintf("%v", tool["name"]))
-			if name == "" {
+			name := fmt.Sprintf("%v", tool["name"])
+			if strings.TrimSpace(name) == "" {
 				continue
 			}
 			definition := sigil.ToolDefinition{
 				Name:        name,
-				Description: strings.TrimSpace(fmt.Sprintf("%v", tool["description"])),
+				Description: fmt.Sprintf("%v", tool["description"]),
 				Type:        "function",
 			}
 			if parameters, exists := tool["parameters"]; exists {
@@ -385,8 +385,8 @@ func mapResponsesTools(value any) []sigil.ToolDefinition {
 			continue
 		}
 
-		name := strings.TrimSpace(fmt.Sprintf("%v", tool["name"]))
-		if toolType != "" && name != "" {
+		name := fmt.Sprintf("%v", tool["name"])
+		if toolType != "" && strings.TrimSpace(name) != "" {
 			out = append(out, sigil.ToolDefinition{Name: name, Type: toolType})
 		}
 	}
@@ -442,7 +442,7 @@ func mapResponsesRequestControls(payload map[string]any) (*int64, *float64, *flo
 func extractResponsesText(value any) string {
 	switch typed := value.(type) {
 	case string:
-		return strings.TrimSpace(typed)
+		return typed
 	case []any:
 		parts := make([]string, 0, len(typed))
 		for i := range typed {
@@ -453,13 +453,13 @@ func extractResponsesText(value any) string {
 		return strings.Join(parts, "\n")
 	case map[string]any:
 		if text, ok := typed["text"].(string); ok {
-			return strings.TrimSpace(text)
+			return text
 		}
 		if text, ok := typed["content"].(string); ok {
-			return strings.TrimSpace(text)
+			return text
 		}
 		if refusal, ok := typed["refusal"].(string); ok {
-			return strings.TrimSpace(refusal)
+			return refusal
 		}
 	}
 	return ""
@@ -471,11 +471,11 @@ func extractResponsesOutputMessageText(content []responses.ResponseOutputMessage
 		item := content[i]
 		switch item.Type {
 		case "output_text":
-			if text := strings.TrimSpace(item.Text); text != "" {
+			if text := item.Text; text != "" {
 				parts = append(parts, text)
 			}
 		case "refusal":
-			if refusal := strings.TrimSpace(item.Refusal); refusal != "" {
+			if refusal := item.Refusal; refusal != "" {
 				parts = append(parts, refusal)
 			}
 		}

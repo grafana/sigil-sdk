@@ -77,6 +77,14 @@ func newGRPCGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 	if err != nil {
 		return nil, err
 	}
+	maxSendMessageBytes := cfg.GRPCMaxSendMessageBytes
+	if maxSendMessageBytes <= 0 {
+		maxSendMessageBytes = defaultGRPCMaxSendMessageBytes
+	}
+	maxReceiveMessageBytes := cfg.GRPCMaxReceiveMessageBytes
+	if maxReceiveMessageBytes <= 0 {
+		maxReceiveMessageBytes = defaultGRPCMaxReceiveMessageBytes
+	}
 
 	transportCreds := credentials.NewTLS(&tls.Config{
 		MinVersion: tls.VersionTLS12,
@@ -86,7 +94,14 @@ func newGRPCGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 		transportCreds = insecure.NewCredentials()
 	}
 
-	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(transportCreds))
+	conn, err := grpc.NewClient(
+		endpoint,
+		grpc.WithTransportCredentials(transportCreds),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallSendMsgSize(maxSendMessageBytes),
+			grpc.MaxCallRecvMsgSize(maxReceiveMessageBytes),
+		),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("dial generation ingest grpc endpoint %q: %w", endpoint, err)
 	}
@@ -214,6 +229,12 @@ func mergeGenerationExportConfig(base, override GenerationExportConfig) Generati
 	}
 	out.Auth = mergeAuthConfig(out.Auth, override.Auth)
 	out.Insecure = override.Insecure
+	if override.GRPCMaxSendMessageBytes > 0 {
+		out.GRPCMaxSendMessageBytes = override.GRPCMaxSendMessageBytes
+	}
+	if override.GRPCMaxReceiveMessageBytes > 0 {
+		out.GRPCMaxReceiveMessageBytes = override.GRPCMaxReceiveMessageBytes
+	}
 	if override.BatchSize > 0 {
 		out.BatchSize = override.BatchSize
 	}
