@@ -39,6 +39,7 @@ type Generation struct {
 	ID                string         `json:"id,omitempty"`
 	ConversationID    string         `json:"conversation_id,omitempty"`
 	ConversationTitle string         `json:"conversation_title,omitempty"`
+	UserID            string         `json:"user_id,omitempty"`
 	AgentName         string         `json:"agent_name,omitempty"`
 	AgentVersion      string         `json:"agent_version,omitempty"`
 	Mode              GenerationMode `json:"mode,omitempty"`
@@ -80,6 +81,7 @@ type GenerationStart struct {
 	ID                string
 	ConversationID    string
 	ConversationTitle string
+	UserID            string
 	AgentName         string
 	AgentVersion      string
 	Mode              GenerationMode
@@ -113,6 +115,7 @@ func cloneGeneration(in Generation) Generation {
 		ID:                in.ID,
 		ConversationID:    in.ConversationID,
 		ConversationTitle: in.ConversationTitle,
+		UserID:            in.UserID,
 		AgentName:         in.AgentName,
 		AgentVersion:      in.AgentVersion,
 		Mode:              in.Mode,
@@ -147,6 +150,7 @@ func cloneGenerationStart(in GenerationStart) GenerationStart {
 		ID:                in.ID,
 		ConversationID:    in.ConversationID,
 		ConversationTitle: in.ConversationTitle,
+		UserID:            in.UserID,
 		AgentName:         in.AgentName,
 		AgentVersion:      in.AgentVersion,
 		Mode:              in.Mode,

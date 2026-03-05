@@ -100,11 +100,13 @@ const (
 	defaultGenerationPayloadMaxBytes  = 16 << 20
 
 	sdkMetadataKeyName = "sigil.sdk.name"
+	metadataUserIDKey  = "sigil.user.id"
 	sdkName            = "sdk-go"
 
 	spanAttrGenerationID           = "sigil.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
 	spanAttrConversationTitle      = "sigil.conversation.title"
+	spanAttrUserID                 = "user.id"
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
 	spanAttrErrorType              = "error.type"
@@ -374,6 +376,9 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	if c == nil {
 		return ctx, &GenerationRecorder{}
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	seed := cloneGenerationStart(start)
 	if seed.Mode == "" {
@@ -391,6 +396,11 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	if seed.ConversationTitle == "" {
 		if title, ok := ConversationTitleFromContext(ctx); ok {
 			seed.ConversationTitle = title
+		}
+	}
+	if seed.UserID == "" {
+		if userID, ok := UserIDFromContext(ctx); ok {
+			seed.UserID = userID
 		}
 	}
 	if seed.AgentName == "" {
@@ -416,6 +426,7 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 		ID:                seed.ID,
 		ConversationID:    seed.ConversationID,
 		ConversationTitle: seed.ConversationTitle,
+		UserID:            seed.UserID,
 		AgentName:         seed.AgentName,
 		AgentVersion:      seed.AgentVersion,
 		Mode:              seed.Mode,
@@ -431,6 +442,7 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 		ID:                seed.ID,
 		ConversationID:    seed.ConversationID,
 		ConversationTitle: seed.ConversationTitle,
+		UserID:            seed.UserID,
 		AgentName:         seed.AgentName,
 		AgentVersion:      seed.AgentVersion,
 		Mode:              seed.Mode,
@@ -935,6 +947,9 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if g.ConversationTitle == "" {
 		g.ConversationTitle = r.seed.ConversationTitle
 	}
+	if g.UserID == "" {
+		g.UserID = r.seed.UserID
+	}
 	if g.AgentName == "" {
 		g.AgentName = r.seed.AgentName
 	}
@@ -984,6 +999,17 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	g.Metadata = mergeMetadata(r.seed.Metadata, g.Metadata)
 	if g.Metadata == nil {
 		g.Metadata = map[string]any{}
+	}
+	if g.UserID == "" {
+		g.UserID = metadataString(g.Metadata, metadataUserIDKey)
+	}
+	if g.UserID == "" {
+		// Backward-compatibility with older builds that mirrored user id under the span key.
+		g.UserID = metadataString(g.Metadata, spanAttrUserID)
+	}
+	if userID := strings.TrimSpace(g.UserID); userID != "" {
+		g.UserID = userID
+		g.Metadata[metadataUserIDKey] = userID
 	}
 	g.Metadata[sdkMetadataKeyName] = sdkName
 
@@ -1151,6 +1177,9 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	if conversationTitle := strings.TrimSpace(g.ConversationTitle); conversationTitle != "" {
 		attrs = append(attrs, attribute.String(spanAttrConversationTitle, conversationTitle))
 	}
+	if userID := strings.TrimSpace(g.UserID); userID != "" {
+		attrs = append(attrs, attribute.String(spanAttrUserID, userID))
+	}
 	if agentName := strings.TrimSpace(g.AgentName); agentName != "" {
 		attrs = append(attrs, attribute.String(spanAttrAgentName, agentName))
 	}
@@ -1241,6 +1270,21 @@ func thinkingBudgetFromMetadata(metadata map[string]any) (int64, bool) {
 	}
 
 	return coerced, true
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	raw, ok := metadata[key]
+	if !ok {
+		return ""
+	}
+	asString, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(asString)
 }
 
 func coerceInt64(value any) (int64, bool) {

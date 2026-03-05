@@ -4,6 +4,7 @@ import "context"
 
 type conversationIDContextKey struct{}
 type conversationTitleContextKey struct{}
+type userIDContextKey struct{}
 type agentNameContextKey struct{}
 type agentVersionContextKey struct{}
 
@@ -31,6 +32,19 @@ func WithConversationTitle(ctx context.Context, title string) context.Context {
 func ConversationTitleFromContext(ctx context.Context) (string, bool) {
 	title, ok := ctx.Value(conversationTitleContextKey{}).(string)
 	return title, ok && title != ""
+}
+
+// WithUserID stores a user ID in the context.
+// StartGeneration and StartStreamingGeneration read it when the explicit field
+// is empty.
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDContextKey{}, userID)
+}
+
+// UserIDFromContext retrieves the user ID stored by WithUserID.
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDContextKey{}).(string)
+	return userID, ok && userID != ""
 }
 
 // WithAgentName stores an agent name in the context.

@@ -739,6 +739,32 @@ func TestNilClientReturnsNoOpEmbeddingRecorder(t *testing.T) {
 	}
 }
 
+func TestStartGenerationNilContextUsesBackgroundContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	//nolint:staticcheck // Intentional nil context to verify StartGeneration fallback behavior.
+	callCtx, generationRecorder := client.StartGeneration(nil, GenerationStart{
+		Model: ModelRef{Provider: "openai", Name: "gpt-5"},
+	})
+	if callCtx == nil {
+		t.Fatalf("expected non-nil context")
+	}
+	if !trace.SpanContextFromContext(callCtx).IsValid() {
+		t.Fatalf("expected valid span context in callCtx")
+	}
+
+	generationRecorder.End()
+	if err := generationRecorder.Err(); err != nil {
+		t.Fatalf("unexpected generation recorder error: %v", err)
+	}
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if _, ok := attrs[spanAttrUserID]; ok {
+		t.Fatalf("did not expect %s attribute when user id is unset", spanAttrUserID)
+	}
+}
+
 func TestStartEmbeddingNilContextUsesBackgroundContext(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -1184,6 +1210,28 @@ func TestConversationTitleFromContext(t *testing.T) {
 	}
 }
 
+func TestUserIDFromContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithUserID(context.Background(), "user-ctx")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrUserID].AsString() != "user-ctx" {
+		t.Fatalf("expected %s=user-ctx, got %q", spanAttrUserID, attrs[spanAttrUserID].AsString())
+	}
+	if got, ok := generationRecorder.lastGeneration.Metadata[metadataUserIDKey]; !ok || got != "user-ctx" {
+		t.Fatalf("expected generation metadata %s=user-ctx, got %#v", metadataUserIDKey, generationRecorder.lastGeneration.Metadata)
+	}
+}
+
 func TestAgentNameAndVersionFromContext(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{})
 
@@ -1244,6 +1292,26 @@ func TestExplicitConversationTitleOverridesContext(t *testing.T) {
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
 		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+	}
+}
+
+func TestExplicitUserIDOverridesContext(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	ctx := WithUserID(context.Background(), "context-user")
+	_, generationRecorder := client.StartGeneration(ctx, GenerationStart{
+		UserID: "explicit-user",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrUserID].AsString() != "explicit-user" {
+		t.Fatalf("expected %s=explicit-user, got %q", spanAttrUserID, attrs[spanAttrUserID].AsString())
 	}
 }
 
@@ -1376,6 +1444,54 @@ func TestGenerationResultAgentFieldsOverrideSeed(t *testing.T) {
 	}
 	if attrs[spanAttrAgentVersion].AsString() != "result-version" {
 		t.Fatalf("expected gen_ai.agent.version=result-version, got %q", attrs[spanAttrAgentVersion].AsString())
+	}
+}
+
+func TestGenerationMetadataUserIDFallbackSetsSpanAttribute(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Metadata: map[string]any{
+			metadataUserIDKey: "metadata-user",
+		},
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	rec.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrUserID].AsString() != "metadata-user" {
+		t.Fatalf("expected %s=metadata-user, got %q", spanAttrUserID, attrs[spanAttrUserID].AsString())
+	}
+	if got, ok := rec.lastGeneration.Metadata[metadataUserIDKey]; !ok || got != "metadata-user" {
+		t.Fatalf("expected generation metadata %s=metadata-user, got %#v", metadataUserIDKey, rec.lastGeneration.Metadata)
+	}
+}
+
+func TestGenerationMetadataLegacyUserIDFallbackSetsSpanAttribute(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Metadata: map[string]any{
+			spanAttrUserID: "legacy-user",
+		},
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	rec.End()
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrUserID].AsString() != "legacy-user" {
+		t.Fatalf("expected %s=legacy-user, got %q", spanAttrUserID, attrs[spanAttrUserID].AsString())
+	}
+	if got, ok := rec.lastGeneration.Metadata[metadataUserIDKey]; !ok || got != "legacy-user" {
+		t.Fatalf("expected generation metadata %s=legacy-user, got %#v", metadataUserIDKey, rec.lastGeneration.Metadata)
 	}
 }
 
