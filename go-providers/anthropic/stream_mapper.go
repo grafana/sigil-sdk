@@ -210,6 +210,7 @@ func (a *streamBlockAccumulator) startBlock(index int, cb asdk.BetaRawContentBlo
 	case "tool_use", "server_tool_use", "mcp_tool_use":
 		b.toolID = cb.ID
 		b.toolName = cb.Name
+		b.providerType = providerTypeForToolUse(cb.Type, cb.Name)
 		if cb.Input != nil {
 			if raw, err := json.Marshal(cb.Input); err == nil && string(raw) != "{}" {
 				b.toolJSON.Write(raw)
@@ -333,6 +334,8 @@ func isToolResultType(t string) bool {
 		"bash_code_execution_tool_result",
 		"text_editor_code_execution_tool_result",
 		"tool_search_tool_result",
+		toolSearchRegexToolResultType,
+		toolSearchBM25ToolResultType,
 		"mcp_tool_result":
 		return true
 	}

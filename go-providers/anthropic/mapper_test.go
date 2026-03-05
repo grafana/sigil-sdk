@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"encoding/json"
 	"testing"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
@@ -712,6 +713,252 @@ func TestMapSystemPromptPreservesEmptySegments(t *testing.T) {
 	if got != "\n\nsecond" {
 		t.Fatalf("expected preserved empty segment separator, got %q", got)
 	}
+}
+
+func TestFromRequestResponsePreservesToolSearchVariantToolResultTypes(t *testing.T) {
+	req := testRequest()
+	resp := &asdk.BetaMessage{
+		ID:         "msg_variant_types",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			mustUnmarshalBetaContentBlockUnion(t, `{"type":"tool_search_tool_regex_tool_result","tool_use_id":"toolu_regex","content":{"type":"tool_search_tool_search_result","tool_references":[]}}`),
+			mustUnmarshalBetaContentBlockUnion(t, `{"type":"tool_search_tool_bm25_tool_result","tool_use_id":"toolu_bm25","content":{"type":"tool_search_tool_search_result","tool_references":[]}}`),
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if len(generation.Output) != 1 {
+		t.Fatalf("expected 1 output message (tool), got %d", len(generation.Output))
+	}
+	if generation.Output[0].Role != sigil.RoleTool {
+		t.Fatalf("expected tool role, got %q", generation.Output[0].Role)
+	}
+	if len(generation.Output[0].Parts) != 2 {
+		t.Fatalf("expected 2 tool result parts, got %d", len(generation.Output[0].Parts))
+	}
+
+	regexPart := generation.Output[0].Parts[0]
+	if regexPart.Metadata.ProviderType != toolSearchRegexToolResultType {
+		t.Fatalf("expected regex provider type %q, got %q", toolSearchRegexToolResultType, regexPart.Metadata.ProviderType)
+	}
+	if regexPart.ToolResult.ToolCallID != "toolu_regex" {
+		t.Fatalf("expected regex tool call id toolu_regex, got %q", regexPart.ToolResult.ToolCallID)
+	}
+
+	bm25Part := generation.Output[0].Parts[1]
+	if bm25Part.Metadata.ProviderType != toolSearchBM25ToolResultType {
+		t.Fatalf("expected bm25 provider type %q, got %q", toolSearchBM25ToolResultType, bm25Part.Metadata.ProviderType)
+	}
+	if bm25Part.ToolResult.ToolCallID != "toolu_bm25" {
+		t.Fatalf("expected bm25 tool call id toolu_bm25, got %q", bm25Part.ToolResult.ToolCallID)
+	}
+}
+
+func TestFromStreamPreservesToolSearchVariantToolResultTypes(t *testing.T) {
+	req := asdk.BetaMessageNewParams{
+		MaxTokens: 1,
+		Model:     asdk.Model("claude-sonnet-4-5"),
+	}
+
+	summary := StreamSummary{
+		Events: []asdk.BetaRawMessageStreamEventUnion{
+			{
+				Type: "message_start",
+				Message: asdk.BetaMessage{
+					ID:    "msg_stream_variants",
+					Model: asdk.Model("claude-sonnet-4-5"),
+				},
+			},
+			{
+				Type:         "content_block_start",
+				Index:        0,
+				ContentBlock: mustUnmarshalBetaRawContentBlockStartEventContentBlockUnion(t, `{"type":"tool_search_tool_regex_tool_result","tool_use_id":"toolu_regex","content":{"type":"tool_search_tool_search_result","tool_references":[]}}`),
+			},
+			{
+				Type:         "content_block_start",
+				Index:        1,
+				ContentBlock: mustUnmarshalBetaRawContentBlockStartEventContentBlockUnion(t, `{"type":"tool_search_tool_bm25_tool_result","tool_use_id":"toolu_bm25","content":{"type":"tool_search_tool_search_result","tool_references":[]}}`),
+			},
+			{
+				Type: "message_delta",
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{
+					StopReason: asdk.BetaStopReasonEndTurn,
+				},
+				Usage: asdk.BetaMessageDeltaUsage{
+					InputTokens:  10,
+					OutputTokens: 5,
+				},
+			},
+		},
+	}
+
+	generation, err := FromStream(req, summary)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+
+	if len(generation.Output) != 1 {
+		t.Fatalf("expected 1 output message (tool), got %d", len(generation.Output))
+	}
+	if generation.Output[0].Role != sigil.RoleTool {
+		t.Fatalf("expected tool role, got %q", generation.Output[0].Role)
+	}
+	if len(generation.Output[0].Parts) != 2 {
+		t.Fatalf("expected 2 tool result parts, got %d", len(generation.Output[0].Parts))
+	}
+
+	regexPart := generation.Output[0].Parts[0]
+	if regexPart.Metadata.ProviderType != toolSearchRegexToolResultType {
+		t.Fatalf("expected regex provider type %q, got %q", toolSearchRegexToolResultType, regexPart.Metadata.ProviderType)
+	}
+	if regexPart.ToolResult.ToolCallID != "toolu_regex" {
+		t.Fatalf("expected regex tool call id toolu_regex, got %q", regexPart.ToolResult.ToolCallID)
+	}
+
+	bm25Part := generation.Output[0].Parts[1]
+	if bm25Part.Metadata.ProviderType != toolSearchBM25ToolResultType {
+		t.Fatalf("expected bm25 provider type %q, got %q", toolSearchBM25ToolResultType, bm25Part.Metadata.ProviderType)
+	}
+	if bm25Part.ToolResult.ToolCallID != "toolu_bm25" {
+		t.Fatalf("expected bm25 tool call id toolu_bm25, got %q", bm25Part.ToolResult.ToolCallID)
+	}
+}
+
+func TestFromRequestResponsePreservesToolSearchVariantToolUseTypes(t *testing.T) {
+	req := testRequest()
+	resp := &asdk.BetaMessage{
+		ID:         "msg_variant_tool_use_types",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonToolUse,
+		Content: []asdk.BetaContentBlockUnion{
+			mustUnmarshalBetaContentBlockUnion(t, `{"type":"server_tool_use","id":"toolu_regex","name":"tool_search_tool_regex","input":{"query":"error"}}`),
+			mustUnmarshalBetaContentBlockUnion(t, `{"type":"server_tool_use","id":"toolu_bm25","name":"tool_search_tool_bm25","input":{"query":"latency"}}`),
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if len(generation.Output) != 1 {
+		t.Fatalf("expected 1 output assistant message, got %d", len(generation.Output))
+	}
+	if generation.Output[0].Role != sigil.RoleAssistant {
+		t.Fatalf("expected assistant role, got %q", generation.Output[0].Role)
+	}
+	if len(generation.Output[0].Parts) != 2 {
+		t.Fatalf("expected 2 tool call parts, got %d", len(generation.Output[0].Parts))
+	}
+
+	regexPart := generation.Output[0].Parts[0]
+	if regexPart.Metadata.ProviderType != toolSearchRegexToolUseType {
+		t.Fatalf("expected regex provider type %q, got %q", toolSearchRegexToolUseType, regexPart.Metadata.ProviderType)
+	}
+	if regexPart.ToolCall.Name != toolSearchRegexToolUseType {
+		t.Fatalf("expected regex tool call name %q, got %q", toolSearchRegexToolUseType, regexPart.ToolCall.Name)
+	}
+
+	bm25Part := generation.Output[0].Parts[1]
+	if bm25Part.Metadata.ProviderType != toolSearchBM25ToolUseType {
+		t.Fatalf("expected bm25 provider type %q, got %q", toolSearchBM25ToolUseType, bm25Part.Metadata.ProviderType)
+	}
+	if bm25Part.ToolCall.Name != toolSearchBM25ToolUseType {
+		t.Fatalf("expected bm25 tool call name %q, got %q", toolSearchBM25ToolUseType, bm25Part.ToolCall.Name)
+	}
+}
+
+func TestFromStreamPreservesToolSearchVariantToolUseTypes(t *testing.T) {
+	req := asdk.BetaMessageNewParams{
+		MaxTokens: 1,
+		Model:     asdk.Model("claude-sonnet-4-5"),
+	}
+
+	summary := StreamSummary{
+		Events: []asdk.BetaRawMessageStreamEventUnion{
+			{
+				Type: "message_start",
+				Message: asdk.BetaMessage{
+					ID:    "msg_stream_tool_use_variants",
+					Model: asdk.Model("claude-sonnet-4-5"),
+				},
+			},
+			{
+				Type:         "content_block_start",
+				Index:        0,
+				ContentBlock: mustUnmarshalBetaRawContentBlockStartEventContentBlockUnion(t, `{"type":"server_tool_use","id":"toolu_regex","name":"tool_search_tool_regex","input":{"query":"error"}}`),
+			},
+			{
+				Type:         "content_block_start",
+				Index:        1,
+				ContentBlock: mustUnmarshalBetaRawContentBlockStartEventContentBlockUnion(t, `{"type":"server_tool_use","id":"toolu_bm25","name":"tool_search_tool_bm25","input":{"query":"latency"}}`),
+			},
+			{
+				Type: "message_delta",
+				Delta: asdk.BetaRawMessageStreamEventUnionDelta{
+					StopReason: asdk.BetaStopReasonToolUse,
+				},
+				Usage: asdk.BetaMessageDeltaUsage{
+					InputTokens:  10,
+					OutputTokens: 5,
+				},
+			},
+		},
+	}
+
+	generation, err := FromStream(req, summary)
+	if err != nil {
+		t.Fatalf("from stream: %v", err)
+	}
+
+	if len(generation.Output) != 1 {
+		t.Fatalf("expected 1 output assistant message, got %d", len(generation.Output))
+	}
+	if generation.Output[0].Role != sigil.RoleAssistant {
+		t.Fatalf("expected assistant role, got %q", generation.Output[0].Role)
+	}
+	if len(generation.Output[0].Parts) != 2 {
+		t.Fatalf("expected 2 tool call parts, got %d", len(generation.Output[0].Parts))
+	}
+
+	regexPart := generation.Output[0].Parts[0]
+	if regexPart.Metadata.ProviderType != toolSearchRegexToolUseType {
+		t.Fatalf("expected regex provider type %q, got %q", toolSearchRegexToolUseType, regexPart.Metadata.ProviderType)
+	}
+	if regexPart.ToolCall.Name != toolSearchRegexToolUseType {
+		t.Fatalf("expected regex tool call name %q, got %q", toolSearchRegexToolUseType, regexPart.ToolCall.Name)
+	}
+
+	bm25Part := generation.Output[0].Parts[1]
+	if bm25Part.Metadata.ProviderType != toolSearchBM25ToolUseType {
+		t.Fatalf("expected bm25 provider type %q, got %q", toolSearchBM25ToolUseType, bm25Part.Metadata.ProviderType)
+	}
+	if bm25Part.ToolCall.Name != toolSearchBM25ToolUseType {
+		t.Fatalf("expected bm25 tool call name %q, got %q", toolSearchBM25ToolUseType, bm25Part.ToolCall.Name)
+	}
+}
+
+func mustUnmarshalBetaContentBlockUnion(t *testing.T, payload string) asdk.BetaContentBlockUnion {
+	t.Helper()
+	var block asdk.BetaContentBlockUnion
+	if err := json.Unmarshal([]byte(payload), &block); err != nil {
+		t.Fatalf("unmarshal beta content block union: %v", err)
+	}
+	return block
+}
+
+func mustUnmarshalBetaRawContentBlockStartEventContentBlockUnion(t *testing.T, payload string) asdk.BetaRawContentBlockStartEventContentBlockUnion {
+	t.Helper()
+	var block asdk.BetaRawContentBlockStartEventContentBlockUnion
+	if err := json.Unmarshal([]byte(payload), &block); err != nil {
+		t.Fatalf("unmarshal beta raw content block start event union: %v", err)
+	}
+	return block
 }
 
 func testRequest() asdk.BetaMessageNewParams {

@@ -14,6 +14,10 @@ const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
 const usageServerToolUseWebSearchMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_search_requests"
 const usageServerToolUseWebFetchMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_fetch_requests"
 const usageServerToolUseTotalMetadataKey = "sigil.gen_ai.usage.server_tool_use.total_requests"
+const toolSearchRegexToolUseType = "tool_search_tool_regex"
+const toolSearchBM25ToolUseType = "tool_search_tool_bm25"
+const toolSearchRegexToolResultType = "tool_search_tool_regex_tool_result"
+const toolSearchBM25ToolResultType = "tool_search_tool_bm25_tool_result"
 
 // FromRequestResponse maps an Anthropic request/response pair to sigil.Generation.
 func FromRequestResponse(req asdk.BetaMessageNewParams, resp *asdk.BetaMessage, opts ...Option) (sigil.Generation, error) {
@@ -196,12 +200,13 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	}
 	if block.OfServerToolUse != nil {
 		inputJSON, _ := marshalAny(block.OfServerToolUse.Input)
+		providerType := providerTypeForToolUse("server_tool_use", string(block.OfServerToolUse.Name))
 		part := sigil.ToolCallPart(sigil.ToolCall{
 			ID:        block.OfServerToolUse.ID,
 			Name:      string(block.OfServerToolUse.Name),
 			InputJSON: inputJSON,
 		})
-		part.Metadata.ProviderType = "server_tool_use"
+		part.Metadata.ProviderType = providerType
 		return part, true
 	}
 	if block.OfMCPToolUse != nil {
@@ -307,12 +312,13 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 		return part, true
 	case "tool_use", "server_tool_use", "mcp_tool_use":
 		inputJSON, _ := marshalAny(derefAny(block.GetInput()))
+		providerType := providerTypeForToolUse(typ, derefString(block.GetName()))
 		part := sigil.ToolCallPart(sigil.ToolCall{
 			ID:        derefString(block.GetID()),
 			Name:      derefString(block.GetName()),
 			InputJSON: inputJSON,
 		})
-		part.Metadata.ProviderType = typ
+		part.Metadata.ProviderType = providerType
 		return part, true
 	case "tool_result",
 		"web_search_tool_result",
@@ -321,6 +327,8 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 		"bash_code_execution_tool_result",
 		"text_editor_code_execution_tool_result",
 		"tool_search_tool_result",
+		toolSearchRegexToolResultType,
+		toolSearchBM25ToolResultType,
 		"mcp_tool_result":
 		contentJSON, _ := marshalAny(block)
 		part := sigil.ToolResultPart(sigil.ToolResult{
@@ -353,12 +361,13 @@ func mapResponseBlock(block asdk.BetaContentBlockUnion) (sigil.Part, bool) {
 		return part, true
 	case "tool_use", "server_tool_use", "mcp_tool_use":
 		inputJSON, _ := marshalAny(block.Input)
+		providerType := providerTypeForToolUse(block.Type, block.Name)
 		part := sigil.ToolCallPart(sigil.ToolCall{
 			ID:        block.ID,
 			Name:      block.Name,
 			InputJSON: inputJSON,
 		})
-		part.Metadata.ProviderType = block.Type
+		part.Metadata.ProviderType = providerType
 		return part, true
 	case "tool_result",
 		"web_search_tool_result",
@@ -367,6 +376,8 @@ func mapResponseBlock(block asdk.BetaContentBlockUnion) (sigil.Part, bool) {
 		"bash_code_execution_tool_result",
 		"text_editor_code_execution_tool_result",
 		"tool_search_tool_result",
+		toolSearchRegexToolResultType,
+		toolSearchBM25ToolResultType,
 		"mcp_tool_result":
 		contentJSON, _ := marshalAny(block.Content)
 		part := sigil.ToolResultPart(sigil.ToolResult{
@@ -413,6 +424,18 @@ func mapTools(tools []asdk.BetaToolUnionParam) []sigil.ToolDefinition {
 	}
 
 	return out
+}
+
+func providerTypeForToolUse(blockType, toolName string) string {
+	if blockType != "server_tool_use" {
+		return blockType
+	}
+	switch toolName {
+	case toolSearchRegexToolUseType, toolSearchBM25ToolUseType:
+		return toolName
+	default:
+		return blockType
+	}
 }
 
 func mapSystemPrompt(system []asdk.BetaTextBlockParam) string {
