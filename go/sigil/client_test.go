@@ -94,6 +94,9 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	if generationRecorder.lastGeneration.ConversationTitle != "Ticket triage" {
 		t.Fatalf("expected conversation title Ticket triage, got %q", generationRecorder.lastGeneration.ConversationTitle)
 	}
+	if got, ok := generationRecorder.lastGeneration.Metadata[spanAttrConversationTitle]; !ok || got != "Ticket triage" {
+		t.Fatalf("expected generation metadata %s=Ticket triage, got %#v", spanAttrConversationTitle, generationRecorder.lastGeneration.Metadata)
+	}
 
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
@@ -1292,6 +1295,58 @@ func TestExplicitConversationTitleOverridesContext(t *testing.T) {
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
 		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+	}
+}
+
+func TestWhitespaceConversationTitleFallsBackToMetadata(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
+		ConversationTitle: "   ",
+		Metadata: map[string]any{
+			spanAttrConversationTitle: "Metadata title",
+		},
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	if generationRecorder.lastGeneration.ConversationTitle != "Metadata title" {
+		t.Fatalf("expected conversation title from metadata fallback, got %q", generationRecorder.lastGeneration.ConversationTitle)
+	}
+	if got, ok := generationRecorder.lastGeneration.Metadata[spanAttrConversationTitle]; !ok || got != "Metadata title" {
+		t.Fatalf("expected generation metadata %s=Metadata title, got %#v", spanAttrConversationTitle, generationRecorder.lastGeneration.Metadata)
+	}
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if attrs[spanAttrConversationTitle].AsString() != "Metadata title" {
+		t.Fatalf("expected sigil.conversation.title=Metadata title, got %q", attrs[spanAttrConversationTitle].AsString())
+	}
+}
+
+func TestWhitespaceConversationTitleNormalizesToEmpty(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{})
+
+	_, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
+		ConversationTitle: "   ",
+		Model: ModelRef{
+			Provider: "anthropic",
+			Name:     "claude-sonnet-4-5",
+		},
+	})
+	generationRecorder.End()
+
+	if generationRecorder.lastGeneration.ConversationTitle != "" {
+		t.Fatalf("expected conversation title to normalize to empty, got %q", generationRecorder.lastGeneration.ConversationTitle)
+	}
+
+	span := onlyGenerationSpan(t, recorder.Ended())
+	attrs := spanAttributeMap(span)
+	if _, ok := attrs[spanAttrConversationTitle]; ok {
+		t.Fatalf("did not expect %s attribute when conversation title is whitespace-only", spanAttrConversationTitle)
 	}
 }
 
