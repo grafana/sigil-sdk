@@ -70,9 +70,10 @@ type threadState struct {
 }
 
 type tagEnvelope struct {
-	agentPersona string
-	tags         map[string]string
-	metadata     map[string]any
+	agentPersona      string
+	conversationTitle string
+	tags              map[string]string
+	metadata          map[string]any
 }
 
 func main() {
@@ -184,33 +185,33 @@ func emitForSource(client *sigil.Client, cfg runtimeConfig, randSeed *rand.Rand,
 	case sourceOpenAI:
 		if mode == sigil.GenerationModeStream {
 			if openAIUsesResponses(thread.turn) {
-				return emitOpenAIResponsesStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+				return emitOpenAIResponsesStream(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 			}
-			return emitOpenAIChatCompletionsStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+			return emitOpenAIChatCompletionsStream(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 		}
 		if openAIUsesResponses(thread.turn) {
-			return emitOpenAIResponsesSync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+			return emitOpenAIResponsesSync(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 		}
-		return emitOpenAIChatCompletionsSync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+		return emitOpenAIChatCompletionsSync(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 	case sourceAnthropic:
 		if mode == sigil.GenerationModeStream {
-			return emitAnthropicStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+			return emitAnthropicStream(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 		}
-		return emitAnthropicSync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+		return emitAnthropicSync(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 	case sourceGemini:
 		if mode == sigil.GenerationModeStream {
-			return emitGeminiStream(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+			return emitGeminiStream(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 		}
-		return emitGeminiSync(ctx, client, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
+		return emitGeminiSync(ctx, client, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn)
 	case sourceCustom:
 		provider := cfg.customProvider
 		if provider == "" {
 			provider = string(sourceCustom)
 		}
 		if mode == sigil.GenerationModeStream {
-			return emitCustomStream(ctx, client, provider, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn, randSeed)
+			return emitCustomStream(ctx, client, provider, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn, randSeed)
 		}
-		return emitCustomSync(ctx, client, provider, thread.conversationID, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn, randSeed)
+		return emitCustomSync(ctx, client, provider, thread.conversationID, envelope.conversationTitle, agentName, agentVersion, envelope.tags, envelope.metadata, thread.turn, randSeed)
 	default:
 		return fmt.Errorf("unknown source %q", src)
 	}
@@ -345,6 +346,7 @@ func emitOpenAIChatCompletionsSync(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -378,6 +380,7 @@ func emitOpenAIChatCompletionsSync(
 
 	mapped, err := goopenai.ChatCompletionsFromRequestResponse(req, resp,
 		goopenai.WithConversationID(conversationID),
+		goopenai.WithConversationTitle(conversationTitle),
 		goopenai.WithAgentName(agentName),
 		goopenai.WithAgentVersion(agentVersion),
 		goopenai.WithTags(tags),
@@ -397,6 +400,7 @@ func emitOpenAIChatCompletionsStream(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -434,6 +438,7 @@ func emitOpenAIChatCompletionsStream(
 
 	mapped, err := goopenai.ChatCompletionsFromStream(req, summary,
 		goopenai.WithConversationID(conversationID),
+		goopenai.WithConversationTitle(conversationTitle),
 		goopenai.WithAgentName(agentName),
 		goopenai.WithAgentVersion(agentVersion),
 		goopenai.WithTags(tags),
@@ -454,6 +459,7 @@ func emitOpenAIResponsesSync(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -487,6 +493,7 @@ func emitOpenAIResponsesSync(
 
 	mapped, err := goopenai.ResponsesFromRequestResponse(req, resp,
 		goopenai.WithConversationID(conversationID),
+		goopenai.WithConversationTitle(conversationTitle),
 		goopenai.WithAgentName(agentName),
 		goopenai.WithAgentVersion(agentVersion),
 		goopenai.WithTags(tags),
@@ -506,6 +513,7 @@ func emitOpenAIResponsesStream(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -548,6 +556,7 @@ func emitOpenAIResponsesStream(
 
 	mapped, err := goopenai.ResponsesFromStream(req, summary,
 		goopenai.WithConversationID(conversationID),
+		goopenai.WithConversationTitle(conversationTitle),
 		goopenai.WithAgentName(agentName),
 		goopenai.WithAgentVersion(agentVersion),
 		goopenai.WithTags(tags),
@@ -568,6 +577,7 @@ func emitAnthropicSync(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -602,6 +612,7 @@ func emitAnthropicSync(
 
 	mapped, err := goanthropic.FromRequestResponse(req, resp,
 		goanthropic.WithConversationID(conversationID),
+		goanthropic.WithConversationTitle(conversationTitle),
 		goanthropic.WithAgentName(agentName),
 		goanthropic.WithAgentVersion(agentVersion),
 		goanthropic.WithTags(tags),
@@ -621,6 +632,7 @@ func emitAnthropicStream(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -664,6 +676,7 @@ func emitAnthropicStream(
 
 	mapped, err := goanthropic.FromStream(req, summary,
 		goanthropic.WithConversationID(conversationID),
+		goanthropic.WithConversationTitle(conversationTitle),
 		goanthropic.WithAgentName(agentName),
 		goanthropic.WithAgentVersion(agentVersion),
 		goanthropic.WithTags(tags),
@@ -684,6 +697,7 @@ func emitGeminiSync(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -713,6 +727,7 @@ func emitGeminiSync(
 
 	mapped, err := gogemini.FromRequestResponse(model, contents, requestConfig, resp,
 		gogemini.WithConversationID(conversationID),
+		gogemini.WithConversationTitle(conversationTitle),
 		gogemini.WithAgentName(agentName),
 		gogemini.WithAgentVersion(agentVersion),
 		gogemini.WithTags(tags),
@@ -732,6 +747,7 @@ func emitGeminiStream(
 	ctx context.Context,
 	client *sigil.Client,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -775,6 +791,7 @@ func emitGeminiStream(
 
 	mapped, err := gogemini.FromStream(model, contents, requestConfig, summary,
 		gogemini.WithConversationID(conversationID),
+		gogemini.WithConversationTitle(conversationTitle),
 		gogemini.WithAgentName(agentName),
 		gogemini.WithAgentVersion(agentVersion),
 		gogemini.WithTags(tags),
@@ -796,6 +813,7 @@ func emitCustomSync(
 	client *sigil.Client,
 	provider string,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -804,9 +822,10 @@ func emitCustomSync(
 	randSeed *rand.Rand,
 ) error {
 	_, rec := client.StartGeneration(ctx, sigil.GenerationStart{
-		ConversationID: conversationID,
-		AgentName:      agentName,
-		AgentVersion:   agentVersion,
+		ConversationID:    conversationID,
+		ConversationTitle: conversationTitle,
+		AgentName:         agentName,
+		AgentVersion:      agentVersion,
 		Model: sigil.ModelRef{
 			Provider: provider,
 			Name:     "mistral-large-devex",
@@ -837,6 +856,7 @@ func emitCustomStream(
 	client *sigil.Client,
 	provider string,
 	conversationID string,
+	conversationTitle string,
 	agentName string,
 	agentVersion string,
 	tags map[string]string,
@@ -845,9 +865,10 @@ func emitCustomStream(
 	randSeed *rand.Rand,
 ) error {
 	_, rec := client.StartStreamingGeneration(ctx, sigil.GenerationStart{
-		ConversationID: conversationID,
-		AgentName:      agentName,
-		AgentVersion:   agentVersion,
+		ConversationID:    conversationID,
+		ConversationTitle: conversationTitle,
+		AgentName:         agentName,
+		AgentVersion:      agentVersion,
 		Model: sigil.ModelRef{
 			Provider: provider,
 			Name:     "mistral-large-devex",
@@ -905,7 +926,8 @@ func chooseMode(roll int, streamPercent int) sigil.GenerationMode {
 func buildTagEnvelope(src source, mode sigil.GenerationMode, turn int, slot int) tagEnvelope {
 	agentPersona := personaForTurn(turn)
 	return tagEnvelope{
-		agentPersona: agentPersona,
+		agentPersona:      agentPersona,
+		conversationTitle: conversationTitleFor(src, slot),
 		tags: map[string]string{
 			"sigil.devex.language": languageName,
 			"sigil.devex.provider": string(src),
@@ -920,6 +942,23 @@ func buildTagEnvelope(src source, mode sigil.GenerationMode, turn int, slot int)
 			"emitter":           "sdk-traffic",
 			"provider_shape":    providerShapeFor(src, turn),
 		},
+	}
+}
+
+func conversationTitleFor(src source, slot int) string {
+	return fmt.Sprintf("Devex %s %s %d", strings.ToUpper(languageName), sourceDisplayName(src), slot+1)
+}
+
+func sourceDisplayName(src source) string {
+	switch src {
+	case sourceOpenAI:
+		return "OpenAI"
+	case sourceAnthropic:
+		return "Anthropic"
+	case sourceGemini:
+		return "Gemini"
+	default:
+		return "Mistral"
 	}
 }
 
