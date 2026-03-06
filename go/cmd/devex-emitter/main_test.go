@@ -43,6 +43,18 @@ func TestBuildTagEnvelopeIncludesRequiredContractFields(t *testing.T) {
 	if envelope.agentPersona == "" {
 		t.Fatalf("expected non-empty agent persona")
 	}
+	if envelope.conversationTitle != "Devex GO OpenAI 2" {
+		t.Fatalf("expected conversation title %q, got %q", "Devex GO OpenAI 2", envelope.conversationTitle)
+	}
+}
+
+func TestConversationTitleForUsesStableProviderAndSlot(t *testing.T) {
+	if got := conversationTitleFor(sourceGemini, 0); got != "Devex GO Gemini 1" {
+		t.Fatalf("expected Gemini title, got %q", got)
+	}
+	if got := conversationTitleFor(sourceCustom, 2); got != "Devex GO Mistral 3" {
+		t.Fatalf("expected Mistral title, got %q", got)
+	}
 }
 
 func TestBuildTagEnvelopeOpenAIAlternatesProviderShape(t *testing.T) {

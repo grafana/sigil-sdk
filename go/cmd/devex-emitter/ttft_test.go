@@ -36,16 +36,16 @@ func TestStreamEmittersRecordTTFTMetric(t *testing.T) {
 	tags := map[string]string{"sigil.devex.test": "true"}
 	metadata := map[string]any{"conversation_slot": 0}
 
-	if err := emitOpenAIChatCompletionsStream(context.Background(), client, "conv-openai-chat", "agent-openai-chat", "v1", tags, metadata, 1); err != nil {
+	if err := emitOpenAIChatCompletionsStream(context.Background(), client, "conv-openai-chat", "Devex GO OpenAI 1", "agent-openai-chat", "v1", tags, metadata, 1); err != nil {
 		t.Fatalf("emit openai chat stream: %v", err)
 	}
-	if err := emitOpenAIResponsesStream(context.Background(), client, "conv-openai-responses", "agent-openai-responses", "v1", tags, metadata, 2); err != nil {
+	if err := emitOpenAIResponsesStream(context.Background(), client, "conv-openai-responses", "Devex GO OpenAI 1", "agent-openai-responses", "v1", tags, metadata, 2); err != nil {
 		t.Fatalf("emit openai responses stream: %v", err)
 	}
-	if err := emitAnthropicStream(context.Background(), client, "conv-anthropic", "agent-anthropic", "v1", tags, metadata, 3); err != nil {
+	if err := emitAnthropicStream(context.Background(), client, "conv-anthropic", "Devex GO Anthropic 1", "agent-anthropic", "v1", tags, metadata, 3); err != nil {
 		t.Fatalf("emit anthropic stream: %v", err)
 	}
-	if err := emitGeminiStream(context.Background(), client, "conv-gemini", "agent-gemini", "v1", tags, metadata, 4); err != nil {
+	if err := emitGeminiStream(context.Background(), client, "conv-gemini", "Devex GO Gemini 1", "agent-gemini", "v1", tags, metadata, 4); err != nil {
 		t.Fatalf("emit gemini stream: %v", err)
 	}
 	if err := emitCustomStream(
@@ -53,6 +53,7 @@ func TestStreamEmittersRecordTTFTMetric(t *testing.T) {
 		client,
 		"mistral",
 		"conv-custom",
+		"Devex GO Mistral 1",
 		"agent-custom",
 		"v1",
 		tags,
