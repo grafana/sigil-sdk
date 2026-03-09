@@ -4,7 +4,7 @@ go 1.25.6
 
 require (
 	github.com/grafana/sigil/sdks/go v0.0.0
-	google.golang.org/genai v1.48.0
+	google.golang.org/genai v1.49.0
 )
 
 require (
