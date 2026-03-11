@@ -54,8 +54,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@google/genai": "^1.41.0",
     "@google/adk": "^0.4.0",
+    "@google/genai": "^1.41.0",
     "@grpc/grpc-js": "^1.14.1",
     "@grpc/proto-loader": "^0.8.0",
     "@langchain/core": "^1.0.0",
@@ -68,8 +68,8 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
     "@opentelemetry/sdk-metrics": "^2.1.0",
     "@opentelemetry/sdk-trace-base": "^2.5.0",
-    "openai": "^6.21.0",
-    "llamaindex": "^0.12.1"
+    "llamaindex": "^0.12.1",
+    "openai": "^6.27.0"
   },
   "devDependencies": {
     "@types/node": "^24.11.0",
