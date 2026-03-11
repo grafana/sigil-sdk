@@ -342,7 +342,7 @@ func mapResponsesOutput(items []responses.ResponseOutputItemUnion) []sigil.Messa
 			part := sigil.ToolCallPart(sigil.ToolCall{
 				ID:        item.CallID,
 				Name:      item.Name,
-				InputJSON: parseJSONOrString(item.Arguments),
+				InputJSON: parseResponsesOutputArguments(item.Arguments),
 			})
 			part.Metadata.ProviderType = "tool_call"
 			out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{part}})
@@ -495,10 +495,29 @@ func extractResponsesOutputFallback(item responses.ResponseOutputItemUnion) stri
 	if item.Error != "" {
 		return item.Error
 	}
-	if item.Name != "" && item.Arguments != "" {
-		return fmt.Sprintf("%s(%s)", item.Name, item.Arguments)
+	arguments := stringifyResponsesOutputArguments(item.Arguments)
+	if item.Name != "" && arguments != "" {
+		return fmt.Sprintf("%s(%s)", item.Name, arguments)
 	}
 	return ""
+}
+
+func parseResponsesOutputArguments(arguments responses.ResponseOutputItemUnionArguments) []byte {
+	return parseJSONOrString(stringifyResponsesOutputArguments(arguments))
+}
+
+func stringifyResponsesOutputArguments(arguments responses.ResponseOutputItemUnionArguments) string {
+	if arguments.OfString != "" {
+		return arguments.OfString
+	}
+	if arguments.OfResponseToolSearchCallArguments == nil {
+		return ""
+	}
+	data, err := json.Marshal(arguments.OfResponseToolSearchCallArguments)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 func marshalAny(value any) map[string]any {

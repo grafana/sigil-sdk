@@ -375,7 +375,7 @@ func TestResponsesFromRequestResponse(t *testing.T) {
 				Type:      "function_call",
 				CallID:    "call_weather",
 				Name:      "weather",
-				Arguments: `{"city":"Paris"}`,
+				Arguments: oresponses.ResponseOutputItemUnionArguments{OfString: `{"city":"Paris"}`},
 			},
 		},
 		Usage: oresponses.ResponseUsage{
