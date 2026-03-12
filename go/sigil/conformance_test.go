@@ -19,130 +19,142 @@ import (
 func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	env := newConformanceEnv(t)
 
-	startedAt := time.Date(2026, time.March, 12, 11, 0, 0, 0, time.UTC)
-	completedAt := startedAt.Add(250 * time.Millisecond)
-	maxTokens := int64(1024)
-	temperature := 0.7
+	startedAt := time.Date(2026, 3, 12, 8, 0, 0, 0, time.UTC)
+	completedAt := startedAt.Add(2 * time.Second)
+	maxTokens := int64(256)
+	temperature := 0.25
 	topP := 0.9
-	toolChoice := "auto"
+	toolChoice := "required"
 	thinkingEnabled := true
+	toolSchema := json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}`)
+	toolCallInput := json.RawMessage(`{"location":"Paris"}`)
+	toolResultContent := json.RawMessage(`{"forecast":"sunny","temp_c":22}`)
 
-	start := sigil.GenerationStart{
-		ID:                "gen-roundtrip",
-		ConversationID:    "conv-roundtrip",
-		ConversationTitle: "Roundtrip Test",
+	requestArtifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindRequest, "request", map[string]any{
+		"model": "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("new request artifact: %v", err)
+	}
+
+	responseArtifact, err := sigil.NewJSONArtifact(sigil.ArtifactKindResponse, "response", map[string]any{
+		"stop_reason": "end_turn",
+	})
+	if err != nil {
+		t.Fatalf("new response artifact: %v", err)
+	}
+
+	parentCtx, parent := env.tracerProvider.Tracer("sigil-conformance-parent").Start(context.Background(), "parent")
+	parentSC := parent.SpanContext()
+
+	callCtx, recorder := env.Client.StartGeneration(parentCtx, sigil.GenerationStart{
+		ID:                "gen-roundtrip-1",
+		ConversationID:    "conv-roundtrip-1",
+		ConversationTitle: "Ticket triage",
 		UserID:            "user-42",
-		AgentName:         "test-agent",
-		AgentVersion:      "1.0.0",
-		Model: sigil.ModelRef{
-			Provider: "test-provider",
-			Name:     "test-model",
-		},
-		SystemPrompt: "You are a test assistant.",
-		Tools: []sigil.ToolDefinition{
-			{
-				Name:        "lookupWeather",
-				Description: "Look up weather",
-				Type:        "function",
-				InputSchema: []byte(`{"type":"object","properties":{"city":{"type":"string"}}}`),
-				Deferred:    true,
-			},
-		},
+		AgentName:         "agent-support",
+		AgentVersion:      "v1.2.3",
+		Model:             conformanceModel,
+		SystemPrompt:      "You are a concise support assistant.",
+		Tools: []sigil.ToolDefinition{{
+			Name:        "lookup_weather",
+			Description: "Look up the latest weather conditions",
+			Type:        "function",
+			InputSchema: toolSchema,
+			Deferred:    true,
+		}},
 		MaxTokens:       &maxTokens,
 		Temperature:     &temperature,
 		TopP:            &topP,
 		ToolChoice:      &toolChoice,
 		ThinkingEnabled: &thinkingEnabled,
 		Tags: map[string]string{
-			"env":   "conformance",
-			"suite": "roundtrip",
+			"suite": "conformance",
 		},
 		Metadata: map[string]any{
-			"custom_key":              "custom_value",
-			metadataKeyThinkingBudget: int64(2048),
+			"request_id":              "req-7",
+			metadataKeyThinkingBudget: int64(4096),
 		},
 		StartedAt: startedAt,
+	})
+	callSC := trace.SpanContextFromContext(callCtx)
+	if !callSC.IsValid() {
+		t.Fatalf("expected valid generation span context")
 	}
 
-	result := sigil.Generation{
-		ResponseID:    "resp-1",
-		ResponseModel: "test-model-v2",
-		Input: []sigil.Message{
-			{
-				Role:  sigil.RoleUser,
-				Name:  "user",
-				Parts: []sigil.Part{sigil.TextPart("What's the weather in Paris?")},
-			},
-			{
-				Role: sigil.RoleTool,
-				Name: "lookupWeather",
-				Parts: []sigil.Part{sigil.ToolResultPart(sigil.ToolResult{
-					ToolCallID:  "call-1",
-					Name:        "lookupWeather",
-					Content:     "18C and clear",
-					ContentJSON: []byte(`{"temp_c":18,"condition":"clear"}`),
-				})},
-			},
-		},
+	recorder.SetResult(sigil.Generation{
+		ResponseID:    "resp-7",
+		ResponseModel: "gpt-5-2026-03-01",
+		Input: []sigil.Message{{
+			Role:  sigil.RoleUser,
+			Name:  "customer",
+			Parts: []sigil.Part{sigil.TextPart("What's the weather in Paris?")},
+		}},
 		Output: []sigil.Message{
 			{
 				Role: sigil.RoleAssistant,
-				Name: "assistant",
 				Parts: []sigil.Part{
-					sigil.TextPart("It is 18C and clear."),
-					sigil.ThinkingPart("Need weather lookup."),
+					sigil.ThinkingPart("I have the tool result; compose the final answer."),
 					sigil.ToolCallPart(sigil.ToolCall{
 						ID:        "call-1",
-						Name:      "lookupWeather",
-						InputJSON: []byte(`{"city":"Paris"}`),
+						Name:      "lookup_weather",
+						InputJSON: toolCallInput,
 					}),
+					sigil.TextPart("It is sunny and 22C in Paris."),
 				},
 			},
+			{
+				Role: sigil.RoleTool,
+				Name: "lookup_weather",
+				Parts: []sigil.Part{sigil.ToolResultPart(sigil.ToolResult{
+					ToolCallID:  "call-1",
+					Name:        "lookup_weather",
+					Content:     "sunny, 22C",
+					ContentJSON: toolResultContent,
+				})},
+			},
+			sigil.AssistantTextMessage("It is sunny and 22C in Paris."),
 		},
+		Tags: map[string]string{
+			"scenario": "full-roundtrip",
+		},
+		Metadata: map[string]any{
+			"response_format": "text",
+		},
+		Artifacts: []sigil.Artifact{requestArtifact, responseArtifact},
 		Usage: sigil.TokenUsage{
 			InputTokens:              120,
-			OutputTokens:             42,
-			TotalTokens:              162,
-			CacheReadInputTokens:     30,
-			CacheWriteInputTokens:    7,
+			OutputTokens:             36,
 			CacheCreationInputTokens: 4,
-			ReasoningTokens:          9,
+			CacheReadInputTokens:     5,
+			CacheWriteInputTokens:    3,
+			ReasoningTokens:          7,
 		},
 		StopReason:  "end_turn",
 		CompletedAt: completedAt,
-		Artifacts: []sigil.Artifact{
-			{
-				Kind:        sigil.ArtifactKindRequest,
-				Name:        "request.json",
-				ContentType: "application/json",
-				Payload:     []byte(`{"request":true}`),
-				RecordID:    "rec-request",
-				URI:         "sigil://artifact/request",
-			},
-			{
-				Kind:        sigil.ArtifactKindResponse,
-				Name:        "response.json",
-				ContentType: "application/json",
-				Payload:     []byte(`{"response":true}`),
-				RecordID:    "rec-response",
-				URI:         "sigil://artifact/response",
-			},
-		},
-	}
-
-	_, recorder := env.Client.StartGeneration(context.Background(), start)
-	recorder.SetResult(result, nil)
+	}, nil)
 	recorder.End()
 	if err := recorder.Err(); err != nil {
 		t.Fatalf("record generation: %v", err)
 	}
 
+	parent.End()
+
 	span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
-	if got := span.Name(); got != "generateText test-model" {
-		t.Fatalf("unexpected span name: got %q want %q", got, "generateText test-model")
+	if got := span.Name(); got != "generateText gpt-5" {
+		t.Fatalf("unexpected span name: got %q want %q", got, "generateText gpt-5")
 	}
 	if got := span.SpanKind(); got != trace.SpanKindClient {
 		t.Fatalf("unexpected span kind: got %v want %v", got, trace.SpanKindClient)
+	}
+	if span.SpanContext().TraceID() != callSC.TraceID() {
+		t.Fatalf("unexpected span trace id: got %q want %q", span.SpanContext().TraceID(), callSC.TraceID())
+	}
+	if span.SpanContext().SpanID() != callSC.SpanID() {
+		t.Fatalf("unexpected span span id: got %q want %q", span.SpanContext().SpanID(), callSC.SpanID())
+	}
+	if span.Parent().SpanID() != parentSC.SpanID() {
+		t.Fatalf("unexpected parent span id: got %q want %q", span.Parent().SpanID(), parentSC.SpanID())
 	}
 	if got := span.Status().Code; got != codes.Ok {
 		t.Fatalf("unexpected span status: got %v want %v", got, codes.Ok)
@@ -150,251 +162,249 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 
 	attrs := spanAttrs(span)
 	requireSpanAttr(t, attrs, spanAttrOperationName, conformanceOperationName)
-	requireSpanAttr(t, attrs, spanAttrGenerationID, start.ID)
-	requireSpanAttr(t, attrs, "gen_ai.conversation.id", start.ConversationID)
-	requireSpanAttr(t, attrs, spanAttrConversationTitle, start.ConversationTitle)
-	requireSpanAttr(t, attrs, spanAttrUserID, start.UserID)
-	requireSpanAttr(t, attrs, spanAttrAgentName, start.AgentName)
-	requireSpanAttr(t, attrs, spanAttrAgentVersion, start.AgentVersion)
-	requireSpanAttr(t, attrs, spanAttrProviderName, start.Model.Provider)
-	requireSpanAttr(t, attrs, spanAttrRequestModel, start.Model.Name)
+	requireSpanAttr(t, attrs, spanAttrGenerationID, "gen-roundtrip-1")
+	requireSpanAttr(t, attrs, spanAttrConversationID, "conv-roundtrip-1")
+	requireSpanAttr(t, attrs, spanAttrConversationTitle, "Ticket triage")
+	requireSpanAttr(t, attrs, spanAttrUserID, "user-42")
+	requireSpanAttr(t, attrs, spanAttrAgentName, "agent-support")
+	requireSpanAttr(t, attrs, spanAttrAgentVersion, "v1.2.3")
+	requireSpanAttr(t, attrs, spanAttrProviderName, conformanceModel.Provider)
+	requireSpanAttr(t, attrs, spanAttrRequestModel, conformanceModel.Name)
+	requireSpanAttr(t, attrs, spanAttrResponseID, "resp-7")
+	requireSpanAttr(t, attrs, spanAttrResponseModel, "gpt-5-2026-03-01")
 	requireSpanAttrInt64(t, attrs, spanAttrRequestMaxTokens, maxTokens)
 	requireSpanAttrFloat64(t, attrs, spanAttrRequestTemperature, temperature)
 	requireSpanAttrFloat64(t, attrs, spanAttrRequestTopP, topP)
 	requireSpanAttr(t, attrs, spanAttrRequestToolChoice, toolChoice)
-	requireSpanAttrBool(t, attrs, "sigil.gen_ai.request.thinking.enabled", thinkingEnabled)
-	requireSpanAttrInt64(t, attrs, "sigil.gen_ai.request.thinking.budget_tokens", 2048)
-	requireSpanAttr(t, attrs, spanAttrResponseID, result.ResponseID)
-	requireSpanAttr(t, attrs, spanAttrResponseModel, result.ResponseModel)
-	requireSpanAttrStringSlice(t, attrs, spanAttrFinishReasons, []string{result.StopReason})
-	requireSpanAttrInt64(t, attrs, spanAttrInputTokens, result.Usage.InputTokens)
-	requireSpanAttrInt64(t, attrs, spanAttrOutputTokens, result.Usage.OutputTokens)
-	requireSpanAttrInt64(t, attrs, spanAttrCacheReadTokens, result.Usage.CacheReadInputTokens)
-	requireSpanAttrInt64(t, attrs, spanAttrCacheWriteTokens, result.Usage.CacheWriteInputTokens)
-	requireSpanAttrInt64(t, attrs, spanAttrCacheCreationTokens, result.Usage.CacheCreationInputTokens)
-	requireSpanAttrInt64(t, attrs, spanAttrReasoningTokens, result.Usage.ReasoningTokens)
+	requireSpanAttrBool(t, attrs, spanAttrRequestThinkingEnabled, thinkingEnabled)
+	requireSpanAttrInt64(t, attrs, metadataKeyThinkingBudget, 4096)
+	requireSpanAttrStringSlice(t, attrs, spanAttrFinishReasons, []string{"end_turn"})
+	requireSpanAttrInt64(t, attrs, spanAttrInputTokens, 120)
+	requireSpanAttrInt64(t, attrs, spanAttrOutputTokens, 36)
+	requireSpanAttrInt64(t, attrs, spanAttrCacheReadTokens, 5)
+	requireSpanAttrInt64(t, attrs, spanAttrCacheWriteTokens, 3)
+	requireSpanAttrInt64(t, attrs, spanAttrCacheCreationTokens, 4)
+	requireSpanAttrInt64(t, attrs, spanAttrReasoningTokens, 7)
 	requireSpanAttr(t, attrs, metadataKeySDKName, sdkNameGo)
+
+	metrics := env.CollectMetrics(t)
+	duration := findHistogram[float64](t, metrics, metricOperationDuration)
+	durationPoint := requireHistogramPointWithAttrs(t, duration, map[string]string{
+		spanAttrOperationName: conformanceOperationName,
+		spanAttrProviderName:  conformanceModel.Provider,
+		spanAttrRequestModel:  conformanceModel.Name,
+		spanAttrAgentName:     "agent-support",
+		spanAttrErrorType:     "",
+		spanAttrErrorCategory: "",
+	})
+	if durationPoint.Sum != completedAt.Sub(startedAt).Seconds() {
+		t.Fatalf("unexpected %s sum: got %v want %v", metricOperationDuration, durationPoint.Sum, completedAt.Sub(startedAt).Seconds())
+	}
+	if durationPoint.Count != 1 {
+		t.Fatalf("unexpected %s count: got %d want %d", metricOperationDuration, durationPoint.Count, 1)
+	}
+
+	tokenUsage := findHistogram[int64](t, metrics, metricTokenUsage)
+	for tokenType, value := range map[string]int64{
+		metricTokenTypeInput:         120,
+		metricTokenTypeOutput:        36,
+		metricTokenTypeCacheRead:     5,
+		metricTokenTypeCacheWrite:    3,
+		metricTokenTypeCacheCreation: 4,
+		metricTokenTypeReasoning:     7,
+	} {
+		requireInt64HistogramSum(t, tokenUsage, map[string]string{
+			spanAttrOperationName: conformanceOperationName,
+			spanAttrProviderName:  conformanceModel.Provider,
+			spanAttrRequestModel:  conformanceModel.Name,
+			spanAttrAgentName:     "agent-support",
+			metricAttrTokenType:   tokenType,
+		}, value)
+	}
+
+	toolCalls := findHistogram[int64](t, metrics, metricToolCallsPerOperation)
+	requireInt64HistogramSum(t, toolCalls, map[string]string{
+		spanAttrProviderName: conformanceModel.Provider,
+		spanAttrRequestModel: conformanceModel.Name,
+		spanAttrAgentName:    "agent-support",
+	}, 1)
+	requireNoHistogram(t, metrics, metricTimeToFirstToken)
 
 	env.Shutdown(t)
 
 	generation := env.Ingest.SingleGeneration(t)
-	if got := generation.GetId(); got != start.ID {
-		t.Fatalf("unexpected proto id: got %q want %q", got, start.ID)
+	if got := generation.GetId(); got != "gen-roundtrip-1" {
+		t.Fatalf("unexpected generation id: got %q want %q", got, "gen-roundtrip-1")
 	}
-	if got := generation.GetConversationId(); got != start.ConversationID {
-		t.Fatalf("unexpected proto conversation_id: got %q want %q", got, start.ConversationID)
+	if got := generation.GetConversationId(); got != "conv-roundtrip-1" {
+		t.Fatalf("unexpected conversation id: got %q want %q", got, "conv-roundtrip-1")
 	}
 	if got := generation.GetOperationName(); got != conformanceOperationName {
-		t.Fatalf("unexpected proto operation_name: got %q want %q", got, conformanceOperationName)
+		t.Fatalf("unexpected operation name: got %q want %q", got, conformanceOperationName)
 	}
 	if got := generation.GetMode(); got != sigilv1.GenerationMode_GENERATION_MODE_SYNC {
-		t.Fatalf("unexpected proto mode: got %v want %v", got, sigilv1.GenerationMode_GENERATION_MODE_SYNC)
+		t.Fatalf("unexpected generation mode: got %v want %v", got, sigilv1.GenerationMode_GENERATION_MODE_SYNC)
 	}
-	if got := generation.GetAgentName(); got != start.AgentName {
-		t.Fatalf("unexpected proto agent_name: got %q want %q", got, start.AgentName)
+	if got := generation.GetAgentName(); got != "agent-support" {
+		t.Fatalf("unexpected agent name: got %q want %q", got, "agent-support")
 	}
-	if got := generation.GetAgentVersion(); got != start.AgentVersion {
-		t.Fatalf("unexpected proto agent_version: got %q want %q", got, start.AgentVersion)
+	if got := generation.GetAgentVersion(); got != "v1.2.3" {
+		t.Fatalf("unexpected agent version: got %q want %q", got, "v1.2.3")
 	}
-	if got := generation.GetResponseId(); got != result.ResponseID {
-		t.Fatalf("unexpected proto response_id: got %q want %q", got, result.ResponseID)
+	if got := generation.GetTraceId(); got != callSC.TraceID().String() {
+		t.Fatalf("unexpected trace id: got %q want %q", got, callSC.TraceID().String())
 	}
-	if got := generation.GetResponseModel(); got != result.ResponseModel {
-		t.Fatalf("unexpected proto response_model: got %q want %q", got, result.ResponseModel)
+	if got := generation.GetSpanId(); got != callSC.SpanID().String() {
+		t.Fatalf("unexpected span id: got %q want %q", got, callSC.SpanID().String())
 	}
-	if got := generation.GetSystemPrompt(); got != start.SystemPrompt {
-		t.Fatalf("unexpected proto system_prompt: got %q want %q", got, start.SystemPrompt)
+	if got := generation.GetResponseId(); got != "resp-7" {
+		t.Fatalf("unexpected response id: got %q want %q", got, "resp-7")
 	}
-	if got := generation.GetTraceId(); got != span.SpanContext().TraceID().String() {
-		t.Fatalf("unexpected proto trace_id: got %q want %q", got, span.SpanContext().TraceID().String())
+	if got := generation.GetResponseModel(); got != "gpt-5-2026-03-01" {
+		t.Fatalf("unexpected response model: got %q want %q", got, "gpt-5-2026-03-01")
 	}
-	if got := generation.GetSpanId(); got != span.SpanContext().SpanID().String() {
-		t.Fatalf("unexpected proto span_id: got %q want %q", got, span.SpanContext().SpanID().String())
+	if got := generation.GetSystemPrompt(); got != "You are a concise support assistant." {
+		t.Fatalf("unexpected system prompt: got %q want %q", got, "You are a concise support assistant.")
+	}
+	if got := generation.GetStopReason(); got != "end_turn" {
+		t.Fatalf("unexpected stop reason: got %q want %q", got, "end_turn")
 	}
 	if !generation.GetStartedAt().AsTime().Equal(startedAt) {
-		t.Fatalf("unexpected proto started_at: got %s want %s", generation.GetStartedAt().AsTime(), startedAt)
+		t.Fatalf("unexpected started_at: got %s want %s", generation.GetStartedAt().AsTime(), startedAt)
 	}
 	if !generation.GetCompletedAt().AsTime().Equal(completedAt) {
-		t.Fatalf("unexpected proto completed_at: got %s want %s", generation.GetCompletedAt().AsTime(), completedAt)
+		t.Fatalf("unexpected completed_at: got %s want %s", generation.GetCompletedAt().AsTime(), completedAt)
 	}
-
-	if got := generation.GetModel().GetProvider(); got != start.Model.Provider {
-		t.Fatalf("unexpected proto model.provider: got %q want %q", got, start.Model.Provider)
+	if got := generation.GetModel().GetProvider(); got != conformanceModel.Provider {
+		t.Fatalf("unexpected model provider: got %q want %q", got, conformanceModel.Provider)
 	}
-	if got := generation.GetModel().GetName(); got != start.Model.Name {
-		t.Fatalf("unexpected proto model.name: got %q want %q", got, start.Model.Name)
+	if got := generation.GetModel().GetName(); got != conformanceModel.Name {
+		t.Fatalf("unexpected model name: got %q want %q", got, conformanceModel.Name)
 	}
 	if got := generation.GetMaxTokens(); got != maxTokens {
-		t.Fatalf("unexpected proto max_tokens: got %d want %d", got, maxTokens)
+		t.Fatalf("unexpected max_tokens: got %d want %d", got, maxTokens)
 	}
 	if got := generation.GetTemperature(); got != temperature {
-		t.Fatalf("unexpected proto temperature: got %v want %v", got, temperature)
+		t.Fatalf("unexpected temperature: got %v want %v", got, temperature)
 	}
 	if got := generation.GetTopP(); got != topP {
-		t.Fatalf("unexpected proto top_p: got %v want %v", got, topP)
+		t.Fatalf("unexpected top_p: got %v want %v", got, topP)
 	}
 	if got := generation.GetToolChoice(); got != toolChoice {
-		t.Fatalf("unexpected proto tool_choice: got %q want %q", got, toolChoice)
+		t.Fatalf("unexpected tool_choice: got %q want %q", got, toolChoice)
 	}
 	if got := generation.GetThinkingEnabled(); got != thinkingEnabled {
-		t.Fatalf("unexpected proto thinking_enabled: got %t want %t", got, thinkingEnabled)
+		t.Fatalf("unexpected thinking_enabled: got %t want %t", got, thinkingEnabled)
 	}
 
-	if len(generation.GetTags()) != len(start.Tags) {
-		t.Fatalf("unexpected proto tags length: got %d want %d", len(generation.GetTags()), len(start.Tags))
-	}
-	for key, want := range start.Tags {
-		if got := generation.GetTags()[key]; got != want {
-			t.Fatalf("unexpected proto tag %q: got %q want %q", key, got, want)
-		}
-	}
-
-	requireProtoMetadata(t, generation, "custom_key", "custom_value")
-	requireProtoMetadata(t, generation, metadataKeyConversation, start.ConversationTitle)
-	requireProtoMetadata(t, generation, metadataKeyCanonicalUserID, start.UserID)
+	requireProtoMetadata(t, generation, metadataKeyConversation, "Ticket triage")
+	requireProtoMetadata(t, generation, metadataKeyCanonicalUserID, "user-42")
 	requireProtoMetadata(t, generation, metadataKeySDKName, sdkNameGo)
-	requireProtoMetadataNumber(t, generation, metadataKeyThinkingBudget, 2048)
+	requireProtoMetadata(t, generation, "request_id", "req-7")
+	requireProtoMetadata(t, generation, "response_format", "text")
+	requireProtoMetadataNumber(t, generation, metadataKeyThinkingBudget, 4096)
+
+	if len(generation.GetTags()) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(generation.GetTags()))
+	}
+	if got := generation.GetTags()["suite"]; got != "conformance" {
+		t.Fatalf("unexpected suite tag: got %q want %q", got, "conformance")
+	}
+	if got := generation.GetTags()["scenario"]; got != "full-roundtrip" {
+		t.Fatalf("unexpected scenario tag: got %q want %q", got, "full-roundtrip")
+	}
 
 	tools := generation.GetTools()
 	if len(tools) != 1 {
-		t.Fatalf("unexpected proto tools length: got %d want %d", len(tools), 1)
+		t.Fatalf("expected 1 tool, got %d", len(tools))
 	}
-	if got := tools[0].GetName(); got != start.Tools[0].Name {
-		t.Fatalf("unexpected proto tool name: got %q want %q", got, start.Tools[0].Name)
+	if got := tools[0].GetName(); got != "lookup_weather" {
+		t.Fatalf("unexpected tool name: got %q want %q", got, "lookup_weather")
 	}
-	if got := tools[0].GetDescription(); got != start.Tools[0].Description {
-		t.Fatalf("unexpected proto tool description: got %q want %q", got, start.Tools[0].Description)
+	if got := tools[0].GetDescription(); got != "Look up the latest weather conditions" {
+		t.Fatalf("unexpected tool description: got %q want %q", got, "Look up the latest weather conditions")
 	}
-	if got := tools[0].GetType(); got != start.Tools[0].Type {
-		t.Fatalf("unexpected proto tool type: got %q want %q", got, start.Tools[0].Type)
+	if got := tools[0].GetType(); got != "function" {
+		t.Fatalf("unexpected tool type: got %q want %q", got, "function")
 	}
-	if !bytes.Equal(tools[0].GetInputSchemaJson(), start.Tools[0].InputSchema) {
-		t.Fatalf("unexpected proto tool input schema: got %s want %s", string(tools[0].GetInputSchemaJson()), string(start.Tools[0].InputSchema))
+	if !bytes.Equal(tools[0].GetInputSchemaJson(), toolSchema) {
+		t.Fatalf("unexpected tool input schema: got %s want %s", string(tools[0].GetInputSchemaJson()), string(toolSchema))
 	}
 	if got := tools[0].GetDeferred(); !got {
-		t.Fatalf("expected proto tool deferred=true")
+		t.Fatalf("expected deferred tool definition")
 	}
 
 	input := generation.GetInput()
-	if len(input) != 2 {
-		t.Fatalf("unexpected proto input length: got %d want %d", len(input), 2)
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input message, got %d", len(input))
 	}
 	if got := input[0].GetRole(); got != sigilv1.MessageRole_MESSAGE_ROLE_USER {
-		t.Fatalf("unexpected first input role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_USER)
+		t.Fatalf("unexpected input role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_USER)
+	}
+	if got := input[0].GetName(); got != "customer" {
+		t.Fatalf("unexpected input name: got %q want %q", got, "customer")
 	}
 	requireProtoTextPart(t, input[0].GetParts()[0], "What's the weather in Paris?")
-	if got := input[1].GetRole(); got != sigilv1.MessageRole_MESSAGE_ROLE_TOOL {
-		t.Fatalf("unexpected second input role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_TOOL)
-	}
-	requireProtoToolResultPart(t, input[1].GetParts()[0], "call-1", "lookupWeather", "18C and clear", []byte(`{"temp_c":18,"condition":"clear"}`), false)
 
 	output := generation.GetOutput()
-	if len(output) != 1 {
-		t.Fatalf("unexpected proto output length: got %d want %d", len(output), 1)
+	if len(output) != 3 {
+		t.Fatalf("expected 3 output messages, got %d", len(output))
 	}
 	if got := output[0].GetRole(); got != sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT {
-		t.Fatalf("unexpected output role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT)
+		t.Fatalf("unexpected output[0] role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT)
 	}
 	if len(output[0].GetParts()) != 3 {
-		t.Fatalf("unexpected output part count: got %d want %d", len(output[0].GetParts()), 3)
+		t.Fatalf("unexpected output[0] part count: got %d want %d", len(output[0].GetParts()), 3)
 	}
-	requireProtoTextPart(t, output[0].GetParts()[0], "It is 18C and clear.")
-	requireProtoThinkingPart(t, output[0].GetParts()[1], "Need weather lookup.")
-	requireProtoToolCallPart(t, output[0].GetParts()[2], "call-1", "lookupWeather", []byte(`{"city":"Paris"}`))
+	requireProtoThinkingPart(t, output[0].GetParts()[0], "I have the tool result; compose the final answer.")
+	requireProtoToolCallPart(t, output[0].GetParts()[1], "call-1", "lookup_weather", toolCallInput)
+	requireProtoTextPart(t, output[0].GetParts()[2], "It is sunny and 22C in Paris.")
+
+	if got := output[1].GetRole(); got != sigilv1.MessageRole_MESSAGE_ROLE_TOOL {
+		t.Fatalf("unexpected output[1] role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_TOOL)
+	}
+	if got := output[1].GetName(); got != "lookup_weather" {
+		t.Fatalf("unexpected output[1] name: got %q want %q", got, "lookup_weather")
+	}
+	requireProtoToolResultPart(t, output[1].GetParts()[0], "call-1", "lookup_weather", "sunny, 22C", toolResultContent, false)
+
+	if got := output[2].GetRole(); got != sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT {
+		t.Fatalf("unexpected output[2] role: got %v want %v", got, sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT)
+	}
+	requireProtoTextPart(t, output[2].GetParts()[0], "It is sunny and 22C in Paris.")
 
 	usage := generation.GetUsage()
-	if got := usage.GetInputTokens(); got != result.Usage.InputTokens {
-		t.Fatalf("unexpected proto input_tokens: got %d want %d", got, result.Usage.InputTokens)
+	if got := usage.GetInputTokens(); got != 120 {
+		t.Fatalf("unexpected input tokens: got %d want %d", got, 120)
 	}
-	if got := usage.GetOutputTokens(); got != result.Usage.OutputTokens {
-		t.Fatalf("unexpected proto output_tokens: got %d want %d", got, result.Usage.OutputTokens)
+	if got := usage.GetOutputTokens(); got != 36 {
+		t.Fatalf("unexpected output tokens: got %d want %d", got, 36)
 	}
-	if got := usage.GetTotalTokens(); got != result.Usage.TotalTokens {
-		t.Fatalf("unexpected proto total_tokens: got %d want %d", got, result.Usage.TotalTokens)
+	if got := usage.GetTotalTokens(); got != 156 {
+		t.Fatalf("unexpected total tokens: got %d want %d", got, 156)
 	}
-	if got := usage.GetCacheReadInputTokens(); got != result.Usage.CacheReadInputTokens {
-		t.Fatalf("unexpected proto cache_read_input_tokens: got %d want %d", got, result.Usage.CacheReadInputTokens)
+	if got := usage.GetCacheReadInputTokens(); got != 5 {
+		t.Fatalf("unexpected cache read tokens: got %d want %d", got, 5)
 	}
-	if got := usage.GetCacheWriteInputTokens(); got != result.Usage.CacheWriteInputTokens {
-		t.Fatalf("unexpected proto cache_write_input_tokens: got %d want %d", got, result.Usage.CacheWriteInputTokens)
+	if got := usage.GetCacheWriteInputTokens(); got != 3 {
+		t.Fatalf("unexpected cache write tokens: got %d want %d", got, 3)
 	}
-	if got := usage.GetCacheCreationInputTokens(); got != result.Usage.CacheCreationInputTokens {
-		t.Fatalf("unexpected proto cache_creation_input_tokens: got %d want %d", got, result.Usage.CacheCreationInputTokens)
+	if got := usage.GetCacheCreationInputTokens(); got != 4 {
+		t.Fatalf("unexpected cache creation tokens: got %d want %d", got, 4)
 	}
-	if got := usage.GetReasoningTokens(); got != result.Usage.ReasoningTokens {
-		t.Fatalf("unexpected proto reasoning_tokens: got %d want %d", got, result.Usage.ReasoningTokens)
+	if got := usage.GetReasoningTokens(); got != 7 {
+		t.Fatalf("unexpected reasoning tokens: got %d want %d", got, 7)
 	}
-	if got := generation.GetStopReason(); got != result.StopReason {
-		t.Fatalf("unexpected proto stop_reason: got %q want %q", got, result.StopReason)
+	if got := generation.GetCallError(); got != "" {
+		t.Fatalf("expected empty call error, got %q", got)
 	}
 
 	artifacts := generation.GetRawArtifacts()
 	if len(artifacts) != 2 {
-		t.Fatalf("unexpected proto artifacts length: got %d want %d", len(artifacts), 2)
+		t.Fatalf("expected 2 raw artifacts, got %d", len(artifacts))
 	}
-	requireProtoArtifact(t, artifacts[0], sigilv1.ArtifactKind_ARTIFACT_KIND_REQUEST, "request.json", "application/json", []byte(`{"request":true}`), "rec-request", "sigil://artifact/request")
-	requireProtoArtifact(t, artifacts[1], sigilv1.ArtifactKind_ARTIFACT_KIND_RESPONSE, "response.json", "application/json", []byte(`{"response":true}`), "rec-response", "sigil://artifact/response")
-
-	metrics := env.CollectMetrics(t)
-	duration := findHistogram[float64](t, metrics, metricOperationDuration)
-	requireHistogramPointWithAttrs(t, duration, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-	})
-
-	tokenUsage := findHistogram[int64](t, metrics, metricTokenUsage)
-	requireInt64HistogramSum(t, tokenUsage, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-		metricAttrTokenType:   metricTokenTypeInput,
-	}, result.Usage.InputTokens)
-	requireInt64HistogramSum(t, tokenUsage, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-		metricAttrTokenType:   metricTokenTypeOutput,
-	}, result.Usage.OutputTokens)
-	requireInt64HistogramSum(t, tokenUsage, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-		metricAttrTokenType:   metricTokenTypeCacheRead,
-	}, result.Usage.CacheReadInputTokens)
-	requireInt64HistogramSum(t, tokenUsage, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-		metricAttrTokenType:   metricTokenTypeCacheWrite,
-	}, result.Usage.CacheWriteInputTokens)
-	requireInt64HistogramSum(t, tokenUsage, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-		metricAttrTokenType:   metricTokenTypeCacheCreation,
-	}, result.Usage.CacheCreationInputTokens)
-	requireInt64HistogramSum(t, tokenUsage, map[string]string{
-		spanAttrOperationName: conformanceOperationName,
-		spanAttrProviderName:  start.Model.Provider,
-		spanAttrRequestModel:  start.Model.Name,
-		spanAttrAgentName:     start.AgentName,
-		metricAttrTokenType:   metricTokenTypeReasoning,
-	}, result.Usage.ReasoningTokens)
-
-	toolCalls := findHistogram[int64](t, metrics, metricToolCallsPerOperation)
-	requireInt64HistogramSum(t, toolCalls, map[string]string{
-		spanAttrProviderName: start.Model.Provider,
-		spanAttrRequestModel: start.Model.Name,
-		spanAttrAgentName:    start.AgentName,
-	}, 1)
-	requireNoHistogram(t, metrics, metricTimeToFirstToken)
+	requireProtoArtifact(t, artifacts[0], sigilv1.ArtifactKind_ARTIFACT_KIND_REQUEST, "request", "application/json", []byte(`{"model":"gpt-5"}`), "", "")
+	requireProtoArtifact(t, artifacts[1], sigilv1.ArtifactKind_ARTIFACT_KIND_RESPONSE, "response", "application/json", []byte(`{"stop_reason":"end_turn"}`), "", "")
 }
 
 func TestConformance_ConversationTitleSemantics(t *testing.T) {
