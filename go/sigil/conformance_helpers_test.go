@@ -1,0 +1,407 @@
+package sigil_test
+
+import (
+	"context"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	sigil "github.com/grafana/sigil/sdks/go/sigil"
+	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
+)
+
+const (
+	conformanceOperationName   = "generateText"
+	metadataKeyConversation    = "sigil.conversation.title"
+	metadataKeyCanonicalUserID = "sigil.user.id"
+	metadataKeyLegacyUserID    = "user.id"
+	spanAttrOperationName      = "gen_ai.operation.name"
+	spanAttrConversationTitle  = "sigil.conversation.title"
+	spanAttrUserID             = "user.id"
+	spanAttrAgentName          = "gen_ai.agent.name"
+	spanAttrAgentVersion       = "gen_ai.agent.version"
+	metricOperationDuration    = "gen_ai.client.operation.duration"
+	metricTimeToFirstToken     = "gen_ai.client.time_to_first_token"
+)
+
+var conformanceModel = sigil.ModelRef{
+	Provider: "openai",
+	Name:     "gpt-5",
+}
+
+type conformanceEnv struct {
+	Client  *sigil.Client
+	Ingest  *fakeIngestServer
+	Spans   *tracetest.SpanRecorder
+	Metrics *sdkmetric.ManualReader
+	Rating  *fakeRatingServer
+
+	tracerProvider *sdktrace.TracerProvider
+	meterProvider  *sdkmetric.MeterProvider
+	grpcServer     *grpc.Server
+	listener       net.Listener
+	closeOnce      sync.Once
+}
+
+type conformanceEnvOption func(*conformanceEnvConfig)
+
+type conformanceEnvConfig struct {
+	config sigil.Config
+}
+
+func newConformanceEnv(t *testing.T, opts ...conformanceEnvOption) *conformanceEnv {
+	t.Helper()
+
+	ingest := &fakeIngestServer{}
+	grpcServer := grpc.NewServer()
+	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for fake ingest server: %v", err)
+	}
+
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	metricReader := sdkmetric.NewManualReader()
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(metricReader))
+	ratingServer := newFakeRatingServer()
+
+	cfg := conformanceEnvConfig{
+		config: sigil.Config{
+			Tracer: tracerProvider.Tracer("sigil-conformance-test"),
+			Meter:  meterProvider.Meter("sigil-conformance-test"),
+			GenerationExport: sigil.GenerationExportConfig{
+				Protocol:        sigil.GenerationExportProtocolGRPC,
+				Endpoint:        listener.Addr().String(),
+				Insecure:        true,
+				BatchSize:       1,
+				FlushInterval:   time.Hour,
+				QueueSize:       8,
+				MaxRetries:      1,
+				InitialBackoff:  time.Millisecond,
+				MaxBackoff:      5 * time.Millisecond,
+				PayloadMaxBytes: 4 << 20,
+			},
+			API: sigil.APIConfig{
+				Endpoint: ratingServer.URL(),
+			},
+		},
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	env := &conformanceEnv{
+		Client:         sigil.NewClient(cfg.config),
+		Ingest:         ingest,
+		Spans:          spanRecorder,
+		Metrics:        metricReader,
+		Rating:         ratingServer,
+		tracerProvider: tracerProvider,
+		meterProvider:  meterProvider,
+		grpcServer:     grpcServer,
+		listener:       listener,
+	}
+	t.Cleanup(func() {
+		_ = env.close()
+	})
+	return env
+}
+
+func (e *conformanceEnv) Shutdown(t *testing.T) {
+	t.Helper()
+
+	if e == nil || e.Client == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := e.Client.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown conformance client: %v", err)
+	}
+}
+
+func (e *conformanceEnv) close() error {
+	if e == nil {
+		return nil
+	}
+
+	var closeErr error
+	e.closeOnce.Do(func() {
+		if e.Client != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := e.Client.Shutdown(ctx); err != nil {
+				closeErr = err
+			}
+		}
+		if e.meterProvider != nil {
+			if err := e.meterProvider.Shutdown(context.Background()); err != nil && closeErr == nil {
+				closeErr = err
+			}
+		}
+		if e.tracerProvider != nil {
+			if err := e.tracerProvider.Shutdown(context.Background()); err != nil && closeErr == nil {
+				closeErr = err
+			}
+		}
+		if e.grpcServer != nil {
+			e.grpcServer.Stop()
+		}
+		if e.listener != nil {
+			_ = e.listener.Close()
+		}
+		if e.Rating != nil {
+			e.Rating.Close()
+		}
+	})
+	return closeErr
+}
+
+func (e *conformanceEnv) CollectMetrics(t *testing.T) metricdata.ResourceMetrics {
+	t.Helper()
+
+	var collected metricdata.ResourceMetrics
+	if err := e.Metrics.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("collect metrics: %v", err)
+	}
+	return collected
+}
+
+type fakeIngestServer struct {
+	sigilv1.UnimplementedGenerationIngestServiceServer
+
+	mu       sync.Mutex
+	requests []*sigilv1.ExportGenerationsRequest
+}
+
+func (s *fakeIngestServer) ExportGenerations(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+	s.capture(req)
+	return acceptanceResponse(req), nil
+}
+
+func (s *fakeIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
+	if req == nil {
+		return
+	}
+
+	clone := proto.Clone(req)
+	typed, ok := clone.(*sigilv1.ExportGenerationsRequest)
+	if !ok {
+		return
+	}
+
+	s.mu.Lock()
+	s.requests = append(s.requests, typed)
+	s.mu.Unlock()
+}
+
+func (s *fakeIngestServer) SingleGeneration(t *testing.T) *sigilv1.Generation {
+	t.Helper()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.requests) != 1 {
+		t.Fatalf("expected exactly one export request, got %d", len(s.requests))
+	}
+	if len(s.requests[0].Generations) != 1 {
+		t.Fatalf("expected exactly one generation in request, got %d", len(s.requests[0].Generations))
+	}
+	return s.requests[0].Generations[0]
+}
+
+func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
+	response := &sigilv1.ExportGenerationsResponse{Results: make([]*sigilv1.ExportGenerationResult, len(req.GetGenerations()))}
+	for i := range req.GetGenerations() {
+		response.Results[i] = &sigilv1.ExportGenerationResult{
+			GenerationId: req.Generations[i].GetId(),
+			Accepted:     true,
+		}
+	}
+	return response
+}
+
+type fakeRatingServer struct {
+	server *httptest.Server
+
+	mu       sync.Mutex
+	requests []capturedRatingRequest
+}
+
+type capturedRatingRequest struct {
+	Method  string
+	Path    string
+	Headers http.Header
+	Body    []byte
+}
+
+func newFakeRatingServer() *fakeRatingServer {
+	s := &fakeRatingServer{}
+	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		s.mu.Lock()
+		s.requests = append(s.requests, capturedRatingRequest{
+			Method:  req.Method,
+			Path:    req.URL.Path,
+			Headers: req.Header.Clone(),
+			Body:    append([]byte(nil), body...),
+		})
+		s.mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"rating":{"rating_id":"rat-1","conversation_id":"conv-1","rating":"CONVERSATION_RATING_VALUE_GOOD","created_at":"2026-03-12T11:00:00Z"},"summary":{"total_count":1,"good_count":1,"bad_count":0,"latest_rating":"CONVERSATION_RATING_VALUE_GOOD","latest_rated_at":"2026-03-12T11:00:00Z","has_bad_rating":false}}`))
+	}))
+	return s
+}
+
+func (s *fakeRatingServer) URL() string {
+	if s == nil || s.server == nil {
+		return ""
+	}
+	return s.server.URL
+}
+
+func (s *fakeRatingServer) Close() {
+	if s != nil && s.server != nil {
+		s.server.Close()
+	}
+}
+
+func findSpan(t *testing.T, spans []sdktrace.ReadOnlySpan, operationName string) sdktrace.ReadOnlySpan {
+	t.Helper()
+
+	var matched sdktrace.ReadOnlySpan
+	for _, span := range spans {
+		attrs := spanAttrs(span)
+		if got, ok := attrs[spanAttrOperationName]; ok && got.AsString() == operationName {
+			if matched != nil {
+				t.Fatalf("expected exactly one span with %s=%q", spanAttrOperationName, operationName)
+			}
+			matched = span
+		}
+	}
+	if matched == nil {
+		t.Fatalf("expected span with %s=%q", spanAttrOperationName, operationName)
+	}
+	return matched
+}
+
+func spanAttrs(span sdktrace.ReadOnlySpan) map[string]attribute.Value {
+	attrs := make(map[string]attribute.Value, len(span.Attributes()))
+	for _, attr := range span.Attributes() {
+		attrs[string(attr.Key)] = attr.Value
+	}
+	return attrs
+}
+
+func requireSpanAttr(t *testing.T, attrs map[string]attribute.Value, key, want string) {
+	t.Helper()
+
+	got, ok := attrs[key]
+	if !ok {
+		t.Fatalf("expected span attribute %q=%q, attribute missing", key, want)
+	}
+	if got.AsString() != want {
+		t.Fatalf("unexpected span attribute %q: got %q want %q", key, got.AsString(), want)
+	}
+}
+
+func requireSpanAttrAbsent(t *testing.T, attrs map[string]attribute.Value, key string) {
+	t.Helper()
+
+	if _, ok := attrs[key]; ok {
+		t.Fatalf("did not expect span attribute %q to be present", key)
+	}
+}
+
+func findHistogram[N int64 | float64](t *testing.T, collected metricdata.ResourceMetrics, name string) metricdata.Histogram[N] {
+	t.Helper()
+
+	for _, scopeMetrics := range collected.ScopeMetrics {
+		for _, metric := range scopeMetrics.Metrics {
+			if metric.Name != name {
+				continue
+			}
+			histogram, ok := metric.Data.(metricdata.Histogram[N])
+			if !ok {
+				t.Fatalf("metric %q is not the expected histogram type", name)
+			}
+			return histogram
+		}
+	}
+
+	t.Fatalf("expected histogram %q", name)
+	return metricdata.Histogram[N]{}
+}
+
+func requireNoHistogram(t *testing.T, collected metricdata.ResourceMetrics, name string) {
+	t.Helper()
+
+	for _, scopeMetrics := range collected.ScopeMetrics {
+		for _, metric := range scopeMetrics.Metrics {
+			if metric.Name == name {
+				t.Fatalf("did not expect histogram %q to be present", name)
+			}
+		}
+	}
+}
+
+func requireProtoMetadata(t *testing.T, generation *sigilv1.Generation, key, want string) {
+	t.Helper()
+
+	got, ok := protoMetadataString(generation, key)
+	if !ok {
+		t.Fatalf("expected generation metadata %q=%q, key missing", key, want)
+	}
+	if got != want {
+		t.Fatalf("unexpected generation metadata %q: got %q want %q", key, got, want)
+	}
+}
+
+func requireProtoMetadataAbsent(t *testing.T, generation *sigilv1.Generation, key string) {
+	t.Helper()
+
+	if _, ok := protoMetadataString(generation, key); ok {
+		t.Fatalf("did not expect generation metadata %q to be present", key)
+	}
+}
+
+func protoMetadataString(generation *sigilv1.Generation, key string) (string, bool) {
+	if generation == nil || generation.GetMetadata() == nil {
+		return "", false
+	}
+
+	value, ok := generation.GetMetadata().AsMap()[key]
+	if !ok {
+		return "", false
+	}
+	asString, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	return asString, true
+}
