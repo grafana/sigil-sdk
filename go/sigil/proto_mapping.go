@@ -185,8 +185,8 @@ func mapUsageToProto(usage TokenUsage) *sigilv1.TokenUsage {
 		TotalTokens:              usage.TotalTokens,
 		CacheReadInputTokens:     usage.CacheReadInputTokens,
 		CacheWriteInputTokens:    usage.CacheWriteInputTokens,
-		CacheCreationInputTokens: usage.CacheCreationInputTokens,
 		ReasoningTokens:          usage.ReasoningTokens,
+		CacheCreationInputTokens: usage.CacheCreationInputTokens,
 	}
 }
 
