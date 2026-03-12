@@ -22,17 +22,28 @@ import (
 )
 
 const (
-	conformanceOperationName   = "generateText"
-	metadataKeyConversation    = "sigil.conversation.title"
-	metadataKeyCanonicalUserID = "sigil.user.id"
-	metadataKeyLegacyUserID    = "user.id"
-	spanAttrOperationName      = "gen_ai.operation.name"
-	spanAttrConversationTitle  = "sigil.conversation.title"
-	spanAttrUserID             = "user.id"
-	spanAttrAgentName          = "gen_ai.agent.name"
-	spanAttrAgentVersion       = "gen_ai.agent.version"
-	metricOperationDuration    = "gen_ai.client.operation.duration"
-	metricTimeToFirstToken     = "gen_ai.client.time_to_first_token"
+	conformanceOperationName    = "generateText"
+	metadataKeyConversation     = "sigil.conversation.title"
+	metadataKeyCanonicalUserID  = "sigil.user.id"
+	metadataKeyLegacyUserID     = "user.id"
+	spanAttrOperationName       = "gen_ai.operation.name"
+	spanAttrConversationTitle   = "sigil.conversation.title"
+	spanAttrUserID              = "user.id"
+	spanAttrAgentName           = "gen_ai.agent.name"
+	spanAttrAgentVersion        = "gen_ai.agent.version"
+	spanAttrErrorType           = "error.type"
+	spanAttrRequestToolChoice   = "sigil.gen_ai.request.tool_choice"
+	spanAttrEmbeddingInputCount = "gen_ai.embeddings.input_count"
+	spanAttrEmbeddingDimCount   = "gen_ai.embeddings.dimension.count"
+	spanAttrToolName            = "gen_ai.tool.name"
+	spanAttrToolCallID          = "gen_ai.tool.call.id"
+	spanAttrToolType            = "gen_ai.tool.type"
+	spanAttrToolCallArguments   = "gen_ai.tool.call.arguments"
+	spanAttrToolCallResult      = "gen_ai.tool.call.result"
+	metricOperationDuration     = "gen_ai.client.operation.duration"
+	metricTokenUsage            = "gen_ai.client.token.usage"
+	metricTimeToFirstToken      = "gen_ai.client.time_to_first_token"
+	metricToolCallsPerOperation = "gen_ai.client.tool_calls_per_operation"
 )
 
 var conformanceModel = sigil.ModelRef{
@@ -122,6 +133,14 @@ func newConformanceEnv(t *testing.T, opts ...conformanceEnvOption) *conformanceE
 		_ = env.close()
 	})
 	return env
+}
+
+func withConformanceConfig(mutator func(*sigil.Config)) conformanceEnvOption {
+	return func(cfg *conformanceEnvConfig) {
+		if mutator != nil {
+			mutator(&cfg.config)
+		}
+	}
 }
 
 func (e *conformanceEnv) Shutdown(t *testing.T) {
@@ -229,6 +248,12 @@ func (s *fakeIngestServer) SingleGeneration(t *testing.T) *sigilv1.Generation {
 	return s.requests[0].Generations[0]
 }
 
+func (s *fakeIngestServer) RequestCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.requests)
+}
+
 func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
 	response := &sigilv1.ExportGenerationsResponse{Results: make([]*sigilv1.ExportGenerationResult, len(req.GetGenerations()))}
 	for i := range req.GetGenerations() {
@@ -288,6 +313,25 @@ func (s *fakeRatingServer) URL() string {
 func (s *fakeRatingServer) Close() {
 	if s != nil && s.server != nil {
 		s.server.Close()
+	}
+}
+
+func (s *fakeRatingServer) SingleRequest(t *testing.T) capturedRatingRequest {
+	t.Helper()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.requests) != 1 {
+		t.Fatalf("expected exactly one rating request, got %d", len(s.requests))
+	}
+
+	req := s.requests[0]
+	return capturedRatingRequest{
+		Method:  req.Method,
+		Path:    req.Path,
+		Headers: req.Headers.Clone(),
+		Body:    append([]byte(nil), req.Body...),
 	}
 }
 
