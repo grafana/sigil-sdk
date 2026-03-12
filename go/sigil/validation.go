@@ -146,6 +146,9 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 		if part.ToolResult == nil {
 			return fmt.Errorf("%s[%d].parts[%d].tool_result is required", path, messageIndex, partIndex)
 		}
+		if strings.TrimSpace(part.ToolResult.ToolCallID) == "" && strings.TrimSpace(part.ToolResult.Name) == "" {
+			return fmt.Errorf("%s[%d].parts[%d].tool_result.tool_call_id or name is required", path, messageIndex, partIndex)
+		}
 	}
 
 	return nil

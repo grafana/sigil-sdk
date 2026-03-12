@@ -109,3 +109,7 @@ In addition to normalized usage fields, Anthropic server-tool counters are mappe
 - `sigil.gen_ai.usage.server_tool_use.total_requests`
 
 Anthropic tool `defer_loading` is mapped to Sigil `Generation.Tools[].Deferred`.
+
+## Tool result correlation
+
+- Anthropic `tool_result` and server-tool result blocks preserve `tool_use_id` in normalized `tool_result.tool_call_id`.

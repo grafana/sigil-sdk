@@ -120,6 +120,11 @@ rec.SetResult(openai.ResponsesFromStream(req, summary))
 - Default: raw request/response/provider-event artifacts are OFF.
 - Opt-in with `WithRawArtifacts()`.
 
+## Tool result correlation
+
+- Chat Completions tool messages and Responses function-call outputs preserve upstream call IDs in normalized `tool_result.tool_call_id`.
+- Legacy Chat Completions `function` role messages do not expose a call ID; the mapper falls back to normalized `tool_result.name`.
+
 ## Live SDK examples
 
 Real end-to-end examples using the actual OpenAI SDK (no fake provider calls) are in `sdk_example_test.go`.
