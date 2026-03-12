@@ -19,6 +19,18 @@ func Message(
 	req asdk.BetaMessageNewParams,
 	opts ...Option,
 ) (*asdk.BetaMessage, error) {
+	return message(ctx, client, req, func(ctx context.Context, request asdk.BetaMessageNewParams) (*asdk.BetaMessage, error) {
+		return provider.Beta.Messages.New(ctx, request)
+	}, opts...)
+}
+
+func message(
+	ctx context.Context,
+	client *sigil.Client,
+	req asdk.BetaMessageNewParams,
+	invoke func(context.Context, asdk.BetaMessageNewParams) (*asdk.BetaMessage, error),
+	opts ...Option,
+) (*asdk.BetaMessage, error) {
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
@@ -30,7 +42,7 @@ func Message(
 	})
 	defer rec.End()
 
-	resp, err := provider.Beta.Messages.New(ctx, req)
+	resp, err := invoke(ctx, req)
 	if err != nil {
 		rec.SetCallError(err)
 		return nil, err
