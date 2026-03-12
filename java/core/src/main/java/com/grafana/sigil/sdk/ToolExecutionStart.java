@@ -12,6 +12,8 @@ public final class ToolExecutionStart {
     private String conversationTitle = "";
     private String agentName = "";
     private String agentVersion = "";
+    private String requestModel = "";
+    private String requestProvider = "";
     private boolean includeContent;
     private Instant startedAt;
 
@@ -87,6 +89,28 @@ public final class ToolExecutionStart {
         return this;
     }
 
+    /** Returns the model that requested the tool call. */
+    public String getRequestModel() {
+        return requestModel;
+    }
+
+    /** Sets the model that requested the tool call (e.g. "gpt-5"). */
+    public ToolExecutionStart setRequestModel(String requestModel) {
+        this.requestModel = requestModel == null ? "" : requestModel;
+        return this;
+    }
+
+    /** Returns the provider that served the model. */
+    public String getRequestProvider() {
+        return requestProvider;
+    }
+
+    /** Sets the provider that served the model (e.g. "openai"). */
+    public ToolExecutionStart setRequestProvider(String requestProvider) {
+        this.requestProvider = requestProvider == null ? "" : requestProvider;
+        return this;
+    }
+
     public boolean isIncludeContent() {
         return includeContent;
     }
@@ -115,6 +139,8 @@ public final class ToolExecutionStart {
                 .setConversationTitle(conversationTitle)
                 .setAgentName(agentName)
                 .setAgentVersion(agentVersion)
+                .setRequestModel(requestModel)
+                .setRequestProvider(requestProvider)
                 .setIncludeContent(includeContent)
                 .setStartedAt(startedAt);
     }

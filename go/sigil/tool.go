@@ -12,7 +12,11 @@ type ToolExecutionStart struct {
 	ConversationTitle string
 	AgentName         string
 	AgentVersion      string
-	StartedAt         time.Time
+	// RequestModel is the model that requested the tool call (e.g. "gpt-5").
+	RequestModel string
+	// RequestProvider is the provider that served the model (e.g. "openai").
+	RequestProvider string
+	StartedAt       time.Time
 	// IncludeContent enables gen_ai.tool.call.arguments and gen_ai.tool.call.result attributes.
 	IncludeContent bool
 }

@@ -653,8 +653,8 @@ class Client:
             duration_seconds,
             attributes={
                 _span_attr_operation_name: "execute_tool",
-                _span_attr_provider_name: "",
-                _span_attr_request_model: seed.tool_name,
+                _span_attr_provider_name: seed.request_provider.strip() if seed.request_provider else "",
+                _span_attr_request_model: seed.request_model.strip() if seed.request_model else "",
                 _span_attr_agent_name: seed.agent_name,
                 _span_attr_error_type: error_type,
                 _span_attr_error_category: error_category,
