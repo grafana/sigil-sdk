@@ -1,0 +1,545 @@
+package googleadk_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+
+	googleadk "github.com/grafana/sigil/sdks/go-frameworks/google-adk"
+	sigil "github.com/grafana/sigil/sdks/go/sigil"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	metricOperationDuration = "gen_ai.client.operation.duration"
+	metricTimeToFirstToken  = "gen_ai.client.time_to_first_token"
+	spanAttrOperationName   = "gen_ai.operation.name"
+	spanAttrConversationID  = "gen_ai.conversation.id"
+	spanAttrAgentName       = "gen_ai.agent.name"
+	spanAttrAgentVersion    = "gen_ai.agent.version"
+	spanAttrProviderName    = "gen_ai.provider.name"
+	spanAttrRequestModel    = "gen_ai.request.model"
+	spanAttrResponseModel   = "gen_ai.response.model"
+)
+
+func TestConformance_RunLifecyclePropagatesFrameworkMetadataAndLinksSpans(t *testing.T) {
+	env := newConformanceEnv(t, googleadk.Options{
+		AgentName:    "planner",
+		AgentVersion: "2026.03.12",
+		ExtraTags: map[string]string{
+			"deployment.environment": "test",
+		},
+		ExtraMetadata: map[string]any{
+			"team": "infra",
+		},
+	})
+
+	retryAttempt := 2
+	parentCtx, parent := env.Tracer.Start(context.Background(), "google-adk.run",
+		trace.WithAttributes(
+			attribute.String("sigil.framework.name", "google-adk"),
+			attribute.String("sigil.framework.source", "handler"),
+			attribute.String("sigil.framework.language", "go"),
+		),
+	)
+
+	if err := env.Callbacks.OnRunStart(parentCtx, googleadk.RunStartEvent{
+		RunID:          "run-sync",
+		ParentRunID:    "parent-run",
+		SessionID:      "session-42",
+		ThreadID:       "thread-7",
+		EventID:        "event-42",
+		ComponentName:  "planner",
+		RunType:        "chat",
+		RetryAttempt:   &retryAttempt,
+		ModelName:      "gpt-5",
+		Prompts:        []string{"Summarize release status"},
+		Tags:           []string{"prod", "framework", "prod"},
+		Metadata:       map[string]any{"event_payload": map[string]any{"step": "validate"}},
+		InputMessages:  []sigil.Message{sigil.UserTextMessage("Summarize release status")},
+		ConversationID: "",
+	}); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+
+	if err := env.Callbacks.OnRunEnd("run-sync", googleadk.RunEndEvent{
+		RunID:          "run-sync",
+		OutputMessages: []sigil.Message{sigil.AssistantTextMessage("Release is healthy")},
+		ResponseModel:  "gpt-5",
+		StopReason:     "stop",
+		Usage: sigil.TokenUsage{
+			InputTokens:  6,
+			OutputTokens: 4,
+			TotalTokens:  10,
+		},
+	}); err != nil {
+		t.Fatalf("run end: %v", err)
+	}
+
+	parentSpanContext := parent.SpanContext()
+	parent.End()
+
+	metrics := env.CollectMetrics(t)
+	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for sync google-adk conformance", metricOperationDuration)
+	}
+	requireNoHistogram(t, metrics, metricTimeToFirstToken)
+
+	env.Shutdown(t)
+
+	parentSpan := findSpanByName(t, env.Spans.Ended(), "google-adk.run")
+	parentAttrs := spanAttrs(parentSpan)
+	requireSpanAttr(t, parentAttrs, "sigil.framework.name", "google-adk")
+	requireSpanAttr(t, parentAttrs, "sigil.framework.source", "handler")
+	requireSpanAttr(t, parentAttrs, "sigil.framework.language", "go")
+
+	generationSpan := findSpanByOperationName(t, env.Spans.Ended(), "generateText")
+	if generationSpan.Parent().SpanID() != parentSpanContext.SpanID() {
+		t.Fatalf("expected generation span parent %q, got %q", parentSpanContext.SpanID().String(), generationSpan.Parent().SpanID().String())
+	}
+
+	generationAttrs := spanAttrs(generationSpan)
+	requireSpanAttr(t, generationAttrs, spanAttrOperationName, "generateText")
+	requireSpanAttr(t, generationAttrs, spanAttrConversationID, "session-42")
+	requireSpanAttr(t, generationAttrs, spanAttrAgentName, "planner")
+	requireSpanAttr(t, generationAttrs, spanAttrAgentVersion, "2026.03.12")
+	requireSpanAttr(t, generationAttrs, spanAttrProviderName, "openai")
+	requireSpanAttr(t, generationAttrs, spanAttrRequestModel, "gpt-5")
+	requireSpanAttr(t, generationAttrs, spanAttrResponseModel, "gpt-5")
+
+	generation := env.Export.SingleGeneration(t)
+	if got := stringValue(t, generation, "conversation_id"); got != "session-42" {
+		t.Fatalf("unexpected conversation_id: got %q want %q", got, "session-42")
+	}
+	if got := stringValue(t, generation, "trace_id"); got != generationSpan.SpanContext().TraceID().String() {
+		t.Fatalf("unexpected trace_id: got %q want %q", got, generationSpan.SpanContext().TraceID().String())
+	}
+	if got := stringValue(t, generation, "span_id"); got != generationSpan.SpanContext().SpanID().String() {
+		t.Fatalf("unexpected span_id: got %q want %q", got, generationSpan.SpanContext().SpanID().String())
+	}
+
+	tags := objectValue(t, generation, "tags")
+	requireStringField(t, tags, "deployment.environment", "test")
+	requireStringField(t, tags, "sigil.framework.name", "google-adk")
+	requireStringField(t, tags, "sigil.framework.source", "handler")
+	requireStringField(t, tags, "sigil.framework.language", "go")
+
+	metadata := objectValue(t, generation, "metadata")
+	requireStringField(t, metadata, "team", "infra")
+	requireStringField(t, metadata, "sigil.framework.run_id", "run-sync")
+	requireStringField(t, metadata, "sigil.framework.thread_id", "thread-7")
+	requireStringField(t, metadata, "sigil.framework.parent_run_id", "parent-run")
+	requireStringField(t, metadata, "sigil.framework.component_name", "planner")
+	requireStringField(t, metadata, "sigil.framework.run_type", "chat")
+	requireNumberField(t, metadata, "sigil.framework.retry_attempt", 2)
+	requireStringField(t, metadata, "sigil.framework.event_id", "event-42")
+	requireStringSliceField(t, metadata, "sigil.framework.tags", []string{"prod", "framework"})
+
+	eventPayload := objectValue(t, metadata, "event_payload")
+	requireStringField(t, eventPayload, "step", "validate")
+}
+
+func TestConformance_StreamingRunTriggersGenerationExport(t *testing.T) {
+	env := newConformanceEnv(t, googleadk.Options{
+		AgentName:    "planner",
+		AgentVersion: "2026.03.12",
+	})
+
+	if err := env.Callbacks.OnRunStart(context.Background(), googleadk.RunStartEvent{
+		RunID:     "run-stream",
+		SessionID: "session-stream",
+		ModelName: "gemini-2.5-pro",
+		RunType:   "chat",
+		Stream:    true,
+		Prompts:   []string{"Stream migration status"},
+	}); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+	env.Callbacks.OnRunToken("run-stream", "step ")
+	env.Callbacks.OnRunToken("run-stream", "complete")
+
+	if err := env.Callbacks.OnRunEnd("run-stream", googleadk.RunEndEvent{
+		RunID:         "run-stream",
+		ResponseModel: "gemini-2.5-pro",
+		Usage: sigil.TokenUsage{
+			InputTokens:  3,
+			OutputTokens: 2,
+			TotalTokens:  5,
+		},
+	}); err != nil {
+		t.Fatalf("run end: %v", err)
+	}
+
+	metrics := env.CollectMetrics(t)
+	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for streaming google-adk conformance", metricOperationDuration)
+	}
+	if len(findHistogram[float64](t, metrics, metricTimeToFirstToken).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for streaming google-adk conformance", metricTimeToFirstToken)
+	}
+
+	env.Shutdown(t)
+
+	generationSpan := findSpanByOperationName(t, env.Spans.Ended(), "streamText")
+	requireSpanAttr(t, spanAttrs(generationSpan), spanAttrRequestModel, "gemini-2.5-pro")
+
+	generation := env.Export.SingleGeneration(t)
+	if got := stringValue(t, generation, "operation_name"); got != "streamText" {
+		t.Fatalf("unexpected operation_name: got %q want %q", got, "streamText")
+	}
+
+	output := arrayValue(t, generation, "output")
+	if len(output) != 1 {
+		t.Fatalf("expected one streamed output message, got %d", len(output))
+	}
+	message := asObject(t, output[0], "output[0]")
+	parts := arrayValue(t, message, "parts")
+	if len(parts) != 1 {
+		t.Fatalf("expected one streamed output part, got %d", len(parts))
+	}
+	part := asObject(t, parts[0], "output[0].parts[0]")
+	requireStringField(t, part, "text", "step complete")
+
+	metadata := objectValue(t, generation, "metadata")
+	requireStringField(t, metadata, "sigil.framework.run_id", "run-stream")
+	requireStringField(t, metadata, "sigil.framework.run_type", "chat")
+}
+
+type conformanceEnv struct {
+	Client    *sigil.Client
+	Callbacks googleadk.Callbacks
+	Export    *generationCaptureServer
+	Spans     *tracetest.SpanRecorder
+	Metrics   *sdkmetric.ManualReader
+	Tracer    trace.Tracer
+
+	tracerProvider *sdktrace.TracerProvider
+	meterProvider  *sdkmetric.MeterProvider
+}
+
+func newConformanceEnv(t *testing.T, opts googleadk.Options) *conformanceEnv {
+	t.Helper()
+
+	export := newGenerationCaptureServer(t)
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	metricReader := sdkmetric.NewManualReader()
+	meterProvider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(metricReader))
+
+	cfg := sigil.DefaultConfig()
+	cfg.Tracer = tracerProvider.Tracer("google-adk-conformance-test")
+	cfg.Meter = meterProvider.Meter("google-adk-conformance-test")
+	cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP
+	cfg.GenerationExport.Endpoint = export.server.URL + "/api/v1/generations:export"
+	cfg.GenerationExport.BatchSize = 1
+	cfg.GenerationExport.QueueSize = 8
+	cfg.GenerationExport.FlushInterval = time.Hour
+	cfg.GenerationExport.MaxRetries = 1
+	cfg.GenerationExport.InitialBackoff = time.Millisecond
+	cfg.GenerationExport.MaxBackoff = 5 * time.Millisecond
+
+	client := sigil.NewClient(cfg)
+	env := &conformanceEnv{
+		Client:         client,
+		Callbacks:      googleadk.NewCallbacks(client, opts),
+		Export:         export,
+		Spans:          spanRecorder,
+		Metrics:        metricReader,
+		Tracer:         tracerProvider.Tracer("google-adk-framework-test"),
+		tracerProvider: tracerProvider,
+		meterProvider:  meterProvider,
+	}
+	t.Cleanup(func() {
+		_ = env.close()
+	})
+	return env
+}
+
+func (e *conformanceEnv) Shutdown(t *testing.T) {
+	t.Helper()
+	if e == nil || e.Client == nil {
+		return
+	}
+	client := e.Client
+	e.Client = nil
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown client: %v", err)
+	}
+}
+
+func (e *conformanceEnv) close() error {
+	if e == nil {
+		return nil
+	}
+
+	var closeErr error
+	if e.Client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := e.Client.Shutdown(ctx); err != nil {
+			closeErr = err
+		}
+		e.Client = nil
+	}
+	if e.meterProvider != nil {
+		if err := e.meterProvider.Shutdown(context.Background()); err != nil && closeErr == nil {
+			closeErr = err
+		}
+		e.meterProvider = nil
+	}
+	if e.tracerProvider != nil {
+		if err := e.tracerProvider.Shutdown(context.Background()); err != nil && closeErr == nil {
+			closeErr = err
+		}
+		e.tracerProvider = nil
+	}
+	if e.Export != nil && e.Export.server != nil {
+		e.Export.server.Close()
+		e.Export.server = nil
+	}
+	return closeErr
+}
+
+func (e *conformanceEnv) CollectMetrics(t *testing.T) metricdata.ResourceMetrics {
+	t.Helper()
+	var collected metricdata.ResourceMetrics
+	if err := e.Metrics.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("collect metrics: %v", err)
+	}
+	return collected
+}
+
+type generationCaptureServer struct {
+	server   *httptest.Server
+	mu       sync.Mutex
+	requests []map[string]any
+}
+
+func newGenerationCaptureServer(t *testing.T) *generationCaptureServer {
+	t.Helper()
+	capture := &generationCaptureServer{}
+	capture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "read body", http.StatusBadRequest)
+			return
+		}
+
+		request := map[string]any{}
+		if err := json.Unmarshal(body, &request); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		capture.mu.Lock()
+		capture.requests = append(capture.requests, request)
+		capture.mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	return capture
+}
+
+func (c *generationCaptureServer) SingleGeneration(t *testing.T) map[string]any {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.requests) != 1 {
+		t.Fatalf("expected exactly one export request, got %d", len(c.requests))
+	}
+
+	generations := arrayValue(t, c.requests[0], "generations")
+	if len(generations) != 1 {
+		t.Fatalf("expected exactly one exported generation, got %d", len(generations))
+	}
+
+	return asObject(t, generations[0], "generations[0]")
+}
+
+func findSpanByName(t *testing.T, spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
+	t.Helper()
+	for _, span := range spans {
+		if span.Name() == name {
+			return span
+		}
+	}
+	t.Fatalf("span %q not found", name)
+	return nil
+}
+
+func findSpanByOperationName(t *testing.T, spans []sdktrace.ReadOnlySpan, operation string) sdktrace.ReadOnlySpan {
+	t.Helper()
+	for _, span := range spans {
+		if spanAttr := attrValue(span.Attributes(), spanAttrOperationName); spanAttr.Type() == attribute.STRING && spanAttr.AsString() == operation {
+			return span
+		}
+	}
+	t.Fatalf("span with %s=%q not found", spanAttrOperationName, operation)
+	return nil
+}
+
+func spanAttrs(span sdktrace.ReadOnlySpan) map[string]attribute.Value {
+	attrs := make(map[string]attribute.Value, len(span.Attributes()))
+	for _, attr := range span.Attributes() {
+		attrs[string(attr.Key)] = attr.Value
+	}
+	return attrs
+}
+
+func requireSpanAttr(t *testing.T, attrs map[string]attribute.Value, key string, want string) {
+	t.Helper()
+	value, ok := attrs[key]
+	if !ok {
+		t.Fatalf("missing span attr %q", key)
+	}
+	if value.Type() != attribute.STRING {
+		t.Fatalf("span attr %q has type %v, want string", key, value.Type())
+	}
+	if got := value.AsString(); got != want {
+		t.Fatalf("unexpected span attr %q: got %q want %q", key, got, want)
+	}
+}
+
+func attrValue(attrs []attribute.KeyValue, key string) attribute.Value {
+	for _, attr := range attrs {
+		if string(attr.Key) == key {
+			return attr.Value
+		}
+	}
+	return attribute.Value{}
+}
+
+func stringValue(t *testing.T, object map[string]any, key string) string {
+	t.Helper()
+	value, ok := object[key]
+	if !ok {
+		t.Fatalf("missing %q", key)
+	}
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("expected %q to be string, got %T", key, value)
+	}
+	return text
+}
+
+func objectValue(t *testing.T, object map[string]any, key string) map[string]any {
+	t.Helper()
+	value, ok := object[key]
+	if !ok {
+		t.Fatalf("missing %q", key)
+	}
+	return asObject(t, value, key)
+}
+
+func arrayValue(t *testing.T, object map[string]any, key string) []any {
+	t.Helper()
+	value, ok := object[key]
+	if !ok {
+		t.Fatalf("missing %q", key)
+	}
+	items, ok := value.([]any)
+	if !ok {
+		t.Fatalf("expected %q to be array, got %T", key, value)
+	}
+	return items
+}
+
+func asObject(t *testing.T, value any, label string) map[string]any {
+	t.Helper()
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("expected %s to be object, got %T", label, value)
+	}
+	return object
+}
+
+func requireStringField(t *testing.T, object map[string]any, key string, want string) {
+	t.Helper()
+	if got := stringValue(t, object, key); got != want {
+		t.Fatalf("unexpected %q: got %q want %q", key, got, want)
+	}
+}
+
+func requireNumberField(t *testing.T, object map[string]any, key string, want float64) {
+	t.Helper()
+	value, ok := object[key]
+	if !ok {
+		t.Fatalf("missing %q", key)
+	}
+	number, ok := value.(float64)
+	if !ok {
+		t.Fatalf("expected %q to be number, got %T", key, value)
+	}
+	if number != want {
+		t.Fatalf("unexpected %q: got %v want %v", key, number, want)
+	}
+}
+
+func requireStringSliceField(t *testing.T, object map[string]any, key string, want []string) {
+	t.Helper()
+	value, ok := object[key]
+	if !ok {
+		t.Fatalf("missing %q", key)
+	}
+	items, ok := value.([]any)
+	if !ok {
+		t.Fatalf("expected %q to be string array, got %T", key, value)
+	}
+	if len(items) != len(want) {
+		t.Fatalf("unexpected %q length: got %d want %d", key, len(items), len(want))
+	}
+	for i := range want {
+		text, ok := items[i].(string)
+		if !ok {
+			t.Fatalf("expected %q[%d] to be string, got %T", key, i, items[i])
+		}
+		if text != want[i] {
+			t.Fatalf("unexpected %q[%d]: got %q want %q", key, i, text, want[i])
+		}
+	}
+}
+
+func findHistogram[N int64 | float64](t *testing.T, metrics metricdata.ResourceMetrics, name string) metricdata.Histogram[N] {
+	t.Helper()
+	for _, scopeMetrics := range metrics.ScopeMetrics {
+		for _, metric := range scopeMetrics.Metrics {
+			if metric.Name != name {
+				continue
+			}
+			histogram, ok := metric.Data.(metricdata.Histogram[N])
+			if !ok {
+				t.Fatalf("metric %q did not contain expected histogram data", name)
+			}
+			return histogram
+		}
+	}
+	t.Fatalf("metric %q not found", name)
+	return metricdata.Histogram[N]{}
+}
+
+func requireNoHistogram(t *testing.T, metrics metricdata.ResourceMetrics, name string) {
+	t.Helper()
+	for _, scopeMetrics := range metrics.ScopeMetrics {
+		for _, metric := range scopeMetrics.Metrics {
+			if metric.Name == name {
+				t.Fatalf("did not expect metric %q", name)
+			}
+		}
+	}
+}
