@@ -14,6 +14,20 @@ Use this package when you want:
 pip install sigil-sdk
 ```
 
+## Validation
+
+Run the shared core conformance suite for the Python SDK from the repo root:
+
+```bash
+mise run test:py:sdk-conformance
+```
+
+Run the cross-language aggregate core conformance suite from the repo root:
+
+```bash
+mise run sdk:conformance
+```
+
 Optional provider helper packages:
 
 ```bash
