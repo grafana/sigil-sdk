@@ -29,6 +29,8 @@ public final class SigilGoogleAdkAdapter {
     private static final String FRAMEWORK_SOURCE = "handler";
     private static final String FRAMEWORK_LANGUAGE = "java";
     private static final int MAX_METADATA_DEPTH = 5;
+    private static final String EMBEDDINGS_UNSUPPORTED_MESSAGE =
+            "google-adk: embeddings are not supported because the Google ADK lifecycle surface does not expose a dedicated embeddings callback";
 
     static final String META_RUN_ID = "sigil.framework.run_id";
     static final String META_THREAD_ID = "sigil.framework.thread_id";
@@ -82,6 +84,15 @@ public final class SigilGoogleAdkAdapter {
     /** Creates callback delegates backed by a new adapter instance. */
     public static Callbacks createCallbacks(SigilClient client, Options options) {
         return new SigilGoogleAdkAdapter(client, options).callbacks();
+    }
+
+    /**
+     * Reports whether this adapter can observe a native Google ADK embeddings lifecycle.
+     * The current lifecycle surface only exposes run and tool callbacks, so embeddings
+     * remain unsupported until ADK exposes a dedicated embeddings callback.
+     */
+    public static void checkEmbeddingsSupport() {
+        throw new UnsupportedOperationException(EMBEDDINGS_UNSUPPORTED_MESSAGE);
     }
 
     public void onRunStart(RunStartEvent event) {

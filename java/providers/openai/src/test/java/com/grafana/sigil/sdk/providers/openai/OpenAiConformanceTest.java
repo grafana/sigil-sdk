@@ -34,7 +34,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
-class OpenAiMappingAndRecorderTests {
+class OpenAiConformanceTest {
     @Test
     void chatSyncWrapperSetsSyncModeAndRawArtifactsOffByDefault() throws Exception {
         CapturingExporter exporter = new CapturingExporter();

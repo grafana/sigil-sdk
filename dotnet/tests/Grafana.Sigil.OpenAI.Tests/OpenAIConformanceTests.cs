@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Grafana.Sigil.OpenAI.Tests;
 
-public sealed class OpenAIMappingAndRecorderTests
+public sealed class OpenAIConformanceTests
 {
     [Fact]
     public void ChatCompletionsFromRequestResponse_MapsSyncModeAndDefaultsRawArtifactsOff()
