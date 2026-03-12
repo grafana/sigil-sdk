@@ -9,11 +9,13 @@ This module maps official OpenAI Go SDK request/response payloads into typed Sig
   - `ChatCompletionsNewStreaming(ctx, sigilClient, provider, req, opts...)`
   - `ResponsesNew(ctx, sigilClient, provider, req, opts...)`
   - `ResponsesNewStreaming(ctx, sigilClient, provider, req, opts...)`
+  - `EmbeddingsNew(ctx, sigilClient, provider, req, opts...)`
 - Mapper functions:
   - `ChatCompletionsFromRequestResponse(req, resp, opts...)`
   - `ChatCompletionsFromStream(req, summary, opts...)`
   - `ResponsesFromRequestResponse(req, resp, opts...)`
   - `ResponsesFromStream(req, summary, opts...)`
+  - `EmbeddingsFromResponse(req, resp)`
 
 ## Integration styles
 
@@ -52,6 +54,21 @@ if err != nil {
 	return err
 }
 _ = resp.ID
+```
+
+## Embeddings Wrapper
+
+```go
+embedResp, err := openai.EmbeddingsNew(ctx, sigilClient, providerClient, osdk.EmbeddingNewParams{
+	Model: osdk.EmbeddingModel("text-embedding-3-small"),
+	Input: osdk.EmbeddingNewParamsInputUnion{
+		OfArrayOfStrings: []string{"hello", "world"},
+	},
+})
+if err != nil {
+	return err
+}
+_ = embedResp.Model
 ```
 
 ## Defer Pattern (explicit control)

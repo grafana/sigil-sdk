@@ -391,7 +391,7 @@ def test_chat_mapper_filters_system_messages_and_supports_raw_artifacts() -> Non
             {"role": "system", "content": "system"},
             {"role": "developer", "content": "developer"},
             {"role": "user", "content": "hello"},
-            {"role": "tool", "content": '{"ok":true}', "name": "tool-weather"},
+            {"role": "tool", "tool_call_id": "call_weather", "content": '{"ok":true}', "name": "tool-weather"},
         ],
         "tools": [
             {
@@ -433,6 +433,10 @@ def test_chat_mapper_filters_system_messages_and_supports_raw_artifacts() -> Non
     assert len(mapped_default.input) == 2
     assert mapped_default.input[0].role.value == "user"
     assert mapped_default.input[1].role.value == "tool"
+    assert mapped_default.input[1].parts[0].kind.value == "tool_result"
+    assert mapped_default.input[1].parts[0].tool_result.tool_call_id == "call_weather"
+    assert mapped_default.input[1].parts[0].tool_result.name == "tool-weather"
+    assert mapped_default.input[1].parts[0].tool_result.content == '{"ok":true}'
     assert mapped_default.max_tokens == 320
     assert mapped_default.temperature == 0.2
     assert mapped_default.top_p == 0.85
@@ -457,7 +461,13 @@ def test_responses_mapper_maps_output_and_stream_fallback() -> None:
                 "type": "message",
                 "role": "user",
                 "content": [{"type": "input_text", "text": "hello"}],
-            }
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call_weather",
+                "name": "weather",
+                "output": {"temp_c": 18},
+            },
         ],
         "max_output_tokens": 300,
         "reasoning": {"effort": "medium", "max_output_tokens": 640},
@@ -482,6 +492,13 @@ def test_responses_mapper_maps_output_and_stream_fallback() -> None:
                 "name": "weather",
                 "arguments": '{"city":"Paris"}',
             },
+            {
+                "id": "result-1",
+                "type": "function_call_output",
+                "call_id": "call_weather",
+                "name": "weather",
+                "output": {"temp_c": 18},
+            },
         ],
         "parallel_tool_calls": False,
         "temperature": 1,
@@ -502,12 +519,21 @@ def test_responses_mapper_maps_output_and_stream_fallback() -> None:
 
     mapped = responses.from_request_response(request, response)
     assert mapped.response_model == "gpt-5"
+    assert len(mapped.input) == 2
+    assert mapped.input[1].role.value == "tool"
+    assert mapped.input[1].parts[0].kind.value == "tool_result"
+    assert mapped.input[1].parts[0].tool_result.tool_call_id == "call_weather"
+    assert mapped.input[1].parts[0].tool_result.content_json == b'{"temp_c":18}'
     assert mapped.max_tokens == 300
     assert mapped.stop_reason == "stop"
     assert mapped.thinking_enabled is True
     assert mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 640
     assert mapped.usage.total_tokens == 100
-    assert mapped.output
+    assert len(mapped.output) == 3
+    assert mapped.output[2].role.value == "tool"
+    assert mapped.output[2].parts[0].kind.value == "tool_result"
+    assert mapped.output[2].parts[0].tool_result.tool_call_id == "call_weather"
+    assert mapped.output[2].parts[0].tool_result.content_json == b'{"temp_c":18}'
 
     streamed = responses.from_stream(
         {**request, "stream": True},

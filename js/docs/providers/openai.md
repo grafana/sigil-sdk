@@ -18,6 +18,11 @@ This helper now mirrors official OpenAI SDK shapes for both Chat Completions and
   - `openai.responses.fromRequestResponse(request, response, options?)`
   - `openai.responses.fromStream(request, summary, options?)`
 
+- Embeddings wrapper:
+  - `openai.embeddings.create(client, request, providerCall, options?)`
+- Embeddings mapper:
+  - `openai.embeddings.fromRequestResponse(request, response)`
+
 ## Integration styles
 
 - Strict wrappers: call OpenAI and record in one step.
@@ -98,6 +103,21 @@ try {
 } finally {
   recorder.end();
 }
+```
+
+## Embeddings example
+
+```ts
+const embeddingResponse = await openai.embeddings.create(
+  sigil,
+  {
+    model: 'text-embedding-3-small',
+    input: ['hello', 'world'],
+  },
+  async (request) => provider.embeddings.create(request)
+);
+
+console.log(embeddingResponse.model);
 ```
 
 ## Raw artifact policy

@@ -26,6 +26,11 @@ pip install sigil-sdk sigil-sdk-openai
   - `responses.from_request_response(...)`
   - `responses.from_stream(...)`
 
+- Embeddings namespace:
+  - `embeddings.create(...)`
+  - `embeddings.create_async(...)`
+  - `embeddings.from_request_response(...)`
+
 ## Integration styles
 
 - Strict wrappers: call OpenAI and record in one step.
@@ -67,6 +72,21 @@ summary = chat.completions.stream(
         "messages": [{"role": "user", "content": "Stream a short status update"}],
     },
     lambda request: ChatCompletionsStreamSummary(events=[]),
+)
+```
+
+## Embeddings example
+
+```python
+from sigil_sdk_openai import embeddings
+
+embedding_response = embeddings.create(
+    sigil,
+    {
+        "model": "text-embedding-3-small",
+        "input": ["hello", "world"],
+    },
+    lambda request: provider.embeddings.create(**request),
 )
 ```
 

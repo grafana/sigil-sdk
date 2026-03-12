@@ -7,8 +7,10 @@ typed Sigil `Generation` model.
 - One-liner wrappers:
   - `GenerateContent(ctx, sigilClient, provider, model, contents, config, opts...)`
   - `GenerateContentStream(ctx, sigilClient, provider, model, contents, config, opts...)`
+  - `EmbedContent(ctx, sigilClient, provider, model, contents, config, opts...)`
 - Request/response mapper:
   - `FromRequestResponse(model, contents, config, resp, opts...)`
+  - `EmbeddingFromResponse(model, contents, config, resp)`
 - Stream mapper:
   - `FromStream(model, contents, config, summary, opts...)`
 - Typed artifacts:
@@ -32,6 +34,16 @@ if err != nil {
 	return err
 }
 _ = resp.Candidates[0].Content.Parts[0].Text
+```
+
+## Embedding Wrapper
+
+```go
+embedResp, err := gemini.EmbedContent(ctx, sigilClient, providerClient, "gemini-embedding-001", contents, &genai.EmbedContentConfig{})
+if err != nil {
+	return err
+}
+_ = embedResp.Embeddings
 ```
 
 ## Defer Pattern (full control)

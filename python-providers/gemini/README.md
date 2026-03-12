@@ -8,6 +8,20 @@
 pip install sigil-sdk sigil-sdk-gemini google-genai
 ```
 
+## Public API
+
+- Wrappers:
+  - `models.generate_content(...)`
+  - `models.generate_content_async(...)`
+  - `models.generate_content_stream(...)`
+  - `models.generate_content_stream_async(...)`
+  - `models.embed_content(...)`
+  - `models.embed_content_async(...)`
+- Mappers:
+  - `models.from_request_response(...)`
+  - `models.from_stream(...)`
+  - `models.embedding_from_response(...)`
+
 ## Wrapper Mode (Sync)
 
 ```python
@@ -60,6 +74,22 @@ summary = models.generate_content_stream(
 ```python
 generation = models.from_request_response(model, contents, config, response)
 stream_generation = models.from_stream(model, contents, config, summary)
+```
+
+## Embedding example
+
+```python
+embedding_response = models.embed_content(
+    client,
+    "gemini-embedding-001",
+    contents,
+    None,
+    lambda req_model, req_contents, req_config: gemini_client.models.embed_content(
+        model=req_model,
+        contents=req_contents,
+        config=req_config,
+    ),
+)
 ```
 
 ## Raw Provider Artifacts (Opt-In)

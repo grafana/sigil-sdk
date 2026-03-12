@@ -653,7 +653,7 @@ test('openai chat mapper aggregates system/developer, preserves tool role, and a
       { role: 'system', content: 'system-message' },
       { role: 'developer', content: 'developer-message' },
       { role: 'user', content: 'hello' },
-      { role: 'tool', content: '{"ok":true}', name: 'tool-weather' },
+      { role: 'tool', tool_call_id: 'call_weather', content: '{"ok":true}', name: 'tool-weather' },
     ],
     tools: [
       {
@@ -704,6 +704,10 @@ test('openai chat mapper aggregates system/developer, preserves tool role, and a
   assert.equal(mappedDefault.input.length, 2);
   assert.equal(mappedDefault.input[0].role, 'user');
   assert.equal(mappedDefault.input[1].role, 'tool');
+  assert.equal(mappedDefault.input[1].parts[0].type, 'tool_result');
+  assert.equal(mappedDefault.input[1].parts[0].toolResult.toolCallId, 'call_weather');
+  assert.equal(mappedDefault.input[1].parts[0].toolResult.name, 'tool-weather');
+  assert.equal(mappedDefault.input[1].parts[0].toolResult.content, '{"ok":true}');
   assert.equal(mappedDefault.maxTokens, 256);
   assert.equal(mappedDefault.temperature, 0.3);
   assert.equal(mappedDefault.topP, 0.8);
@@ -731,6 +735,12 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
         role: 'user',
         content: [{ type: 'input_text', text: 'hello' }],
       },
+      {
+        type: 'function_call_output',
+        call_id: 'call_weather',
+        name: 'weather',
+        output: { temp_c: 18 },
+      },
     ],
     max_output_tokens: 300,
     tool_choice: { type: 'function', name: 'weather' },
@@ -756,6 +766,13 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
         name: 'weather',
         arguments: '{"city":"Paris"}',
       },
+      {
+        id: 'result-1',
+        type: 'function_call_output',
+        call_id: 'call_weather',
+        name: 'weather',
+        output: { temp_c: 18 },
+      },
     ],
     status: 'completed',
     parallel_tool_calls: false,
@@ -777,15 +794,23 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
 
   const mapped = openai.responses.fromRequestResponse(request, response);
   assert.equal(mapped.responseModel, 'gpt-5');
-  assert.equal(mapped.input.length, 1);
+  assert.equal(mapped.input.length, 2);
   assert.equal(mapped.input[0].role, 'user');
   assert.equal(mapped.input[0].content, 'hello');
+  assert.equal(mapped.input[1].role, 'tool');
+  assert.equal(mapped.input[1].parts[0].type, 'tool_result');
+  assert.equal(mapped.input[1].parts[0].toolResult.toolCallId, 'call_weather');
+  assert.equal(mapped.input[1].parts[0].toolResult.contentJSON, '{"temp_c":18}');
   assert.equal(mapped.maxTokens, 300);
   assert.equal(mapped.stopReason, 'stop');
   assert.equal(mapped.thinkingEnabled, true);
   assert.equal(mapped.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 640);
   assert.equal(mapped.usage.totalTokens, 100);
-  assert.equal(mapped.output.length > 0, true);
+  assert.equal(mapped.output.length, 3);
+  assert.equal(mapped.output[2].role, 'tool');
+  assert.equal(mapped.output[2].parts[0].type, 'tool_result');
+  assert.equal(mapped.output[2].parts[0].toolResult.toolCallId, 'call_weather');
+  assert.equal(mapped.output[2].parts[0].toolResult.contentJSON, '{"temp_c":18}');
 
   const streamed = openai.responses.fromStream(
     { ...request, stream: true },
@@ -813,7 +838,7 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
   );
 
   assert.equal(streamed.responseModel, 'gpt-5');
-  assert.equal(streamed.input.length, 1);
+  assert.equal(streamed.input.length, 2);
   assert.equal(streamed.input[0].content, 'hello');
   assert.equal(streamed.output.length, 1);
   assert.equal(streamed.output[0].content, 'delta-one delta-two');
