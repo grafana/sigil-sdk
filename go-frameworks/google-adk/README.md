@@ -9,6 +9,21 @@ This module maps Google ADK callback/interceptor lifecycles to Sigil generation 
 - SYNC/STREAM run lifecycle support with TTFT capture
 - Tool lifecycle support
 
+## Embeddings support
+
+This helper currently supports Google ADK run and tool lifecycles only. The
+Google ADK lifecycle surface used in this repository does not expose a
+dedicated embeddings callback, so embedding conformance is explicitly
+unsupported until that surface exists.
+
+Use the capability gate before assuming framework-level embedding coverage:
+
+```go
+if err := googleadk.CheckEmbeddingsSupport(); err != nil {
+	// Embedding conformance is not available through the current ADK lifecycle.
+}
+```
+
 ## Install
 
 ```bash

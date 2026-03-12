@@ -3,6 +3,7 @@ package googleadk_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -217,6 +218,16 @@ func TestConformance_StreamingRunTriggersGenerationExport(t *testing.T) {
 	metadata := objectValue(t, generation, "metadata")
 	requireStringField(t, metadata, "sigil.framework.run_id", "run-stream")
 	requireStringField(t, metadata, "sigil.framework.run_type", "chat")
+}
+
+func TestConformance_EmbeddingSupportStatus(t *testing.T) {
+	err := googleadk.CheckEmbeddingsSupport()
+	if err == nil {
+		t.Fatalf("expected Google ADK embeddings to remain unsupported")
+	}
+	if !errors.Is(err, googleadk.ErrEmbeddingsUnsupported) {
+		t.Fatalf("expected ErrEmbeddingsUnsupported, got %v", err)
+	}
 }
 
 func TestConformance_ToolCallOutputsAndToolLifecycleStayObservable(t *testing.T) {
