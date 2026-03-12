@@ -8,6 +8,20 @@ Sigil records normalized LLM generation and tool-execution telemetry using your 
 pnpm add @grafana/sigil-sdk-js
 ```
 
+## Validation
+
+Run the shared core conformance suite for the JavaScript SDK from the repo root:
+
+```bash
+mise run test:ts:sdk-conformance
+```
+
+Run the cross-language aggregate core conformance suite from the repo root:
+
+```bash
+mise run sdk:conformance
+```
+
 ## Quick Start
 
 ```ts
