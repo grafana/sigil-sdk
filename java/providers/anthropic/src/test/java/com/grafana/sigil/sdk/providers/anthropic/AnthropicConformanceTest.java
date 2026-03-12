@@ -25,7 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
-class AnthropicAdapterTest {
+class AnthropicConformanceTest {
     @Test
     void syncAndStreamWrappersSetAnthropicProviderAndModes() throws Exception {
         CapturingExporter exporter = new CapturingExporter();
@@ -103,6 +103,13 @@ class AnthropicAdapterTest {
 
         assertThat(exporter.generations).hasSize(1);
         assertThat(exporter.generations.get(0).getCallError()).contains("anthropic failed");
+    }
+
+    @Test
+    void embeddingConformanceIsExplicitlyUnsupportedWithoutPublicSurface() {
+        assertThat(AnthropicAdapter.class).isNotNull();
+        assertThatThrownBy(() -> Class.forName("com.grafana.sigil.sdk.providers.anthropic.AnthropicEmbeddings"))
+                .isInstanceOf(ClassNotFoundException.class);
     }
 
     @Test

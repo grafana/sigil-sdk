@@ -8,6 +8,7 @@ This module maps Google ADK callback/interceptor lifecycles to Sigil generation 
 - Optional lineage metadata (`run_id`, `thread_id`, `parent_run_id`, `event_id`)
 - SYNC and STREAM lifecycle support
 - Tool lifecycle support
+- Explicit embeddings unsupported contract via `SigilGoogleAdkAdapter.checkEmbeddingsSupport()`
 
 ## Install
 

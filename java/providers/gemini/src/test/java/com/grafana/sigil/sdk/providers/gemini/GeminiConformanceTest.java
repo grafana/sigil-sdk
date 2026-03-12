@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 
-class GeminiAdapterTest {
+class GeminiConformanceTest {
     @Test
     void syncAndStreamWrappersSetGeminiProviderAndModes() throws Exception {
         CapturingExporter exporter = new CapturingExporter();

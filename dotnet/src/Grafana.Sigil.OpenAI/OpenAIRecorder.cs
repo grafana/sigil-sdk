@@ -228,7 +228,7 @@ public static class OpenAIRecorder
         }
 
         var effective = options ?? new OpenAISigilOptions();
-        var modelName = ResolveInitialModelName(effective, provider.Model);
+        var modelName = ResolveInitialModelName(effective, provider.GetType().GetProperty("Model")?.GetValue(provider) as string);
 
         return await CreateResponseAsync(
             client,
@@ -333,7 +333,7 @@ public static class OpenAIRecorder
         }
 
         var effective = options ?? new OpenAISigilOptions();
-        var modelName = ResolveInitialModelName(effective, provider.Model);
+        var modelName = ResolveInitialModelName(effective, provider.GetType().GetProperty("Model")?.GetValue(provider) as string);
 
         return await CreateResponseStreamingAsync(
             client,
