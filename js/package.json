@@ -72,7 +72,7 @@
     "openai": "^6.27.0"
   },
   "devDependencies": {
-    "@opentelemetry/context-async-hooks": "^2.5.1",
+    "@opentelemetry/context-async-hooks": "^2.6.0",
     "@types/node": "^24.11.0",
     "typescript": "^5.9.3"
   }
