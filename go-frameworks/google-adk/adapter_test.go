@@ -404,6 +404,8 @@ func TestOnToolStartPropagatesToolCallFields(t *testing.T) {
 		ToolType:        "function",
 		ToolDescription: "Look up weather",
 		Arguments:       map[string]any{"city": "Paris"},
+		ModelName:       "gpt-5",
+		Provider:        "openai",
 	}); err != nil {
 		t.Fatalf("tool start: %v", err)
 	}
@@ -420,9 +422,93 @@ func TestOnToolStartPropagatesToolCallFields(t *testing.T) {
 	if captured.ConversationID != "session-42" {
 		t.Fatalf("expected conversation propagation, got %q", captured.ConversationID)
 	}
+	if captured.RequestModel != "gpt-5" {
+		t.Fatalf("expected request model propagation, got %q", captured.RequestModel)
+	}
+	if captured.RequestProvider != "openai" {
+		t.Fatalf("expected request provider propagation, got %q", captured.RequestProvider)
+	}
 
 	if err := adapter.OnToolEnd("tool-propagation", ToolEndEvent{CompletedAt: time.Now().UTC()}); err != nil {
 		t.Fatalf("tool end: %v", err)
+	}
+}
+
+func TestOnToolStartResolvesModelAndProvider(t *testing.T) {
+	tests := []struct {
+		name            string
+		adapterProvider string
+		eventModelName  string
+		eventProvider   string
+		wantModel       string
+		wantProvider    string
+	}{
+		{
+			name:           "explicit event provider and model",
+			eventModelName: "claude-4",
+			eventProvider:  "anthropic",
+			wantModel:      "claude-4",
+			wantProvider:   "anthropic",
+		},
+		{
+			name:            "adapter-level provider fallback",
+			adapterProvider: "openai",
+			eventModelName:  "gpt-5",
+			wantModel:       "gpt-5",
+			wantProvider:    "openai",
+		},
+		{
+			name:           "inferred provider from model name",
+			eventModelName: "gemini-2.0-flash",
+			wantModel:      "gemini-2.0-flash",
+			wantProvider:   "gemini",
+		},
+		{
+			name:         "unknown model defaults",
+			wantModel:    "unknown",
+			wantProvider: "custom",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := sigil.DefaultConfig()
+			cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolNone
+			client := sigil.NewClient(cfg)
+			t.Cleanup(func() {
+				_ = client.Shutdown(context.Background())
+			})
+
+			adapter := NewSigilAdapter(client, Options{Provider: tt.adapterProvider})
+
+			var captured sigil.ToolExecutionStart
+			adapter.startTool = func(ctx context.Context, start sigil.ToolExecutionStart) *sigil.ToolExecutionRecorder {
+				captured = start
+				_, rec := client.StartToolExecution(ctx, start)
+				return rec
+			}
+
+			if err := adapter.OnToolStart(context.Background(), ToolStartEvent{
+				RunID:     "tool-resolve-" + tt.name,
+				SessionID: "session-42",
+				ToolName:  "lookup",
+				ModelName: tt.eventModelName,
+				Provider:  tt.eventProvider,
+			}); err != nil {
+				t.Fatalf("tool start: %v", err)
+			}
+
+			if captured.RequestModel != tt.wantModel {
+				t.Fatalf("expected request model %q, got %q", tt.wantModel, captured.RequestModel)
+			}
+			if captured.RequestProvider != tt.wantProvider {
+				t.Fatalf("expected request provider %q, got %q", tt.wantProvider, captured.RequestProvider)
+			}
+
+			if err := adapter.OnToolEnd("tool-resolve-"+tt.name, ToolEndEvent{CompletedAt: time.Now().UTC()}); err != nil {
+				t.Fatalf("tool end: %v", err)
+			}
+		})
 	}
 }
 
