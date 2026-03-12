@@ -458,6 +458,29 @@ func TestResponsesFromStream(t *testing.T) {
 				Delta: " world",
 			},
 			{
+				Type: "response.output_item.added",
+				Item: oresponses.ResponseOutputItemUnion{
+					ID:     "fc_1",
+					Type:   "function_call",
+					CallID: "call_weather",
+					Name:   "weather",
+				},
+				OutputIndex: 1,
+			},
+			{
+				Type:        "response.function_call_arguments.delta",
+				ItemID:      "fc_1",
+				OutputIndex: 1,
+				Delta:       `{"city":"Pa`,
+			},
+			{
+				Type:        "response.function_call_arguments.done",
+				ItemID:      "fc_1",
+				OutputIndex: 1,
+				Name:        "weather",
+				Arguments:   `{"city":"Paris"}`,
+			},
+			{
 				Type: "response.completed",
 			},
 		},
@@ -480,11 +503,23 @@ func TestResponsesFromStream(t *testing.T) {
 	if generation.MaxTokens == nil || *generation.MaxTokens != 128 {
 		t.Fatalf("expected max tokens 128, got %v", generation.MaxTokens)
 	}
-	if len(generation.Output) != 1 {
-		t.Fatalf("expected one output message, got %d", len(generation.Output))
+	if len(generation.Output) != 2 {
+		t.Fatalf("expected text and tool-call output messages, got %d", len(generation.Output))
 	}
 	if generation.Output[0].Parts[0].Text != "hello world" {
 		t.Fatalf("expected merged stream output, got %q", generation.Output[0].Parts[0].Text)
+	}
+	if generation.Output[1].Parts[0].Kind != sigil.PartKindToolCall {
+		t.Fatalf("expected tool call output, got %#v", generation.Output[1].Parts[0])
+	}
+	if generation.Output[1].Parts[0].ToolCall.ID != "call_weather" {
+		t.Fatalf("expected tool call id call_weather, got %q", generation.Output[1].Parts[0].ToolCall.ID)
+	}
+	if generation.Output[1].Parts[0].ToolCall.Name != "weather" {
+		t.Fatalf("expected tool call name weather, got %q", generation.Output[1].Parts[0].ToolCall.Name)
+	}
+	if string(generation.Output[1].Parts[0].ToolCall.InputJSON) != `{"city":"Paris"}` {
+		t.Fatalf("expected tool call input JSON, got %q", string(generation.Output[1].Parts[0].ToolCall.InputJSON))
 	}
 	if len(generation.Artifacts) != 2 {
 		t.Fatalf("expected request and provider_event artifacts, got %d", len(generation.Artifacts))

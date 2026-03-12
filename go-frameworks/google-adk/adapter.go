@@ -86,7 +86,9 @@ type ToolStartEvent struct {
 	SessionID       string
 	GroupID         string
 	ThreadID        string
+	ToolCallID      string
 	ToolName        string
+	ToolType        string
 	ToolDescription string
 	Arguments       any
 }
@@ -392,6 +394,8 @@ func (a *Adapter) OnToolStart(ctx context.Context, event ToolStartEvent) error {
 
 	rec := a.startTool(ctx, sigil.ToolExecutionStart{
 		ToolName:        strings.TrimSpace(event.ToolName),
+		ToolCallID:      strings.TrimSpace(event.ToolCallID),
+		ToolType:        strings.TrimSpace(event.ToolType),
 		ToolDescription: strings.TrimSpace(event.ToolDescription),
 		ConversationID:  conversationID,
 		AgentName:       strings.TrimSpace(a.opts.AgentName),

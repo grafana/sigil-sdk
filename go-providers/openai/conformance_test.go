@@ -132,6 +132,18 @@ func TestConformance_OpenAIResponsesStreamMapping(t *testing.T) {
 	if got := sigiltest.StringValue(t, exported, "output", 0, "parts", 0, "text"); got != "checking weather" {
 		t.Fatalf("unexpected streamed output text: got %q want %q", got, "checking weather")
 	}
+	if got := sigiltest.StringValue(t, exported, "output", 1, "parts", 0, "metadata", "provider_type"); got != "tool_call" {
+		t.Fatalf("unexpected streamed tool call provider_type: got %q want %q", got, "tool_call")
+	}
+	if got := sigiltest.StringValue(t, exported, "output", 1, "parts", 0, "tool_call", "id"); got != "call_weather" {
+		t.Fatalf("unexpected streamed tool_call.id: got %q want %q", got, "call_weather")
+	}
+	if got := sigiltest.StringValue(t, exported, "output", 1, "parts", 0, "tool_call", "name"); got != "weather" {
+		t.Fatalf("unexpected streamed tool_call.name: got %q want %q", got, "weather")
+	}
+	if got := sigiltest.StringValue(t, exported, "output", 1, "parts", 0, "tool_call", "input_json"); got != "eyJjaXR5IjoiUGFyaXMifQ==" {
+		t.Fatalf("unexpected streamed tool_call.input_json: got %q want %q", got, "eyJjaXR5IjoiUGFyaXMifQ==")
+	}
 	if got := sigiltest.StringValue(t, exported, "usage", "total_tokens"); got != "26" {
 		t.Fatalf("unexpected usage.total_tokens: got %q want %q", got, "26")
 	}
@@ -284,6 +296,29 @@ func openAIResponsesStreamSummary() ResponsesStreamSummary {
 			{
 				Type:  "response.output_text.delta",
 				Delta: "weather",
+			},
+			{
+				Type: "response.output_item.added",
+				Item: oresponses.ResponseOutputItemUnion{
+					ID:     "fc_1",
+					Type:   "function_call",
+					CallID: "call_weather",
+					Name:   "weather",
+				},
+				OutputIndex: 1,
+			},
+			{
+				Type:        "response.function_call_arguments.delta",
+				ItemID:      "fc_1",
+				OutputIndex: 1,
+				Delta:       `{"city":"Pa`,
+			},
+			{
+				Type:        "response.function_call_arguments.done",
+				ItemID:      "fc_1",
+				OutputIndex: 1,
+				Name:        "weather",
+				Arguments:   `{"city":"Paris"}`,
 			},
 			{
 				Type: "response.completed",

@@ -23,6 +23,7 @@ import (
 const (
 	metricOperationDuration = "gen_ai.client.operation.duration"
 	metricTimeToFirstToken  = "gen_ai.client.time_to_first_token"
+	metricToolCallsPerOp    = "gen_ai.client.tool_calls_per_operation"
 	spanAttrOperationName   = "gen_ai.operation.name"
 	spanAttrConversationID  = "gen_ai.conversation.id"
 	spanAttrAgentName       = "gen_ai.agent.name"
@@ -30,6 +31,9 @@ const (
 	spanAttrProviderName    = "gen_ai.provider.name"
 	spanAttrRequestModel    = "gen_ai.request.model"
 	spanAttrResponseModel   = "gen_ai.response.model"
+	spanAttrToolName        = "gen_ai.tool.name"
+	spanAttrToolCallID      = "gen_ai.tool.call.id"
+	spanAttrToolType        = "gen_ai.tool.type"
 )
 
 func TestConformance_RunLifecyclePropagatesFrameworkMetadataAndLinksSpans(t *testing.T) {
@@ -213,6 +217,125 @@ func TestConformance_StreamingRunTriggersGenerationExport(t *testing.T) {
 	metadata := objectValue(t, generation, "metadata")
 	requireStringField(t, metadata, "sigil.framework.run_id", "run-stream")
 	requireStringField(t, metadata, "sigil.framework.run_type", "chat")
+}
+
+func TestConformance_ToolCallOutputsAndToolLifecycleStayObservable(t *testing.T) {
+	env := newConformanceEnv(t, googleadk.Options{
+		AgentName:    "planner",
+		AgentVersion: "2026.03.12",
+	})
+
+	if err := env.Callbacks.OnRunStart(context.Background(), googleadk.RunStartEvent{
+		RunID:     "run-tool-call",
+		SessionID: "session-tool-call",
+		ModelName: "gpt-5",
+		RunType:   "chat",
+		Prompts:   []string{"Look up the weather in Paris"},
+	}); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+
+	if err := env.Callbacks.OnRunEnd("run-tool-call", googleadk.RunEndEvent{
+		RunID: "run-tool-call",
+		OutputMessages: []sigil.Message{
+			{
+				Role: sigil.RoleAssistant,
+				Name: "assistant",
+				Parts: []sigil.Part{
+					sigil.TextPart("Calling weather lookup."),
+					sigil.ToolCallPart(sigil.ToolCall{
+						ID:        "call-weather",
+						Name:      "weather.lookup",
+						InputJSON: []byte(`{"city":"Paris"}`),
+					}),
+				},
+			},
+			{
+				Role: sigil.RoleTool,
+				Name: "weather.lookup",
+				Parts: []sigil.Part{
+					sigil.ToolResultPart(sigil.ToolResult{
+						ToolCallID:  "call-weather",
+						Name:        "weather.lookup",
+						Content:     "18C",
+						ContentJSON: []byte(`{"temp_c":18}`),
+					}),
+				},
+			},
+		},
+		ResponseModel: "gpt-5",
+		StopReason:    "tool_calls",
+		Usage: sigil.TokenUsage{
+			InputTokens:  8,
+			OutputTokens: 3,
+			TotalTokens:  11,
+		},
+	}); err != nil {
+		t.Fatalf("run end: %v", err)
+	}
+
+	if err := env.Callbacks.OnToolStart(context.Background(), googleadk.ToolStartEvent{
+		RunID:           "tool-call-span",
+		SessionID:       "session-tool-call",
+		ToolCallID:      "call-weather",
+		ToolName:        "weather.lookup",
+		ToolType:        "function",
+		ToolDescription: "Look up weather",
+		Arguments:       map[string]any{"city": "Paris"},
+	}); err != nil {
+		t.Fatalf("tool start: %v", err)
+	}
+	if err := env.Callbacks.OnToolEnd("tool-call-span", googleadk.ToolEndEvent{
+		Result:      map[string]any{"temp_c": 18},
+		CompletedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("tool end: %v", err)
+	}
+
+	metrics := env.CollectMetrics(t)
+	toolCalls := findHistogram[int64](t, metrics, metricToolCallsPerOp)
+	if len(toolCalls.DataPoints) != 1 {
+		t.Fatalf("expected one %s datapoint, got %d", metricToolCallsPerOp, len(toolCalls.DataPoints))
+	}
+	if toolCalls.DataPoints[0].Sum != 1 {
+		t.Fatalf("expected %s sum=1, got %d", metricToolCallsPerOp, toolCalls.DataPoints[0].Sum)
+	}
+
+	env.Shutdown(t)
+
+	generation := env.Export.SingleGeneration(t)
+	output := arrayValue(t, generation, "output")
+	if len(output) != 2 {
+		t.Fatalf("expected assistant tool call plus tool result output messages, got %d", len(output))
+	}
+
+	assistant := asObject(t, output[0], "output[0]")
+	assistantParts := arrayValue(t, assistant, "parts")
+	if len(assistantParts) != 2 {
+		t.Fatalf("expected assistant text + tool call parts, got %d", len(assistantParts))
+	}
+	toolCallPart := asObject(t, assistantParts[1], "output[0].parts[1]")
+	toolCall := objectValue(t, toolCallPart, "tool_call")
+	requireStringField(t, toolCall, "id", "call-weather")
+	requireStringField(t, toolCall, "name", "weather.lookup")
+	requireStringField(t, toolCall, "input_json", "eyJjaXR5IjoiUGFyaXMifQ==")
+
+	toolMessage := asObject(t, output[1], "output[1]")
+	toolParts := arrayValue(t, toolMessage, "parts")
+	if len(toolParts) != 1 {
+		t.Fatalf("expected one tool result part, got %d", len(toolParts))
+	}
+	toolResultPart := asObject(t, toolParts[0], "output[1].parts[0]")
+	toolResult := objectValue(t, toolResultPart, "tool_result")
+	requireStringField(t, toolResult, "tool_call_id", "call-weather")
+	requireStringField(t, toolResult, "name", "weather.lookup")
+
+	toolSpan := findSpanByOperationName(t, env.Spans.Ended(), "execute_tool")
+	toolAttrs := spanAttrs(toolSpan)
+	requireSpanAttr(t, toolAttrs, spanAttrToolName, "weather.lookup")
+	requireSpanAttr(t, toolAttrs, spanAttrToolCallID, "call-weather")
+	requireSpanAttr(t, toolAttrs, spanAttrToolType, "function")
+	requireSpanAttr(t, toolAttrs, spanAttrConversationID, "session-tool-call")
 }
 
 type conformanceEnv struct {

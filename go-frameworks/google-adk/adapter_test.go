@@ -376,6 +376,56 @@ func TestOnToolStartDropsArgumentsWhenCaptureInputsDisabled(t *testing.T) {
 	}
 }
 
+func TestOnToolStartPropagatesToolCallFields(t *testing.T) {
+	cfg := sigil.DefaultConfig()
+	cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolNone
+	client := sigil.NewClient(cfg)
+	t.Cleanup(func() {
+		_ = client.Shutdown(context.Background())
+	})
+
+	adapter := NewSigilAdapter(client, Options{
+		AgentName:    "adk-agent",
+		AgentVersion: "1.0.0",
+	})
+
+	var captured sigil.ToolExecutionStart
+	adapter.startTool = func(ctx context.Context, start sigil.ToolExecutionStart) *sigil.ToolExecutionRecorder {
+		captured = start
+		_, rec := client.StartToolExecution(ctx, start)
+		return rec
+	}
+
+	if err := adapter.OnToolStart(context.Background(), ToolStartEvent{
+		RunID:           "tool-propagation",
+		SessionID:       "session-42",
+		ToolCallID:      "call-weather",
+		ToolName:        "weather.lookup",
+		ToolType:        "function",
+		ToolDescription: "Look up weather",
+		Arguments:       map[string]any{"city": "Paris"},
+	}); err != nil {
+		t.Fatalf("tool start: %v", err)
+	}
+
+	if captured.ToolCallID != "call-weather" {
+		t.Fatalf("expected tool call id propagation, got %q", captured.ToolCallID)
+	}
+	if captured.ToolType != "function" {
+		t.Fatalf("expected tool type propagation, got %q", captured.ToolType)
+	}
+	if captured.ToolName != "weather.lookup" {
+		t.Fatalf("expected tool name propagation, got %q", captured.ToolName)
+	}
+	if captured.ConversationID != "session-42" {
+		t.Fatalf("expected conversation propagation, got %q", captured.ConversationID)
+	}
+
+	if err := adapter.OnToolEnd("tool-propagation", ToolEndEvent{CompletedAt: time.Now().UTC()}); err != nil {
+		t.Fatalf("tool end: %v", err)
+	}
+}
+
 func TestBuildFrameworkMetadataNormalizesStructAndPointerValues(t *testing.T) {
 	type metadataDetails struct {
 		Enabled bool `json:"enabled"`
