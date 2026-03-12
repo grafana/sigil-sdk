@@ -2,9 +2,14 @@ package sigil_test
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
 	"testing"
+	"time"
 
 	sigil "github.com/grafana/sigil/sdks/go/sigil"
+	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
 )
 
 func TestConformance_ConversationTitleSemantics(t *testing.T) {
@@ -260,6 +265,280 @@ func TestConformance_AgentIdentitySemantics(t *testing.T) {
 				t.Fatalf("unexpected proto agent_version: got %q want %q", got, tc.wantVersion)
 			}
 		})
+	}
+}
+
+func TestConformance_StreamingModeSemantics(t *testing.T) {
+	env := newConformanceEnv(t)
+
+	_, recorder := env.Client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
+		ConversationID: "conv-stream",
+		Model:          conformanceModel,
+	})
+	recorder.SetFirstTokenAt(time.Now())
+	recorder.SetResult(sigil.Generation{
+		Input:  []sigil.Message{sigil.UserTextMessage("Say hello")},
+		Output: []sigil.Message{sigil.AssistantTextMessage("Hello world")},
+		Usage:  sigil.TokenUsage{InputTokens: 5, OutputTokens: 2},
+	}, nil)
+	recorder.End()
+	if err := recorder.Err(); err != nil {
+		t.Fatalf("record streaming generation: %v", err)
+	}
+
+	metrics := env.CollectMetrics(t)
+	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for streaming conformance", metricOperationDuration)
+	}
+	if len(findHistogram[float64](t, metrics, metricTimeToFirstToken).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for streaming conformance", metricTimeToFirstToken)
+	}
+
+	env.Shutdown(t)
+
+	generation := env.Ingest.SingleGeneration(t)
+	if generation.GetMode() != sigilv1.GenerationMode_GENERATION_MODE_STREAM {
+		t.Fatalf("expected streamed proto mode, got %s", generation.GetMode())
+	}
+	if generation.GetOperationName() != "streamText" {
+		t.Fatalf("expected streamed operation streamText, got %q", generation.GetOperationName())
+	}
+	if len(generation.GetOutput()) != 1 || len(generation.GetOutput()[0].GetParts()) != 1 {
+		t.Fatalf("expected a single streamed assistant output, got %#v", generation.GetOutput())
+	}
+	if got := generation.GetOutput()[0].GetParts()[0].GetText(); got != "Hello world" {
+		t.Fatalf("unexpected streamed assistant text: got %q want %q", got, "Hello world")
+	}
+
+	span := findSpan(t, env.Spans.Ended(), "streamText")
+	if span.Name() != "streamText gpt-5" {
+		t.Fatalf("unexpected streaming span name: %q", span.Name())
+	}
+}
+
+func TestConformance_ToolExecutionSemantics(t *testing.T) {
+	env := newConformanceEnv(t)
+
+	_, recorder := env.Client.StartToolExecution(context.Background(), sigil.ToolExecutionStart{
+		ToolName:          "weather",
+		ToolCallID:        "call-weather",
+		ToolType:          "function",
+		ToolDescription:   "Get weather for a city",
+		ConversationID:    "conv-tools",
+		ConversationTitle: "Weather lookup",
+		AgentName:         "assistant-core",
+		AgentVersion:      "2026.03.12",
+		IncludeContent:    true,
+	})
+	recorder.SetResult(sigil.ToolExecutionEnd{
+		Arguments: map[string]any{"city": "Paris"},
+		Result:    map[string]any{"temp_c": 18},
+	})
+	recorder.End()
+	if err := recorder.Err(); err != nil {
+		t.Fatalf("record tool execution: %v", err)
+	}
+
+	metrics := env.CollectMetrics(t)
+	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for tool execution", metricOperationDuration)
+	}
+	requireNoHistogram(t, metrics, metricTimeToFirstToken)
+	if got := env.Ingest.RequestCount(); got != 0 {
+		t.Fatalf("expected no generation exports for tool execution, got %d", got)
+	}
+
+	span := findSpan(t, env.Spans.Ended(), "execute_tool")
+	attrs := spanAttrs(span)
+	requireSpanAttr(t, attrs, spanAttrToolName, "weather")
+	requireSpanAttr(t, attrs, spanAttrToolCallID, "call-weather")
+	requireSpanAttr(t, attrs, spanAttrToolType, "function")
+	requireSpanAttr(t, attrs, spanAttrConversationTitle, "Weather lookup")
+	requireSpanAttr(t, attrs, spanAttrAgentName, "assistant-core")
+	requireSpanAttr(t, attrs, spanAttrAgentVersion, "2026.03.12")
+	requireSpanAttr(t, attrs, spanAttrToolCallArguments, `{"city":"Paris"}`)
+	requireSpanAttr(t, attrs, spanAttrToolCallResult, `{"temp_c":18}`)
+
+	env.Shutdown(t)
+	if got := env.Ingest.RequestCount(); got != 0 {
+		t.Fatalf("expected no generation exports after tool shutdown, got %d", got)
+	}
+}
+
+func TestConformance_EmbeddingSemantics(t *testing.T) {
+	env := newConformanceEnv(t)
+	dimensions := int64(256)
+
+	_, recorder := env.Client.StartEmbedding(context.Background(), sigil.EmbeddingStart{
+		Model:          sigil.ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+		AgentName:      "agent-embed",
+		AgentVersion:   "v-embed",
+		Dimensions:     &dimensions,
+		EncodingFormat: "float",
+	})
+	recorder.SetResult(sigil.EmbeddingResult{
+		InputCount:    2,
+		InputTokens:   120,
+		ResponseModel: "text-embedding-3-small",
+		Dimensions:    &dimensions,
+	})
+	recorder.End()
+	if err := recorder.Err(); err != nil {
+		t.Fatalf("record embedding: %v", err)
+	}
+
+	metrics := env.CollectMetrics(t)
+	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for embeddings", metricOperationDuration)
+	}
+	if len(findHistogram[int64](t, metrics, metricTokenUsage).DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints for embeddings", metricTokenUsage)
+	}
+	requireNoHistogram(t, metrics, metricTimeToFirstToken)
+	requireNoHistogram(t, metrics, metricToolCallsPerOperation)
+	if got := env.Ingest.RequestCount(); got != 0 {
+		t.Fatalf("expected no generation exports for embeddings, got %d", got)
+	}
+
+	span := findSpan(t, env.Spans.Ended(), "embeddings")
+	attrs := spanAttrs(span)
+	requireSpanAttr(t, attrs, spanAttrAgentName, "agent-embed")
+	requireSpanAttr(t, attrs, spanAttrAgentVersion, "v-embed")
+	if got := attrs[spanAttrEmbeddingInputCount].AsInt64(); got != 2 {
+		t.Fatalf("unexpected embedding input count: got %d want %d", got, 2)
+	}
+	if got := attrs[spanAttrEmbeddingDimCount].AsInt64(); got != dimensions {
+		t.Fatalf("unexpected embedding dimension count: got %d want %d", got, dimensions)
+	}
+
+	env.Shutdown(t)
+	if got := env.Ingest.RequestCount(); got != 0 {
+		t.Fatalf("expected no generation exports after embedding shutdown, got %d", got)
+	}
+}
+
+func TestConformance_ValidationAndErrorSemantics(t *testing.T) {
+	t.Run("validation failures stay local and unexported", func(t *testing.T) {
+		env := newConformanceEnv(t)
+
+		_, recorder := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
+			ConversationID: "conv-validation",
+			Model:          conformanceModel,
+		})
+		recorder.SetResult(sigil.Generation{
+			Input:  []sigil.Message{{Role: sigil.RoleUser}},
+			Output: []sigil.Message{sigil.AssistantTextMessage("ok")},
+		}, nil)
+		recorder.End()
+
+		err := recorder.Err()
+		if err == nil {
+			t.Fatalf("expected validation error")
+		}
+		if !errors.Is(err, sigil.ErrValidationFailed) {
+			t.Fatalf("expected ErrValidationFailed, got %v", err)
+		}
+
+		span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+		attrs := spanAttrs(span)
+		requireSpanAttr(t, attrs, spanAttrErrorType, "validation_error")
+
+		env.Shutdown(t)
+		if got := env.Ingest.RequestCount(); got != 0 {
+			t.Fatalf("expected no generation exports for validation failure, got %d", got)
+		}
+	})
+
+	t.Run("provider call errors export call error metadata", func(t *testing.T) {
+		env := newConformanceEnv(t)
+
+		_, recorder := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
+			ConversationID: "conv-call-error",
+			Model:          conformanceModel,
+		})
+		recorder.SetCallError(errors.New("provider unavailable"))
+		recorder.End()
+		if err := recorder.Err(); err != nil {
+			t.Fatalf("expected nil local error for provider call failure, got %v", err)
+		}
+
+		span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+		attrs := spanAttrs(span)
+		requireSpanAttr(t, attrs, spanAttrErrorType, "provider_call_error")
+
+		env.Shutdown(t)
+
+		generation := env.Ingest.SingleGeneration(t)
+		if got := generation.GetCallError(); got != "provider unavailable" {
+			t.Fatalf("unexpected proto call error: got %q want %q", got, "provider unavailable")
+		}
+		requireProtoMetadata(t, generation, "call_error", "provider unavailable")
+	})
+}
+
+func TestConformance_RatingSubmissionSemantics(t *testing.T) {
+	env := newConformanceEnv(t)
+
+	response, err := env.Client.SubmitConversationRating(context.Background(), "conv-1", sigil.ConversationRatingInput{
+		RatingID: "rat-1",
+		Rating:   sigil.ConversationRatingValueGood,
+		Comment:  "helpful",
+		Metadata: map[string]any{"channel": "assistant"},
+	})
+	if err != nil {
+		t.Fatalf("submit rating: %v", err)
+	}
+
+	request := env.Rating.SingleRequest(t)
+	if request.Method != http.MethodPost {
+		t.Fatalf("expected POST rating request, got %s", request.Method)
+	}
+	if request.Path != "/api/v1/conversations/conv-1/ratings" {
+		t.Fatalf("unexpected rating request path: %s", request.Path)
+	}
+
+	var body sigil.ConversationRatingInput
+	if err := json.Unmarshal(request.Body, &body); err != nil {
+		t.Fatalf("decode rating request body: %v", err)
+	}
+	if body.RatingID != "rat-1" || body.Rating != sigil.ConversationRatingValueGood {
+		t.Fatalf("unexpected rating request body: %#v", body)
+	}
+	if got := body.Metadata["channel"]; got != "assistant" {
+		t.Fatalf("expected rating metadata channel=assistant, got %#v", got)
+	}
+	if response == nil || response.Rating.ConversationID != "conv-1" {
+		t.Fatalf("unexpected rating response: %#v", response)
+	}
+}
+
+func TestConformance_ShutdownFlushSemantics(t *testing.T) {
+	env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+		cfg.GenerationExport.BatchSize = 8
+		cfg.GenerationExport.QueueSize = 8
+		cfg.GenerationExport.FlushInterval = time.Hour
+	}))
+
+	recordGeneration(t, env, context.Background(), sigil.GenerationStart{
+		ConversationID: "conv-shutdown",
+		Model:          conformanceModel,
+	}, sigil.Generation{
+		Input:  []sigil.Message{sigil.UserTextMessage("hello")},
+		Output: []sigil.Message{sigil.AssistantTextMessage("hi")},
+	})
+
+	if got := env.Ingest.RequestCount(); got != 0 {
+		t.Fatalf("expected no export before shutdown flush, got %d", got)
+	}
+
+	env.Shutdown(t)
+
+	if got := env.Ingest.RequestCount(); got != 1 {
+		t.Fatalf("expected one export after shutdown flush, got %d", got)
+	}
+	generation := env.Ingest.SingleGeneration(t)
+	if generation.GetConversationId() != "conv-shutdown" {
+		t.Fatalf("unexpected shutdown-flushed conversation id: %q", generation.GetConversationId())
 	}
 }
 
