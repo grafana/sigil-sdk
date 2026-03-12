@@ -180,12 +180,13 @@ func mapToolsToProto(tools []ToolDefinition) []*sigilv1.ToolDefinition {
 
 func mapUsageToProto(usage TokenUsage) *sigilv1.TokenUsage {
 	return &sigilv1.TokenUsage{
-		InputTokens:           usage.InputTokens,
-		OutputTokens:          usage.OutputTokens,
-		TotalTokens:           usage.TotalTokens,
-		CacheReadInputTokens:  usage.CacheReadInputTokens,
-		CacheWriteInputTokens: usage.CacheWriteInputTokens,
-		ReasoningTokens:       usage.ReasoningTokens,
+		InputTokens:              usage.InputTokens,
+		OutputTokens:             usage.OutputTokens,
+		TotalTokens:              usage.TotalTokens,
+		CacheReadInputTokens:     usage.CacheReadInputTokens,
+		CacheWriteInputTokens:    usage.CacheWriteInputTokens,
+		CacheCreationInputTokens: usage.CacheCreationInputTokens,
+		ReasoningTokens:          usage.ReasoningTokens,
 	}
 }
 

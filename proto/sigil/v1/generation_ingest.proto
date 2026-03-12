@@ -93,6 +93,7 @@ message TokenUsage {
   int64 cache_read_input_tokens = 4;
   int64 cache_write_input_tokens = 5;
   int64 reasoning_tokens = 6;
+  int64 cache_creation_input_tokens = 7;
 }
 
 enum ArtifactKind {
