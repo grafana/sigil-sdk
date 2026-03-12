@@ -33,6 +33,10 @@ Framework modules:
   - `ToolChoice`
   - `ThinkingEnabled`
 - `Message` contains typed parts: `text`, `thinking`, `tool_call`, `tool_result`.
+- Normalized `tool_result` correlation is provider-safe:
+  - Preserve `tool_result.tool_call_id` whenever the upstream provider exposes a stable per-call identifier.
+  - When the upstream surface omits a per-call ID, populate `tool_result.name` with the tool/function name as the fallback correlation key.
+  - Local validation requires at least one of `tool_result.tool_call_id` or `tool_result.name`.
 - `TokenUsage` includes token/cache/reasoning fields.
 - Raw provider `Artifacts` are optional debug payloads.
 

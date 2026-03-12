@@ -152,10 +152,68 @@ func TestFromRequestResponse(t *testing.T) {
 	for _, message := range generation.Input {
 		if message.Role == sigil.RoleTool {
 			hasToolRole = true
+			if len(message.Parts) != 1 || message.Parts[0].ToolResult == nil {
+				t.Fatalf("expected single tool_result part, got %#v", message.Parts)
+			}
+			if message.Parts[0].ToolResult.ToolCallID != "call_weather" {
+				t.Fatalf("expected tool_result tool_call_id call_weather, got %q", message.Parts[0].ToolResult.ToolCallID)
+			}
 		}
 	}
 	if !hasToolRole {
 		t.Fatalf("expected tool role message from tool result input")
+	}
+}
+
+func TestMapFunctionMessageUsesNameFallbackCorrelation(t *testing.T) {
+	//nolint:staticcheck // OpenAI still exposes deprecated function messages in the union surface we normalize.
+	part := mapFunctionMessage(&osdk.ChatCompletionFunctionMessageParam{
+		Name:    "weather",
+		Content: param.NewOpt("18C and sunny"),
+	})
+
+	if part == nil {
+		t.Fatalf("expected tool result part")
+	}
+	if part.ToolResult == nil {
+		t.Fatalf("expected tool result payload, got %#v", part)
+	}
+	if part.ToolResult.ToolCallID != "" {
+		t.Fatalf("expected empty legacy function-result tool_call_id, got %q", part.ToolResult.ToolCallID)
+	}
+	if part.ToolResult.Name != "weather" {
+		t.Fatalf("expected legacy function-result name fallback weather, got %q", part.ToolResult.Name)
+	}
+}
+
+func TestMapResponsesRequestInputUsesNameFallbackWhenCallIDMissing(t *testing.T) {
+	input, systemPrompt := mapResponsesRequestInput(map[string]any{
+		"input": []any{
+			map[string]any{
+				"type":   "function_call_output",
+				"name":   "weather",
+				"output": map[string]any{"temp_c": 18},
+			},
+		},
+	})
+
+	if systemPrompt != "" {
+		t.Fatalf("expected empty system prompt, got %q", systemPrompt)
+	}
+	if len(input) != 1 {
+		t.Fatalf("expected one input message, got %#v", input)
+	}
+	if input[0].Role != sigil.RoleTool {
+		t.Fatalf("expected tool role, got %q", input[0].Role)
+	}
+	if len(input[0].Parts) != 1 || input[0].Parts[0].ToolResult == nil {
+		t.Fatalf("expected single tool_result part, got %#v", input[0].Parts)
+	}
+	if input[0].Parts[0].ToolResult.ToolCallID != "" {
+		t.Fatalf("expected missing call id to stay empty, got %q", input[0].Parts[0].ToolResult.ToolCallID)
+	}
+	if input[0].Parts[0].ToolResult.Name != "weather" {
+		t.Fatalf("expected Responses fallback name weather, got %q", input[0].Parts[0].ToolResult.Name)
 	}
 }
 

@@ -172,6 +172,15 @@ func TestFromRequestResponse(t *testing.T) {
 	for _, message := range generation.Input {
 		if message.Role == sigil.RoleTool {
 			hasToolRole = true
+			if len(message.Parts) != 1 || message.Parts[0].ToolResult == nil {
+				t.Fatalf("expected single tool_result part, got %#v", message.Parts)
+			}
+			if message.Parts[0].ToolResult.ToolCallID != "" {
+				t.Fatalf("expected empty Gemini tool_call_id fallback, got %q", message.Parts[0].ToolResult.ToolCallID)
+			}
+			if message.Parts[0].ToolResult.Name != "weather" {
+				t.Fatalf("expected Gemini tool_result name weather, got %q", message.Parts[0].ToolResult.Name)
+			}
 		}
 	}
 	if !hasToolRole {

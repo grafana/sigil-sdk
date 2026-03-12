@@ -390,7 +390,8 @@ func mapResponsesRequestInput(payload map[string]any) ([]sigil.Message, string) 
 					continue
 				}
 				part := sigil.ToolResultPart(sigil.ToolResult{
-					ToolCallID:  fmt.Sprintf("%v", item["call_id"]),
+					ToolCallID:  responsesMapString(item, "call_id", "callId"),
+					Name:        responsesMapString(item, "name"),
 					Content:     content,
 					ContentJSON: parseJSONOrString(content),
 				})
@@ -648,4 +649,17 @@ func jsonValueText(value any) string {
 		return ""
 	}
 	return string(data)
+}
+
+func responsesMapString(item map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := item[key]
+		if !ok {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
 }

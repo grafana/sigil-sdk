@@ -125,6 +125,12 @@ func TestFromRequestResponse(t *testing.T) {
 	for _, message := range generation.Input {
 		if message.Role == sigil.RoleTool {
 			hasToolRole = true
+			if len(message.Parts) != 1 || message.Parts[0].ToolResult == nil {
+				t.Fatalf("expected single tool_result part, got %#v", message.Parts)
+			}
+			if message.Parts[0].ToolResult.ToolCallID != "toolu_1" {
+				t.Fatalf("expected Anthropic tool_result tool_call_id toolu_1, got %q", message.Parts[0].ToolResult.ToolCallID)
+			}
 		}
 	}
 	if !hasToolRole {

@@ -47,6 +47,38 @@ func TestValidateGenerationRolePartCompatibility(t *testing.T) {
 		}
 	})
 
+	t.Run("tool result requires correlation key", func(t *testing.T) {
+		g := cloneGeneration(base)
+		g.Input = append(g.Input, Message{
+			Role: RoleTool,
+			Parts: []Part{
+				ToolResultPart(ToolResult{Content: "sunny"}),
+			},
+		})
+
+		err := ValidateGeneration(g)
+		if err == nil {
+			t.Fatalf("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "tool_result.tool_call_id or name is required") {
+			t.Fatalf("expected correlation validation error, got %q", err.Error())
+		}
+	})
+
+	t.Run("tool result allows name fallback without tool call id", func(t *testing.T) {
+		g := cloneGeneration(base)
+		g.Input = append(g.Input, Message{
+			Role: RoleTool,
+			Parts: []Part{
+				ToolResultPart(ToolResult{Name: "weather", Content: "sunny"}),
+			},
+		})
+
+		if err := ValidateGeneration(g); err != nil {
+			t.Fatalf("expected valid generation, got %v", err)
+		}
+	})
+
 	t.Run("thinking only assistant", func(t *testing.T) {
 		g := cloneGeneration(base)
 		g.Input = append(g.Input, Message{
