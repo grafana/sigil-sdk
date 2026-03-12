@@ -89,12 +89,16 @@ Precedence:
 _ = callbacks.OnToolStart(ctx, googleadk.ToolStartEvent{
 	RunID:           "tool-1",
 	SessionID:       "session-42",
+	ToolCallID:      "call_lookup_customer",
 	ToolName:        "lookup_customer",
+	ToolType:        "function",
 	ToolDescription: "Lookup customer profile",
 	Arguments:       map[string]any{"customer_id": "42"},
 })
 _ = callbacks.OnToolEnd("tool-1", googleadk.ToolEndEvent{Result: map[string]any{"status": "ok"}})
 ```
+
+`ToolCallID` and `ToolType` are optional, but passing them lets the framework tool span line up with the assistant `tool_call` message part and emit `gen_ai.tool.call.id` / `gen_ai.tool.type`.
 
 ## Troubleshooting
 

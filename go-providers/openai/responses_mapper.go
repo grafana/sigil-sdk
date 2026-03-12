@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -117,6 +118,8 @@ func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStrea
 	usage := sigil.TokenUsage{}
 	stopReason := ""
 	text := strings.Builder{}
+	toolCalls := map[string]*responsesStreamToolCall{}
+	toolCallOrder := []string{}
 
 	for i := range summary.Events {
 		event := summary.Events[i]
@@ -146,6 +149,35 @@ func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStrea
 			if text.Len() == 0 && event.Refusal != "" {
 				text.WriteString(event.Refusal)
 			}
+		case "response.output_item.added", "response.output_item.done":
+			if event.Item.Type != "function_call" {
+				break
+			}
+			call := ensureResponsesStreamToolCall(toolCalls, &toolCallOrder, event.Item.ID, event.OutputIndex)
+			if call.callID == "" {
+				call.callID = strings.TrimSpace(event.Item.CallID)
+			}
+			if call.name == "" {
+				call.name = strings.TrimSpace(event.Item.Name)
+			}
+			if arguments := stringifyResponsesOutputArguments(event.Item.Arguments); arguments != "" {
+				call.arguments.Reset()
+				call.arguments.WriteString(arguments)
+			}
+		case "response.function_call_arguments.delta":
+			call := ensureResponsesStreamToolCall(toolCalls, &toolCallOrder, event.ItemID, event.OutputIndex)
+			if event.Delta != "" {
+				call.arguments.WriteString(event.Delta)
+			}
+		case "response.function_call_arguments.done":
+			call := ensureResponsesStreamToolCall(toolCalls, &toolCallOrder, event.ItemID, event.OutputIndex)
+			if name := strings.TrimSpace(event.Name); name != "" {
+				call.name = name
+			}
+			if event.Arguments != "" {
+				call.arguments.Reset()
+				call.arguments.WriteString(event.Arguments)
+			}
 		case "response.completed":
 			if stopReason == "" {
 				stopReason = "stop"
@@ -174,6 +206,7 @@ func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStrea
 	if generated := text.String(); generated != "" {
 		output = append(output, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart(generated)}})
 	}
+	output = append(output, mapResponsesStreamToolCalls(toolCalls, toolCallOrder)...)
 
 	artifacts := make([]sigil.Artifact, 0, 3)
 	if options.includeRequestArtifact {
@@ -227,6 +260,74 @@ func ResponsesFromStream(req responses.ResponseNewParams, summary ResponsesStrea
 	}
 
 	return generation, nil
+}
+
+type responsesStreamToolCall struct {
+	itemID      string
+	callID      string
+	name        string
+	outputIndex int64
+	order       int
+	arguments   strings.Builder
+}
+
+func ensureResponsesStreamToolCall(calls map[string]*responsesStreamToolCall, order *[]string, itemID string, outputIndex int64) *responsesStreamToolCall {
+	key := strings.TrimSpace(itemID)
+	if key == "" {
+		key = fmt.Sprintf("output-%d", outputIndex)
+	}
+	if existing, ok := calls[key]; ok {
+		if existing.outputIndex == 0 && outputIndex != 0 {
+			existing.outputIndex = outputIndex
+		}
+		return existing
+	}
+
+	call := &responsesStreamToolCall{
+		itemID:      key,
+		outputIndex: outputIndex,
+		order:       len(*order),
+	}
+	calls[key] = call
+	*order = append(*order, key)
+	return call
+}
+
+func mapResponsesStreamToolCalls(calls map[string]*responsesStreamToolCall, order []string) []sigil.Message {
+	if len(order) == 0 {
+		return nil
+	}
+
+	ordered := make([]*responsesStreamToolCall, 0, len(order))
+	for _, key := range order {
+		call := calls[key]
+		if call == nil || strings.TrimSpace(call.name) == "" {
+			continue
+		}
+		ordered = append(ordered, call)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].outputIndex == ordered[j].outputIndex {
+			return ordered[i].order < ordered[j].order
+		}
+		return ordered[i].outputIndex < ordered[j].outputIndex
+	})
+
+	out := make([]sigil.Message, 0, len(ordered))
+	for _, call := range ordered {
+		callID := strings.TrimSpace(call.callID)
+		if callID == "" {
+			callID = call.itemID
+		}
+		part := sigil.ToolCallPart(sigil.ToolCall{
+			ID:        callID,
+			Name:      call.name,
+			InputJSON: parseJSONOrString(call.arguments.String()),
+		})
+		part.Metadata.ProviderType = "tool_call"
+		out = append(out, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{part}})
+	}
+	return out
 }
 
 func appendResponsesStreamEventsArtifact(generation sigil.Generation, events []responses.ResponseStreamEventUnion, opts []Option) (sigil.Generation, error) {
