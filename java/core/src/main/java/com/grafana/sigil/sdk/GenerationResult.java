@@ -10,6 +10,8 @@ import java.util.Map;
 public class GenerationResult {
     private String id = "";
     private String conversationId = "";
+    private String conversationTitle = "";
+    private String userId = "";
     private String agentName = "";
     private String agentVersion = "";
     private GenerationMode mode;
@@ -50,6 +52,24 @@ public class GenerationResult {
 
     public GenerationResult setConversationId(String conversationId) {
         this.conversationId = conversationId == null ? "" : conversationId;
+        return this;
+    }
+
+    public String getConversationTitle() {
+        return conversationTitle;
+    }
+
+    public GenerationResult setConversationTitle(String conversationTitle) {
+        this.conversationTitle = conversationTitle == null ? "" : conversationTitle;
+        return this;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public GenerationResult setUserId(String userId) {
+        this.userId = userId == null ? "" : userId;
         return this;
     }
 
@@ -291,6 +311,8 @@ public class GenerationResult {
         GenerationResult out = new GenerationResult()
                 .setId(id)
                 .setConversationId(conversationId)
+                .setConversationTitle(conversationTitle)
+                .setUserId(userId)
                 .setAgentName(agentName)
                 .setAgentVersion(agentVersion)
                 .setMode(mode)

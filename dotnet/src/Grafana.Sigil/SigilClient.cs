@@ -20,6 +20,8 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrGenerationId = "sigil.generation.id";
     internal const string SpanAttrSdkName = "sigil.sdk.name";
     internal const string SpanAttrConversationId = "gen_ai.conversation.id";
+    internal const string SpanAttrConversationTitle = "sigil.conversation.title";
+    internal const string SpanAttrUserId = "user.id";
     internal const string SpanAttrAgentName = "gen_ai.agent.name";
     internal const string SpanAttrAgentVersion = "gen_ai.agent.version";
     internal const string SpanAttrErrorType = "error.type";
@@ -74,6 +76,8 @@ public sealed class SigilClient : IAsyncDisposable
 
     private static readonly Regex StatusCodeRegex = new(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled);
     internal const string SdkName = "sdk-dotnet";
+    internal const string MetadataUserIdKey = "sigil.user.id";
+    internal const string MetadataLegacyUserIdKey = "user.id";
 
     internal readonly SigilClientConfig _config;
     private readonly IGenerationExporter _generationExporter;
@@ -202,6 +206,11 @@ public sealed class SigilClient : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(seed.ConversationId))
         {
             seed.ConversationId = SigilContext.ConversationIdFromContext() ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(seed.ConversationTitle))
+        {
+            seed.ConversationTitle = SigilContext.ConversationTitleFromContext() ?? string.Empty;
         }
 
         if (string.IsNullOrWhiteSpace(seed.AgentName))
@@ -414,6 +423,16 @@ public sealed class SigilClient : IAsyncDisposable
             seed.ConversationId = SigilContext.ConversationIdFromContext() ?? string.Empty;
         }
 
+        if (string.IsNullOrWhiteSpace(seed.ConversationTitle))
+        {
+            seed.ConversationTitle = SigilContext.ConversationTitleFromContext() ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(seed.UserId))
+        {
+            seed.UserId = SigilContext.UserIdFromContext() ?? string.Empty;
+        }
+
         if (string.IsNullOrWhiteSpace(seed.AgentName))
         {
             seed.AgentName = SigilContext.AgentNameFromContext() ?? string.Empty;
@@ -443,6 +462,8 @@ public sealed class SigilClient : IAsyncDisposable
             {
                 Id = seed.Id,
                 ConversationId = seed.ConversationId,
+                ConversationTitle = seed.ConversationTitle,
+                UserId = seed.UserId,
                 AgentName = seed.AgentName,
                 AgentVersion = seed.AgentVersion,
                 Mode = seed.Mode,
@@ -1063,6 +1084,16 @@ public sealed class SigilClient : IAsyncDisposable
             activity.SetTag(SpanAttrConversationId, generation.ConversationId);
         }
 
+        if (!string.IsNullOrWhiteSpace(generation.ConversationTitle))
+        {
+            activity.SetTag(SpanAttrConversationTitle, generation.ConversationTitle);
+        }
+
+        if (!string.IsNullOrWhiteSpace(generation.UserId))
+        {
+            activity.SetTag(SpanAttrUserId, generation.UserId);
+        }
+
         if (!string.IsNullOrWhiteSpace(generation.AgentName))
         {
             activity.SetTag(SpanAttrAgentName, generation.AgentName);
@@ -1243,6 +1274,11 @@ public sealed class SigilClient : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(tool.ConversationId))
         {
             activity.SetTag(SpanAttrConversationId, tool.ConversationId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(tool.ConversationTitle))
+        {
+            activity.SetTag(SpanAttrConversationTitle, tool.ConversationTitle);
         }
 
         if (!string.IsNullOrWhiteSpace(tool.AgentName))
@@ -1941,6 +1977,8 @@ public sealed class GenerationRecorder
 
         generation.Id = FirstNonEmpty(generation.Id, _seed.Id, InternalUtils.NewRandomId("gen"));
         generation.ConversationId = FirstNonEmpty(generation.ConversationId, _seed.ConversationId);
+        generation.ConversationTitle = FirstNonEmpty(generation.ConversationTitle, _seed.ConversationTitle);
+        generation.UserId = FirstNonEmpty(generation.UserId, _seed.UserId);
         generation.AgentName = FirstNonEmpty(generation.AgentName, _seed.AgentName);
         generation.AgentVersion = FirstNonEmpty(generation.AgentVersion, _seed.AgentVersion);
         generation.Mode ??= _seed.Mode ?? GenerationMode.Sync;
@@ -1966,6 +2004,27 @@ public sealed class GenerationRecorder
 
         generation.Tags = Merge(_seed.Tags, generation.Tags);
         generation.Metadata = Merge(_seed.Metadata, generation.Metadata);
+
+        generation.ConversationTitle = FirstNonEmpty(
+            generation.ConversationTitle,
+            MetadataString(generation.Metadata, SigilClient.SpanAttrConversationTitle)
+        );
+        generation.ConversationTitle = NormalizeResolvedString(generation.ConversationTitle);
+        if (!string.IsNullOrWhiteSpace(generation.ConversationTitle))
+        {
+            generation.Metadata[SigilClient.SpanAttrConversationTitle] = generation.ConversationTitle;
+        }
+
+        generation.UserId = FirstNonEmpty(
+            generation.UserId,
+            MetadataString(generation.Metadata, SigilClient.MetadataUserIdKey),
+            MetadataString(generation.Metadata, SigilClient.MetadataLegacyUserIdKey)
+        );
+        generation.UserId = NormalizeResolvedString(generation.UserId);
+        if (!string.IsNullOrWhiteSpace(generation.UserId))
+        {
+            generation.Metadata[SigilClient.MetadataUserIdKey] = generation.UserId;
+        }
 
         generation.StartedAt = generation.StartedAt.HasValue
             ? InternalUtils.Utc(generation.StartedAt.Value)
@@ -2000,6 +2059,22 @@ public sealed class GenerationRecorder
         }
 
         return string.Empty;
+    }
+
+    private static string MetadataString(IReadOnlyDictionary<string, object?> metadata, string key)
+    {
+        if (!metadata.TryGetValue(key, out var value) || value == null)
+        {
+            return string.Empty;
+        }
+
+        var text = value.ToString()?.Trim() ?? string.Empty;
+        return text;
+    }
+
+    private static string NormalizeResolvedString(string value)
+    {
+        return value?.Trim() ?? string.Empty;
     }
 
     private static Dictionary<TKey, TValue> Merge<TKey, TValue>(

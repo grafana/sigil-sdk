@@ -1,4 +1,11 @@
 import { defaultLogger, mergeConfig } from './config.js';
+import {
+  agentNameFromContext,
+  agentVersionFromContext,
+  conversationIdFromContext,
+  conversationTitleFromContext,
+  userIdFromContext,
+} from './context.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
 import { metrics, SpanKind, SpanStatusCode, trace, type Histogram, type Meter, type Span, type Tracer } from '@opentelemetry/api';
 import type {
@@ -34,11 +41,13 @@ import {
   cloneEmbeddingStart,
   cloneGeneration,
   cloneGenerationResult,
+  cloneGenerationStart,
   cloneModelRef,
   cloneToolDefinition,
   cloneMessage,
   cloneArtifact,
   cloneToolExecution,
+  cloneToolExecutionStart,
   cloneToolExecutionResult,
   defaultOperationNameForMode,
   defaultSleep,
@@ -62,6 +71,8 @@ const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
 const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
 const spanAttrFrameworkEventID = 'sigil.framework.event_id';
 const spanAttrConversationID = 'gen_ai.conversation.id';
+const spanAttrConversationTitle = 'sigil.conversation.title';
+const spanAttrUserID = 'user.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
 const spanAttrErrorType = 'error.type';
@@ -116,6 +127,8 @@ const metricTokenTypeReasoning = 'reasoning';
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
+const metadataUserIDKey = 'sigil.user.id';
+const metadataLegacyUserIDKey = 'user.id';
 
 export class SigilClient {
   private readonly config: SigilSdkConfig;
@@ -221,7 +234,14 @@ export class SigilClient {
     callback?: RecorderCallback<EmbeddingRecorder, TResult>
   ): EmbeddingRecorder | Promise<TResult> {
     this.assertOpen();
-    const recorder = new EmbeddingRecorderImpl(this, start);
+    const seed = cloneEmbeddingStart(start);
+    if (!notEmpty(seed.agentName)) {
+      seed.agentName = agentNameFromContext();
+    }
+    if (!notEmpty(seed.agentVersion)) {
+      seed.agentVersion = agentVersionFromContext();
+    }
+    const recorder = new EmbeddingRecorderImpl(this, seed);
     if (callback === undefined) {
       return recorder;
     }
@@ -413,6 +433,8 @@ export class SigilClient {
     setGenerationSpanAttributes(span, {
       id: seed.id,
       conversationId: seed.conversationId,
+      conversationTitle: seed.conversationTitle,
+      userId: seed.userId,
       agentName: seed.agentName,
       agentVersion: seed.agentVersion,
       operationName,
@@ -457,6 +479,10 @@ export class SigilClient {
     }
   }
 
+  internalSyncGenerationSpan(span: Span, generation: Generation): void {
+    setGenerationSpanAttributes(span, generation);
+  }
+
   internalFinalizeGenerationSpan(
     span: Span,
     generation: Generation,
@@ -466,7 +492,6 @@ export class SigilClient {
     firstTokenAt: Date | undefined
   ): void {
     span.updateName(generationSpanName(generation.operationName, generation.model.name));
-    setGenerationSpanAttributes(span, generation);
 
     if (callError !== undefined) {
       span.recordException(new Error(callError));
@@ -801,6 +826,7 @@ export class SigilClient {
 }
 
 class GenerationRecorderImpl implements GenerationRecorder {
+  private readonly seed: GenerationStart;
   private readonly startedAt: Date;
   private readonly mode: GenerationMode;
   private readonly span: Span;
@@ -812,12 +838,31 @@ class GenerationRecorderImpl implements GenerationRecorder {
 
   constructor(
     private readonly client: SigilClient,
-    private readonly seed: GenerationStart,
+    seed: GenerationStart,
     defaultMode: GenerationMode
   ) {
-    this.mode = seed.mode ?? defaultMode;
-    this.startedAt = seed.startedAt ?? this.client.internalNow();
-    this.span = this.client.internalStartGenerationSpan(seed, this.mode, this.startedAt);
+    this.seed = cloneGenerationStart(seed);
+    if (!notEmpty(this.seed.conversationId)) {
+      this.seed.conversationId = conversationIdFromContext();
+    }
+    if (!notEmpty(this.seed.conversationTitle)) {
+      this.seed.conversationTitle = conversationTitleFromContext();
+    }
+    if (!notEmpty(this.seed.userId)) {
+      this.seed.userId = userIdFromContext();
+    }
+    if (!notEmpty(this.seed.agentName)) {
+      this.seed.agentName = agentNameFromContext();
+    }
+    if (!notEmpty(this.seed.agentVersion)) {
+      this.seed.agentVersion = agentVersionFromContext();
+    }
+    if (!notEmpty(this.seed.operationName)) {
+      this.seed.operationName = defaultOperationNameForMode(this.seed.mode ?? defaultMode);
+    }
+    this.mode = this.seed.mode ?? defaultMode;
+    this.startedAt = this.seed.startedAt ?? this.client.internalNow();
+    this.span = this.client.internalStartGenerationSpan(this.seed, this.mode, this.startedAt);
   }
 
   setResult(result: GenerationResult): void {
@@ -852,9 +897,11 @@ class GenerationRecorderImpl implements GenerationRecorder {
 
     const generation: Generation = {
       id: this.seed.id ?? newLocalID('gen'),
-      conversationId: this.result?.conversationId ?? this.seed.conversationId,
-      agentName: this.result?.agentName ?? this.seed.agentName,
-      agentVersion: this.result?.agentVersion ?? this.seed.agentVersion,
+      conversationId: firstNonEmptyString(this.result?.conversationId, this.seed.conversationId),
+      conversationTitle: firstNonEmptyString(this.result?.conversationTitle, this.seed.conversationTitle),
+      userId: firstNonEmptyString(this.result?.userId, this.seed.userId),
+      agentName: firstNonEmptyString(this.result?.agentName, this.seed.agentName),
+      agentVersion: firstNonEmptyString(this.result?.agentVersion, this.seed.agentVersion),
       mode: this.mode,
       operationName: this.result?.operationName ?? this.seed.operationName ?? defaultOperationNameForMode(this.mode),
       model: cloneModelRef(this.seed.model),
@@ -873,15 +920,34 @@ class GenerationRecorderImpl implements GenerationRecorder {
       stopReason: this.result?.stopReason,
       startedAt: new Date(this.startedAt),
       completedAt: new Date(this.result?.completedAt ?? this.client.internalNow()),
-      tags: this.result?.tags ? { ...this.result.tags } : this.seed.tags ? { ...this.seed.tags } : undefined,
-      metadata: this.result?.metadata
-        ? { ...this.result.metadata }
-        : this.seed.metadata
-          ? { ...this.seed.metadata }
-          : undefined,
+      tags: mergeStringRecords(this.seed.tags, this.result?.tags),
+      metadata: mergeUnknownRecords(this.seed.metadata, this.result?.metadata),
       artifacts: this.result?.artifacts?.map(cloneArtifact),
       callError: this.callError,
     };
+
+    generation.conversationTitle = firstNonEmptyString(
+      generation.conversationTitle,
+      metadataStringValue(generation.metadata, spanAttrConversationTitle)
+    )?.trim();
+    if (notEmpty(generation.conversationTitle)) {
+      if (generation.metadata === undefined) {
+        generation.metadata = {};
+      }
+      generation.metadata[spanAttrConversationTitle] = generation.conversationTitle;
+    }
+
+    generation.userId = firstNonEmptyString(
+      generation.userId,
+      metadataStringValue(generation.metadata, metadataUserIDKey),
+      metadataStringValue(generation.metadata, metadataLegacyUserIDKey)
+    )?.trim();
+    if (notEmpty(generation.userId)) {
+      if (generation.metadata === undefined) {
+        generation.metadata = {};
+      }
+      generation.metadata[metadataUserIDKey] = generation.userId;
+    }
 
     if (this.callError !== undefined) {
       if (generation.metadata === undefined) {
@@ -894,6 +960,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     generation.metadata[spanAttrSDKName] = sdkName;
 
+    this.client.internalSyncGenerationSpan(this.span, generation);
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
     this.client.internalRecordGeneration(generation);
 
@@ -993,6 +1060,7 @@ class EmbeddingRecorderImpl implements EmbeddingRecorder {
 }
 
 class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
+  private readonly seed: ToolExecutionStart;
   private readonly startedAt: Date;
   private readonly span: Span;
   private ended = false;
@@ -1002,10 +1070,23 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
 
   constructor(
     private readonly client: SigilClient,
-    private readonly seed: ToolExecutionStart
+    seed: ToolExecutionStart
   ) {
-    this.startedAt = seed.startedAt ?? this.client.internalNow();
-    this.span = this.client.internalStartToolExecutionSpan(seed, this.startedAt);
+    this.seed = cloneToolExecutionStart(seed);
+    if (!notEmpty(this.seed.conversationId)) {
+      this.seed.conversationId = conversationIdFromContext();
+    }
+    if (!notEmpty(this.seed.conversationTitle)) {
+      this.seed.conversationTitle = conversationTitleFromContext();
+    }
+    if (!notEmpty(this.seed.agentName)) {
+      this.seed.agentName = agentNameFromContext();
+    }
+    if (!notEmpty(this.seed.agentVersion)) {
+      this.seed.agentVersion = agentVersionFromContext();
+    }
+    this.startedAt = this.seed.startedAt ?? this.client.internalNow();
+    this.span = this.client.internalStartToolExecutionSpan(this.seed, this.startedAt);
   }
 
   setResult(result: ToolExecutionResult): void {
@@ -1035,6 +1116,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
       toolType: this.seed.toolType,
       toolDescription: this.seed.toolDescription,
       conversationId: this.seed.conversationId,
+      conversationTitle: this.seed.conversationTitle,
       agentName: this.seed.agentName,
       agentVersion: this.seed.agentVersion,
       includeContent: this.seed.includeContent ?? false,
@@ -1122,6 +1204,8 @@ function setGenerationSpanAttributes(
   generation: {
     id?: string;
     conversationId?: string;
+    conversationTitle?: string;
+    userId?: string;
     agentName?: string;
     agentVersion?: string;
     operationName: string;
@@ -1153,6 +1237,12 @@ function setGenerationSpanAttributes(
   }
   if (notEmpty(generation.conversationId)) {
     span.setAttribute(spanAttrConversationID, generation.conversationId);
+  }
+  if (notEmpty(generation.conversationTitle)) {
+    span.setAttribute(spanAttrConversationTitle, generation.conversationTitle);
+  }
+  if (notEmpty(generation.userId)) {
+    span.setAttribute(spanAttrUserID, generation.userId);
   }
   if (notEmpty(generation.agentName)) {
     span.setAttribute(spanAttrAgentName, generation.agentName);
@@ -1309,6 +1399,7 @@ function setToolSpanAttributes(
     toolType?: string;
     toolDescription?: string;
     conversationId?: string;
+    conversationTitle?: string;
     agentName?: string;
     agentVersion?: string;
   }
@@ -1328,6 +1419,9 @@ function setToolSpanAttributes(
   }
   if (notEmpty(tool.conversationId)) {
     span.setAttribute(spanAttrConversationID, tool.conversationId);
+  }
+  if (notEmpty(tool.conversationTitle)) {
+    span.setAttribute(spanAttrConversationTitle, tool.conversationTitle);
   }
   if (notEmpty(tool.agentName)) {
     span.setAttribute(spanAttrAgentName, tool.agentName);
@@ -1616,6 +1710,41 @@ function metadataIntValue(metadata: Record<string, unknown> | undefined, key: st
     return parsed;
   }
   return undefined;
+}
+
+function firstNonEmptyString(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (notEmpty(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function mergeStringRecords(
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return {
+    ...(left ?? {}),
+    ...(right ?? {}),
+  };
+}
+
+function mergeUnknownRecords(
+  left: Record<string, unknown> | undefined,
+  right: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (left === undefined && right === undefined) {
+    return undefined;
+  }
+  return {
+    ...(left ?? {}),
+    ...(right ?? {}),
+  };
 }
 
 function countToolCallParts(messages: Message[]): number {

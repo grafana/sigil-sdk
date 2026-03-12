@@ -1,5 +1,17 @@
 export { SigilClient } from './client.js';
 export { defaultConfig } from './config.js';
+export {
+  agentNameFromContext,
+  agentVersionFromContext,
+  conversationIdFromContext,
+  conversationTitleFromContext,
+  userIdFromContext,
+  withAgentName,
+  withAgentVersion,
+  withConversationId,
+  withConversationTitle,
+  withUserId,
+} from './context.js';
 export type {
   ApiConfig,
   Artifact,

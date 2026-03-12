@@ -19,7 +19,13 @@ from opentelemetry.metrics import Histogram, Meter
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .config import ClientConfig, resolve_config
-from .context import agent_name_from_context, agent_version_from_context, conversation_id_from_context
+from .context import (
+    agent_name_from_context,
+    agent_version_from_context,
+    conversation_id_from_context,
+    conversation_title_from_context,
+    user_id_from_context,
+)
 from .errors import (
     ClientShutdownError,
     EnqueueError,
@@ -61,6 +67,8 @@ _span_attr_framework_retry_attempt = "sigil.framework.retry_attempt"
 _span_attr_framework_langgraph_node = "sigil.framework.langgraph.node"
 _span_attr_framework_event_id = "sigil.framework.event_id"
 _span_attr_conversation_id = "gen_ai.conversation.id"
+_span_attr_conversation_title = "sigil.conversation.title"
+_span_attr_user_id = "user.id"
 _span_attr_agent_name = "gen_ai.agent.name"
 _span_attr_agent_version = "gen_ai.agent.version"
 _span_attr_error_type = "error.type"
@@ -117,6 +125,8 @@ _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 _instrumentation_name = "github.com/grafana/sigil/sdks/python"
 _sdk_name = "sdk-python"
 _default_embedding_operation_name = "embeddings"
+_metadata_user_id_key = "sigil.user.id"
+_metadata_legacy_user_id_key = "user.id"
 
 
 class Client:
@@ -226,9 +236,13 @@ class Client:
         if seed.tool_name == "":
             return NoopToolExecutionRecorder()
 
+        seed.conversation_title = seed.conversation_title.strip()
         if seed.conversation_id == "":
             conversation_id = conversation_id_from_context() or ""
             seed.conversation_id = conversation_id
+        if seed.conversation_title == "":
+            conversation_title = conversation_title_from_context() or ""
+            seed.conversation_title = conversation_title.strip()
         if seed.agent_name == "":
             agent_name = agent_name_from_context() or ""
             seed.agent_name = agent_name
@@ -379,8 +393,14 @@ class Client:
         if seed.operation_name == "":
             seed.operation_name = _default_operation_name(seed.mode)
 
+        seed.conversation_title = seed.conversation_title.strip()
+        seed.user_id = seed.user_id.strip()
         if seed.conversation_id == "":
             seed.conversation_id = conversation_id_from_context() or ""
+        if seed.conversation_title == "":
+            seed.conversation_title = (conversation_title_from_context() or "").strip()
+        if seed.user_id == "":
+            seed.user_id = (user_id_from_context() or "").strip()
         if seed.agent_name == "":
             seed.agent_name = agent_name_from_context() or ""
         if seed.agent_version == "":
@@ -399,6 +419,8 @@ class Client:
             Generation(
                 id=seed.id,
                 conversation_id=seed.conversation_id,
+                conversation_title=seed.conversation_title,
+                user_id=seed.user_id,
                 agent_name=seed.agent_name,
                 agent_version=seed.agent_version,
                 mode=seed.mode,
@@ -792,6 +814,10 @@ class GenerationRecorder:
 
         if generation.conversation_id == "":
             generation.conversation_id = self.seed.conversation_id
+        if generation.conversation_title == "":
+            generation.conversation_title = self.seed.conversation_title
+        if generation.user_id == "":
+            generation.user_id = self.seed.user_id
         if generation.agent_name == "":
             generation.agent_name = self.seed.agent_name
         if generation.agent_version == "":
@@ -836,6 +862,22 @@ class GenerationRecorder:
         merged_metadata: dict[str, Any] = dict(self.seed.metadata)
         merged_metadata.update(generation.metadata)
         generation.metadata = merged_metadata
+
+        conversation_title = generation.conversation_title.strip()
+        if conversation_title == "":
+            conversation_title = _metadata_string_value(generation.metadata, _span_attr_conversation_title) or ""
+        generation.conversation_title = conversation_title
+        if conversation_title != "":
+            generation.metadata[_span_attr_conversation_title] = conversation_title
+
+        user_id = generation.user_id.strip()
+        if user_id == "":
+            user_id = _metadata_string_value(generation.metadata, _metadata_user_id_key) or ""
+        if user_id == "":
+            user_id = _metadata_string_value(generation.metadata, _metadata_legacy_user_id_key) or ""
+        generation.user_id = user_id
+        if user_id != "":
+            generation.metadata[_metadata_user_id_key] = user_id
 
         generation.started_at = _to_utc(generation.started_at) if generation.started_at is not None else self.started_at
         generation.completed_at = _to_utc(generation.completed_at) if generation.completed_at is not None else completed_at
@@ -1128,6 +1170,10 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
         span.set_attribute(_span_attr_generation_id, generation.id)
     if generation.conversation_id:
         span.set_attribute(_span_attr_conversation_id, generation.conversation_id)
+    if generation.conversation_title:
+        span.set_attribute(_span_attr_conversation_title, generation.conversation_title)
+    if generation.user_id:
+        span.set_attribute(_span_attr_user_id, generation.user_id)
     if generation.agent_name:
         span.set_attribute(_span_attr_agent_name, generation.agent_name)
     if generation.agent_version:
@@ -1252,6 +1298,8 @@ def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
         span.set_attribute(_span_attr_tool_description, start.tool_description)
     if start.conversation_id:
         span.set_attribute(_span_attr_conversation_id, start.conversation_id)
+    if start.conversation_title:
+        span.set_attribute(_span_attr_conversation_title, start.conversation_title)
     if start.agent_name:
         span.set_attribute(_span_attr_agent_name, start.agent_name)
     if start.agent_version:

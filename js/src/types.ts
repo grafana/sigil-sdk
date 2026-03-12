@@ -238,6 +238,8 @@ export interface Artifact {
 export interface GenerationStart {
   id?: string;
   conversationId?: string;
+  conversationTitle?: string;
+  userId?: string;
   agentName?: string;
   agentVersion?: string;
   mode?: GenerationMode;
@@ -258,6 +260,8 @@ export interface GenerationStart {
 /** Final generation result fields. */
 export interface GenerationResult {
   conversationId?: string;
+  conversationTitle?: string;
+  userId?: string;
   agentName?: string;
   agentVersion?: string;
   operationName?: string;
@@ -304,6 +308,8 @@ export interface EmbeddingResult {
 export interface Generation {
   id: string;
   conversationId?: string;
+  conversationTitle?: string;
+  userId?: string;
   agentName?: string;
   agentVersion?: string;
   mode: GenerationMode;
@@ -339,6 +345,7 @@ export interface ToolExecutionStart {
   toolType?: string;
   toolDescription?: string;
   conversationId?: string;
+  conversationTitle?: string;
   agentName?: string;
   agentVersion?: string;
   includeContent?: boolean;
@@ -359,6 +366,7 @@ export interface ToolExecution {
   toolType?: string;
   toolDescription?: string;
   conversationId?: string;
+  conversationTitle?: string;
   agentName?: string;
   agentVersion?: string;
   includeContent: boolean;

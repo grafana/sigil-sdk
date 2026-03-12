@@ -3,12 +3,16 @@
 from .client import Client
 from .config import ApiConfig, AuthConfig, ClientConfig, EmbeddingCaptureConfig, GenerationExportConfig, default_config
 from .context import (
+    conversation_title_from_context,
     conversation_id_from_context,
     agent_name_from_context,
     agent_version_from_context,
+    user_id_from_context,
     with_agent_name,
     with_agent_version,
     with_conversation_id,
+    with_conversation_title,
+    with_user_id,
 )
 from .errors import (
     ClientShutdownError,
@@ -98,15 +102,19 @@ __all__ = [
     "agent_version_from_context",
     "assistant_text_message",
     "conversation_id_from_context",
+    "conversation_title_from_context",
     "text_part",
     "thinking_part",
     "tool_call_part",
     "tool_result_message",
     "tool_result_part",
+    "user_id_from_context",
     "user_text_message",
     "with_agent_name",
     "with_agent_version",
     "with_conversation_id",
+    "with_conversation_title",
+    "with_user_id",
     "default_config",
     "validate_embedding_result",
     "validate_embedding_start",

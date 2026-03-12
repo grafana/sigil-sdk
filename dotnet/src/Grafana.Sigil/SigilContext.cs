@@ -5,12 +5,24 @@ namespace Grafana.Sigil;
 public static class SigilContext
 {
     private static readonly AsyncLocal<string?> ConversationIdSlot = new();
+    private static readonly AsyncLocal<string?> ConversationTitleSlot = new();
+    private static readonly AsyncLocal<string?> UserIdSlot = new();
     private static readonly AsyncLocal<string?> AgentNameSlot = new();
     private static readonly AsyncLocal<string?> AgentVersionSlot = new();
 
     public static IDisposable WithConversationId(string conversationId)
     {
         return new AsyncLocalScope(ConversationIdSlot, conversationId);
+    }
+
+    public static IDisposable WithConversationTitle(string conversationTitle)
+    {
+        return new AsyncLocalScope(ConversationTitleSlot, conversationTitle);
+    }
+
+    public static IDisposable WithUserId(string userId)
+    {
+        return new AsyncLocalScope(UserIdSlot, userId);
     }
 
     public static IDisposable WithAgentName(string agentName)
@@ -26,6 +38,16 @@ public static class SigilContext
     public static string? ConversationIdFromContext()
     {
         return ConversationIdSlot.Value;
+    }
+
+    public static string? ConversationTitleFromContext()
+    {
+        return ConversationTitleSlot.Value;
+    }
+
+    public static string? UserIdFromContext()
+    {
+        return UserIdSlot.Value;
     }
 
     public static string? AgentNameFromContext()
