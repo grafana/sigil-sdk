@@ -91,6 +91,10 @@ type ToolStartEvent struct {
 	ToolType        string
 	ToolDescription string
 	Arguments       any
+	// ModelName is the model that requested the tool call (e.g. "gpt-5").
+	ModelName string
+	// Provider is the provider that served the model (e.g. "openai").
+	Provider string
 }
 
 // ToolEndEvent is the adapter input for tool completion callbacks.
@@ -392,6 +396,11 @@ func (a *Adapter) OnToolStart(ctx context.Context, event ToolStartEvent) error {
 		ThreadID:       event.ThreadID,
 	})
 
+	provider := resolveProvider(a.opts.Provider, event.Provider, event.ModelName, a.opts.ProviderResolver, RunStartEvent{
+		ModelName: event.ModelName,
+		Provider:  event.Provider,
+	})
+
 	rec := a.startTool(ctx, sigil.ToolExecutionStart{
 		ToolName:        strings.TrimSpace(event.ToolName),
 		ToolCallID:      strings.TrimSpace(event.ToolCallID),
@@ -400,6 +409,8 @@ func (a *Adapter) OnToolStart(ctx context.Context, event ToolStartEvent) error {
 		ConversationID:  conversationID,
 		AgentName:       strings.TrimSpace(a.opts.AgentName),
 		AgentVersion:    strings.TrimSpace(a.opts.AgentVersion),
+		RequestModel:    normalizeModelName(event.ModelName),
+		RequestProvider: provider,
 		IncludeContent:  a.captureInputs || a.captureOutputs,
 	})
 
