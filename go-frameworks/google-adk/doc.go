@@ -4,4 +4,7 @@
 // metadata for tracing and generation analysis.
 //
 // NewCallbacks provides one-time function-based lifecycle wiring for runner setup.
+// Embedding support is currently exposed as an explicit unsupported capability
+// gate because the Google ADK lifecycle surface used here does not provide a
+// dedicated embeddings callback.
 package googleadk
