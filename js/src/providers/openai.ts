@@ -503,12 +503,26 @@ function mapChatRequestMessages(request: ChatCreateRequest | ChatStreamRequest):
     const normalizedRole: Message['role'] = role === 'assistant' || role === 'tool' ? role : 'user';
     const message: Message = { role: normalizedRole };
 
-    if (content.length > 0) {
+    if (normalizedRole !== 'tool' && content.length > 0) {
       message.content = content;
     }
 
     if (typeof rawMessage.name === 'string' && rawMessage.name.trim().length > 0) {
       message.name = rawMessage.name;
+    }
+
+    if (normalizedRole === 'tool') {
+      const toolResult = mapToolResultMessage(
+        rawMessage.content,
+        rawMessage.tool_call_id ?? rawMessage.toolCallId ?? rawMessage.id,
+        rawMessage.name,
+        rawMessage.is_error,
+        'tool_result'
+      );
+      if (toolResult) {
+        input.push(toolResult);
+      }
+      continue;
     }
 
     if (normalizedRole === 'assistant' && Array.isArray(rawMessage.tool_calls)) {
@@ -760,10 +774,15 @@ function mapResponsesRequest(request: ResponsesCreateRequest | ResponsesStreamRe
       }
 
       if (itemType === 'function_call_output') {
-        const outputValue = rawItem.output;
-        const content = typeof outputValue === 'string' ? outputValue : jsonString(outputValue);
-        if (content.length > 0) {
-          input.push({ role: 'tool', content });
+        const toolResult = mapToolResultMessage(
+          rawItem.output,
+          rawItem.call_id ?? rawItem.callId,
+          rawItem.name,
+          rawItem.is_error,
+          'tool_result'
+        );
+        if (toolResult) {
+          input.push(toolResult);
         }
         continue;
       }
@@ -899,11 +918,15 @@ function mapResponsesOutputItems(value: unknown): Message[] {
     }
 
     if (itemType === 'function_call_output') {
-      const content = typeof rawItem.output === 'string'
-        ? rawItem.output
-        : jsonString(rawItem.output);
-      if (content.length > 0) {
-        output.push({ role: 'tool', content });
+      const toolResult = mapToolResultMessage(
+        rawItem.output,
+        rawItem.call_id ?? rawItem.callId,
+        rawItem.name,
+        rawItem.is_error,
+        'tool_result'
+      );
+      if (toolResult) {
+        output.push(toolResult);
       }
       continue;
     }
@@ -1163,6 +1186,40 @@ function openAIThinkingBudget(reasoning: unknown): number | undefined {
     }
   }
   return undefined;
+}
+
+function mapToolResultMessage(
+  value: unknown,
+  toolCallId: unknown,
+  name: unknown,
+  isError: unknown,
+  providerType: string
+): Message | undefined {
+  const content = extractText(value);
+  const contentJSON = jsonString(value);
+  const renderedContent = content.length > 0 ? content : contentJSON;
+
+  if (renderedContent.length === 0) {
+    return undefined;
+  }
+
+  return {
+    role: 'tool',
+    content: renderedContent,
+    parts: [
+      {
+        type: 'tool_result',
+        toolResult: {
+          toolCallId: typeof toolCallId === 'string' && toolCallId.trim().length > 0 ? toolCallId : undefined,
+          name: typeof name === 'string' && name.trim().length > 0 ? name : undefined,
+          content: renderedContent,
+          contentJSON,
+          isError: typeof isError === 'boolean' ? isError : undefined,
+        },
+        metadata: { providerType },
+      },
+    ],
+  };
 }
 
 function metadataWithThinkingBudget(

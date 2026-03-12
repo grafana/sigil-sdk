@@ -22,6 +22,7 @@ from sigil_sdk import (
     TokenUsage,
     ToolCall,
     ToolDefinition,
+    ToolResult,
 )
 
 if TYPE_CHECKING:
@@ -662,8 +663,19 @@ def _map_chat_request_messages(request: ChatCreateRequest | ChatStreamRequest) -
             mapped_role = MessageRole.TOOL
 
         parts: list[Part] = []
-        if content:
+        if mapped_role != MessageRole.TOOL and content:
             parts.append(Part(kind=PartKind.TEXT, text=content))
+
+        if mapped_role == MessageRole.TOOL:
+            tool_message = _tool_result_message(
+                _read(message, "content"),
+                tool_call_id=_as_str(_read(message, "tool_call_id")) or _as_str(_read(message, "toolCallId")) or _as_str(_read(message, "id")),
+                name=_as_str(_read(message, "name")),
+                is_error=_read(message, "is_error"),
+            )
+            if tool_message is not None:
+                out.append(tool_message)
+            continue
 
         if mapped_role == MessageRole.ASSISTANT:
             for part in _map_chat_tool_call_parts(_read(message, "tool_calls")):
@@ -831,11 +843,14 @@ def _map_responses_request(request: ResponsesCreateRequest | ResponsesStreamRequ
                 continue
 
             if item_type == "function_call_output":
-                output_text = _extract_text(_read(item, "output")) or _json_text(_read(item, "output"))
-                if output_text:
-                    input_messages.append(
-                        Message(role=MessageRole.TOOL, parts=[Part(kind=PartKind.TEXT, text=output_text)])
-                    )
+                tool_message = _tool_result_message(
+                    _read(item, "output"),
+                    tool_call_id=_as_str(_read(item, "call_id")) or _as_str(_read(item, "callId")),
+                    name=_as_str(_read(item, "name")),
+                    is_error=_read(item, "is_error"),
+                )
+                if tool_message is not None:
+                    input_messages.append(tool_message)
                 continue
 
             if item_type == "message" or role:
@@ -925,9 +940,14 @@ def _map_responses_output_items(value: Any) -> list[Message]:
             continue
 
         if item_type == "function_call_output":
-            output_text = _extract_text(_read(item, "output")) or _json_text(_read(item, "output"))
-            if output_text:
-                out.append(Message(role=MessageRole.TOOL, parts=[Part(kind=PartKind.TEXT, text=output_text)]))
+            tool_message = _tool_result_message(
+                _read(item, "output"),
+                tool_call_id=_as_str(_read(item, "call_id")) or _as_str(_read(item, "callId")),
+                name=_as_str(_read(item, "name")),
+                is_error=_read(item, "is_error"),
+            )
+            if tool_message is not None:
+                out.append(tool_message)
             continue
 
         fallback = _extract_text(item)
@@ -935,6 +955,27 @@ def _map_responses_output_items(value: Any) -> list[Message]:
             out.append(Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=fallback)]))
 
     return out
+
+
+def _tool_result_message(value: Any, *, tool_call_id: str, name: str, is_error: Any) -> Message | None:
+    content = _extract_text(value)
+    content_json = _json_bytes(value)
+    rendered_content = content or content_json.decode("utf-8")
+    if not rendered_content:
+        return None
+
+    part = Part(
+        kind=PartKind.TOOL_RESULT,
+        tool_result=ToolResult(
+            tool_call_id=tool_call_id,
+            name=name,
+            content=rendered_content,
+            content_json=content_json,
+            is_error=is_error if isinstance(is_error, bool) else None,
+        ),
+    )
+    part.metadata.provider_type = "tool_result"
+    return Message(role=MessageRole.TOOL, parts=[part])
 
 
 def _map_responses_usage(value: Any) -> TokenUsage:

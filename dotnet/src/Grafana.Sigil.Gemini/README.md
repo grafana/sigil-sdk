@@ -2,6 +2,15 @@
 
 Google Gemini GenerateContent instrumentation helpers for `Grafana.Sigil`.
 
+## Public API
+
+- `GeminiRecorder.GenerateContentAsync(...)`
+- `GeminiRecorder.GenerateContentStreamAsync(...)`
+- `GeminiRecorder.EmbedContentAsync(...)`
+- `GeminiGenerationMapper.FromRequestResponse(...)`
+- `GeminiGenerationMapper.FromStream(...)`
+- `GeminiGenerationMapper.EmbeddingFromResponse(...)`
+
 ## Install
 
 ```bash
@@ -105,6 +114,29 @@ foreach (var update in summary.Responses)
 ```
 
 The wrapper records mode as `STREAM` and aggregates the normalized generation from collected responses.
+
+## Embedding wrapper (`EmbedContentAsync`)
+
+```csharp
+EmbedContentResponse embeddingResponse = await GeminiRecorder.EmbedContentAsync(
+    sigil,
+    gemini,
+    "gemini-embedding-001",
+    new List<Content>
+    {
+        new() { Parts = new List<GPart> { new() { Text = "hello" } } },
+        new() { Parts = new List<GPart> { new() { Text = "world" } } },
+    },
+    config: null,
+    options: new GeminiSigilOptions
+    {
+        ConversationId = "conv-gemini-embeddings-1",
+        AgentName = "assistant-core",
+        AgentVersion = "1.0.0",
+    },
+    cancellationToken: CancellationToken.None
+);
+```
 
 ## Raw artifacts (debug opt-in)
 

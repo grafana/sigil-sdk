@@ -19,6 +19,9 @@ No simplified OpenAI DTO layer is exposed.
   - `OpenAiResponses.createStreaming(...)`
   - `OpenAiResponses.fromRequestResponse(...)`
   - `OpenAiResponses.fromStream(...)`
+- Embeddings:
+  - `OpenAiEmbeddings.create(...)`
+  - `OpenAiEmbeddings.fromRequestResponse(...)`
 
 ## Integration styles
 
@@ -65,6 +68,23 @@ Response response = OpenAiResponses.create(
     sigilClient,
     request,
     params -> openAI.responses().create(params),
+    new OpenAiOptions()
+        .setConversationId("conv-1")
+        .setAgentName("assistant-openai")
+        .setAgentVersion("1.0.0")
+);
+```
+
+## Embeddings Example
+
+```java
+CreateEmbeddingResponse embeddingResponse = OpenAiEmbeddings.create(
+    sigilClient,
+    EmbeddingCreateParams.builder()
+        .model("text-embedding-3-small")
+        .inputOfArrayOfStrings(java.util.List.of("hello", "world"))
+        .build(),
+    params -> openAI.embeddings().create(params),
     new OpenAiOptions()
         .setConversationId("conv-1")
         .setAgentName("assistant-openai")

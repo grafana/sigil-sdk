@@ -17,11 +17,13 @@ OpenAI instrumentation helpers for `Grafana.Sigil` with strict official OpenAI .
   - `OpenAIRecorder.CompleteChatStreamingAsync(...)`
   - `OpenAIRecorder.CreateResponseAsync(...)`
   - `OpenAIRecorder.CreateResponseStreamingAsync(...)`
+  - `OpenAIRecorder.GenerateEmbeddingsAsync(...)`
 - Mappers:
   - `OpenAIGenerationMapper.ChatCompletionsFromRequestResponse(...)`
   - `OpenAIGenerationMapper.ChatCompletionsFromStream(...)`
   - `OpenAIGenerationMapper.ResponsesFromRequestResponse(...)`
   - `OpenAIGenerationMapper.ResponsesFromStream(...)`
+  - `OpenAIGenerationMapper.EmbeddingsFromRequestResponse(...)`
 
 ## Install
 
@@ -155,6 +157,27 @@ OpenAIChatCompletionsStreamSummary streamSummary = await OpenAIRecorder.Complete
         ConversationId = "conv-openai-chat-stream-1",
         AgentName = "assistant-core",
         AgentVersion = "1.0.0",
+    },
+    cancellationToken: CancellationToken.None
+);
+```
+
+## Embeddings Wrapper
+
+```csharp
+using OpenAI.Embeddings;
+
+OpenAIEmbeddingCollection embeddingResponse = await OpenAIRecorder.GenerateEmbeddingsAsync(
+    sigil,
+    new EmbeddingClient(Environment.GetEnvironmentVariable("OPENAI_API_KEY")!),
+    new[] { "hello", "world" },
+    requestOptions: new EmbeddingGenerationOptions { Dimensions = 256 },
+    options: new OpenAISigilOptions
+    {
+        ConversationId = "conv-openai-embeddings-1",
+        AgentName = "assistant-core",
+        AgentVersion = "1.0.0",
+        ModelName = "text-embedding-3-small",
     },
     cancellationToken: CancellationToken.None
 );
