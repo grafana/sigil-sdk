@@ -3,6 +3,7 @@ package sigil_test
 import (
 	"context"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,8 @@ const (
 	metadataKeyLegacyUserID        = "user.id"
 	metadataKeyThinkingBudget      = "sigil.gen_ai.request.thinking.budget_tokens"
 	metadataKeySDKName             = "sigil.sdk.name"
+	sdkMetadataKeyName             = metadataKeySDKName
+	sdkNameGo                      = "sdk-go"
 	spanAttrOperationName          = "gen_ai.operation.name"
 	spanAttrGenerationID           = "sigil.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
@@ -47,6 +50,7 @@ const (
 	spanAttrRequestTopP            = "gen_ai.request.top_p"
 	spanAttrRequestToolChoice      = "sigil.gen_ai.request.tool_choice"
 	spanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled"
+	spanAttrRequestThinkingBudget  = metadataKeyThinkingBudget
 	spanAttrEmbeddingInputCount    = "gen_ai.embeddings.input_count"
 	spanAttrEmbeddingDimCount      = "gen_ai.embeddings.dimension.count"
 	spanAttrToolName               = "gen_ai.tool.name"
@@ -75,7 +79,6 @@ const (
 	metricTokenTypeCacheWrite      = "cache_write"
 	metricTokenTypeCacheCreation   = "cache_creation"
 	metricTokenTypeReasoning       = "reasoning"
-	sdkNameGo                      = "sdk-go"
 )
 
 var conformanceModel = sigil.ModelRef{
@@ -450,7 +453,15 @@ func requireSpanAttr(t *testing.T, attrs map[string]attribute.Value, key, want s
 	}
 }
 
-func requireSpanAttrBool(t *testing.T, attrs map[string]attribute.Value, key string, want bool) {
+func requireSpanAttrAbsent(t *testing.T, attrs map[string]attribute.Value, key string) {
+	t.Helper()
+
+	if _, ok := attrs[key]; ok {
+		t.Fatalf("did not expect span attribute %q to be present", key)
+	}
+}
+
+func requireSpanBoolAttr(t *testing.T, attrs map[string]attribute.Value, key string, want bool) {
 	t.Helper()
 
 	got, ok := attrs[key]
@@ -462,7 +473,7 @@ func requireSpanAttrBool(t *testing.T, attrs map[string]attribute.Value, key str
 	}
 }
 
-func requireSpanAttrInt64(t *testing.T, attrs map[string]attribute.Value, key string, want int64) {
+func requireSpanInt64Attr(t *testing.T, attrs map[string]attribute.Value, key string, want int64) {
 	t.Helper()
 
 	got, ok := attrs[key]
@@ -474,19 +485,19 @@ func requireSpanAttrInt64(t *testing.T, attrs map[string]attribute.Value, key st
 	}
 }
 
-func requireSpanAttrFloat64(t *testing.T, attrs map[string]attribute.Value, key string, want float64) {
+func requireSpanFloat64Attr(t *testing.T, attrs map[string]attribute.Value, key string, want float64) {
 	t.Helper()
 
 	got, ok := attrs[key]
 	if !ok {
 		t.Fatalf("expected span attribute %q=%v, attribute missing", key, want)
 	}
-	if got.AsFloat64() != want {
+	if math.Abs(got.AsFloat64()-want) > 1e-9 {
 		t.Fatalf("unexpected span attribute %q: got %v want %v", key, got.AsFloat64(), want)
 	}
 }
 
-func requireSpanAttrStringSlice(t *testing.T, attrs map[string]attribute.Value, key string, want []string) {
+func requireSpanStringSliceAttr(t *testing.T, attrs map[string]attribute.Value, key string, want []string) {
 	t.Helper()
 
 	got, ok := attrs[key]
@@ -495,11 +506,11 @@ func requireSpanAttrStringSlice(t *testing.T, attrs map[string]attribute.Value, 
 	}
 	gotSlice := got.AsStringSlice()
 	if len(gotSlice) != len(want) {
-		t.Fatalf("unexpected span attribute %q length: got %v want %v", key, gotSlice, want)
+		t.Fatalf("unexpected span attribute %q length: got %d want %d", key, len(gotSlice), len(want))
 	}
 	for i := range want {
 		if gotSlice[i] != want[i] {
-			t.Fatalf("unexpected span attribute %q: got %v want %v", key, gotSlice, want)
+			t.Fatalf("unexpected span attribute %q[%d]: got %q want %q", key, i, gotSlice[i], want[i])
 		}
 	}
 }
@@ -509,14 +520,6 @@ func requireSpanAttrPresent(t *testing.T, attrs map[string]attribute.Value, key 
 
 	if _, ok := attrs[key]; !ok {
 		t.Fatalf("expected span attribute %q to be present", key)
-	}
-}
-
-func requireSpanAttrAbsent(t *testing.T, attrs map[string]attribute.Value, key string) {
-	t.Helper()
-
-	if _, ok := attrs[key]; ok {
-		t.Fatalf("did not expect span attribute %q to be present", key)
 	}
 }
 
@@ -555,28 +558,29 @@ func requireNoHistogram(t *testing.T, collected metricdata.ResourceMetrics, name
 func requireHistogramPointWithAttrs[N int64 | float64](t *testing.T, histogram metricdata.Histogram[N], want map[string]string) metricdata.HistogramDataPoint[N] {
 	t.Helper()
 
+	return findHistogramPoint(t, histogram, want)
+}
+
+func findHistogramPoint[N int64 | float64](t *testing.T, histogram metricdata.Histogram[N], want map[string]string) metricdata.HistogramDataPoint[N] {
+	t.Helper()
+
 	for _, point := range histogram.DataPoints {
-		if pointHasStringAttrs(point.Attributes, want) {
+		if histogramPointMatches(point.Attributes, want) {
 			return point
 		}
 	}
 
-	t.Fatalf("expected histogram datapoint with attrs %v", want)
+	t.Fatalf("expected histogram point with attrs %v", want)
 	return metricdata.HistogramDataPoint[N]{}
 }
 
-func pointHasStringAttrs(attrs attribute.Set, want map[string]string) bool {
-	got := map[string]string{}
-	for _, kv := range attrs.ToSlice() {
-		got[string(kv.Key)] = kv.Value.AsString()
-	}
-
-	for key, wantValue := range want {
-		if got[key] != wantValue {
+func histogramPointMatches(attrs attribute.Set, want map[string]string) bool {
+	for key, expected := range want {
+		value, ok := (&attrs).Value(attribute.Key(key))
+		if !ok || value.AsString() != expected {
 			return false
 		}
 	}
-
 	return true
 }
 
