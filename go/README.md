@@ -304,7 +304,7 @@ Provider modules are documented wrapper-first for ergonomics and include explici
 Current Go provider helpers:
 
 - `sdks/go-providers/openai` (OpenAI Chat Completions + Responses wrappers and mappers)
-- `sdks/go-providers/anthropic`
+- `sdks/go-providers/anthropic` (Anthropic Messages wrappers and mappers; embeddings currently unsupported by the upstream SDK/API surface)
 - `sdks/go-providers/gemini`
 
 ## Raw artifact policy

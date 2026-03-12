@@ -7,10 +7,20 @@ typed Sigil `Generation` model.
 
 This helper currently supports Anthropic Messages APIs only. Native Anthropic embeddings endpoints are not available in the official SDK/API surface used in this repository.
 
+Use the exported support gate when you need a deterministic capability check:
+
+```go
+if err := anthropic.CheckEmbeddingsSupport(); err != nil {
+	return err
+}
+```
+
 ## Scope
 - One-liner wrappers:
   - `Message(ctx, sigilClient, provider, req, opts...)`
   - `MessageStream(ctx, sigilClient, provider, req, opts...)`
+- Embedding capability gate:
+  - `CheckEmbeddingsSupport()`
 - Request/response mapper:
   - `FromRequestResponse(req, resp, opts...)`
 - Stream mapper:
