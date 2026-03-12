@@ -21,6 +21,25 @@ func GenerateContent(
 	config *genai.GenerateContentConfig,
 	opts ...Option,
 ) (*genai.GenerateContentResponse, error) {
+	return generateContent(ctx, client, model, contents, config, func(
+		ctx context.Context,
+		model string,
+		contents []*genai.Content,
+		config *genai.GenerateContentConfig,
+	) (*genai.GenerateContentResponse, error) {
+		return provider.Models.GenerateContent(ctx, model, contents, config)
+	}, opts...)
+}
+
+func generateContent(
+	ctx context.Context,
+	client *sigil.Client,
+	model string,
+	contents []*genai.Content,
+	config *genai.GenerateContentConfig,
+	invoke func(context.Context, string, []*genai.Content, *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error),
+	opts ...Option,
+) (*genai.GenerateContentResponse, error) {
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
@@ -32,7 +51,7 @@ func GenerateContent(
 	})
 	defer rec.End()
 
-	resp, err := provider.Models.GenerateContent(ctx, model, contents, config)
+	resp, err := invoke(ctx, model, contents, config)
 	if err != nil {
 		rec.SetCallError(err)
 		return nil, err

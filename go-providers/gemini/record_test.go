@@ -12,7 +12,7 @@ import (
 )
 
 func TestEmbedContentReturnsRecorderValidationErrorAfterEnd(t *testing.T) {
-	client := newEmbeddingTestClient(t)
+	client := newProviderTestClient(t)
 
 	contents := []*genai.Content{
 		genai.NewContentFromText("hello", genai.RoleUser),
@@ -51,7 +51,7 @@ func TestEmbedContentReturnsRecorderValidationErrorAfterEnd(t *testing.T) {
 }
 
 func TestEmbedContentPreservesProviderErrors(t *testing.T) {
-	client := newEmbeddingTestClient(t)
+	client := newProviderTestClient(t)
 
 	providerErr := errors.New("provider failed")
 
@@ -74,7 +74,65 @@ func TestEmbedContentPreservesProviderErrors(t *testing.T) {
 	}
 }
 
-func newEmbeddingTestClient(t *testing.T) *sigil.Client {
+func TestConformance_GenerateContentErrorMapping(t *testing.T) {
+	client := newProviderTestClient(t)
+	model := "gemini-2.5-pro"
+	contents := []*genai.Content{
+		genai.NewContentFromText("hello", genai.RoleUser),
+	}
+
+	t.Run("provider errors are preserved", func(t *testing.T) {
+		providerErr := errors.New("provider failed")
+
+		response, err := generateContent(
+			context.Background(),
+			client,
+			model,
+			contents,
+			nil,
+			func(context.Context, string, []*genai.Content, *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+				return nil, providerErr
+			},
+		)
+		if !errors.Is(err, providerErr) {
+			t.Fatalf("expected provider error, got %v", err)
+		}
+		if response != nil {
+			t.Fatalf("expected nil response on provider error")
+		}
+	})
+
+	t.Run("mapping failures do not hide provider responses", func(t *testing.T) {
+		expectedResponse := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					FinishReason: genai.FinishReasonStop,
+					Content:      genai.NewContentFromText("hi", genai.RoleModel),
+				},
+			},
+		}
+
+		response, err := generateContent(
+			context.Background(),
+			client,
+			model,
+			contents,
+			nil,
+			func(context.Context, string, []*genai.Content, *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+				return expectedResponse, nil
+			},
+			WithProviderName(""),
+		)
+		if err != nil {
+			t.Fatalf("expected nil local error for mapping failure, got %v", err)
+		}
+		if response != expectedResponse {
+			t.Fatalf("expected wrapper to return provider response pointer")
+		}
+	})
+}
+
+func newProviderTestClient(t *testing.T) *sigil.Client {
 	t.Helper()
 
 	cfg := sigil.DefaultConfig()

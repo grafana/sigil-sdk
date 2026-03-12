@@ -20,6 +20,18 @@ func ChatCompletionsNew(
 	req osdk.ChatCompletionNewParams,
 	opts ...Option,
 ) (*osdk.ChatCompletion, error) {
+	return chatCompletionsNew(ctx, client, req, func(ctx context.Context, request osdk.ChatCompletionNewParams) (*osdk.ChatCompletion, error) {
+		return provider.Chat.Completions.New(ctx, request)
+	}, opts...)
+}
+
+func chatCompletionsNew(
+	ctx context.Context,
+	client *sigil.Client,
+	req osdk.ChatCompletionNewParams,
+	invoke func(context.Context, osdk.ChatCompletionNewParams) (*osdk.ChatCompletion, error),
+	opts ...Option,
+) (*osdk.ChatCompletion, error) {
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
@@ -31,7 +43,7 @@ func ChatCompletionsNew(
 	})
 	defer rec.End()
 
-	resp, err := provider.Chat.Completions.New(ctx, req)
+	resp, err := invoke(ctx, req)
 	if err != nil {
 		rec.SetCallError(err)
 		return nil, err
@@ -102,6 +114,18 @@ func ResponsesNew(
 	req oresponses.ResponseNewParams,
 	opts ...Option,
 ) (*oresponses.Response, error) {
+	return responsesNew(ctx, client, req, func(ctx context.Context, request oresponses.ResponseNewParams) (*oresponses.Response, error) {
+		return provider.Responses.New(ctx, request)
+	}, opts...)
+}
+
+func responsesNew(
+	ctx context.Context,
+	client *sigil.Client,
+	req oresponses.ResponseNewParams,
+	invoke func(context.Context, oresponses.ResponseNewParams) (*oresponses.Response, error),
+	opts ...Option,
+) (*oresponses.Response, error) {
 	options := applyOptions(opts)
 
 	ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
@@ -113,7 +137,7 @@ func ResponsesNew(
 	})
 	defer rec.End()
 
-	resp, err := provider.Responses.New(ctx, req)
+	resp, err := invoke(ctx, req)
 	if err != nil {
 		rec.SetCallError(err)
 		return nil, err
