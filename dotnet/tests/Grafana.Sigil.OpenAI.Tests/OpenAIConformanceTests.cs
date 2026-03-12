@@ -1,4 +1,5 @@
 using System.ClientModel.Primitives;
+using System.Diagnostics;
 using System.Reflection;
 using OpenAI.Chat;
 using OpenAI.Embeddings;
@@ -322,6 +323,48 @@ public sealed class OpenAIConformanceTests
     }
 
     [Fact]
+    public void MapperRejectsMissingOrMalformedResponses()
+    {
+        var chatMessages = new List<ChatMessage>
+        {
+            new UserChatMessage("hello"),
+        };
+        var responseItems = new List<ResponseItem>
+        {
+            ResponseItem.CreateUserMessageItem("hello"),
+        };
+
+        Assert.Throws<ArgumentNullException>(() => OpenAIGenerationMapper.ChatCompletionsFromRequestResponse(
+            "gpt-5",
+            chatMessages,
+            requestOptions: null,
+            response: null!,
+            new OpenAISigilOptions()
+        ));
+        Assert.Throws<ArgumentNullException>(() => OpenAIGenerationMapper.ResponsesFromRequestResponse(
+            "gpt-5",
+            responseItems,
+            requestOptions: null,
+            response: null!,
+            new OpenAISigilOptions()
+        ));
+        Assert.Throws<ArgumentException>(() => OpenAIGenerationMapper.ChatCompletionsFromStream(
+            "gpt-5",
+            chatMessages,
+            requestOptions: null,
+            new OpenAIChatCompletionsStreamSummary(),
+            new OpenAISigilOptions()
+        ));
+        Assert.Throws<ArgumentException>(() => OpenAIGenerationMapper.ResponsesFromStream(
+            "gpt-5",
+            responseItems,
+            requestOptions: null,
+            new OpenAIResponsesStreamSummary(),
+            new OpenAISigilOptions()
+        ));
+    }
+
+    [Fact]
     public async Task Recorder_RecordsChatAndResponsesModesAndPropagatesProviderErrors()
     {
         var exporter = new CapturingExporter();
@@ -405,6 +448,63 @@ public sealed class OpenAIConformanceTests
         Assert.Contains(generations, generation => generation.Mode == GenerationMode.Sync && generation.CallError.Contains("chat provider failed", StringComparison.Ordinal));
         Assert.Contains(generations, generation => generation.Mode == GenerationMode.Sync && generation.CallError.Contains("responses provider failed", StringComparison.Ordinal));
         Assert.True(generations.Count(generation => generation.Mode == GenerationMode.Stream) >= 2);
+    }
+
+    [Fact]
+    public async Task Recorder_StreamMappingErrors_PreserveReturnedSummaries_AndMarkSpans()
+    {
+        var exporter = new CapturingExporter();
+        var spans = new List<Activity>();
+        using var listener = NewGenerationListener(spans);
+        ActivitySource.AddActivityListener(listener);
+
+        await using var client = new SigilClient(new SigilClientConfig
+        {
+            GenerationExporter = exporter,
+            GenerationExport = new GenerationExportConfig
+            {
+                BatchSize = 1,
+                QueueSize = 10,
+                FlushInterval = TimeSpan.FromHours(1),
+            },
+        });
+
+        var chatSummary = await OpenAIRecorder.CompleteChatStreamingAsync(
+            client,
+            new List<ChatMessage> { new UserChatMessage("hello") },
+            (_, _, _) => EmptyChatUpdates(),
+            requestOptions: null,
+            options: new OpenAISigilOptions
+            {
+                ModelName = "gpt-5",
+            }
+        );
+
+        var responsesSummary = await OpenAIRecorder.CreateResponseStreamingAsync(
+            client,
+            new List<ResponseItem> { ResponseItem.CreateUserMessageItem("hello") },
+            (_, _, _) => EmptyResponsesUpdates(),
+            requestOptions: new CreateResponseOptions(),
+            options: new OpenAISigilOptions
+            {
+                ModelName = "gpt-5",
+            }
+        );
+
+        Assert.Empty(chatSummary.Updates);
+        Assert.Empty(responsesSummary.Events);
+
+        await client.FlushAsync();
+        await client.ShutdownAsync();
+
+        var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
+        Assert.Equal(2, generations.Count);
+        Assert.All(generations, generation =>
+        {
+            Assert.Equal(GenerationMode.Stream, generation.Mode);
+            Assert.Equal(string.Empty, generation.CallError);
+        });
+        Assert.Equal(2, spans.Count(span => span.GetTagItem("error.type")?.ToString() == "mapping_error"));
     }
 
     [Fact]
@@ -565,6 +665,34 @@ public sealed class OpenAIConformanceTests
         );
 
         await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<StreamingChatCompletionUpdate> EmptyChatUpdates()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    private static async IAsyncEnumerable<StreamingResponseUpdate> EmptyResponsesUpdates()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    private static ActivityListener NewGenerationListener(List<Activity> spans)
+    {
+        return new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")
+                {
+                    spans.Add(activity);
+                }
+            },
+        };
     }
 
     private sealed class CapturingExporter : IGenerationExporter

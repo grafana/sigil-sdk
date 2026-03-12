@@ -1,4 +1,5 @@
 using Google.GenAI.Types;
+using System.Diagnostics;
 using System.Reflection;
 using Xunit;
 using GPart = Google.GenAI.Types.Part;
@@ -184,6 +185,68 @@ public sealed class GeminiConformanceTests
         Assert.True(generations.Count >= 2);
         Assert.Contains(generations, generation => generation.Mode == GenerationMode.Sync && generation.CallError.Contains("provider failed", StringComparison.Ordinal));
         Assert.Contains(generations, generation => generation.Mode == GenerationMode.Stream);
+    }
+
+    [Fact]
+    public async Task Recorder_StreamMappingErrors_PreserveReturnedSummaries_AndMarkSpans()
+    {
+        var exporter = new CapturingExporter();
+        var spans = new List<Activity>();
+        using var listener = NewGenerationListener(spans);
+        ActivitySource.AddActivityListener(listener);
+
+        await using var client = new SigilClient(new SigilClientConfig
+        {
+            GenerationExporter = exporter,
+            GenerationExport = new GenerationExportConfig
+            {
+                BatchSize = 1,
+                QueueSize = 10,
+                FlushInterval = TimeSpan.FromHours(1),
+            },
+        });
+
+        var summary = await GeminiRecorder.GenerateContentStreamAsync(
+            client,
+            DefaultModel,
+            CreateContents(),
+            (_, _, _, _) => EmptyStreamResponses(),
+            CreateConfig(),
+            new GeminiSigilOptions
+            {
+                ModelName = DefaultModel,
+            }
+        );
+
+        Assert.Empty(summary.Responses);
+
+        await client.FlushAsync();
+        await client.ShutdownAsync();
+
+        var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
+        Assert.Single(generations);
+        Assert.Equal(GenerationMode.Stream, generations[0].Mode);
+        Assert.Equal(string.Empty, generations[0].CallError);
+        Assert.Single(spans, span => span.GetTagItem("error.type")?.ToString() == "mapping_error");
+    }
+
+    [Fact]
+    public void MapperRejectsMissingOrMalformedResponses()
+    {
+        Assert.Throws<ArgumentNullException>(() => GeminiGenerationMapper.FromRequestResponse(
+            DefaultModel,
+            CreateContents(),
+            CreateConfig(),
+            response: null!,
+            new GeminiSigilOptions()
+        ));
+        Assert.Throws<ArgumentException>(() => GeminiGenerationMapper.FromStream(
+            DefaultModel,
+            CreateContents(),
+            CreateConfig(),
+            new GeminiStreamSummary(),
+            new GeminiSigilOptions()
+        ));
     }
 
     [Fact]
@@ -637,6 +700,12 @@ public sealed class GeminiConformanceTests
         await Task.CompletedTask;
     }
 
+    private static async IAsyncEnumerable<GenerateContentResponse> EmptyStreamResponses()
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
     private sealed class CapturingExporter : IGenerationExporter
     {
         public List<ExportGenerationsRequest> Requests { get; } = new();
@@ -658,5 +727,21 @@ public sealed class GeminiConformanceTests
         {
             return Task.CompletedTask;
         }
+    }
+
+    private static ActivityListener NewGenerationListener(List<Activity> spans)
+    {
+        return new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")
+                {
+                    spans.Add(activity);
+                }
+            },
+        };
     }
 }

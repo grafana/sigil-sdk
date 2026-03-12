@@ -195,6 +195,48 @@ def test_gemini_wrapper_propagates_provider_error_and_sets_call_error() -> None:
         client.shutdown()
 
 
+def test_gemini_wrappers_tolerate_missing_provider_payload_fields() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        models.generate_content(
+            client,
+            "gemini-2.5-pro",
+            _contents(),
+            _config(),
+            lambda _model, _contents, _config: {
+                "response_id": "resp-malformed",
+                "model_version": "gemini-2.5-pro-001",
+                "candidates": [],
+            },
+        )
+        models.generate_content_stream(
+            client,
+            "gemini-2.5-pro",
+            _contents(),
+            _config(),
+            lambda _model, _contents, _config: GeminiStreamSummary(responses=[{"model_version": "gemini-2.5-pro-001"}]),
+        )
+
+        client.flush()
+        generations = exporter.requests[0].generations
+        assert len(generations) == 2
+
+        sync_generation = generations[0]
+        assert sync_generation.mode.value == "SYNC"
+        assert sync_generation.response_id == "resp-malformed"
+        assert sync_generation.response_model == "gemini-2.5-pro-001"
+        assert sync_generation.output == []
+        assert sync_generation.stop_reason == ""
+
+        stream_generation = generations[1]
+        assert stream_generation.mode.value == "STREAM"
+        assert stream_generation.response_model == "gemini-2.5-pro-001"
+        assert stream_generation.output == []
+    finally:
+        client.shutdown()
+
+
 def test_gemini_embeddings_wrapper_records_span_and_skips_generation_export() -> None:
     exporter = _CapturingExporter()
     span_exporter = InMemorySpanExporter()

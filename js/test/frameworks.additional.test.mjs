@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { context, trace } from '@opentelemetry/api';
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 import {
@@ -253,6 +255,87 @@ for (const framework of frameworks) {
 
     assert.deepEqual(generation.metadata.first, { nested: { ok: true } });
     assert.deepEqual(generation.metadata.second, { nested: { ok: true } });
+  });
+
+  test(`${framework.name} generation span tracks active parent span and preserves export lineage`, async () => {
+    const spanExporter = new InMemorySpanExporter();
+    const tracerProvider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(spanExporter)],
+    });
+    const baseTracer = tracerProvider.getTracer('sigil-framework-test');
+    let parentContext;
+    const tracer = {
+      startSpan(name, options, contextArg) {
+        return baseTracer.startSpan(name, options, contextArg ?? parentContext);
+      },
+      startActiveSpan(...args) {
+        return baseTracer.startActiveSpan(...args);
+      },
+    };
+    const defaults = defaultConfig();
+    const exporter = new CapturingExporter();
+    const client = new SigilClient({
+      generationExport: {
+        ...defaults.generationExport,
+        batchSize: 10,
+        flushIntervalMs: 60_000,
+      },
+      generationExporter: exporter,
+      tracer,
+    });
+
+    try {
+      const handler = new framework.handlerCtor(client);
+      const parentSpan = baseTracer.startSpan('framework.request');
+      parentContext = trace.setSpan(context.active(), parentSpan);
+      await handler.handleChatModelStart(
+        { name: 'ChatModel' },
+        [[{ type: 'human', content: 'hello' }]],
+        'run-lineage',
+        'parent-run-lineage',
+        { invocation_params: { model: 'gpt-5' } },
+        ['prod'],
+        {
+          conversation_id: 'framework-conversation-lineage-42',
+          thread_id: 'framework-thread-lineage-42',
+        }
+      );
+      await handler.handleLLMEnd(
+        {
+          generations: [[{ text: 'world' }]],
+          llm_output: { model_name: 'gpt-5', finish_reason: 'stop' },
+        },
+        'run-lineage'
+      );
+      parentSpan.end();
+
+      await client.flush();
+      const generation = exporter.requests[0].generations[0];
+      const generationSpan = spanExporter
+        .getFinishedSpans()
+        .find((span) => span.attributes['gen_ai.operation.name'] === 'generateText');
+
+      assert.ok(generationSpan);
+      assert.equal(generationSpan.parentSpanContext?.spanId, parentSpan.spanContext().spanId);
+      assert.equal(generationSpan.spanContext().traceId, parentSpan.spanContext().traceId);
+      assert.equal(generation.traceId, generationSpan.spanContext().traceId);
+      assert.equal(generation.spanId, generationSpan.spanContext().spanId);
+    } finally {
+      await client.shutdown();
+      await tracerProvider.shutdown();
+    }
+  });
+
+  test(`${framework.name} handler explicitly has no embedding lifecycle`, async () => {
+    const client = new SigilClient(defaultConfig());
+    try {
+      const handler = new framework.handlerCtor(client);
+      assert.equal(typeof handler.handleEmbeddingStart, 'undefined');
+      assert.equal(typeof handler.handleEmbeddingEnd, 'undefined');
+      assert.equal(typeof handler.handleEmbeddingError, 'undefined');
+    } finally {
+      await client.shutdown();
+    }
   });
 }
 

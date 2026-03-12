@@ -21,7 +21,7 @@ public static class OpenAIRecorder
         }
 
         var effective = options ?? new OpenAISigilOptions();
-        var modelName = ResolveInitialModelName(effective, provider.GetType().GetProperty("Model")?.GetValue(provider) as string);
+        var modelName = ResolveInitialModelName(effective, provider.Model);
 
         return await CompleteChatAsync(
             client,
@@ -125,7 +125,7 @@ public static class OpenAIRecorder
         }
 
         var effective = options ?? new OpenAISigilOptions();
-        var modelName = ResolveInitialModelName(effective, provider.GetType().GetProperty("Model")?.GetValue(provider) as string);
+        var modelName = ResolveInitialModelName(effective, provider.Model);
 
         return await CompleteChatStreamingAsync(
             client,

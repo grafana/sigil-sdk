@@ -106,6 +106,53 @@ class GeminiConformanceTest {
     }
 
     @Test
+    void wrappersTolerateMissingProviderPayloadFields() throws Exception {
+        CapturingExporter exporter = new CapturingExporter();
+        try (SigilClient client = new SigilClient(new SigilClientConfig()
+                .setTracer(GlobalOpenTelemetry.getTracer("test"))
+                .setGenerationExporter(exporter)
+                .setGenerationExport(new GenerationExportConfig().setBatchSize(1).setFlushInterval(Duration.ofMinutes(10)).setMaxRetries(0)))) {
+
+            GeminiAdapter.completion(
+                    client,
+                    model(),
+                    contents(),
+                    config(),
+                    (_m, _c, _cfg) -> GenerateContentResponse.fromJson(
+                            """
+                            {
+                              "responseId": "resp_malformed",
+                              "modelVersion": "gemini-2.5-pro-001",
+                              "candidates": []
+                            }
+                            """),
+                    new GeminiOptions());
+            GeminiAdapter.completionStream(
+                    client,
+                    model(),
+                    contents(),
+                    config(),
+                    (_m, _c, _cfg) -> List.of(GenerateContentResponse.fromJson(
+                            """
+                            {
+                              "modelVersion": "gemini-2.5-pro-001"
+                            }
+                            """)),
+                    new GeminiOptions());
+        }
+
+        assertThat(exporter.generations).hasSize(2);
+        assertThat(exporter.generations.get(0).getMode()).isEqualTo(GenerationMode.SYNC);
+        assertThat(exporter.generations.get(0).getResponseId()).isEqualTo("resp_malformed");
+        assertThat(exporter.generations.get(0).getResponseModel()).isEqualTo("gemini-2.5-pro-001");
+        assertThat(exporter.generations.get(0).getOutput()).isEmpty();
+        assertThat(exporter.generations.get(0).getStopReason()).isEmpty();
+        assertThat(exporter.generations.get(1).getMode()).isEqualTo(GenerationMode.STREAM);
+        assertThat(exporter.generations.get(1).getResponseModel()).isEqualTo("gemini-2.5-pro-001");
+        assertThat(exporter.generations.get(1).getOutput()).isEmpty();
+    }
+
+    @Test
     void embeddingWrapperDoesNotEnqueueGenerations() throws Exception {
         CapturingExporter exporter = new CapturingExporter();
         try (SigilClient client = new SigilClient(new SigilClientConfig()

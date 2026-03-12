@@ -549,6 +549,172 @@ test('embedding provider wrapper errors set provider_call_error span status', as
   }
 });
 
+test('provider mappers throw on missing provider responses and stream summaries', () => {
+  assert.throws(
+    () => openai.chat.completions.fromRequestResponse(
+      {
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'hello' }],
+      },
+      undefined
+    ),
+    /reading 'id'/
+  );
+  assert.throws(
+    () => openai.responses.fromRequestResponse(
+      {
+        model: 'gpt-5',
+        input: 'hello',
+      },
+      undefined
+    ),
+    /reading 'id'/
+  );
+  assert.throws(
+    () => openai.chat.completions.fromStream(
+      {
+        model: 'gpt-5',
+        stream: true,
+        messages: [{ role: 'user', content: 'hello' }],
+      },
+      undefined
+    ),
+    /reading 'outputText'/
+  );
+  assert.throws(
+    () => openai.responses.fromStream(
+      {
+        model: 'gpt-5',
+        stream: true,
+        input: 'hello',
+      },
+      undefined
+    ),
+    /reading 'events'/
+  );
+
+  assert.throws(
+    () => anthropic.messages.fromRequestResponse(
+      {
+        model: 'claude-sonnet-4-5',
+        max_tokens: 128,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      },
+      undefined
+    ),
+    /reading 'content'/
+  );
+  assert.throws(
+    () => anthropic.messages.fromStream(
+      {
+        model: 'claude-sonnet-4-5',
+        max_tokens: 128,
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      },
+      undefined
+    ),
+    /reading 'events'/
+  );
+
+  assert.throws(
+    () => gemini.models.fromRequestResponse(
+      'gemini-2.5-pro',
+      [{ role: 'user', parts: [{ text: 'hello' }] }],
+      undefined,
+      undefined
+    ),
+    /reading 'candidates'/
+  );
+  assert.throws(
+    () => gemini.models.fromStream(
+      'gemini-2.5-pro',
+      [{ role: 'user', parts: [{ text: 'hello' }] }],
+      undefined,
+      undefined
+    ),
+    /reading 'responses'/
+  );
+});
+
+test('provider wrappers surface mapper failures when provider payloads are missing', async () => {
+  for (const suite of [
+    {
+      provider: 'openai',
+      error: /reading 'id'/,
+      run: async (client) => {
+        await openai.chat.completions.create(
+          client,
+          {
+            model: 'gpt-5',
+            messages: [{ role: 'user', content: 'hello' }],
+          },
+          async () => undefined
+        );
+      },
+    },
+    {
+      provider: 'openai',
+      error: /reading 'id'/,
+      run: async (client) => {
+        await openai.responses.create(
+          client,
+          {
+            model: 'gpt-5',
+            input: 'hello',
+          },
+          async () => undefined
+        );
+      },
+    },
+    {
+      provider: 'anthropic',
+      error: /reading 'content'/,
+      run: async (client) => {
+        await anthropic.messages.create(
+          client,
+          {
+            model: 'claude-sonnet-4-5',
+            max_tokens: 128,
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+          },
+          async () => undefined
+        );
+      },
+    },
+    {
+      provider: 'gemini',
+      error: /reading 'candidates'/,
+      run: async (client) => {
+        await gemini.models.generateContent(
+          client,
+          'gemini-2.5-pro',
+          [{ role: 'user', parts: [{ text: 'hello' }] }],
+          undefined,
+          async () => undefined
+        );
+      },
+    },
+  ]) {
+    const exporter = new CapturingExporter();
+    const client = newClient(exporter);
+    try {
+      await assert.rejects(suite.run(client), suite.error);
+      await client.flush();
+      const generation = firstGeneration(exporter);
+      assert.equal(generation.model.provider, suite.provider);
+      assert.match(generation.callError ?? '', suite.error);
+      assert.equal(generation.output, undefined);
+    } finally {
+      await client.shutdown();
+    }
+  }
+});
+
+test('anthropic provider namespace explicitly has no embeddings surface', () => {
+  assert.ok(anthropic.messages);
+  assert.equal(anthropic.embeddings, undefined);
+});
+
 test('provider wrappers propagate provider errors and persist callError', async () => {
   for (const suite of [
     {

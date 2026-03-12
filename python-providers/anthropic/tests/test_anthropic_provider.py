@@ -8,6 +8,7 @@ import pytest
 
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
+import sigil_sdk_anthropic
 from sigil_sdk_anthropic import AnthropicOptions, AnthropicStreamSummary, messages
 
 
@@ -145,6 +146,45 @@ def test_anthropic_wrapper_propagates_provider_error_and_sets_call_error() -> No
         client.shutdown()
 
 
+def test_anthropic_wrappers_tolerate_missing_provider_payload_fields() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        messages.create(
+            client,
+            _request(),
+            lambda _request: {
+                "id": "resp-malformed",
+                "model": "claude-sonnet-4-5-20260210",
+                "role": "assistant",
+                "content": [],
+            },
+        )
+        messages.stream(
+            client,
+            _request(),
+            lambda _request: AnthropicStreamSummary(events=[{"type": "content_block_delta", "delta": {"type": "text_delta"}}]),
+        )
+
+        client.flush()
+        generations = exporter.requests[0].generations
+        assert len(generations) == 2
+
+        sync_generation = generations[0]
+        assert sync_generation.mode.value == "SYNC"
+        assert sync_generation.response_id == "resp-malformed"
+        assert sync_generation.response_model == "claude-sonnet-4-5-20260210"
+        assert sync_generation.output == []
+        assert sync_generation.stop_reason == ""
+
+        stream_generation = generations[1]
+        assert stream_generation.mode.value == "STREAM"
+        assert stream_generation.response_model == "claude-sonnet-4-5"
+        assert stream_generation.output == []
+    finally:
+        client.shutdown()
+
+
 def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
     request = _request()
     response = _response()
@@ -200,3 +240,9 @@ def test_anthropic_mapper_maps_thinking_disabled() -> None:
     mapped = messages.from_request_response(request, response)
 
     assert mapped.thinking_enabled is False
+
+
+def test_anthropic_provider_explicitly_has_no_embeddings_surface() -> None:
+    assert "messages" in sigil_sdk_anthropic.__all__
+    assert "embeddings" not in sigil_sdk_anthropic.__all__
+    assert not hasattr(sigil_sdk_anthropic, "embeddings")
