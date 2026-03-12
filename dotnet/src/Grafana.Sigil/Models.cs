@@ -203,6 +203,8 @@ public sealed class GenerationStart
 {
     public string Id { get; set; } = string.Empty;
     public string ConversationId { get; set; } = string.Empty;
+    public string ConversationTitle { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
     public string AgentName { get; set; } = string.Empty;
     public string AgentVersion { get; set; } = string.Empty;
     public GenerationMode? Mode { get; set; }
@@ -245,6 +247,8 @@ public sealed class Generation
 {
     public string Id { get; set; } = string.Empty;
     public string ConversationId { get; set; } = string.Empty;
+    public string ConversationTitle { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
     public string AgentName { get; set; } = string.Empty;
     public string AgentVersion { get; set; } = string.Empty;
     public GenerationMode? Mode { get; set; }
@@ -280,6 +284,7 @@ public sealed class ToolExecutionStart
     public string ToolType { get; set; } = string.Empty;
     public string ToolDescription { get; set; } = string.Empty;
     public string ConversationId { get; set; } = string.Empty;
+    public string ConversationTitle { get; set; } = string.Empty;
     public string AgentName { get; set; } = string.Empty;
     public string AgentVersion { get; set; } = string.Empty;
     public bool IncludeContent { get; set; }

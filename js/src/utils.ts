@@ -5,11 +5,13 @@ import type {
   Generation,
   GenerationMode,
   GenerationResult,
+  GenerationStart,
   Message,
   MessagePart,
   ModelRef,
   ToolDefinition,
   ToolExecution,
+  ToolExecutionStart,
   ToolExecutionResult,
 } from './types.js';
 
@@ -159,6 +161,17 @@ export function cloneGenerationResult(result: GenerationResult): GenerationResul
   };
 }
 
+export function cloneGenerationStart(start: GenerationStart): GenerationStart {
+  return {
+    ...start,
+    model: cloneModelRef(start.model),
+    tools: start.tools?.map(cloneToolDefinition),
+    tags: start.tags ? { ...start.tags } : undefined,
+    metadata: start.metadata ? { ...start.metadata } : undefined,
+    startedAt: start.startedAt ? new Date(start.startedAt) : undefined,
+  };
+}
+
 export function cloneEmbeddingStart(start: EmbeddingStart): EmbeddingStart {
   return {
     ...start,
@@ -181,6 +194,13 @@ export function cloneToolExecution(toolExecution: ToolExecution): ToolExecution 
     ...toolExecution,
     startedAt: new Date(toolExecution.startedAt),
     completedAt: new Date(toolExecution.completedAt),
+  };
+}
+
+export function cloneToolExecutionStart(start: ToolExecutionStart): ToolExecutionStart {
+  return {
+    ...start,
+    startedAt: start.startedAt ? new Date(start.startedAt) : undefined,
   };
 }
 

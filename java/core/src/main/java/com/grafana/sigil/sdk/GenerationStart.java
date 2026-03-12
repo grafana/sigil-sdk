@@ -10,6 +10,8 @@ import java.util.Map;
 public final class GenerationStart {
     private String id = "";
     private String conversationId = "";
+    private String conversationTitle = "";
+    private String userId = "";
     private String agentName = "";
     private String agentVersion = "";
     private GenerationMode mode;
@@ -41,6 +43,24 @@ public final class GenerationStart {
 
     public GenerationStart setConversationId(String conversationId) {
         this.conversationId = conversationId == null ? "" : conversationId;
+        return this;
+    }
+
+    public String getConversationTitle() {
+        return conversationTitle;
+    }
+
+    public GenerationStart setConversationTitle(String conversationTitle) {
+        this.conversationTitle = conversationTitle == null ? "" : conversationTitle;
+        return this;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public GenerationStart setUserId(String userId) {
+        this.userId = userId == null ? "" : userId;
         return this;
     }
 
@@ -192,6 +212,8 @@ public final class GenerationStart {
         GenerationStart out = new GenerationStart()
                 .setId(id)
                 .setConversationId(conversationId)
+                .setConversationTitle(conversationTitle)
+                .setUserId(userId)
                 .setAgentName(agentName)
                 .setAgentVersion(agentVersion)
                 .setMode(mode)

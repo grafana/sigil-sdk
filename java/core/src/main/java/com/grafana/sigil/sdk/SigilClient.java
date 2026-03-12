@@ -42,6 +42,8 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_GENERATION_ID = "sigil.generation.id";
     static final String SPAN_ATTR_SDK_NAME = "sigil.sdk.name";
     static final String SPAN_ATTR_CONVERSATION_ID = "gen_ai.conversation.id";
+    static final String SPAN_ATTR_CONVERSATION_TITLE = "sigil.conversation.title";
+    static final String SPAN_ATTR_USER_ID = "user.id";
     static final String SPAN_ATTR_AGENT_NAME = "gen_ai.agent.name";
     static final String SPAN_ATTR_AGENT_VERSION = "gen_ai.agent.version";
     static final String SPAN_ATTR_ERROR_TYPE = "error.type";
@@ -98,6 +100,8 @@ public final class SigilClient implements AutoCloseable {
     private static final String INSTRUMENTATION_NAME = "github.com/grafana/sigil/sdks/java";
     static final String DEFAULT_EMBEDDING_OPERATION_NAME = "embeddings";
     static final String SDK_NAME = "sdk-java";
+    static final String METADATA_USER_ID_KEY = "sigil.user.id";
+    static final String METADATA_LEGACY_USER_ID_KEY = "user.id";
 
     private final SigilClientConfig config;
     private final GenerationExporter generationExporter;
@@ -300,6 +304,9 @@ public final class SigilClient implements AutoCloseable {
 
         if (seed.getConversationId().isBlank()) {
             seed.setConversationId(SigilContext.conversationIdFromContext());
+        }
+        if (seed.getConversationTitle().isBlank()) {
+            seed.setConversationTitle(SigilContext.conversationTitleFromContext());
         }
         if (seed.getAgentName().isBlank()) {
             seed.setAgentName(SigilContext.agentNameFromContext());
@@ -535,6 +542,12 @@ public final class SigilClient implements AutoCloseable {
         if (seed.getConversationId().isBlank()) {
             seed.setConversationId(SigilContext.conversationIdFromContext());
         }
+        if (seed.getConversationTitle().isBlank()) {
+            seed.setConversationTitle(SigilContext.conversationTitleFromContext());
+        }
+        if (seed.getUserId().isBlank()) {
+            seed.setUserId(SigilContext.userIdFromContext());
+        }
         if (seed.getAgentName().isBlank()) {
             seed.setAgentName(SigilContext.agentNameFromContext());
         }
@@ -553,6 +566,8 @@ public final class SigilClient implements AutoCloseable {
         Generation initial = new Generation();
         initial.setId(seed.getId());
         initial.setConversationId(seed.getConversationId());
+        initial.setConversationTitle(seed.getConversationTitle());
+        initial.setUserId(seed.getUserId());
         initial.setAgentName(seed.getAgentName());
         initial.setAgentVersion(seed.getAgentVersion());
         initial.setMode(seed.getMode());
@@ -955,6 +970,12 @@ public final class SigilClient implements AutoCloseable {
         if (!generation.getConversationId().isBlank()) {
             span.setAttribute(SPAN_ATTR_CONVERSATION_ID, generation.getConversationId());
         }
+        if (!generation.getConversationTitle().isBlank()) {
+            span.setAttribute(SPAN_ATTR_CONVERSATION_TITLE, generation.getConversationTitle());
+        }
+        if (!generation.getUserId().isBlank()) {
+            span.setAttribute(SPAN_ATTR_USER_ID, generation.getUserId());
+        }
         if (!generation.getAgentName().isBlank()) {
             span.setAttribute(SPAN_ATTR_AGENT_NAME, generation.getAgentName());
         }
@@ -1013,6 +1034,9 @@ public final class SigilClient implements AutoCloseable {
         span.setAttribute(SPAN_ATTR_SDK_NAME, SDK_NAME);
         if (!seed.getConversationId().isBlank()) {
             span.setAttribute(SPAN_ATTR_CONVERSATION_ID, seed.getConversationId());
+        }
+        if (!seed.getConversationTitle().isBlank()) {
+            span.setAttribute(SPAN_ATTR_CONVERSATION_TITLE, seed.getConversationTitle());
         }
         if (!seed.getAgentName().isBlank()) {
             span.setAttribute(SPAN_ATTR_AGENT_NAME, seed.getAgentName());
@@ -1328,6 +1352,17 @@ public final class SigilClient implements AutoCloseable {
             }
         }
         return null;
+    }
+
+    static String metadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null) {
+            return "";
+        }
+        Object value = metadata.get(key);
+        if (value == null) {
+            return "";
+        }
+        return String.valueOf(value).trim();
     }
 
     private static EmbeddingCaptureConfig normalizeEmbeddingCaptureConfig(EmbeddingCaptureConfig input) {

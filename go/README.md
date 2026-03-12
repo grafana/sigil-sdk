@@ -206,7 +206,7 @@ The Go SDK ships a local no-Docker conformance harness for the current cross-SDK
 - Shared spec: `../../docs/references/sdk-conformance-spec.md`
 - Default local command: `mise run test:sdk:conformance`
 - Direct Go command: `cd sdks/go && GOWORK=off go test ./sigil -run '^TestConformance' -count=1`
-- Current baseline coverage: conversation title resolution, user ID resolution, agent name/version resolution, streaming mode + TTFT, tool execution, embeddings, validation/error handling, rating submission, and shutdown flush semantics across exported generation payloads, OTLP spans, OTLP metrics, and local rating HTTP capture
+- Current baseline coverage: sync roundtrip, conversation title resolution, user ID resolution, agent name/version resolution, streaming mode + TTFT, tool execution, embeddings, validation/error handling, rating submission, and shutdown flush semantics across exported generation payloads, OTLP spans, OTLP metrics, and local rating HTTP capture
 
 ## Explicit flow example
 

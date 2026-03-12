@@ -38,6 +38,18 @@ public final class Generation extends GenerationResult {
     }
 
     @Override
+    public Generation setConversationTitle(String conversationTitle) {
+        super.setConversationTitle(conversationTitle);
+        return this;
+    }
+
+    @Override
+    public Generation setUserId(String userId) {
+        super.setUserId(userId);
+        return this;
+    }
+
+    @Override
     public Generation setAgentName(String agentName) {
         super.setAgentName(agentName);
         return this;
@@ -101,6 +113,8 @@ public final class Generation extends GenerationResult {
         Generation out = new Generation();
         out.setId(getId());
         out.setConversationId(getConversationId());
+        out.setConversationTitle(getConversationTitle());
+        out.setUserId(getUserId());
         out.setAgentName(getAgentName());
         out.setAgentVersion(getAgentVersion());
         out.setMode(getMode());

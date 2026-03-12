@@ -9,6 +9,7 @@ public final class ToolExecutionStart {
     private String toolType = "";
     private String toolDescription = "";
     private String conversationId = "";
+    private String conversationTitle = "";
     private String agentName = "";
     private String agentVersion = "";
     private boolean includeContent;
@@ -59,6 +60,15 @@ public final class ToolExecutionStart {
         return this;
     }
 
+    public String getConversationTitle() {
+        return conversationTitle;
+    }
+
+    public ToolExecutionStart setConversationTitle(String conversationTitle) {
+        this.conversationTitle = conversationTitle == null ? "" : conversationTitle;
+        return this;
+    }
+
     public String getAgentName() {
         return agentName;
     }
@@ -102,6 +112,7 @@ public final class ToolExecutionStart {
                 .setToolType(toolType)
                 .setToolDescription(toolDescription)
                 .setConversationId(conversationId)
+                .setConversationTitle(conversationTitle)
                 .setAgentName(agentName)
                 .setAgentVersion(agentVersion)
                 .setIncludeContent(includeContent)

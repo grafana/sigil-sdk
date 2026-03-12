@@ -162,6 +162,8 @@ class GenerationStart:
     model: ModelRef
     id: str = ""
     conversation_id: str = ""
+    conversation_title: str = ""
+    user_id: str = ""
     agent_name: str = ""
     agent_version: str = ""
     mode: Optional[GenerationMode] = None
@@ -209,6 +211,8 @@ class Generation:
 
     id: str = ""
     conversation_id: str = ""
+    conversation_title: str = ""
+    user_id: str = ""
     agent_name: str = ""
     agent_version: str = ""
     mode: Optional[GenerationMode] = None
@@ -246,6 +250,7 @@ class ToolExecutionStart:
     tool_type: str = ""
     tool_description: str = ""
     conversation_id: str = ""
+    conversation_title: str = ""
     agent_name: str = ""
     agent_version: str = ""
     include_content: bool = False
