@@ -23,6 +23,9 @@ import (
 
 const (
 	conformanceOperationName       = "generateText"
+	conformanceStreamOperation     = "streamText"
+	conformanceToolOperation       = "execute_tool"
+	conformanceEmbeddingOperation  = "embeddings"
 	metadataKeyConversation        = "sigil.conversation.title"
 	metadataKeyCanonicalUserID     = "sigil.user.id"
 	metadataKeyLegacyUserID        = "user.id"
@@ -30,11 +33,13 @@ const (
 	metadataKeySDKName             = "sigil.sdk.name"
 	spanAttrOperationName          = "gen_ai.operation.name"
 	spanAttrGenerationID           = "sigil.generation.id"
+	spanAttrConversationID         = "gen_ai.conversation.id"
 	spanAttrConversationTitle      = "sigil.conversation.title"
 	spanAttrUserID                 = "user.id"
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
 	spanAttrErrorType              = "error.type"
+	spanAttrErrorCategory          = "error.category"
 	spanAttrProviderName           = "gen_ai.provider.name"
 	spanAttrRequestModel           = "gen_ai.request.model"
 	spanAttrRequestMaxTokens       = "gen_ai.request.max_tokens"
@@ -47,6 +52,7 @@ const (
 	spanAttrToolName               = "gen_ai.tool.name"
 	spanAttrToolCallID             = "gen_ai.tool.call.id"
 	spanAttrToolType               = "gen_ai.tool.type"
+	spanAttrToolDescription        = "gen_ai.tool.description"
 	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
 	spanAttrToolCallResult         = "gen_ai.tool.call.result"
 	spanAttrResponseID             = "gen_ai.response.id"
@@ -275,9 +281,41 @@ func (s *fakeIngestServer) SingleGeneration(t *testing.T) *sigilv1.Generation {
 }
 
 func (s *fakeIngestServer) RequestCount() int {
+	if s == nil {
+		return 0
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.requests)
+}
+
+func (s *fakeIngestServer) Requests() []*sigilv1.ExportGenerationsRequest {
+	if s == nil {
+		return nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]*sigilv1.ExportGenerationsRequest, len(s.requests))
+	copy(out, s.requests)
+	return out
+}
+
+func (s *fakeIngestServer) GenerationCount() int {
+	if s == nil {
+		return 0
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	total := 0
+	for _, req := range s.requests {
+		total += len(req.GetGenerations())
+	}
+	return total
 }
 
 func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
@@ -345,20 +383,32 @@ func (s *fakeRatingServer) Close() {
 func (s *fakeRatingServer) SingleRequest(t *testing.T) capturedRatingRequest {
 	t.Helper()
 
+	requests := s.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("expected exactly one rating request, got %d", len(requests))
+	}
+
+	return requests[0]
+}
+
+func (s *fakeRatingServer) Requests() []capturedRatingRequest {
+	if s == nil {
+		return nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.requests) != 1 {
-		t.Fatalf("expected exactly one rating request, got %d", len(s.requests))
+	out := make([]capturedRatingRequest, len(s.requests))
+	for i := range s.requests {
+		out[i] = capturedRatingRequest{
+			Method:  s.requests[i].Method,
+			Path:    s.requests[i].Path,
+			Headers: s.requests[i].Headers.Clone(),
+			Body:    append([]byte(nil), s.requests[i].Body...),
+		}
 	}
-
-	req := s.requests[0]
-	return capturedRatingRequest{
-		Method:  req.Method,
-		Path:    req.Path,
-		Headers: req.Headers.Clone(),
-		Body:    append([]byte(nil), req.Body...),
-	}
+	return out
 }
 
 func findSpan(t *testing.T, spans []sdktrace.ReadOnlySpan, operationName string) sdktrace.ReadOnlySpan {
@@ -451,6 +501,14 @@ func requireSpanAttrStringSlice(t *testing.T, attrs map[string]attribute.Value, 
 		if gotSlice[i] != want[i] {
 			t.Fatalf("unexpected span attribute %q: got %v want %v", key, gotSlice, want)
 		}
+	}
+}
+
+func requireSpanAttrPresent(t *testing.T, attrs map[string]attribute.Value, key string) {
+	t.Helper()
+
+	if _, ok := attrs[key]; !ok {
+		t.Fatalf("expected span attribute %q to be present", key)
 	}
 }
 

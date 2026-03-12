@@ -653,18 +653,31 @@ func TestConformance_AgentIdentitySemantics(t *testing.T) {
 	}
 }
 
-func TestConformance_StreamingModeSemantics(t *testing.T) {
+func TestConformance_StreamingMode(t *testing.T) {
 	env := newConformanceEnv(t)
 
+	recordGeneration(t, env, context.Background(), sigil.GenerationStart{
+		ConversationID: "conv-sync",
+		Model:          conformanceModel,
+		StartedAt:      time.Date(2026, 3, 12, 14, 0, 0, 0, time.UTC),
+	}, sigil.Generation{
+		Input:       []sigil.Message{sigil.UserTextMessage("hello")},
+		Output:      []sigil.Message{sigil.AssistantTextMessage("hi")},
+		CompletedAt: time.Date(2026, 3, 12, 14, 0, 1, 0, time.UTC),
+	})
+
+	streamStartedAt := time.Date(2026, 3, 12, 14, 1, 0, 0, time.UTC)
 	_, recorder := env.Client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-stream",
+		AgentName:      "agent-stream",
 		Model:          conformanceModel,
+		StartedAt:      streamStartedAt,
 	})
-	recorder.SetFirstTokenAt(time.Now())
+	recorder.SetFirstTokenAt(streamStartedAt.Add(250 * time.Millisecond))
 	recorder.SetResult(sigil.Generation{
-		Input:  []sigil.Message{sigil.UserTextMessage("Say hello")},
-		Output: []sigil.Message{sigil.AssistantTextMessage("Hello world")},
-		Usage:  sigil.TokenUsage{InputTokens: 5, OutputTokens: 2},
+		Input:       []sigil.Message{sigil.UserTextMessage("say hello")},
+		Output:      []sigil.Message{sigil.AssistantTextMessage("Hello world")},
+		CompletedAt: streamStartedAt.Add(1500 * time.Millisecond),
 	}, nil)
 	recorder.End()
 	if err := recorder.Err(); err != nil {
@@ -672,100 +685,126 @@ func TestConformance_StreamingModeSemantics(t *testing.T) {
 	}
 
 	metrics := env.CollectMetrics(t)
-	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
-		t.Fatalf("expected %s datapoints for streaming conformance", metricOperationDuration)
+	ttft := findHistogram[float64](t, metrics, metricTimeToFirstToken)
+	if len(ttft.DataPoints) != 1 {
+		t.Fatalf("expected exactly 1 %s datapoint, got %d", metricTimeToFirstToken, len(ttft.DataPoints))
 	}
-	if len(findHistogram[float64](t, metrics, metricTimeToFirstToken).DataPoints) == 0 {
-		t.Fatalf("expected %s datapoints for streaming conformance", metricTimeToFirstToken)
-	}
+	requireHistogramPointWithAttrs(t, ttft, map[string]string{
+		spanAttrProviderName: conformanceModel.Provider,
+		spanAttrRequestModel: conformanceModel.Name,
+		spanAttrAgentName:    "agent-stream",
+	})
 
 	env.Shutdown(t)
 
-	generation := env.Ingest.SingleGeneration(t)
-	if generation.GetMode() != sigilv1.GenerationMode_GENERATION_MODE_STREAM {
-		t.Fatalf("expected streamed proto mode, got %s", generation.GetMode())
+	streamGeneration := findGenerationByConversationID(t, env.Ingest.Requests(), "conv-stream")
+	if got := streamGeneration.GetMode(); got != sigilv1.GenerationMode_GENERATION_MODE_STREAM {
+		t.Fatalf("unexpected proto mode: got %v want %v", got, sigilv1.GenerationMode_GENERATION_MODE_STREAM)
 	}
-	if generation.GetOperationName() != "streamText" {
-		t.Fatalf("expected streamed operation streamText, got %q", generation.GetOperationName())
+	if got := streamGeneration.GetOperationName(); got != conformanceStreamOperation {
+		t.Fatalf("unexpected proto operation: got %q want %q", got, conformanceStreamOperation)
 	}
-	if len(generation.GetOutput()) != 1 || len(generation.GetOutput()[0].GetParts()) != 1 {
-		t.Fatalf("expected a single streamed assistant output, got %#v", generation.GetOutput())
+	if len(streamGeneration.GetOutput()) != 1 || len(streamGeneration.GetOutput()[0].GetParts()) != 1 {
+		t.Fatalf("expected a single streamed assistant output, got %#v", streamGeneration.GetOutput())
 	}
-	if got := generation.GetOutput()[0].GetParts()[0].GetText(); got != "Hello world" {
+	if got := streamGeneration.GetOutput()[0].GetParts()[0].GetText(); got != "Hello world" {
 		t.Fatalf("unexpected streamed assistant text: got %q want %q", got, "Hello world")
 	}
 
-	span := findSpan(t, env.Spans.Ended(), "streamText")
-	if span.Name() != "streamText gpt-5" {
-		t.Fatalf("unexpected streaming span name: %q", span.Name())
+	span := findSpan(t, env.Spans.Ended(), conformanceStreamOperation)
+	if got := span.Name(); got != conformanceStreamOperation+" "+conformanceModel.Name {
+		t.Fatalf("unexpected streaming span name: %q", got)
 	}
+	attrs := spanAttrs(span)
+	requireSpanAttr(t, attrs, spanAttrOperationName, conformanceStreamOperation)
 }
 
-func TestConformance_ToolExecutionSemantics(t *testing.T) {
+func TestConformance_ToolExecution(t *testing.T) {
 	env := newConformanceEnv(t)
 
-	_, recorder := env.Client.StartToolExecution(context.Background(), sigil.ToolExecutionStart{
-		ToolName:          "weather",
-		ToolCallID:        "call-weather",
-		ToolType:          "function",
-		ToolDescription:   "Get weather for a city",
-		ConversationID:    "conv-tools",
-		ConversationTitle: "Weather lookup",
-		AgentName:         "assistant-core",
-		AgentVersion:      "2026.03.12",
-		IncludeContent:    true,
+	ctx := sigil.WithConversationID(context.Background(), "conv-tool")
+	ctx = sigil.WithConversationTitle(ctx, "Weather lookup")
+	ctx = sigil.WithAgentName(ctx, "agent-tools")
+	ctx = sigil.WithAgentVersion(ctx, "2026.03.12")
+
+	generationStartedAt := time.Date(2026, 3, 12, 14, 2, 0, 0, time.UTC)
+	callCtx, generationRecorder := env.Client.StartGeneration(ctx, sigil.GenerationStart{
+		Model:     conformanceModel,
+		StartedAt: generationStartedAt,
 	})
-	recorder.SetResult(sigil.ToolExecutionEnd{
-		Arguments: map[string]any{"city": "Paris"},
-		Result:    map[string]any{"temp_c": 18},
+	_, toolRecorder := env.Client.StartToolExecution(callCtx, sigil.ToolExecutionStart{
+		ToolName:        "weather",
+		ToolCallID:      "call-weather",
+		ToolType:        "function",
+		ToolDescription: "Get weather",
+		IncludeContent:  true,
+		StartedAt:       generationStartedAt.Add(100 * time.Millisecond),
 	})
-	recorder.End()
-	if err := recorder.Err(); err != nil {
+	toolRecorder.SetResult(sigil.ToolExecutionEnd{
+		Arguments:   map[string]any{"city": "Paris"},
+		Result:      map[string]any{"temp_c": 18},
+		CompletedAt: generationStartedAt.Add(600 * time.Millisecond),
+	})
+	toolRecorder.End()
+	if err := toolRecorder.Err(); err != nil {
 		t.Fatalf("record tool execution: %v", err)
 	}
 
-	metrics := env.CollectMetrics(t)
-	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
-		t.Fatalf("expected %s datapoints for tool execution", metricOperationDuration)
-	}
-	requireNoHistogram(t, metrics, metricTimeToFirstToken)
-	if got := env.Ingest.RequestCount(); got != 0 {
-		t.Fatalf("expected no generation exports for tool execution, got %d", got)
+	generationRecorder.SetResult(sigil.Generation{
+		Input:       []sigil.Message{sigil.UserTextMessage("weather in Paris")},
+		Output:      []sigil.Message{sigil.AssistantTextMessage("Paris is 18C")},
+		CompletedAt: generationStartedAt.Add(time.Second),
+	}, nil)
+	generationRecorder.End()
+	if err := generationRecorder.Err(); err != nil {
+		t.Fatalf("record parent generation: %v", err)
 	}
 
-	span := findSpan(t, env.Spans.Ended(), "execute_tool")
+	metrics := env.CollectMetrics(t)
+	duration := findHistogram[float64](t, metrics, metricOperationDuration)
+	requireHistogramPointWithAttrs(t, duration, map[string]string{
+		spanAttrOperationName: conformanceToolOperation,
+		spanAttrRequestModel:  "weather",
+		spanAttrAgentName:     "agent-tools",
+	})
+
+	env.Shutdown(t)
+
+	span := findSpan(t, env.Spans.Ended(), conformanceToolOperation)
+	if got := span.SpanKind(); got != trace.SpanKindInternal {
+		t.Fatalf("unexpected tool span kind: got %v want %v", got, trace.SpanKindInternal)
+	}
+
 	attrs := spanAttrs(span)
+	requireSpanAttr(t, attrs, spanAttrOperationName, conformanceToolOperation)
 	requireSpanAttr(t, attrs, spanAttrToolName, "weather")
 	requireSpanAttr(t, attrs, spanAttrToolCallID, "call-weather")
 	requireSpanAttr(t, attrs, spanAttrToolType, "function")
+	requireSpanAttr(t, attrs, spanAttrToolDescription, "Get weather")
+	requireSpanAttr(t, attrs, spanAttrConversationID, "conv-tool")
 	requireSpanAttr(t, attrs, spanAttrConversationTitle, "Weather lookup")
-	requireSpanAttr(t, attrs, spanAttrAgentName, "assistant-core")
+	requireSpanAttr(t, attrs, spanAttrAgentName, "agent-tools")
 	requireSpanAttr(t, attrs, spanAttrAgentVersion, "2026.03.12")
-	requireSpanAttr(t, attrs, spanAttrToolCallArguments, `{"city":"Paris"}`)
-	requireSpanAttr(t, attrs, spanAttrToolCallResult, `{"temp_c":18}`)
-
-	env.Shutdown(t)
-	if got := env.Ingest.RequestCount(); got != 0 {
-		t.Fatalf("expected no generation exports after tool shutdown, got %d", got)
-	}
+	requireSpanAttr(t, attrs, metadataKeySDKName, sdkNameGo)
+	requireSpanAttrPresent(t, attrs, spanAttrToolCallArguments)
+	requireSpanAttrPresent(t, attrs, spanAttrToolCallResult)
 }
 
-func TestConformance_EmbeddingSemantics(t *testing.T) {
+func TestConformance_Embedding(t *testing.T) {
 	env := newConformanceEnv(t)
-	dimensions := int64(256)
 
 	_, recorder := env.Client.StartEmbedding(context.Background(), sigil.EmbeddingStart{
 		Model:          sigil.ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
 		AgentName:      "agent-embed",
-		AgentVersion:   "v-embed",
-		Dimensions:     &dimensions,
+		Dimensions:     int64Ptr(256),
 		EncodingFormat: "float",
+		StartedAt:      time.Date(2026, 3, 12, 14, 3, 0, 0, time.UTC),
 	})
 	recorder.SetResult(sigil.EmbeddingResult{
 		InputCount:    2,
 		InputTokens:   120,
 		ResponseModel: "text-embedding-3-small",
-		Dimensions:    &dimensions,
+		Dimensions:    int64Ptr(256),
 	})
 	recorder.End()
 	if err := recorder.Err(); err != nil {
@@ -773,157 +812,206 @@ func TestConformance_EmbeddingSemantics(t *testing.T) {
 	}
 
 	metrics := env.CollectMetrics(t)
-	if len(findHistogram[float64](t, metrics, metricOperationDuration).DataPoints) == 0 {
-		t.Fatalf("expected %s datapoints for embeddings", metricOperationDuration)
-	}
-	if len(findHistogram[int64](t, metrics, metricTokenUsage).DataPoints) == 0 {
-		t.Fatalf("expected %s datapoints for embeddings", metricTokenUsage)
-	}
+	duration := findHistogram[float64](t, metrics, metricOperationDuration)
+	requireHistogramPointWithAttrs(t, duration, map[string]string{
+		spanAttrOperationName: conformanceEmbeddingOperation,
+		spanAttrProviderName:  "openai",
+		spanAttrRequestModel:  "text-embedding-3-small",
+		spanAttrAgentName:     "agent-embed",
+	})
+	tokenUsage := findHistogram[int64](t, metrics, metricTokenUsage)
+	requireHistogramPointWithAttrs(t, tokenUsage, map[string]string{
+		spanAttrOperationName: conformanceEmbeddingOperation,
+		spanAttrProviderName:  "openai",
+		spanAttrRequestModel:  "text-embedding-3-small",
+		spanAttrAgentName:     "agent-embed",
+		metricAttrTokenType:   metricTokenTypeInput,
+	})
 	requireNoHistogram(t, metrics, metricTimeToFirstToken)
 	requireNoHistogram(t, metrics, metricToolCallsPerOperation)
-	if got := env.Ingest.RequestCount(); got != 0 {
+
+	env.Shutdown(t)
+
+	if got := env.Ingest.GenerationCount(); got != 0 {
 		t.Fatalf("expected no generation exports for embeddings, got %d", got)
 	}
 
-	span := findSpan(t, env.Spans.Ended(), "embeddings")
-	attrs := spanAttrs(span)
-	requireSpanAttr(t, attrs, spanAttrAgentName, "agent-embed")
-	requireSpanAttr(t, attrs, spanAttrAgentVersion, "v-embed")
-	if got := attrs[spanAttrEmbeddingInputCount].AsInt64(); got != 2 {
-		t.Fatalf("unexpected embedding input count: got %d want %d", got, 2)
-	}
-	if got := attrs[spanAttrEmbeddingDimCount].AsInt64(); got != dimensions {
-		t.Fatalf("unexpected embedding dimension count: got %d want %d", got, dimensions)
+	span := findSpan(t, env.Spans.Ended(), conformanceEmbeddingOperation)
+	if got := span.SpanKind(); got != trace.SpanKindClient {
+		t.Fatalf("unexpected embedding span kind: got %v want %v", got, trace.SpanKindClient)
 	}
 
-	env.Shutdown(t)
-	if got := env.Ingest.RequestCount(); got != 0 {
-		t.Fatalf("expected no generation exports after embedding shutdown, got %d", got)
+	attrs := spanAttrs(span)
+	requireSpanAttr(t, attrs, spanAttrOperationName, conformanceEmbeddingOperation)
+	requireSpanAttr(t, attrs, spanAttrProviderName, "openai")
+	requireSpanAttr(t, attrs, spanAttrRequestModel, "text-embedding-3-small")
+	requireSpanAttr(t, attrs, metadataKeySDKName, sdkNameGo)
+	if got := attrs[spanAttrEmbeddingInputCount].AsInt64(); got != 2 {
+		t.Fatalf("unexpected embedding input count: got %d want 2", got)
+	}
+	if got := attrs[spanAttrEmbeddingDimCount].AsInt64(); got != 256 {
+		t.Fatalf("unexpected embedding dimension count: got %d want 256", got)
 	}
 }
 
 func TestConformance_ValidationAndErrorSemantics(t *testing.T) {
-	t.Run("validation failures stay local and unexported", func(t *testing.T) {
+	t.Run("invalid generation", func(t *testing.T) {
 		env := newConformanceEnv(t)
 
 		_, recorder := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
-			ConversationID: "conv-validation",
-			Model:          conformanceModel,
+			ConversationID: "conv-invalid",
+			StartedAt:      time.Date(2026, 3, 12, 14, 4, 0, 0, time.UTC),
 		})
 		recorder.SetResult(sigil.Generation{
-			Input:  []sigil.Message{{Role: sigil.RoleUser}},
-			Output: []sigil.Message{sigil.AssistantTextMessage("ok")},
+			Input:       []sigil.Message{sigil.UserTextMessage("hello")},
+			Output:      []sigil.Message{sigil.AssistantTextMessage("hi")},
+			CompletedAt: time.Date(2026, 3, 12, 14, 4, 1, 0, time.UTC),
 		}, nil)
 		recorder.End()
 
-		err := recorder.Err()
-		if err == nil {
-			t.Fatalf("expected validation error")
-		}
-		if !errors.Is(err, sigil.ErrValidationFailed) {
+		if err := recorder.Err(); !errors.Is(err, sigil.ErrValidationFailed) {
 			t.Fatalf("expected ErrValidationFailed, got %v", err)
+		}
+		if got := env.Ingest.GenerationCount(); got != 0 {
+			t.Fatalf("expected no exports for invalid generation, got %d", got)
 		}
 
 		span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+		if got := span.Status().Code; got != codes.Error {
+			t.Fatalf("expected error span status, got %v", got)
+		}
 		attrs := spanAttrs(span)
 		requireSpanAttr(t, attrs, spanAttrErrorType, "validation_error")
-
-		env.Shutdown(t)
-		if got := env.Ingest.RequestCount(); got != 0 {
-			t.Fatalf("expected no generation exports for validation failure, got %d", got)
-		}
 	})
 
-	t.Run("provider call errors export call error metadata", func(t *testing.T) {
+	t.Run("provider call error", func(t *testing.T) {
 		env := newConformanceEnv(t)
 
 		_, recorder := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
-			ConversationID: "conv-call-error",
+			ConversationID: "conv-rate-limit",
+			AgentName:      "agent-error",
 			Model:          conformanceModel,
+			StartedAt:      time.Date(2026, 3, 12, 14, 5, 0, 0, time.UTC),
 		})
-		recorder.SetCallError(errors.New("provider unavailable"))
+		recorder.SetCallError(errors.New("provider returned HTTP 429 rate limit"))
+		recorder.SetResult(sigil.Generation{
+			Input:       []sigil.Message{sigil.UserTextMessage("retry later")},
+			Output:      []sigil.Message{sigil.AssistantTextMessage("rate limited")},
+			CompletedAt: time.Date(2026, 3, 12, 14, 5, 1, 0, time.UTC),
+		}, nil)
 		recorder.End()
 		if err := recorder.Err(); err != nil {
-			t.Fatalf("expected nil local error for provider call failure, got %v", err)
+			t.Fatalf("expected no local error for provider call failure, got %v", err)
 		}
 
-		span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
-		attrs := spanAttrs(span)
-		requireSpanAttr(t, attrs, spanAttrErrorType, "provider_call_error")
+		metrics := env.CollectMetrics(t)
+		duration := findHistogram[float64](t, metrics, metricOperationDuration)
+		requireHistogramPointWithAttrs(t, duration, map[string]string{
+			spanAttrOperationName: conformanceOperationName,
+			spanAttrProviderName:  conformanceModel.Provider,
+			spanAttrRequestModel:  conformanceModel.Name,
+			spanAttrAgentName:     "agent-error",
+			spanAttrErrorType:     "provider_call_error",
+			spanAttrErrorCategory: "rate_limit",
+		})
 
 		env.Shutdown(t)
 
-		generation := env.Ingest.SingleGeneration(t)
-		if got := generation.GetCallError(); got != "provider unavailable" {
-			t.Fatalf("unexpected proto call error: got %q want %q", got, "provider unavailable")
+		span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+		if got := span.Status().Code; got != codes.Error {
+			t.Fatalf("expected error span status, got %v", got)
 		}
-		requireProtoMetadata(t, generation, "call_error", "provider unavailable")
+		attrs := spanAttrs(span)
+		requireSpanAttr(t, attrs, spanAttrErrorType, "provider_call_error")
+		requireSpanAttr(t, attrs, spanAttrErrorCategory, "rate_limit")
+
+		generation := env.Ingest.SingleGeneration(t)
+		if got := generation.GetCallError(); got != "provider returned HTTP 429 rate limit" {
+			t.Fatalf("unexpected proto call error: got %q", got)
+		}
+		requireProtoMetadata(t, generation, "call_error", "provider returned HTTP 429 rate limit")
 	})
 }
 
-func TestConformance_RatingSubmissionSemantics(t *testing.T) {
-	env := newConformanceEnv(t)
+func TestConformance_RatingHelper(t *testing.T) {
+	env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+		cfg.GenerationExport.Headers = map[string]string{"X-Custom": "test"}
+	}))
 
-	response, err := env.Client.SubmitConversationRating(context.Background(), "conv-1", sigil.ConversationRatingInput{
+	response, err := env.Client.SubmitConversationRating(context.Background(), "conv-rated", sigil.ConversationRatingInput{
 		RatingID: "rat-1",
 		Rating:   sigil.ConversationRatingValueGood,
-		Comment:  "helpful",
+		Comment:  "looks good",
 		Metadata: map[string]any{"channel": "assistant"},
 	})
 	if err != nil {
-		t.Fatalf("submit rating: %v", err)
+		t.Fatalf("submit conversation rating: %v", err)
 	}
 
-	request := env.Rating.SingleRequest(t)
-	if request.Method != http.MethodPost {
-		t.Fatalf("expected POST rating request, got %s", request.Method)
+	requests := env.Rating.Requests()
+	if len(requests) != 1 {
+		t.Fatalf("expected exactly 1 rating request, got %d", len(requests))
 	}
-	if request.Path != "/api/v1/conversations/conv-1/ratings" {
+
+	request := requests[0]
+	if request.Method != http.MethodPost {
+		t.Fatalf("unexpected request method: got %s want %s", request.Method, http.MethodPost)
+	}
+	if request.Path != "/api/v1/conversations/conv-rated/ratings" {
 		t.Fatalf("unexpected rating request path: %s", request.Path)
 	}
+	if got := request.Headers.Get("X-Custom"); got != "test" {
+		t.Fatalf("expected X-Custom header, got %q", got)
+	}
 
-	var body sigil.ConversationRatingInput
-	if err := json.Unmarshal(request.Body, &body); err != nil {
+	var payload sigil.ConversationRatingInput
+	if err := json.Unmarshal(request.Body, &payload); err != nil {
 		t.Fatalf("decode rating request body: %v", err)
 	}
-	if body.RatingID != "rat-1" || body.Rating != sigil.ConversationRatingValueGood {
-		t.Fatalf("unexpected rating request body: %#v", body)
+	if payload.RatingID != "rat-1" {
+		t.Fatalf("unexpected rating id: %q", payload.RatingID)
 	}
-	if got := body.Metadata["channel"]; got != "assistant" {
-		t.Fatalf("expected rating metadata channel=assistant, got %#v", got)
+	if payload.Rating != sigil.ConversationRatingValueGood {
+		t.Fatalf("unexpected rating value: %q", payload.Rating)
 	}
-	if response == nil || response.Rating.ConversationID != "conv-1" {
+	if payload.Comment != "looks good" {
+		t.Fatalf("unexpected comment: %q", payload.Comment)
+	}
+	if got := payload.Metadata["channel"]; got != "assistant" {
+		t.Fatalf("unexpected metadata: %#v", payload.Metadata)
+	}
+	if response == nil || response.Rating.RatingID != "rat-1" {
 		t.Fatalf("unexpected rating response: %#v", response)
 	}
 }
 
-func TestConformance_ShutdownFlushSemantics(t *testing.T) {
+func TestConformance_ShutdownFlushesPendingGeneration(t *testing.T) {
 	env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
-		cfg.GenerationExport.BatchSize = 8
-		cfg.GenerationExport.QueueSize = 8
-		cfg.GenerationExport.FlushInterval = time.Hour
+		cfg.GenerationExport.BatchSize = 10
 	}))
 
 	recordGeneration(t, env, context.Background(), sigil.GenerationStart{
 		ConversationID: "conv-shutdown",
 		Model:          conformanceModel,
+		StartedAt:      time.Date(2026, 3, 12, 14, 6, 0, 0, time.UTC),
 	}, sigil.Generation{
-		Input:  []sigil.Message{sigil.UserTextMessage("hello")},
-		Output: []sigil.Message{sigil.AssistantTextMessage("hi")},
+		Input:       []sigil.Message{sigil.UserTextMessage("hello")},
+		Output:      []sigil.Message{sigil.AssistantTextMessage("hi")},
+		CompletedAt: time.Date(2026, 3, 12, 14, 6, 1, 0, time.UTC),
 	})
 
-	if got := env.Ingest.RequestCount(); got != 0 {
-		t.Fatalf("expected no export before shutdown flush, got %d", got)
+	if got := env.Ingest.GenerationCount(); got != 0 {
+		t.Fatalf("expected no exports before shutdown flush, got %d", got)
 	}
 
 	env.Shutdown(t)
 
-	if got := env.Ingest.RequestCount(); got != 1 {
-		t.Fatalf("expected one export after shutdown flush, got %d", got)
+	if got := env.Ingest.GenerationCount(); got != 1 {
+		t.Fatalf("expected exactly 1 exported generation after shutdown, got %d", got)
 	}
 	generation := env.Ingest.SingleGeneration(t)
-	if generation.GetConversationId() != "conv-shutdown" {
-		t.Fatalf("unexpected shutdown-flushed conversation id: %q", generation.GetConversationId())
+	if got := generation.GetConversationId(); got != "conv-shutdown" {
+		t.Fatalf("unexpected shutdown-flushed conversation id: %q", got)
 	}
 }
 
@@ -947,6 +1035,25 @@ func requireSyncGenerationMetrics(t *testing.T, env *conformanceEnv) {
 		t.Fatalf("expected %s datapoints for conformance generation", metricOperationDuration)
 	}
 	requireNoHistogram(t, metrics, metricTimeToFirstToken)
+}
+
+func findGenerationByConversationID(t *testing.T, requests []*sigilv1.ExportGenerationsRequest, conversationID string) *sigilv1.Generation {
+	t.Helper()
+
+	for _, req := range requests {
+		for _, generation := range req.GetGenerations() {
+			if generation.GetConversationId() == conversationID {
+				return generation
+			}
+		}
+	}
+
+	t.Fatalf("expected generation for conversation %q", conversationID)
+	return nil
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
 }
 
 func requireProtoMetadataNumber(t *testing.T, generation *sigilv1.Generation, key string, want float64) {
