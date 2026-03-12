@@ -138,6 +138,58 @@ class OpenAiConformanceTest {
     }
 
     @Test
+    void wrappersTolerateMissingProviderPayloadFields() throws Exception {
+        try (SigilClient client = newClient(new CapturingExporter())) {
+            OpenAiChatCompletions.create(
+                    client,
+                    chatRequestFixture(),
+                    _request -> json(
+                            """
+                            {
+                              "id": "chatcmpl_malformed",
+                              "choices": [],
+                              "created": 1,
+                              "model": "gpt-5",
+                              "object": "chat.completion"
+                            }
+                            """,
+                                    ChatCompletion.class),
+                    new OpenAiOptions());
+            Generation chatGeneration = singleDebugGeneration(client);
+            assertThat(chatGeneration.getMode()).isEqualTo(GenerationMode.SYNC);
+            assertThat(chatGeneration.getResponseId()).isEqualTo("chatcmpl_malformed");
+            assertThat(chatGeneration.getResponseModel()).isEqualTo("gpt-5");
+            assertThat(chatGeneration.getOutput()).isEmpty();
+            assertThat(chatGeneration.getStopReason()).isEmpty();
+        }
+
+        try (SigilClient client = newClient(new CapturingExporter())) {
+            OpenAiResponses.createStreaming(
+                    client,
+                    responsesRequestFixture(),
+                    _request -> new FakeStreamResponse<>(List.of(
+                            json(
+                                    """
+                                    {
+                                      "type": "response.output_text.delta",
+                                      "content_index": 0,
+                                      "delta": 42,
+                                      "item_id": "msg_1",
+                                      "output_index": 0,
+                                      "sequence_number": 1
+                                    }
+                                    """,
+                                    ResponseStreamEvent.class))),
+                    new OpenAiOptions());
+            Generation streamGeneration = singleDebugGeneration(client);
+            assertThat(streamGeneration.getMode()).isEqualTo(GenerationMode.STREAM);
+            assertThat(streamGeneration.getOutput()).hasSize(1);
+            assertThat(streamGeneration.getOutput().get(0).getParts()).hasSize(1);
+            assertThat(streamGeneration.getOutput().get(0).getParts().get(0).getText()).isEqualTo("42");
+        }
+    }
+
+    @Test
     void embeddingsWrapperDoesNotEnqueueGenerations() throws Exception {
         CapturingExporter exporter = new CapturingExporter();
         try (SigilClient client = newClient(exporter)) {

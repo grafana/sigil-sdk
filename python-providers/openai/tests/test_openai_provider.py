@@ -279,6 +279,47 @@ def test_openai_wrappers_propagate_provider_error_and_set_call_error() -> None:
             client.shutdown()
 
 
+def test_openai_wrappers_tolerate_missing_provider_payload_fields() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    try:
+        chat.completions.create(
+            client,
+            {"model": "gpt-5", "messages": [{"role": "user", "content": "hello"}]},
+            lambda _request: {
+                "id": "resp-chat-malformed",
+                "model": "gpt-5",
+                "object": "chat.completion",
+                "created": 0,
+                "choices": [],
+            },
+        )
+        responses.stream(
+            client,
+            {"model": "gpt-5", "stream": True, "input": "stream this"},
+            lambda _request: ResponsesStreamSummary(events=[{"type": "response.output_text.delta", "delta": 42}]),
+        )
+
+        client.flush()
+        generations = exporter.requests[0].generations
+        assert len(generations) == 2
+
+        chat_generation = generations[0]
+        assert chat_generation.mode.value == "SYNC"
+        assert chat_generation.response_id == "resp-chat-malformed"
+        assert chat_generation.response_model == "gpt-5"
+        assert chat_generation.output == []
+        assert chat_generation.stop_reason == ""
+
+        stream_generation = generations[1]
+        assert stream_generation.mode.value == "STREAM"
+        assert stream_generation.response_model == "gpt-5"
+        assert stream_generation.output[0].parts[0].text == "42"
+    finally:
+        client.shutdown()
+
+
 def test_embeddings_wrapper_records_span_and_skips_generation_export() -> None:
     exporter = _CapturingExporter()
     span_exporter = InMemorySpanExporter()

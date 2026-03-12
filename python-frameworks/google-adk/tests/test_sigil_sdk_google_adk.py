@@ -7,6 +7,9 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from google.adk.plugins import BasePlugin
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_google_adk import (
@@ -38,9 +41,10 @@ class _CapturingExporter:
         return
 
 
-def _new_client(exporter: _CapturingExporter) -> Client:
+def _new_client(exporter: _CapturingExporter, tracer=None) -> Client:
     return Client(
         ClientConfig(
+            tracer=tracer,
             generation_export=GenerationExportConfig(batch_size=10, flush_interval=timedelta(seconds=60)),
             generation_exporter=exporter,
         )
@@ -181,6 +185,47 @@ def test_sigil_sdk_google_adk_stream_mode_uses_chunks_when_output_missing() -> N
         assert generation.output[0].parts[0].text == "hello world"
     finally:
         client.shutdown()
+
+
+def test_sigil_sdk_google_adk_generation_span_tracks_active_parent_span_and_export_lineage() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-framework-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        run_id = uuid4()
+        with tracer.start_as_current_span("framework.request"):
+            handler = SigilGoogleAdkHandler(client=client, provider_resolver="auto")
+            handler.on_chat_model_start(
+                {"name": "ChatModel"},
+                [[{"type": "human", "content": "hello"}]],
+                run_id=run_id,
+                parent_run_id=uuid4(),
+                invocation_params={"model": "gpt-5"},
+                metadata={"conversation_id": "framework-conversation-lineage-42", "thread_id": "framework-thread-lineage-42"},
+            )
+            handler.on_llm_end(
+                {"generations": [[{"text": "world"}]], "llm_output": {"model_name": "gpt-5", "finish_reason": "stop"}},
+                run_id=run_id,
+            )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        spans = span_exporter.get_finished_spans()
+        parent_span = next(span for span in spans if span.name == "framework.request")
+        generation_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "generateText")
+
+        assert generation_span.parent is not None
+        assert generation_span.parent.span_id == parent_span.context.span_id
+        assert generation_span.context.trace_id == parent_span.context.trace_id
+        assert generation.trace_id == generation_span.context.trace_id.to_bytes(16, "big").hex()
+        assert generation.span_id == generation_span.context.span_id.to_bytes(8, "big").hex()
+    finally:
+        client.shutdown()
+        provider.shutdown()
 
 
 def test_sigil_sdk_google_adk_normalizes_extra_metadata() -> None:
@@ -329,6 +374,18 @@ def test_sigil_sdk_google_adk_callback_helpers_attach_callback_fields() -> None:
         assert agent.before_model_callback is not None
         assert agent.after_model_callback is not None
 
+    finally:
+        client.shutdown()
+
+
+def test_sigil_sdk_google_adk_handler_explicitly_has_no_embedding_lifecycle() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        handler = SigilGoogleAdkHandler(client=client)
+        assert not hasattr(handler, "on_embedding_start")
+        assert not hasattr(handler, "on_embedding_end")
+        assert not hasattr(handler, "on_embedding_error")
     finally:
         client.shutdown()
 

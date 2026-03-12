@@ -2,6 +2,11 @@ package com.grafana.sigil.sdk.frameworks.googleadk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.grafana.sigil.sdk.ExportGenerationResult;
+import com.grafana.sigil.sdk.ExportGenerationsRequest;
+import com.grafana.sigil.sdk.ExportGenerationsResponse;
+import com.grafana.sigil.sdk.Generation;
+import com.grafana.sigil.sdk.GenerationExporter;
 import com.grafana.sigil.sdk.GenerationMode;
 import com.grafana.sigil.sdk.GenerationRecorder;
 import com.grafana.sigil.sdk.GenerationExportConfig;
@@ -13,7 +18,21 @@ import com.grafana.sigil.sdk.MessageRole;
 import com.grafana.sigil.sdk.ModelRef;
 import com.grafana.sigil.sdk.SigilClient;
 import com.grafana.sigil.sdk.SigilClientConfig;
+import com.grafana.sigil.sdk.TokenUsage;
 import com.grafana.sigil.sdk.ToolExecutionStart;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
+import java.lang.reflect.Method;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -155,6 +174,184 @@ class SigilGoogleAdkAdapterTest {
         } finally {
             client.shutdown();
         }
+    }
+
+    @Test
+    void syncRunExportsFrameworkPayloadTagsAndMetrics() {
+        try (FrameworkConformanceEnv env = new FrameworkConformanceEnv()) {
+            SigilGoogleAdkAdapter adapter = new SigilGoogleAdkAdapter(env.client, new SigilGoogleAdkAdapter.Options()
+                    .setAgentName("adk-agent")
+                    .setAgentVersion("1.0.0")
+                    .setCaptureInputs(true)
+                    .setCaptureOutputs(true)
+                    .putExtraTag("team", "infra")
+                    .putExtraMetadata("workspace", "sigil"));
+
+            var parentSpan = env.tracerProvider.get("sigil-framework-test")
+                    .spanBuilder("framework.request")
+                    .setAttribute(AttributeKey.stringKey("sigil.framework.name"), "google-adk")
+                    .setAttribute(AttributeKey.stringKey("sigil.framework.source"), "handler")
+                    .setAttribute(AttributeKey.stringKey("sigil.framework.language"), "java")
+                    .startSpan();
+            try (Scope ignored = parentSpan.makeCurrent()) {
+                adapter.onRunStart(new SigilGoogleAdkAdapter.RunStartEvent()
+                        .setRunId("run-sync")
+                        .setSessionId("session-42")
+                        .setThreadId("thread-9")
+                        .setParentRunId("framework-parent-run")
+                        .setComponentName("planner")
+                        .setRunType("chat")
+                        .setRetryAttempt(2)
+                        .setEventId("event-42")
+                        .setModelName("gpt-5")
+                        .addTag("prod")
+                        .addTag("framework")
+                        .addPrompt("hello")
+                        .putMetadata("phase", "plan"));
+                adapter.onRunEnd("run-sync", new SigilGoogleAdkAdapter.RunEndEvent()
+                        .setResponseModel("gpt-5")
+                        .setStopReason("stop")
+                        .setUsage(new TokenUsage().setInputTokens(3).setOutputTokens(2).setTotalTokens(5))
+                        .addOutputMessage(new Message()
+                                .setRole(MessageRole.ASSISTANT)
+                                .setParts(List.of(MessagePart.text("hi")))));
+            } finally {
+                parentSpan.end();
+            }
+
+            env.client.flush();
+
+            Generation generation = env.exporter.singleGeneration();
+            SpanData generationSpan = env.latestGenerationSpan();
+
+            assertThat(generation.getMode()).isEqualTo(GenerationMode.SYNC);
+            assertThat(generation.getOperationName()).isEqualTo("generateText");
+            assertThat(generation.getConversationId()).isEqualTo("session-42");
+            assertThat(generation.getResponseModel()).isEqualTo("gpt-5");
+            assertThat(generation.getTraceId()).isEqualTo(generationSpan.getTraceId());
+            assertThat(generation.getSpanId()).isEqualTo(generationSpan.getSpanId());
+            assertThat(generation.getTags())
+                    .containsEntry("sigil.framework.name", "google-adk")
+                    .containsEntry("sigil.framework.source", "handler")
+                    .containsEntry("sigil.framework.language", "java")
+                    .containsEntry("team", "infra");
+            assertThat(generation.getMetadata())
+                    .containsEntry("workspace", "sigil")
+                    .containsEntry("phase", "plan")
+                    .containsEntry(SigilGoogleAdkAdapter.META_RUN_ID, "run-sync")
+                    .containsEntry(SigilGoogleAdkAdapter.META_RUN_TYPE, "chat")
+                    .containsEntry(SigilGoogleAdkAdapter.META_THREAD_ID, "thread-9")
+                    .containsEntry(SigilGoogleAdkAdapter.META_PARENT_RUN_ID, "framework-parent-run")
+                    .containsEntry(SigilGoogleAdkAdapter.META_COMPONENT_NAME, "planner")
+                    .containsEntry(SigilGoogleAdkAdapter.META_RETRY_ATTEMPT, 2)
+                    .containsEntry(SigilGoogleAdkAdapter.META_EVENT_ID, "event-42")
+                    .containsEntry(SigilGoogleAdkAdapter.META_TAGS, List.of("prod", "framework"));
+            assertThat(generation.getOutput()).hasSize(1);
+            assertThat(generation.getOutput().get(0).getParts()).hasSize(1);
+            assertThat(generation.getOutput().get(0).getParts().get(0).getText()).isEqualTo("hi");
+            assertThat(generationSpan.getParentSpanId()).isEqualTo(parentSpan.getSpanContext().getSpanId());
+            assertThat(env.metricNames())
+                    .contains("gen_ai.client.operation.duration")
+                    .doesNotContain("gen_ai.client.time_to_first_token");
+        }
+    }
+
+    @Test
+    void streamRunExportsStitchedOutputAndTtftMetric() {
+        try (FrameworkConformanceEnv env = new FrameworkConformanceEnv()) {
+            SigilGoogleAdkAdapter adapter = new SigilGoogleAdkAdapter(env.client, new SigilGoogleAdkAdapter.Options()
+                    .setCaptureInputs(true)
+                    .setCaptureOutputs(true));
+
+            adapter.onRunStart(new SigilGoogleAdkAdapter.RunStartEvent()
+                    .setRunId("run-stream-export")
+                    .setSessionId("session-stream")
+                    .setModelName("claude-sonnet-4-5")
+                    .setStream(true)
+                    .addPrompt("stream me"));
+            adapter.onRunToken("run-stream-export", "hello");
+            adapter.onRunToken("run-stream-export", " world");
+            adapter.onRunEnd("run-stream-export", new SigilGoogleAdkAdapter.RunEndEvent()
+                    .setResponseModel("claude-sonnet-4-5"));
+
+            env.client.flush();
+
+            Generation generation = env.exporter.singleGeneration();
+            assertThat(generation.getMode()).isEqualTo(GenerationMode.STREAM);
+            assertThat(generation.getOperationName()).isEqualTo("streamText");
+            assertThat(generation.getResponseModel()).isEqualTo("claude-sonnet-4-5");
+            assertThat(generation.getOutput()).hasSize(1);
+            assertThat(generation.getOutput().get(0).getParts()).hasSize(1);
+            assertThat(generation.getOutput().get(0).getParts().get(0).getText()).isEqualTo("hello world");
+            assertThat(generation.getTags())
+                    .containsEntry("sigil.framework.name", "google-adk")
+                    .containsEntry("sigil.framework.source", "handler")
+                    .containsEntry("sigil.framework.language", "java");
+            assertThat(env.metricNames())
+                    .contains("gen_ai.client.operation.duration", "gen_ai.client.time_to_first_token");
+        }
+    }
+
+    @Test
+    void generationSpanTracksActiveParentSpanAndPreservesExportLineage() {
+        InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                .build();
+        SigilClient client = new SigilClient(
+                new SigilClientConfig()
+                        .setTracer(tracerProvider.get("sigil-framework-test"))
+                        .setGenerationExport(
+                                new GenerationExportConfig()
+                                        .setProtocol(GenerationExportProtocol.NONE)));
+        try {
+            SigilGoogleAdkAdapter adapter = new SigilGoogleAdkAdapter(client, new SigilGoogleAdkAdapter.Options()
+                    .setCaptureInputs(true)
+                    .setCaptureOutputs(true));
+
+            var parentSpan = tracerProvider.get("sigil-framework-test").spanBuilder("framework.request").startSpan();
+            try (Scope ignored = parentSpan.makeCurrent()) {
+                adapter.onRunStart(new SigilGoogleAdkAdapter.RunStartEvent()
+                        .setRunId("run-lineage")
+                        .setSessionId("session-lineage-42")
+                        .setParentRunId("framework-parent-run")
+                        .setRunType("chat")
+                        .setModelName("gpt-5")
+                        .addPrompt("hello"));
+                adapter.onRunEnd("run-lineage", new SigilGoogleAdkAdapter.RunEndEvent()
+                        .setResponseModel("gpt-5")
+                        .setStopReason("stop"));
+            } finally {
+                parentSpan.end();
+            }
+
+            assertThat(client.debugSnapshot().getGenerations()).hasSize(1);
+            var generation = client.debugSnapshot().getGenerations().get(0);
+            var generationSpan = spanExporter.getFinishedSpanItems().stream()
+                    .filter(span -> "generateText".equals(span.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("gen_ai.operation.name"))))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertThat(generationSpan.getParentSpanId()).isEqualTo(parentSpan.getSpanContext().getSpanId());
+            assertThat(generationSpan.getTraceId()).isEqualTo(parentSpan.getSpanContext().getTraceId());
+            assertThat(generation.getTraceId()).isEqualTo(generationSpan.getTraceId());
+            assertThat(generation.getSpanId()).isEqualTo(generationSpan.getSpanId());
+        } finally {
+            client.shutdown();
+            tracerProvider.close();
+        }
+    }
+
+    @Test
+    void adapterExplicitlyHasNoEmbeddingLifecycle() {
+        List<String> publicMethodNames = Arrays.stream(SigilGoogleAdkAdapter.class.getMethods())
+                .map(Method::getName)
+                .toList();
+
+        assertThat(publicMethodNames)
+                .doesNotContain("onEmbeddingStart")
+                .doesNotContain("onEmbeddingEnd")
+                .doesNotContain("onEmbeddingError");
     }
 
     @Test
@@ -375,6 +572,69 @@ class SigilGoogleAdkAdapterTest {
             assertThat(client.debugSnapshot().getToolExecutions()).hasSize(1);
         } finally {
             client.shutdown();
+        }
+    }
+
+    private static final class FrameworkConformanceEnv implements AutoCloseable {
+        private final CapturingExporter exporter = new CapturingExporter();
+        private final InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+        private final SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
+                .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+                .build();
+        private final InMemoryMetricReader metricReader = InMemoryMetricReader.create();
+        private final SdkMeterProvider meterProvider = SdkMeterProvider.builder()
+                .registerMetricReader(metricReader)
+                .build();
+        private final SigilClient client = new SigilClient(new SigilClientConfig()
+                .setTracer(tracerProvider.get("sigil-framework-test"))
+                .setMeter(meterProvider.get("sigil-framework-test"))
+                .setGenerationExporter(exporter)
+                .setGenerationExport(new GenerationExportConfig()
+                        .setBatchSize(1)
+                        .setQueueSize(10)
+                        .setFlushInterval(Duration.ofHours(1))
+                        .setMaxRetries(0)));
+
+        private List<String> metricNames() {
+            return metricReader.collectAllMetrics().stream()
+                    .map(MetricData::getName)
+                    .toList();
+        }
+
+        private SpanData latestGenerationSpan() {
+            return spanExporter.getFinishedSpanItems().stream()
+                    .filter(span -> {
+                        String operation = span.getAttributes().get(AttributeKey.stringKey("gen_ai.operation.name"));
+                        return "generateText".equals(operation) || "streamText".equals(operation);
+                    })
+                    .reduce((first, second) -> second)
+                    .orElseThrow();
+        }
+
+        @Override
+        public void close() {
+            client.shutdown();
+            tracerProvider.close();
+            meterProvider.close();
+        }
+    }
+
+    private static final class CapturingExporter implements GenerationExporter {
+        private final List<Generation> generations = new ArrayList<>();
+
+        @Override
+        public ExportGenerationsResponse exportGenerations(ExportGenerationsRequest request) {
+            List<ExportGenerationResult> results = new ArrayList<>();
+            for (Generation generation : request.getGenerations()) {
+                generations.add(generation.copy());
+                results.add(new ExportGenerationResult().setGenerationId(generation.getId()).setAccepted(true));
+            }
+            return new ExportGenerationsResponse().setResults(results);
+        }
+
+        private Generation singleGeneration() {
+            assertThat(generations).hasSize(1);
+            return generations.get(0);
         }
     }
 }

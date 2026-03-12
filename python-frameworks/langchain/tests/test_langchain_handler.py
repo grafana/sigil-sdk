@@ -175,6 +175,47 @@ def test_langchain_stream_records_first_token_timestamp_once() -> None:
         client.shutdown()
 
 
+def test_langchain_generation_span_tracks_active_parent_span_and_export_lineage() -> None:
+    exporter = _CapturingExporter()
+    span_exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = provider.get_tracer("sigil-framework-test")
+    client = _new_client(exporter, tracer=tracer)
+
+    try:
+        run_id = uuid4()
+        with tracer.start_as_current_span("framework.request"):
+            handler = SigilLangChainHandler(client=client)
+            handler.on_chat_model_start(
+                {"name": "ChatOpenAI"},
+                [[{"type": "human", "content": "hello"}]],
+                run_id=run_id,
+                parent_run_id=uuid4(),
+                invocation_params={"model": "gpt-5"},
+                metadata={"thread_id": "chain-thread-lineage-42"},
+            )
+            handler.on_llm_end(
+                {"generations": [[{"text": "world"}]], "llm_output": {"model_name": "gpt-5", "finish_reason": "stop"}},
+                run_id=run_id,
+            )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        spans = span_exporter.get_finished_spans()
+        parent_span = next(span for span in spans if span.name == "framework.request")
+        generation_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "generateText")
+
+        assert generation_span.parent is not None
+        assert generation_span.parent.span_id == parent_span.context.span_id
+        assert generation_span.context.trace_id == parent_span.context.trace_id
+        assert generation.trace_id == generation_span.context.trace_id.to_bytes(16, "big").hex()
+        assert generation.span_id == generation_span.context.span_id.to_bytes(8, "big").hex()
+    finally:
+        client.shutdown()
+        provider.shutdown()
+
+
 def test_langchain_provider_resolution_supports_known_models_and_fallback() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
@@ -329,6 +370,18 @@ def test_langchain_attach_helpers_preserve_existing_callbacks() -> None:
         assert isinstance(callbacks, list)
         assert callbacks[0] is existing
         assert isinstance(callbacks[1], SigilLangChainHandler)
+    finally:
+        client.shutdown()
+
+
+def test_langchain_handler_explicitly_has_no_embedding_lifecycle() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    try:
+        handler = SigilLangChainHandler(client=client)
+        assert not hasattr(handler, "on_embedding_start")
+        assert not hasattr(handler, "on_embedding_end")
+        assert not hasattr(handler, "on_embedding_error")
     finally:
         client.shutdown()
 
