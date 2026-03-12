@@ -77,7 +77,7 @@ func TestFromRequestResponse(t *testing.T) {
 		UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
 			PromptTokenCount:        120,
 			CandidatesTokenCount:    40,
-			TotalTokenCount:         170,
+			TotalTokenCount:         160,
 			CachedContentTokenCount: 12,
 			ThoughtsTokenCount:      10,
 			ToolUsePromptTokenCount: 9,
@@ -125,8 +125,8 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.StopReason != "STOP" {
 		t.Fatalf("expected stop reason STOP, got %q", generation.StopReason)
 	}
-	if generation.Usage.TotalTokens != 170 {
-		t.Fatalf("expected total tokens 170, got %d", generation.Usage.TotalTokens)
+	if generation.Usage.TotalTokens != 160 {
+		t.Fatalf("expected total tokens 160, got %d", generation.Usage.TotalTokens)
 	}
 	if generation.Usage.CacheReadInputTokens != 12 {
 		t.Fatalf("expected cache read tokens 12, got %d", generation.Usage.CacheReadInputTokens)
@@ -241,7 +241,7 @@ func TestFromStream(t *testing.T) {
 				UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
 					PromptTokenCount:        20,
 					CandidatesTokenCount:    6,
-					TotalTokenCount:         31,
+					TotalTokenCount:         26,
 					ToolUsePromptTokenCount: 5,
 				},
 			},
@@ -275,8 +275,8 @@ func TestFromStream(t *testing.T) {
 	if generation.ResponseModel != "gemini-2.5-pro-001" {
 		t.Fatalf("expected response model gemini-2.5-pro-001, got %q", generation.ResponseModel)
 	}
-	if generation.Usage.TotalTokens != 31 {
-		t.Fatalf("expected total tokens 31, got %d", generation.Usage.TotalTokens)
+	if generation.Usage.TotalTokens != 26 {
+		t.Fatalf("expected total tokens 26, got %d", generation.Usage.TotalTokens)
 	}
 	if generation.MaxTokens == nil || *generation.MaxTokens != 90 {
 		t.Fatalf("expected max tokens 90, got %v", generation.MaxTokens)
