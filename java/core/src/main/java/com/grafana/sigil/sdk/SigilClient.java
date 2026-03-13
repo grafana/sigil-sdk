@@ -1044,6 +1044,12 @@ public final class SigilClient implements AutoCloseable {
         if (!seed.getAgentVersion().isBlank()) {
             span.setAttribute(SPAN_ATTR_AGENT_VERSION, seed.getAgentVersion());
         }
+        if (!seed.getRequestProvider().isBlank()) {
+            span.setAttribute(SPAN_ATTR_PROVIDER_NAME, seed.getRequestProvider());
+        }
+        if (!seed.getRequestModel().isBlank()) {
+            span.setAttribute(SPAN_ATTR_REQUEST_MODEL, seed.getRequestModel());
+        }
         if (!seed.getToolName().isBlank()) {
             span.setAttribute(SPAN_ATTR_TOOL_NAME, seed.getToolName());
         }
@@ -1186,6 +1192,7 @@ public final class SigilClient implements AutoCloseable {
                         .put(SPAN_ATTR_OPERATION_NAME, "execute_tool")
                         .put(SPAN_ATTR_PROVIDER_NAME, seed.getRequestProvider().trim())
                         .put(SPAN_ATTR_REQUEST_MODEL, seed.getRequestModel().trim())
+                        .put(SPAN_ATTR_TOOL_NAME, seed.getToolName().trim())
                         .put(SPAN_ATTR_AGENT_NAME, seed.getAgentName())
                         .put(SPAN_ATTR_ERROR_TYPE, errorType)
                         .put(SPAN_ATTR_ERROR_CATEGORY, errorCategory)

@@ -655,6 +655,7 @@ class Client:
                 _span_attr_operation_name: "execute_tool",
                 _span_attr_provider_name: seed.request_provider.strip() if seed.request_provider else "",
                 _span_attr_request_model: seed.request_model.strip() if seed.request_model else "",
+                _span_attr_tool_name: seed.tool_name.strip(),
                 _span_attr_agent_name: seed.agent_name,
                 _span_attr_error_type: error_type,
                 _span_attr_error_category: error_category,
@@ -1304,6 +1305,10 @@ def _set_tool_span_attributes(span: Span, start: ToolExecutionStart) -> None:
         span.set_attribute(_span_attr_agent_name, start.agent_name)
     if start.agent_version:
         span.set_attribute(_span_attr_agent_version, start.agent_version)
+    if start.request_provider:
+        span.set_attribute(_span_attr_provider_name, start.request_provider)
+    if start.request_model:
+        span.set_attribute(_span_attr_request_model, start.request_model)
 
 
 def _thinking_budget_from_metadata(metadata: dict[str, Any]) -> int | None:

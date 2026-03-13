@@ -1026,6 +1026,8 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 		ConversationTitle: "Weather lookup",
 		AgentName:         "agent-tools",
 		AgentVersion:      "2026.02.12",
+		RequestProvider:   "openai",
+		RequestModel:      "gpt-5",
 	})
 
 	if !trace.SpanContextFromContext(callCtx).IsValid() {
@@ -1071,6 +1073,12 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 	}
 	if attrs[spanAttrAgentVersion].AsString() != "2026.02.12" {
 		t.Fatalf("expected gen_ai.agent.version=2026.02.12")
+	}
+	if attrs[spanAttrProviderName].AsString() != "openai" {
+		t.Fatalf("expected gen_ai.provider.name=openai")
+	}
+	if attrs[spanAttrRequestModel].AsString() != "gpt-5" {
+		t.Fatalf("expected gen_ai.request.model=gpt-5")
 	}
 	if attrs[sdkMetadataKeyName].AsString() != sdkName {
 		t.Fatalf("expected %s=%s", sdkMetadataKeyName, sdkName)

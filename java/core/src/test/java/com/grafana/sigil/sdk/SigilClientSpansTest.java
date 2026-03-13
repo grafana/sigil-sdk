@@ -85,7 +85,9 @@ class SigilClientSpansTest {
                     .setToolName("weather")
                     .setToolCallId("call-1")
                     .setToolType("function")
-                    .setToolDescription("Get weather"));
+                    .setToolDescription("Get weather")
+                    .setRequestProvider("openai")
+                    .setRequestModel("gpt-5"));
             recorder.setResult(new ToolExecutionResult().setArguments(java.util.Map.of("city", "Paris")).setResult("18C"));
             recorder.end();
         }
@@ -97,6 +99,8 @@ class SigilClientSpansTest {
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_SDK_NAME))).isEqualTo("sdk-java");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_NAME))).isEqualTo("weather");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_CALL_ID))).isEqualTo("call-1");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_PROVIDER_NAME))).isEqualTo("openai");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_REQUEST_MODEL))).isEqualTo("gpt-5");
 
         provider.shutdown();
     }

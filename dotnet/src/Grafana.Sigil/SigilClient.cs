@@ -1290,6 +1290,14 @@ public sealed class SigilClient : IAsyncDisposable
         {
             activity.SetTag(SpanAttrAgentVersion, tool.AgentVersion);
         }
+        if (!string.IsNullOrWhiteSpace(tool.RequestProvider))
+        {
+            activity.SetTag(SpanAttrProviderName, tool.RequestProvider);
+        }
+        if (!string.IsNullOrWhiteSpace(tool.RequestModel))
+        {
+            activity.SetTag(SpanAttrRequestModel, tool.RequestModel);
+        }
     }
 
     internal static string OperationName(Generation generation)
@@ -1419,6 +1427,7 @@ public sealed class SigilClient : IAsyncDisposable
                 new(SpanAttrOperationName, "execute_tool"),
                 new(SpanAttrProviderName, (seed.RequestProvider ?? string.Empty).Trim()),
                 new(SpanAttrRequestModel, (seed.RequestModel ?? string.Empty).Trim()),
+                new(SpanAttrToolName, (seed.ToolName ?? string.Empty).Trim()),
                 new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
                 new(SpanAttrErrorType, errorType),
                 new(SpanAttrErrorCategory, errorCategory),

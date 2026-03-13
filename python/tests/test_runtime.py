@@ -573,6 +573,8 @@ def test_tool_execution_attributes_and_content_capture() -> None:
                 conversation_id="conv-tool",
                 agent_name="agent-tools",
                 agent_version="2026.02.12",
+                request_provider="openai",
+                request_model="gpt-5",
                 include_content=True,
             )
         ) as rec:
@@ -585,6 +587,8 @@ def test_tool_execution_attributes_and_content_capture() -> None:
         assert span.attributes.get("gen_ai.tool.call.id") == "call_weather"
         assert span.attributes.get("gen_ai.tool.call.arguments") is not None
         assert span.attributes.get("gen_ai.tool.call.result") is not None
+        assert span.attributes.get("gen_ai.provider.name") == "openai"
+        assert span.attributes.get("gen_ai.request.model") == "gpt-5"
         assert span.attributes.get("sigil.sdk.name") == "sdk-python"
     finally:
         client.shutdown()
