@@ -1,0 +1,34 @@
+{
+  "name": "opencode-sigil",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for Grafana Sigil AI telemetry",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "skills"],
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "typecheck": "tsc --noEmit",
+    "deploy": "bash scripts/deploy.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.2.16"
+  },
+  "devDependencies": {
+    "@grafana/sigil-sdk-js": "workspace:*",
+    "@opencode-ai/plugin": "^1.2.16",
+    "@opencode-ai/sdk": "^1.2.16",
+    "@types/node": "^22.13.9",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2",
+    "vitest": "^4.0.18"
+  }
+}
