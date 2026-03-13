@@ -522,6 +522,9 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 	if c == nil {
 		return ctx, &ToolExecutionRecorder{}
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	seed := start
 	seed.ToolName = strings.TrimSpace(seed.ToolName)
@@ -559,7 +562,16 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 	}
 	seed.StartedAt = startedAt
 
-	callCtx, span := c.startSpan(ctx, Generation{OperationName: "execute_tool", Model: ModelRef{Name: seed.ToolName}}, trace.SpanKindInternal, startedAt)
+	tracer := c.tracer
+	if tracer == nil {
+		tracer = otel.Tracer(instrumentationName)
+	}
+	callCtx, span := tracer.Start(
+		ctx,
+		toolSpanName(seed.ToolName),
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithTimestamp(startedAt),
+	)
 	attrs := toolSpanAttributes(seed)
 	span.SetAttributes(attrs...)
 
@@ -1654,6 +1666,7 @@ func (c *Client) recordToolExecutionMetrics(seed ToolExecutionStart, startedAt t
 			attribute.String(spanAttrOperationName, "execute_tool"),
 			attribute.String(spanAttrProviderName, strings.TrimSpace(seed.RequestProvider)),
 			attribute.String(spanAttrRequestModel, strings.TrimSpace(seed.RequestModel)),
+			attribute.String(spanAttrToolName, strings.TrimSpace(seed.ToolName)),
 			attribute.String(spanAttrAgentName, strings.TrimSpace(seed.AgentName)),
 			attribute.String(spanAttrErrorType, errorType),
 			attribute.String(spanAttrErrorCategory, errorCategory),
@@ -1708,6 +1721,12 @@ func toolSpanAttributes(start ToolExecutionStart) []attribute.KeyValue {
 	}
 	if agentVersion := strings.TrimSpace(start.AgentVersion); agentVersion != "" {
 		attrs = append(attrs, attribute.String(spanAttrAgentVersion, agentVersion))
+	}
+	if provider := strings.TrimSpace(start.RequestProvider); provider != "" {
+		attrs = append(attrs, attribute.String(spanAttrProviderName, provider))
+	}
+	if model := strings.TrimSpace(start.RequestModel); model != "" {
+		attrs = append(attrs, attribute.String(spanAttrRequestModel, model))
 	}
 
 	return attrs

@@ -318,6 +318,8 @@ public sealed class ConformanceTests
             ToolName = "weather",
             ToolCallId = "call-weather-1",
             ToolType = "function",
+            RequestProvider = "openai",
+            RequestModel = "gpt-5",
             IncludeContent = true,
         });
         recorder.SetResult(new ToolExecutionEnd
@@ -344,6 +346,8 @@ public sealed class ConformanceTests
         Assert.Equal("function", span.GetTagItem("gen_ai.tool.type"));
         Assert.Contains("Paris", span.GetTagItem("gen_ai.tool.call.arguments")?.ToString());
         Assert.Contains("sunny", span.GetTagItem("gen_ai.tool.call.result")?.ToString());
+        Assert.Equal("openai", span.GetTagItem("gen_ai.provider.name")?.ToString());
+        Assert.Equal("gpt-5", span.GetTagItem("gen_ai.request.model")?.ToString());
         Assert.Equal("Context title", span.GetTagItem("sigil.conversation.title")?.ToString());
         Assert.Equal("agent-context", span.GetTagItem("gen_ai.agent.name")?.ToString());
         Assert.Equal("v-context", span.GetTagItem("gen_ai.agent.version")?.ToString());

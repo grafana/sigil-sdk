@@ -713,6 +713,7 @@ export class SigilClient {
       [spanAttrOperationName]: 'execute_tool',
       [spanAttrProviderName]: (toolExecution.requestProvider ?? '').trim(),
       [spanAttrRequestModel]: (toolExecution.requestModel ?? '').trim(),
+      [spanAttrToolName]: toolExecution.toolName.trim(),
       [spanAttrAgentName]: toolExecution.agentName ?? '',
       [spanAttrErrorType]: errorType,
       [spanAttrErrorCategory]: errorCategory,
@@ -1404,6 +1405,8 @@ function setToolSpanAttributes(
     conversationTitle?: string;
     agentName?: string;
     agentVersion?: string;
+    requestProvider?: string;
+    requestModel?: string;
   }
 ): void {
   span.setAttribute(spanAttrOperationName, 'execute_tool');
@@ -1430,6 +1433,12 @@ function setToolSpanAttributes(
   }
   if (notEmpty(tool.agentVersion)) {
     span.setAttribute(spanAttrAgentVersion, tool.agentVersion);
+  }
+  if (notEmpty(tool.requestProvider)) {
+    span.setAttribute(spanAttrProviderName, tool.requestProvider);
+  }
+  if (notEmpty(tool.requestModel)) {
+    span.setAttribute(spanAttrRequestModel, tool.requestModel);
   }
 }
 

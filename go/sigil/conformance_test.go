@@ -836,6 +836,7 @@ func TestConformance_ToolExecution(t *testing.T) {
 		spanAttrOperationName: conformanceToolOperation,
 		spanAttrProviderName:  conformanceModel.Provider,
 		spanAttrRequestModel:  conformanceModel.Name,
+		spanAttrToolName:      "weather",
 		spanAttrAgentName:     "agent-tools",
 	})
 
@@ -856,6 +857,8 @@ func TestConformance_ToolExecution(t *testing.T) {
 	requireSpanAttr(t, attrs, spanAttrConversationTitle, "Weather lookup")
 	requireSpanAttr(t, attrs, spanAttrAgentName, "agent-tools")
 	requireSpanAttr(t, attrs, spanAttrAgentVersion, "2026.03.12")
+	requireSpanAttr(t, attrs, spanAttrProviderName, conformanceModel.Provider)
+	requireSpanAttr(t, attrs, spanAttrRequestModel, conformanceModel.Name)
 	requireSpanAttr(t, attrs, metadataKeySDKName, sdkNameGo)
 	requireSpanAttrPresent(t, attrs, spanAttrToolCallArguments)
 	requireSpanAttrPresent(t, attrs, spanAttrToolCallResult)

@@ -320,6 +320,8 @@ test('tool execution includeContent controls argument/result attributes', async 
       conversationId: 'conv-tool',
       agentName: 'agent-tool',
       agentVersion: 'v-tool',
+      requestProvider: 'openai',
+      requestModel: 'gpt-5',
     });
     withContent.setResult({
       arguments: { city: 'Paris' },
@@ -351,6 +353,8 @@ test('tool execution includeContent controls argument/result attributes', async 
     assert.equal(contentSpan.attributes['gen_ai.conversation.id'], 'conv-tool');
     assert.equal(contentSpan.attributes['gen_ai.agent.name'], 'agent-tool');
     assert.equal(contentSpan.attributes['gen_ai.agent.version'], 'v-tool');
+    assert.equal(contentSpan.attributes['gen_ai.provider.name'], 'openai');
+    assert.equal(contentSpan.attributes['gen_ai.request.model'], 'gpt-5');
     assert.equal(contentSpan.attributes['sigil.sdk.name'], 'sdk-js');
     assert.equal(noContentSpan.attributes['gen_ai.tool.call.arguments'], undefined);
     assert.equal(noContentSpan.attributes['gen_ai.tool.call.result'], undefined);
