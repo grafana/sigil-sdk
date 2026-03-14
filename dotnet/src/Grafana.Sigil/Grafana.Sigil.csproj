@@ -15,8 +15,8 @@
     <PackageReference Include="Grpc.Tools" Version="2.78.0" PrivateAssets="All" />
     <PackageReference Include="OpenTelemetry" Version="1.15.0" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
-    <PackageReference Include="System.Text.Json" Version="10.0.3" />
-    <PackageReference Include="System.Threading.Channels" Version="10.0.3" />
+    <PackageReference Include="System.Text.Json" Version="10.0.4" />
+    <PackageReference Include="System.Threading.Channels" Version="10.0.4" />
   </ItemGroup>
 
   <ItemGroup>
