@@ -115,6 +115,56 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
         client.shutdown()
 
 
+def test_langchain_sync_lifecycle_extracts_anthropic_style_usage_and_stop_reason() -> None:
+    """ChatAnthropic puts token usage under 'usage' (not 'token_usage') and
+    stop reason under 'stop_reason' (not 'finish_reason')."""
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    try:
+        run_id = uuid4()
+        handler = SigilLangChainHandler(
+            client=client,
+            agent_name="agent-langchain",
+            agent_version="v1",
+            provider_resolver="auto",
+        )
+
+        handler.on_chat_model_start(
+            {"name": "ChatAnthropic"},
+            [[{"type": "human", "content": "hello"}]],
+            run_id=run_id,
+            invocation_params={"model": "claude-haiku-4-5-20251001"},
+        )
+        handler.on_llm_end(
+            {
+                "generations": [[{"text": "world"}]],
+                "llm_output": {
+                    "id": "msg_01ABC",
+                    "model": "claude-haiku-4-5-20251001",
+                    "model_name": "claude-haiku-4-5-20251001",
+                    "stop_reason": "end_turn",
+                    "usage": {
+                        "input_tokens": 42,
+                        "output_tokens": 17,
+                    },
+                },
+            },
+            run_id=run_id,
+        )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.model.provider == "anthropic"
+        assert generation.model.name == "claude-haiku-4-5-20251001"
+        assert generation.usage.input_tokens == 42
+        assert generation.usage.output_tokens == 17
+        assert generation.usage.total_tokens == 59
+        assert generation.stop_reason == "end_turn"
+    finally:
+        client.shutdown()
+
+
 def test_langchain_stream_lifecycle_uses_stream_mode_and_chunk_fallback() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
