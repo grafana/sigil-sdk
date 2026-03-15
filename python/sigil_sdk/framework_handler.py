@@ -304,9 +304,11 @@ class SigilFrameworkHandlerBase:
             return
 
         try:
-            usage = _map_usage(_read(_read(response, "llm_output"), "token_usage"))
-            response_model = _as_str(_read(_read(response, "llm_output"), "model_name"))
-            stop_reason = _as_str(_read(_read(response, "llm_output"), "finish_reason"))
+            llm_output = _read(response, "llm_output")
+            raw_usage = _read(llm_output, "token_usage") or _read(llm_output, "usage")
+            usage = _map_usage(raw_usage)
+            response_model = _as_str(_read(llm_output, "model_name"))
+            stop_reason = _as_str(_read(llm_output, "finish_reason") or _read(llm_output, "stop_reason"))
 
             output_messages: list[Message] = []
             if run_state.capture_outputs:
