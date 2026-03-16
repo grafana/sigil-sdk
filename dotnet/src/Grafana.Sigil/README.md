@@ -260,8 +260,34 @@ Per export path, supported auth modes are:
 - `ExportAuthMode.None`
 - `ExportAuthMode.Tenant` (`X-Scope-OrgID`)
 - `ExportAuthMode.Bearer` (`Authorization: Bearer <token>`)
+- `ExportAuthMode.Basic` (requires `BasicPassword` + `BasicUser` or `TenantId`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `TenantId` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
 
 Explicit transport headers take precedence over auth-derived headers (`Authorization`, `X-Scope-OrgID`, case-insensitive).
+
+### Grafana Cloud auth (basic)
+
+For Grafana Cloud, use `Basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key:
+
+```csharp
+Auth = new AuthConfig
+{
+    Mode = ExportAuthMode.Basic,
+    TenantId = Environment.GetEnvironmentVariable("GRAFANA_CLOUD_INSTANCE_ID") ?? "",
+    BasicPassword = Environment.GetEnvironmentVariable("GRAFANA_CLOUD_API_KEY") ?? "",
+},
+```
+
+If your deployment requires a distinct username, set `BasicUser` explicitly:
+
+```csharp
+Auth = new AuthConfig
+{
+    Mode = ExportAuthMode.Basic,
+    TenantId = Environment.GetEnvironmentVariable("GRAFANA_CLOUD_INSTANCE_ID") ?? "",
+    BasicUser = Environment.GetEnvironmentVariable("GRAFANA_CLOUD_INSTANCE_ID") ?? "",
+    BasicPassword = Environment.GetEnvironmentVariable("GRAFANA_CLOUD_API_KEY") ?? "",
+},
+```
 
 ## Lifecycle and performance guidance
 

@@ -1,5 +1,7 @@
 package com.grafana.sigil.sdk;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -21,8 +23,10 @@ final class AuthHeaders {
         String bearer = auth == null ? "" : auth.getBearerToken().trim();
 
         if (mode == AuthMode.NONE) {
-            if (!tenantId.isEmpty() || !bearer.isEmpty()) {
-                throw new IllegalArgumentException(label + " auth mode 'none' does not allow tenantId or bearerToken");
+            String basicUser = auth == null ? "" : auth.getBasicUser().trim();
+            String basicPassword = auth == null ? "" : auth.getBasicPassword().trim();
+            if (!tenantId.isEmpty() || !bearer.isEmpty() || !basicUser.isEmpty() || !basicPassword.isEmpty()) {
+                throw new IllegalArgumentException(label + " auth mode 'none' does not allow credentials");
             }
             return out;
         }
@@ -49,6 +53,29 @@ final class AuthHeaders {
             }
             if (!hasHeader(out, AUTHORIZATION_HEADER)) {
                 out.put(AUTHORIZATION_HEADER, formatBearer(bearer));
+            }
+            return out;
+        }
+
+        if (mode == AuthMode.BASIC) {
+            String password = auth == null ? "" : auth.getBasicPassword().trim();
+            if (password.isEmpty()) {
+                throw new IllegalArgumentException(label + " auth mode 'basic' requires basicPassword");
+            }
+            String user = auth == null ? "" : auth.getBasicUser().trim();
+            if (user.isEmpty()) {
+                user = tenantId;
+            }
+            if (user.isEmpty()) {
+                throw new IllegalArgumentException(label + " auth mode 'basic' requires basicUser or tenantId");
+            }
+            if (!hasHeader(out, AUTHORIZATION_HEADER)) {
+                String encoded = Base64.getEncoder().encodeToString(
+                        (user + ":" + password).getBytes(StandardCharsets.UTF_8));
+                out.put(AUTHORIZATION_HEADER, "Basic " + encoded);
+            }
+            if (!tenantId.isEmpty() && !hasHeader(out, TENANT_HEADER)) {
+                out.put(TENANT_HEADER, tenantId);
             }
             return out;
         }

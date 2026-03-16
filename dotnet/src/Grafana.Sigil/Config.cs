@@ -11,7 +11,8 @@ public enum ExportAuthMode
 {
     None,
     Tenant,
-    Bearer
+    Bearer,
+    Basic
 }
 
 public sealed class AuthConfig
@@ -19,6 +20,10 @@ public sealed class AuthConfig
     public ExportAuthMode Mode { get; set; } = ExportAuthMode.None;
     public string TenantId { get; set; } = string.Empty;
     public string BearerToken { get; set; } = string.Empty;
+    /// <summary>Username for basic auth. When empty, TenantId is used.</summary>
+    public string BasicUser { get; set; } = string.Empty;
+    /// <summary>Password/token for basic auth.</summary>
+    public string BasicPassword { get; set; } = string.Empty;
 }
 
 public sealed class GenerationExportConfig
@@ -152,9 +157,11 @@ internal static class ConfigResolver
         switch (auth.Mode)
         {
             case ExportAuthMode.None:
-                if (tenantId.Length > 0 || bearerToken.Length > 0)
+                var noneBasicUser = auth.BasicUser?.Trim() ?? string.Empty;
+                var noneBasicPassword = auth.BasicPassword?.Trim() ?? string.Empty;
+                if (tenantId.Length > 0 || bearerToken.Length > 0 || noneBasicUser.Length > 0 || noneBasicPassword.Length > 0)
                 {
-                    throw new ArgumentException($"{label} auth mode 'none' does not allow tenant_id or bearer_token");
+                    throw new ArgumentException($"{label} auth mode 'none' does not allow credentials");
                 }
                 return resolved;
             case ExportAuthMode.Tenant:
@@ -188,6 +195,37 @@ internal static class ConfigResolver
                 if (!resolved.ContainsKey(AuthorizationHeaderName))
                 {
                     resolved[AuthorizationHeaderName] = FormatBearerTokenValue(bearerToken);
+                }
+
+                return resolved;
+            case ExportAuthMode.Basic:
+                var basicPassword = auth.BasicPassword?.Trim() ?? string.Empty;
+                if (basicPassword.Length == 0)
+                {
+                    throw new ArgumentException($"{label} auth mode 'basic' requires basic_password");
+                }
+
+                var basicUser = auth.BasicUser?.Trim() ?? string.Empty;
+                if (basicUser.Length == 0)
+                {
+                    basicUser = tenantId;
+                }
+
+                if (basicUser.Length == 0)
+                {
+                    throw new ArgumentException($"{label} auth mode 'basic' requires basic_user or tenant_id");
+                }
+
+                if (!resolved.ContainsKey(AuthorizationHeaderName))
+                {
+                    var encoded = Convert.ToBase64String(
+                        System.Text.Encoding.UTF8.GetBytes($"{basicUser}:{basicPassword}"));
+                    resolved[AuthorizationHeaderName] = $"Basic {encoded}";
+                }
+
+                if (tenantId.Length > 0 && !resolved.ContainsKey(TenantHeaderName))
+                {
+                    resolved[TenantHeaderName] = tenantId;
                 }
 
                 return resolved;

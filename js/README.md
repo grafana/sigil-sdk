@@ -271,6 +271,7 @@ Auth is configured for `generationExport`.
 - `mode: "none"`
 - `mode: "tenant"` (requires `tenantId`, injects `X-Scope-OrgID`)
 - `mode: "bearer"` (requires `bearerToken`, injects `Authorization: Bearer <token>`)
+- `mode: "basic"` (requires `basicPassword` + `basicUser` or `tenantId`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenantId` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
 
 Invalid mode/field combinations throw during client config resolution.
 
@@ -287,6 +288,35 @@ const client = new SigilClient({
     endpoint: "http://localhost:8080",
   },
 });
+```
+
+### Grafana Cloud auth (basic)
+
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key:
+
+```ts
+const client = new SigilClient({
+  generationExport: {
+    protocol: "http",
+    endpoint: "https://<your-stack>.grafana.net/api/v1/generations:export",
+    auth: {
+      mode: "basic",
+      tenantId: process.env.GRAFANA_CLOUD_INSTANCE_ID,
+      basicPassword: process.env.GRAFANA_CLOUD_API_KEY,
+    },
+  },
+});
+```
+
+If your deployment requires a distinct username, set `basicUser` explicitly:
+
+```ts
+auth: {
+  mode: "basic",
+  tenantId: process.env.GRAFANA_CLOUD_INSTANCE_ID,
+  basicUser: process.env.GRAFANA_CLOUD_INSTANCE_ID,
+  basicPassword: process.env.GRAFANA_CLOUD_API_KEY,
+},
 ```
 
 ## Env-secret wiring example
@@ -313,7 +343,8 @@ const client = new SigilClient({
 
 Common topology:
 
-- Generations direct to Sigil: generation `tenant` mode.
+- Grafana Cloud: generation `basic` mode with instance ID and API key.
+- Self-hosted direct to Sigil: generation `tenant` mode.
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 

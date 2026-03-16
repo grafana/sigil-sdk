@@ -298,6 +298,7 @@ Auth is resolved for `generation_export`.
 - `mode="none"`
 - `mode="tenant"` (requires `tenant_id`, injects `X-Scope-OrgID`)
 - `mode="bearer"` (requires `bearer_token`, injects `Authorization: Bearer <token>`)
+- `mode="basic"` (requires `basic_password` + `basic_user` or `tenant_id`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenant_id` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
 
 Invalid mode/field combinations fail fast in `resolve_config(...)`.
 
@@ -313,6 +314,38 @@ cfg = ClientConfig(
         auth=AuthConfig(mode="tenant", tenant_id="prod-tenant"),
     ),
     api=ApiConfig(endpoint="http://localhost:8080"),
+)
+```
+
+### Grafana Cloud auth (basic)
+
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key:
+
+```python
+import os
+from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig
+
+cfg = ClientConfig(
+    generation_export=GenerationExportConfig(
+        protocol="http",
+        endpoint="https://<your-stack>.grafana.net/api/v1/generations:export",
+        auth=AuthConfig(
+            mode="basic",
+            tenant_id=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],
+            basic_password=os.environ["GRAFANA_CLOUD_API_KEY"],
+        ),
+    ),
+)
+```
+
+If your deployment requires a distinct username, set `basic_user` explicitly:
+
+```python
+auth=AuthConfig(
+    mode="basic",
+    tenant_id=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],
+    basic_user=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],
+    basic_password=os.environ["GRAFANA_CLOUD_API_KEY"],
 )
 ```
 
@@ -333,7 +366,8 @@ if gen_token:
 
 Common topology:
 
-- Generations direct to Sigil: generation `tenant` mode.
+- Grafana Cloud: generation `basic` mode with instance ID and API key.
+- Self-hosted direct to Sigil: generation `tenant` mode.
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 

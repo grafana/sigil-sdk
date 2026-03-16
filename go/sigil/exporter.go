@@ -310,8 +310,10 @@ func resolveHeadersWithAuth(headers map[string]string, auth AuthConfig) (map[str
 
 	switch mode {
 	case ExportAuthModeNone:
-		if tenantID != "" || bearerToken != "" {
-			return nil, errors.New("auth mode none does not allow tenant_id or bearer_token")
+		basicUser := strings.TrimSpace(auth.BasicUser)
+		basicPassword := strings.TrimSpace(auth.BasicPassword)
+		if tenantID != "" || bearerToken != "" || basicUser != "" || basicPassword != "" {
+			return nil, errors.New("auth mode none does not allow credentials")
 		}
 		return cloneTags(headers), nil
 	case ExportAuthModeTenant:

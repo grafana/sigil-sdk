@@ -5,6 +5,8 @@ public final class AuthConfig {
     private AuthMode mode = AuthMode.NONE;
     private String tenantId = "";
     private String bearerToken = "";
+    private String basicUser = "";
+    private String basicPassword = "";
 
     public AuthMode getMode() {
         return mode;
@@ -33,7 +35,32 @@ public final class AuthConfig {
         return this;
     }
 
+    /** Username for basic auth. When empty, tenantId is used. */
+    public String getBasicUser() {
+        return basicUser;
+    }
+
+    public AuthConfig setBasicUser(String basicUser) {
+        this.basicUser = basicUser == null ? "" : basicUser;
+        return this;
+    }
+
+    /** Password/token for basic auth. */
+    public String getBasicPassword() {
+        return basicPassword;
+    }
+
+    public AuthConfig setBasicPassword(String basicPassword) {
+        this.basicPassword = basicPassword == null ? "" : basicPassword;
+        return this;
+    }
+
     public AuthConfig copy() {
-        return new AuthConfig().setMode(mode).setTenantId(tenantId).setBearerToken(bearerToken);
+        return new AuthConfig()
+                .setMode(mode)
+                .setTenantId(tenantId)
+                .setBearerToken(bearerToken)
+                .setBasicUser(basicUser)
+                .setBasicPassword(basicPassword);
     }
 }
