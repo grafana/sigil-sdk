@@ -120,8 +120,10 @@ function resolveHeadersWithAuth(
   const out = headers ? { ...headers } : undefined;
 
   if (mode === 'none') {
-    if (tenantId.length > 0 || bearerToken.length > 0) {
-      throw new Error(`${label} auth mode "none" does not allow tenantId or bearerToken`);
+    const basicUser = auth.basicUser?.trim() ?? '';
+    const basicPassword = auth.basicPassword?.trim() ?? '';
+    if (tenantId.length > 0 || bearerToken.length > 0 || basicUser.length > 0 || basicPassword.length > 0) {
+      throw new Error(`${label} auth mode "none" does not allow credentials`);
     }
     return out;
   }
@@ -156,6 +158,29 @@ function resolveHeadersWithAuth(
       ...(out ?? {}),
       [authorizationHeaderName]: formatBearerTokenValue(bearerToken),
     };
+  }
+
+  if (mode === 'basic') {
+    const password = auth.basicPassword?.trim() ?? '';
+    if (password.length === 0) {
+      throw new Error(`${label} auth mode "basic" requires basicPassword`);
+    }
+    let user = auth.basicUser?.trim() ?? '';
+    if (user.length === 0) {
+      user = tenantId;
+    }
+    if (user.length === 0) {
+      throw new Error(`${label} auth mode "basic" requires basicUser or tenantId`);
+    }
+    const result: Record<string, string> = { ...(out ?? {}) };
+    if (!hasHeaderKey(result, authorizationHeaderName)) {
+      const encoded = new TextEncoder().encode(`${user}:${password}`);
+      result[authorizationHeaderName] = 'Basic ' + btoa(String.fromCharCode(...encoded));
+    }
+    if (tenantId.length > 0 && !hasHeaderKey(result, tenantHeaderName)) {
+      result[tenantHeaderName] = tenantId;
+    }
+    return result;
   }
 
   throw new Error(`unsupported ${label} auth mode: ${auth.mode}`);

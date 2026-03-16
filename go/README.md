@@ -133,6 +133,7 @@ Auth is configured for generation export.
 - `none`
 - `tenant` (requires `TenantID`, injects `X-Scope-OrgID`)
 - `bearer` (requires `BearerToken`, injects `Authorization: Bearer <token>`)
+- `basic` (requires `BasicPassword` + `BasicUser` or `TenantID`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `TenantID` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
 
 Invalid combinations fail fast during `NewClient(...)`.
 
@@ -144,6 +145,29 @@ cfg.GenerationExport.Auth = sigil.AuthConfig{
 ```
 
 Explicit transport headers remain the highest-precedence escape hatch. If `Headers` already contains `Authorization` or `X-Scope-OrgID`, the SDK does not overwrite them.
+
+### Grafana Cloud auth (basic)
+
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key:
+
+```go
+cfg.GenerationExport.Auth = sigil.AuthConfig{
+	Mode:          sigil.ExportAuthModeBasic,
+	TenantID:      os.Getenv("GRAFANA_CLOUD_INSTANCE_ID"),
+	BasicPassword: os.Getenv("GRAFANA_CLOUD_API_KEY"),
+}
+```
+
+If your deployment requires a distinct username (different from the tenant ID), set `BasicUser` explicitly:
+
+```go
+cfg.GenerationExport.Auth = sigil.AuthConfig{
+	Mode:          sigil.ExportAuthModeBasic,
+	TenantID:      os.Getenv("GRAFANA_CLOUD_INSTANCE_ID"),
+	BasicUser:     os.Getenv("GRAFANA_CLOUD_INSTANCE_ID"),
+	BasicPassword: os.Getenv("GRAFANA_CLOUD_API_KEY"),
+}
+```
 
 ## Env-secret wiring example
 
@@ -161,7 +185,8 @@ if genToken != "" {
 
 Common topology:
 
-- Generations direct to Sigil: generation `tenant` mode.
+- Grafana Cloud: generation `basic` mode with instance ID and API key.
+- Self-hosted direct to Sigil: generation `tenant` mode.
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 

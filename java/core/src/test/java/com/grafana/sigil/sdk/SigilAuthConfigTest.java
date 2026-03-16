@@ -3,6 +3,9 @@ package com.grafana.sigil.sdk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +13,14 @@ class SigilAuthConfigTest {
     @Test
     void validatesAuthModeShape() {
         assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.NONE).setTenantId("x"), "trace"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mode 'none'");
+
+        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.NONE).setBasicUser("user"), "trace"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mode 'none'");
+
+        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.NONE).setBasicPassword("secret"), "trace"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("mode 'none'");
 
@@ -35,5 +46,70 @@ class SigilAuthConfigTest {
                 new AuthConfig().setMode(AuthMode.TENANT).setTenantId("tenant-injected"),
                 "generation export");
         assertThat(generation.get("x-scope-orgid")).isEqualTo("tenant-override");
+    }
+
+    @Test
+    void basicAuthWithTenantId() {
+        Map<String, String> headers = AuthHeaders.resolve(
+                Map.of(),
+                new AuthConfig().setMode(AuthMode.BASIC).setTenantId("42").setBasicPassword("secret"),
+                "generation export");
+        String expected = "Basic " + Base64.getEncoder()
+                .encodeToString("42:secret".getBytes(StandardCharsets.UTF_8));
+        assertThat(headers.get("Authorization")).isEqualTo(expected);
+        assertThat(headers.get("X-Scope-OrgID")).isEqualTo("42");
+    }
+
+    @Test
+    void basicAuthWithExplicitUser() {
+        Map<String, String> headers = AuthHeaders.resolve(
+                Map.of(),
+                new AuthConfig().setMode(AuthMode.BASIC).setTenantId("42")
+                        .setBasicUser("probe-user").setBasicPassword("secret"),
+                "generation export");
+        String expected = "Basic " + Base64.getEncoder()
+                .encodeToString("probe-user:secret".getBytes(StandardCharsets.UTF_8));
+        assertThat(headers.get("Authorization")).isEqualTo(expected);
+        assertThat(headers.get("X-Scope-OrgID")).isEqualTo("42");
+    }
+
+    @Test
+    void basicAuthExplicitHeaderWins() {
+        Map<String, String> input = new LinkedHashMap<>();
+        input.put("Authorization", "Basic override");
+        input.put("X-Scope-OrgID", "override-tenant");
+        Map<String, String> headers = AuthHeaders.resolve(
+                input,
+                new AuthConfig().setMode(AuthMode.BASIC).setTenantId("42").setBasicPassword("secret"),
+                "generation export");
+        assertThat(headers.get("Authorization")).isEqualTo("Basic override");
+        assertThat(headers.get("X-Scope-OrgID")).isEqualTo("override-tenant");
+    }
+
+    @Test
+    void basicAuthRejectsInvalidConfig() {
+        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(),
+                new AuthConfig().setMode(AuthMode.BASIC), "generation export"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires basicPassword");
+
+        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(),
+                new AuthConfig().setMode(AuthMode.BASIC).setBasicPassword("secret"), "generation export"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires basicUser or tenantId");
+    }
+
+    @Test
+    void basicAuthCopy() {
+        AuthConfig original = new AuthConfig()
+                .setMode(AuthMode.BASIC)
+                .setTenantId("42")
+                .setBasicUser("user")
+                .setBasicPassword("pass");
+        AuthConfig copy = original.copy();
+        assertThat(copy.getMode()).isEqualTo(AuthMode.BASIC);
+        assertThat(copy.getTenantId()).isEqualTo("42");
+        assertThat(copy.getBasicUser()).isEqualTo("user");
+        assertThat(copy.getBasicPassword()).isEqualTo("pass");
     }
 }

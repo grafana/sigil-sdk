@@ -120,6 +120,8 @@ func TestResolveHeadersWithAuthRejectsInvalidConfig(t *testing.T) {
 		{Mode: ExportAuthModeBearer},
 		{Mode: ExportAuthModeNone, TenantID: "tenant-a"},
 		{Mode: ExportAuthModeNone, BearerToken: "token"},
+		{Mode: ExportAuthModeNone, BasicUser: "user"},
+		{Mode: ExportAuthModeNone, BasicPassword: "secret"},
 		{Mode: ExportAuthModeTenant, TenantID: "tenant-a", BearerToken: "token"},
 		{Mode: ExportAuthModeBearer, TenantID: "tenant-a", BearerToken: "token"},
 		{Mode: ExportAuthMode("unknown"), TenantID: "tenant-a"},

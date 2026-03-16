@@ -5,13 +5,17 @@ export type GenerationExportProtocol = 'grpc' | 'http' | 'none';
 /** Generation execution mode. */
 export type GenerationMode = 'SYNC' | 'STREAM';
 /** Supported auth modes for transport exports. */
-export type ExportAuthMode = 'none' | 'tenant' | 'bearer';
+export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
 
 /** Per-export auth configuration. */
 export interface ExportAuthConfig {
   mode: ExportAuthMode;
   tenantId?: string;
   bearerToken?: string;
+  /** Username for basic auth. When empty, tenantId is used. */
+  basicUser?: string;
+  /** Password/token for basic auth. */
+  basicPassword?: string;
 }
 
 /** Generation exporter runtime configuration. */

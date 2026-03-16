@@ -1,3 +1,4 @@
+using System.Text;
 using Xunit;
 
 namespace Grafana.Sigil.Tests;
@@ -54,6 +55,37 @@ public sealed class AuthConfigTests
                 },
                 "unsupported generation auth mode"
             },
+            {
+                new AuthConfig
+                {
+                    Mode = ExportAuthMode.None,
+                    BasicUser = "user",
+                },
+                "generation auth mode 'none' does not allow credentials"
+            },
+            {
+                new AuthConfig
+                {
+                    Mode = ExportAuthMode.None,
+                    BasicPassword = "secret",
+                },
+                "generation auth mode 'none' does not allow credentials"
+            },
+            {
+                new AuthConfig
+                {
+                    Mode = ExportAuthMode.Basic,
+                },
+                "generation auth mode 'basic' requires basic_password"
+            },
+            {
+                new AuthConfig
+                {
+                    Mode = ExportAuthMode.Basic,
+                    BasicPassword = "secret",
+                },
+                "generation auth mode 'basic' requires basic_user or tenant_id"
+            },
         };
 
     [Theory]
@@ -97,6 +129,62 @@ public sealed class AuthConfigTests
         await using var client = new SigilClient(config);
 
         Assert.Equal("Bearer override-token", config.GenerationExport.Headers["authorization"]);
+    }
+
+    [Fact]
+    public async Task Constructor_AppliesBasicAuthWithTenantId()
+    {
+        var config = TestHelpers.TestConfig(new CapturingGenerationExporter());
+        config.GenerationExport.Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Basic,
+            TenantId = "42",
+            BasicPassword = "secret",
+        };
+
+        await using var client = new SigilClient(config);
+
+        var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("42:secret"));
+        Assert.Equal(expected, config.GenerationExport.Headers["Authorization"]);
+        Assert.Equal("42", config.GenerationExport.Headers["X-Scope-OrgID"]);
+    }
+
+    [Fact]
+    public async Task Constructor_AppliesBasicAuthWithExplicitUser()
+    {
+        var config = TestHelpers.TestConfig(new CapturingGenerationExporter());
+        config.GenerationExport.Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Basic,
+            TenantId = "42",
+            BasicUser = "probe-user",
+            BasicPassword = "secret",
+        };
+
+        await using var client = new SigilClient(config);
+
+        var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("probe-user:secret"));
+        Assert.Equal(expected, config.GenerationExport.Headers["Authorization"]);
+        Assert.Equal("42", config.GenerationExport.Headers["X-Scope-OrgID"]);
+    }
+
+    [Fact]
+    public async Task Constructor_BasicAuthExplicitHeaderWins()
+    {
+        var config = TestHelpers.TestConfig(new CapturingGenerationExporter());
+        config.GenerationExport.Headers["Authorization"] = "Basic override";
+        config.GenerationExport.Headers["X-Scope-OrgID"] = "override-tenant";
+        config.GenerationExport.Auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Basic,
+            TenantId = "42",
+            BasicPassword = "secret",
+        };
+
+        await using var client = new SigilClient(config);
+
+        Assert.Equal("Basic override", config.GenerationExport.Headers["Authorization"]);
+        Assert.Equal("override-tenant", config.GenerationExport.Headers["X-Scope-OrgID"]);
     }
 
 }
