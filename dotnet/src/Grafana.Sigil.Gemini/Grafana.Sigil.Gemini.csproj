@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Grafana.Sigil/Grafana.Sigil.csproj" />
-    <PackageReference Include="Google.GenAI" Version="1.3.0" />
+    <PackageReference Include="Google.GenAI" Version="1.4.0" />
   </ItemGroup>
 
   <ItemGroup>
