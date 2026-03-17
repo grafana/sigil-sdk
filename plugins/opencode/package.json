@@ -27,7 +27,7 @@
     "@opencode-ai/plugin": "^1.2.16",
     "@opencode-ai/sdk": "^1.2.16",
     "@types/node": "^24.0.0",
-    "esbuild": "^0.27.0",
+    "esbuild": "^0.27.3",
     "typescript": "^5.8.2",
     "vitest": "^4.0.18"
   }
