@@ -18,6 +18,23 @@ except ModuleNotFoundError:  # pragma: no cover - handled by package dependency 
         """Fallback async base class when langchain-core is unavailable."""
 
 
+def _extract_tool_output(output: Any) -> Any:
+    """Extract serializable content from LangChain tool output.
+
+    LangChain's on_tool_end receives the raw output which may be a
+    ToolMessage or other BaseMessage subclass that isn't directly JSON
+    serializable. Extract the .content string when available.
+    """
+    if output is None:
+        return output
+    if isinstance(output, str):
+        return output
+    # Handle LangChain BaseMessage subclasses (ToolMessage, AIMessage, etc.)
+    if hasattr(output, "content"):
+        return output.content
+    return output
+
+
 _framework_name = "langchain"
 _framework_source = "handler"
 _framework_language = "python"
@@ -149,7 +166,7 @@ class SigilLangChainHandler(_SigilLangChainBase, BaseCallbackHandler):
         )
 
     def on_tool_end(self, output: Any, *, run_id: UUID, **_kwargs: Any) -> None:
-        self._on_tool_end(output=output, run_id=run_id)
+        self._on_tool_end(output=_extract_tool_output(output), run_id=run_id)
 
     def on_tool_error(self, error: BaseException, *, run_id: UUID, **_kwargs: Any) -> None:
         self._on_tool_error(error=error, run_id=run_id)
@@ -284,7 +301,7 @@ class SigilAsyncLangChainHandler(_SigilLangChainBase, AsyncCallbackHandler):
         )
 
     async def on_tool_end(self, output: Any, *, run_id: UUID, **_kwargs: Any) -> None:
-        self._on_tool_end(output=output, run_id=run_id)
+        self._on_tool_end(output=_extract_tool_output(output), run_id=run_id)
 
     async def on_tool_error(self, error: BaseException, *, run_id: UUID, **_kwargs: Any) -> None:
         self._on_tool_error(error=error, run_id=run_id)

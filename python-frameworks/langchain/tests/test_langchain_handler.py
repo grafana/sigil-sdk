@@ -18,6 +18,7 @@ from sigil_sdk_langchain import (
     create_sigil_langchain_handler,
     with_sigil_langchain_callbacks,
 )
+from sigil_sdk_langchain.handler import _extract_tool_output
 
 
 class _CapturingExporter:
@@ -331,6 +332,45 @@ def test_langchain_async_handler_records_generation() -> None:
         generation = exporter.requests[0].generations[0]
         assert generation.tags["sigil.framework.name"] == "langchain"
         assert generation.model.provider == "openai"
+    finally:
+        client.shutdown()
+
+
+def test_extract_tool_output_unwraps_message_content_and_preserves_plain_values() -> None:
+    class _FakeToolMessage:
+        def __init__(self, content):
+            self.content = content
+
+    payload = {"temp_c": 18}
+
+    assert _extract_tool_output(_FakeToolMessage("tool result text")) == "tool result text"
+    assert _extract_tool_output("plain string") == "plain string"
+    assert _extract_tool_output(None) is None
+    assert _extract_tool_output(payload) is payload
+
+
+def test_langchain_tool_end_extracts_message_content_before_recording() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    class _FakeToolMessage:
+        def __init__(self, content):
+            self.content = content
+
+    try:
+        handler = SigilLangChainHandler(client=client)
+        captured: dict[str, object] = {}
+
+        def _capture_tool_end(*, output, run_id) -> None:
+            captured["output"] = output
+            captured["run_id"] = run_id
+
+        handler._on_tool_end = _capture_tool_end  # type: ignore[method-assign]
+
+        run_id = uuid4()
+        handler.on_tool_end(_FakeToolMessage("tool result text"), run_id=run_id)
+
+        assert captured == {"output": "tool result text", "run_id": run_id}
     finally:
         client.shutdown()
 
