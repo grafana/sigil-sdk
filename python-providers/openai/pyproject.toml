@@ -1,12 +1,12 @@
 [project]
 name = "sigil-sdk-openai"
-version = "0.1.0"
+version = "0.1.1"
 description = "OpenAI helper wrappers for Sigil Python SDK"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
-  "sigil-sdk>=0.1.0",
+  "sigil-sdk>=0.1.1",
   "openai>=2.20.0,<3",
 ]
 
