@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go/cmd/devex-emitter
 go 1.25.6
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.26.0
+	github.com/anthropics/anthropic-sdk-go v1.27.1
 	github.com/grafana/sigil/sdks/go v0.0.0
 	github.com/grafana/sigil/sdks/go-providers/anthropic v0.0.0
 	github.com/grafana/sigil/sdks/go-providers/gemini v0.0.0
