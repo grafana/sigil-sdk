@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go-providers/gemini
 go 1.25.6
 
 require (
-	github.com/grafana/sigil/sdks/go v0.0.0
+	github.com/grafana/sigil/sdks/go v0.1.1
 	google.golang.org/genai v1.50.0
 )
 
