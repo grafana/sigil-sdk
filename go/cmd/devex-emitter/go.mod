@@ -4,9 +4,9 @@ go 1.25.6
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1
-	github.com/grafana/sigil/sdks/go v0.1.1
-	github.com/grafana/sigil/sdks/go-providers/anthropic v0.0.0
-	github.com/grafana/sigil/sdks/go-providers/gemini v0.1.1
+	github.com/grafana/sigil/sdks/go v0.0.0
+	github.com/grafana/sigil/sdks/go-providers/anthropic v0.1.1
+	github.com/grafana/sigil/sdks/go-providers/gemini v0.0.0
 	github.com/grafana/sigil/sdks/go-providers/openai v0.0.0
 	github.com/openai/openai-go/v3 v3.28.0
 	go.opentelemetry.io/otel v1.42.0
