@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go-providers/openai
 go 1.25.6
 
 require (
-	github.com/grafana/sigil/sdks/go v0.0.0
+	github.com/grafana/sigil/sdks/go v0.1.1
 	github.com/openai/openai-go/v3 v3.28.0
 )
 
