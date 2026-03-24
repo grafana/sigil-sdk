@@ -265,6 +265,50 @@ def test_sdk_generation_auth_bearer_over_grpc_with_header_override() -> None:
         grpc_server.stop(grace=0)
 
 
+def test_grpc_metadata_keys_are_lowercased() -> None:
+    """Mixed-case header keys must be lowercased for gRPC metadata (grpcio rejects uppercase)."""
+    servicer = _CapturingGenerationServicer()
+    grpc_server = grpc.server(thread_pool=__import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=2))
+    sigil_pb2_grpc.add_GenerationIngestServiceServicer_to_server(servicer, grpc_server)
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+
+    grpc_server.add_insecure_port(f"127.0.0.1:{port}")
+    grpc_server.start()
+
+    client = _new_client(
+        GenerationExportConfig(
+            protocol="grpc",
+            endpoint=f"127.0.0.1:{port}",
+            insecure=True,
+            auth=AuthConfig(mode="tenant", tenant_id="12345"),
+            batch_size=1,
+            flush_interval=timedelta(seconds=1),
+            max_retries=1,
+            initial_backoff=timedelta(milliseconds=1),
+            max_backoff=timedelta(milliseconds=10),
+        )
+    )
+
+    try:
+        start, result = _payload_fixture()
+        rec = client.start_generation(start)
+        rec.set_result(result)
+        rec.end()
+        assert rec.err() is None
+        client.shutdown()
+
+        assert len(servicer.metadata) == 1
+        meta = servicer.metadata[0]
+        assert meta.get("x-scope-orgid") == "12345"
+        assert not any(k != k.lower() for k in meta)
+    finally:
+        grpc_server.stop(grace=0)
+
+
 def _assert_generation_json_payload(generation: dict[str, Any]) -> None:
     assert generation["id"] == "gen-fixture-1"
     assert generation["conversation_id"] == "conv-fixture-1"
