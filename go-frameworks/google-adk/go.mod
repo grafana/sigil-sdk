@@ -3,7 +3,7 @@ module github.com/grafana/sigil/sdks/go-frameworks/google-adk
 go 1.25.6
 
 require (
-	github.com/grafana/sigil/sdks/go v0.1.1
+	github.com/grafana/sigil/sdks/go v0.1.2
 	go.opentelemetry.io/otel v1.42.0
 	go.opentelemetry.io/otel/sdk v1.42.0
 	go.opentelemetry.io/otel/sdk/metric v1.42.0
