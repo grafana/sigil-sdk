@@ -36,4 +36,4 @@ Vendored protobuf definitions used by SDKs live in [`proto/`](proto/).
 
 ## License
 
-[GNU AGPL v3](LICENSE)
+[Apache License 2.0](LICENSE)
