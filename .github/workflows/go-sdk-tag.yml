@@ -48,8 +48,10 @@ jobs:
           git config user.email '144369747+grafana-plugins-platform-bot[bot]@users.noreply.github.com'
 
       - name: Tag all Go modules
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="v${{ inputs.version }}"
+          VERSION="v${INPUT_VERSION}"
           MODULES=(
             go
             go-providers/anthropic
