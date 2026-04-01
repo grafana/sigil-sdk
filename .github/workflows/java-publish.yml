@@ -1,0 +1,52 @@
+name: Publish Java SDK to Maven Central
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (e.g. 0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'grafana/sigil-sdk' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Get secrets from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@f1614b210386ac420af6807a997ac7f6d96e477a # get-vault-secrets/v1.3.1
+        env:
+          VAULT_INSTANCE: ops
+        with:
+          vault_instance: ${{ env.VAULT_INSTANCE }}
+          common_secrets: |
+            MAVEN_USERNAME=sigil-maven:username
+            MAVEN_PASSWORD=sigil-maven:password
+            GPG_PRIVATE_KEY=sigil-maven:gpg-private-key
+            GPG_PASSPHRASE=sigil-maven:gpg-passphrase
+          export_env: false
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Publish
+        working-directory: java
+        run: |
+          ./gradlew --no-daemon publish \
+            -Pversion=${{ inputs.version }} \
+            -PossrhUsername="${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_USERNAME }}" \
+            -PossrhPassword="${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_PASSWORD }}" \
+            -Psigning.key="${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}" \
+            -Psigning.password="${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}"

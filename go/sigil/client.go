@@ -93,7 +93,7 @@ type APIConfig struct {
 	Endpoint string
 }
 
-const instrumentationName = "github.com/grafana/sigil/sdks/go/sigil"
+const instrumentationName = "github.com/grafana/sigil-sdk/go/sigil"
 const (
 	defaultGRPCMaxSendMessageBytes    = 16 << 20
 	defaultGRPCMaxReceiveMessageBytes = 16 << 20

@@ -1,0 +1,195 @@
+name: Publish Python SDKs to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver bump type (major / minor / patch)'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository == 'grafana/sigil-sdk' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      new-version: ${{ steps.bump.outputs.new-version }}
+
+    steps:
+      - name: Get secrets from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@f1614b210386ac420af6807a997ac7f6d96e477a # get-vault-secrets/v1.3.1
+        env:
+          VAULT_INSTANCE: ops
+        with:
+          vault_instance: ${{ env.VAULT_INSTANCE }}
+          common_secrets: |
+            GITHUB_APP_ID=plugins-platform-bot-app:app-id
+            GITHUB_APP_PRIVATE_KEY=plugins-platform-bot-app:private-key
+          export_env: false
+
+      - name: Generate GitHub token
+        id: generate-github-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ fromJSON(steps.get-secrets.outputs.secrets).GITHUB_APP_ID }}
+          private-key: ${{ fromJSON(steps.get-secrets.outputs.secrets).GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ steps.generate-github-token.outputs.token }}
+          persist-credentials: true
+
+      - name: Setup Git
+        run: |
+          git config user.name 'grafana-plugins-platform-bot[bot]'
+          git config user.email '144369747+grafana-plugins-platform-bot[bot]@users.noreply.github.com'
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Compute and apply version bump
+        id: bump
+        shell: bash
+        run: |
+          CURRENT=$(grep '^version = ' python/pyproject.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "${{ inputs.version }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW="${MAJOR}.${MINOR}.${PATCH}"
+          echo "new-version=${NEW}" >> "$GITHUB_OUTPUT"
+          echo "Bumping Python SDK versions: ${CURRENT} -> ${NEW}"
+
+          PACKAGE_DIRS=(
+            python
+            python-providers/openai
+            python-providers/anthropic
+            python-providers/gemini
+            python-frameworks/langchain
+            python-frameworks/langgraph
+            python-frameworks/openai-agents
+            python-frameworks/llamaindex
+            python-frameworks/google-adk
+          )
+
+          for dir in "${PACKAGE_DIRS[@]}"; do
+            file="${dir}/pyproject.toml"
+            sed -i "s/^version = \".*\"/version = \"${NEW}\"/" "$file"
+            if [[ "$dir" != "python" ]]; then
+              sed -i "s/\"sigil-sdk>=.*\"/\"sigil-sdk>=${NEW}\"/" "$file"
+            fi
+            echo "  updated ${file}"
+          done
+
+      - name: Build all packages
+        shell: bash
+        run: |
+          PACKAGE_DIRS=(
+            python
+            python-providers/openai
+            python-providers/anthropic
+            python-providers/gemini
+            python-frameworks/langchain
+            python-frameworks/langgraph
+            python-frameworks/openai-agents
+            python-frameworks/llamaindex
+            python-frameworks/google-adk
+          )
+
+          for dir in "${PACKAGE_DIRS[@]}"; do
+            pkg_name=$(grep '^name = ' "${dir}/pyproject.toml" | head -1 | sed 's/name = "\(.*\)"/\1/')
+            echo "Building ${pkg_name} from ${dir}..."
+            python -m build "$dir" --outdir "dist/${pkg_name}"
+          done
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          git add \
+            python/pyproject.toml \
+            python-providers/*/pyproject.toml \
+            python-frameworks/*/pyproject.toml
+          git commit -m "chore(sdk-python): bump version to ${NEW_VERSION}"
+          git tag -a "sdk-python/v${NEW_VERSION}" -m "Python SDK ${NEW_VERSION}"
+          git push origin HEAD --tags
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new-version }}
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: python-sdk-dists
+          path: dist/
+          retention-days: 5
+
+  publish-core:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-sdk-dists
+          path: dist/
+
+      - name: Publish sigil-sdk to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        with:
+          packages-dir: dist/sigil-sdk/
+
+  publish-dependents:
+    needs: [build, publish-core]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - sigil-sdk-openai
+          - sigil-sdk-anthropic
+          - sigil-sdk-gemini
+          - sigil-sdk-langchain
+          - sigil-sdk-langgraph
+          - sigil-sdk-openai-agents
+          - sigil-sdk-llamaindex
+          - sigil-sdk-google-adk
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-sdk-dists
+          path: dist/
+
+      - name: Publish ${{ matrix.package }} to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
+        with:
+          packages-dir: dist/${{ matrix.package }}/

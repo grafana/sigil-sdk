@@ -1,10 +1,10 @@
-module github.com/grafana/sigil/sdks/go-providers/anthropic
+module github.com/grafana/sigil-sdk/go-providers/anthropic
 
 go 1.25.6
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1
-	github.com/grafana/sigil/sdks/go v0.1.2
+	github.com/grafana/sigil-sdk/go v0.1.2
 )
 
 require (
@@ -32,4 +32,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/grafana/sigil/sdks/go => ../../go
+replace github.com/grafana/sigil-sdk/go => ../../go

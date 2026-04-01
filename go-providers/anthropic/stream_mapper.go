@@ -7,7 +7,7 @@ import (
 	"time"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 // StreamSummary captures Anthropic stream events and an optional final message.

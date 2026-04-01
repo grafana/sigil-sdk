@@ -20,8 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="../../../../sigil/proto/sigil/v1/generation_ingest.proto"
-              ProtoRoot="../../../../sigil/proto"
+    <Protobuf Include="../../../proto/sigil/v1/generation_ingest.proto"
+              ProtoRoot="../../../proto"
               GrpcServices="Both"
               Link="Proto/sigil/v1/generation_ingest.proto" />
   </ItemGroup>

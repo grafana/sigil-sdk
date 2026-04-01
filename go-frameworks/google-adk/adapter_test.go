@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 func boolPtr(v bool) *bool {

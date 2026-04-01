@@ -9,7 +9,7 @@ import (
 	osdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"

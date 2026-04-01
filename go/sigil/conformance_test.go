@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	sigil "github.com/grafana/sigil/sdks/go/sigil"
-	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
+	sigil "github.com/grafana/sigil-sdk/go/sigil"
+	sigilv1 "github.com/grafana/sigil-sdk/go/sigil/internal/gen/sigil/v1"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )

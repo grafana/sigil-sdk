@@ -8,7 +8,7 @@ java {
     withSourcesJar()
 }
 
-val protoRoot = rootProject.projectDir.resolve("../../sigil/proto")
+val protoRoot = rootProject.projectDir.resolve("../proto")
 
 dependencies {
     api(libs.otel.api)

@@ -1,4 +1,4 @@
-module github.com/grafana/sigil/sdks/go
+module github.com/grafana/sigil-sdk/go
 
 go 1.25.6
 
