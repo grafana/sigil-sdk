@@ -22,20 +22,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="../../../../sdks/js/proto/opentelemetry/proto/collector/trace/v1/trace_service.proto"
-              ProtoRoot="../../../../sdks/js/proto"
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/collector/trace/v1/trace_service.proto"
+              ProtoRoot="../../../js/proto"
               GrpcServices="Server"
               Link="Proto/opentelemetry/proto/collector/trace/v1/trace_service.proto" />
-    <Protobuf Include="../../../../sdks/js/proto/opentelemetry/proto/trace/v1/trace.proto"
-              ProtoRoot="../../../../sdks/js/proto"
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/trace/v1/trace.proto"
+              ProtoRoot="../../../js/proto"
               GrpcServices="None"
               Link="Proto/opentelemetry/proto/trace/v1/trace.proto" />
-    <Protobuf Include="../../../../sdks/js/proto/opentelemetry/proto/resource/v1/resource.proto"
-              ProtoRoot="../../../../sdks/js/proto"
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/resource/v1/resource.proto"
+              ProtoRoot="../../../js/proto"
               GrpcServices="None"
               Link="Proto/opentelemetry/proto/resource/v1/resource.proto" />
-    <Protobuf Include="../../../../sdks/js/proto/opentelemetry/proto/common/v1/common.proto"
-              ProtoRoot="../../../../sdks/js/proto"
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/common/v1/common.proto"
+              ProtoRoot="../../../js/proto"
               GrpcServices="None"
               Link="Proto/opentelemetry/proto/common/v1/common.proto" />
   </ItemGroup>

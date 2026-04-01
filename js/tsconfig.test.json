@@ -4,7 +4,8 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noEmit": false,
-    "outDir": ".test-dist"
+    "outDir": ".test-dist",
+    "rootDir": "./src"
   },
   "include": ["src/**/*.ts"]
 }
