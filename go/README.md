@@ -6,13 +6,13 @@ The Go SDK is the current production-ready baseline for normalized generation re
 
 Cross-language parity tracks are available for:
 
-- Python: `sdks/python`
-- TypeScript/JavaScript: `sdks/js`
-- .NET/C#: `sdks/dotnet`
+- Python: `python/`
+- TypeScript/JavaScript: `js/`
+- .NET/C#: `dotnet/`
 
 Framework modules:
 
-- Google ADK helper: `../go-frameworks/google-adk/README.md`
+- Google ADK helper: [`go-frameworks/google-adk`](../go-frameworks/google-adk/README.md)
 
 ## Core model
 
@@ -232,9 +232,9 @@ The SDK emits four OTel histograms automatically through your configured OTel me
 
 The Go SDK ships a local no-Docker conformance harness for the current cross-SDK baseline.
 
-- Shared spec: `../../docs/references/sdk-conformance-spec.md`
+- Shared spec: `docs/references/sdk-conformance-spec.md` (in the sigil repo)
 - Default local command: `mise run sdk:conformance`
-- Direct Go command: `cd sdks/go && GOWORK=off go test ./sigil -run '^TestConformance' -count=1`
+- Direct Go command: `cd go && GOWORK=off go test ./sigil -run '^TestConformance' -count=1`
 - Current baseline coverage: sync roundtrip, conversation title resolution, user ID resolution, agent name/version resolution, streaming mode + TTFT, tool execution, embeddings, validation/error handling, rating submission, and shutdown flush semantics across exported generation payloads, OTLP spans, OTLP metrics, and local rating HTTP capture
 
 ## Explicit flow example
@@ -332,9 +332,9 @@ Provider modules are documented wrapper-first for ergonomics and include explici
 
 Current Go provider helpers:
 
-- `sdks/go-providers/openai` (OpenAI Chat Completions + Responses wrappers and mappers)
-- `sdks/go-providers/anthropic` (Anthropic Messages wrappers and mappers; embeddings currently unsupported by the upstream SDK/API surface)
-- `sdks/go-providers/gemini`
+- `go-providers/openai` (OpenAI Chat Completions + Responses wrappers and mappers)
+- `go-providers/anthropic` (Anthropic Messages wrappers and mappers; embeddings currently unsupported by the upstream SDK/API surface)
+- `go-providers/gemini`
 
 ## Raw artifact policy
 

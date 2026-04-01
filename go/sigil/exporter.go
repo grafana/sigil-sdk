@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil/sdks/go/sigil/internal/gen/sigil/v1"
+	sigilv1 "github.com/grafana/sigil-sdk/go/sigil/internal/gen/sigil/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"

@@ -10,7 +10,7 @@ import (
 
 	"github.com/openai/openai-go/v3/responses"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 // ResponsesStreamSummary captures Responses API stream events and an optional final response.

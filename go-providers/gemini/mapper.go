@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/genai"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"

@@ -1,0 +1,9 @@
+go 1.25.6
+
+use (
+	./go
+	./go-frameworks/google-adk
+	./go-providers/anthropic
+	./go-providers/gemini
+	./go-providers/openai
+)

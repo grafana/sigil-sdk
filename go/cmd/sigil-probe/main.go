@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	oresponses "github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 )
 
 func TestFromRequestResponse(t *testing.T) {

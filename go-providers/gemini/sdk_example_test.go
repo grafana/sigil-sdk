@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/grafana/sigil/sdks/go/sigil"
+	"github.com/grafana/sigil-sdk/go/sigil"
 	"google.golang.org/genai"
 )
 

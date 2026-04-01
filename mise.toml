@@ -1,0 +1,428 @@
+[env]
+PYTHON_BIN = "python3"
+
+# --- Dependencies ---
+
+[tasks.deps]
+description = "Install JS/TS dependencies"
+run = "pnpm install"
+
+# --- Formatting ---
+
+[tasks."format:go"]
+description = "Format Go code in all modules"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r moddir; do
+  echo "==> gofmt ${moddir}"
+  gofmt -w "${moddir}"
+done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; | sort)
+"""
+
+[tasks."format:cs"]
+description = "Format .NET SDK code"
+run = "dotnet format dotnet/Sigil.DotNet.sln"
+
+[tasks.format]
+description = "Format all code"
+depends = ["format:go", "format:cs"]
+
+# --- Linting ---
+
+[tasks."lint:go"]
+description = "Lint Go code in all modules"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r moddir; do
+  if [[ -z "$(cd "${moddir}" && GOWORK=off go list ./... 2>/dev/null || true)" ]]; then
+    echo "==> skip golangci-lint ${moddir} (no Go packages)"
+    continue
+  fi
+  echo "==> golangci-lint ${moddir}"
+  (cd "${moddir}" && GOWORK=off golangci-lint run ./...)
+done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; | sort)
+"""
+
+[tasks."lint:cs"]
+description = "Verify .NET SDK formatting and analyzer checks"
+run = "dotnet format dotnet/Sigil.DotNet.sln --verify-no-changes"
+
+[tasks.lint]
+description = "Run all linting"
+depends = ["lint:go", "lint:cs"]
+
+# --- Type checking ---
+
+[tasks."typecheck:ts:sdk-js"]
+description = "Type-check TypeScript/JavaScript SDK code"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-sdk-js run typecheck"
+
+[tasks.typecheck]
+description = "Run all type checks"
+depends = ["typecheck:ts:sdk-js"]
+
+# --- Go SDK tests ---
+
+[tasks."test:go:sdk-core"]
+description = "Run Go SDK core tests as standalone module"
+dir = "go"
+run = "GOWORK=off go test ./..."
+
+[tasks."test:go:sdk-anthropic"]
+description = "Run Anthropic provider helper tests as standalone module"
+dir = "go-providers/anthropic"
+run = "GOWORK=off go test ./..."
+
+[tasks."test:go:sdk-openai"]
+description = "Run OpenAI provider helper tests as standalone module"
+dir = "go-providers/openai"
+run = "GOWORK=off go test ./..."
+
+[tasks."test:go:sdk-gemini"]
+description = "Run Gemini provider helper tests as standalone module"
+dir = "go-providers/gemini"
+run = "GOWORK=off go test ./..."
+
+[tasks."test:go:sdk-google-adk"]
+description = "Run Google ADK framework helper tests as standalone module"
+dir = "go-frameworks/google-adk"
+run = "GOWORK=off go test ./..."
+
+[tasks."test:go:sdk-conformance"]
+description = "Run the Go SDK core conformance harness"
+dir = "go"
+run = "GOWORK=off go test ./sigil -run '^TestConformance' -count=1"
+
+# --- TypeScript/JavaScript SDK tests ---
+
+[tasks."test:ts:sdk-js"]
+description = "Run TypeScript/JavaScript SDK runtime tests"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-sdk-js run test:ci"
+
+[tasks."test:ts:sdk-conformance"]
+description = "Run TypeScript/JavaScript SDK core conformance tests"
+depends = ["deps"]
+dir = "js"
+run = "pnpm run test:build && node --test test/conformance.test.mjs"
+
+[tasks."test:ts:sdk-provider-conformance"]
+description = "Run TypeScript/JavaScript provider-wrapper conformance tests"
+depends = ["deps"]
+dir = "js"
+run = "pnpm run test:build && node --test test/providers.test.mjs"
+
+[tasks."test:ts:sdk-framework-conformance"]
+description = "Run TypeScript/JavaScript framework-adapter conformance tests"
+depends = ["deps"]
+run = "mise run test:ts:sdk-js-frameworks"
+
+[tasks."test:ts:sdk-js-frameworks"]
+description = "Run TypeScript/JavaScript SDK framework handler tests"
+depends = ["deps"]
+dir = "js"
+run = "pnpm run test:build && node --test test/frameworks.langchain.test.mjs test/frameworks.langgraph.test.mjs test/frameworks.additional.test.mjs test/frameworks.vercel-ai-sdk.mapping.test.mjs test/frameworks.vercel-ai-sdk.test.mjs"
+
+# --- Python SDK tests ---
+
+[tasks."test:py:sdk-core"]
+description = "Run Python SDK core parity tests"
+run = "uv run --python \"$PYTHON_BIN\" --with '.[dev]' --directory python pytest tests"
+
+[tasks."test:py:sdk-conformance"]
+description = "Run Python SDK core conformance tests"
+run = "uv run --python \"$PYTHON_BIN\" --with '.[dev]' --directory python pytest tests/test_conformance.py"
+
+[tasks."test:py:sdk-openai"]
+description = "Run Python OpenAI provider helper tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-providers/openai[dev]' pytest python-providers/openai/tests"
+
+[tasks."test:py:sdk-anthropic"]
+description = "Run Python Anthropic provider helper tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-providers/anthropic[dev]' pytest python-providers/anthropic/tests"
+
+[tasks."test:py:sdk-gemini"]
+description = "Run Python Gemini provider helper tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-providers/gemini[dev]' pytest python-providers/gemini/tests"
+
+[tasks."test:py:sdk-langchain"]
+description = "Run Python LangChain framework handler tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/langchain[dev]' pytest python-frameworks/langchain/tests"
+
+[tasks."test:py:sdk-langgraph"]
+description = "Run Python LangGraph framework handler tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/langgraph[dev]' pytest python-frameworks/langgraph/tests"
+
+[tasks."test:py:sdk-openai-agents"]
+description = "Run Python OpenAI Agents framework handler tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/openai-agents[dev]' pytest python-frameworks/openai-agents/tests"
+
+[tasks."test:py:sdk-llamaindex"]
+description = "Run Python LlamaIndex framework handler tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/llamaindex[dev]' pytest python-frameworks/llamaindex/tests"
+
+[tasks."test:py:sdk-google-adk"]
+description = "Run Python Google ADK framework handler tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/google-adk[dev]' pytest python-frameworks/google-adk/tests"
+
+[tasks."test:py:sdk-provider-conformance"]
+description = "Run Python provider-wrapper conformance tests"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:py:sdk-openai
+mise run test:py:sdk-anthropic
+mise run test:py:sdk-gemini
+"""
+
+[tasks."test:py:sdk-framework-conformance"]
+description = "Run Python framework-adapter conformance tests"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:py:sdk-langchain
+mise run test:py:sdk-langgraph
+mise run test:py:sdk-openai-agents
+mise run test:py:sdk-llamaindex
+mise run test:py:sdk-google-adk
+"""
+
+# --- .NET SDK tests ---
+
+[tasks."test:cs:sdk-core"]
+description = "Run .NET SDK core runtime tests"
+dir = "dotnet"
+run = "dotnet test tests/Grafana.Sigil.Tests/Grafana.Sigil.Tests.csproj -c Release"
+
+[tasks."test:cs:sdk-conformance"]
+description = "Run .NET SDK core conformance tests"
+dir = "dotnet"
+run = "dotnet test tests/Grafana.Sigil.Tests/Grafana.Sigil.Tests.csproj -c Release --filter FullyQualifiedName~ConformanceTests"
+
+[tasks."test:cs:sdk-openai"]
+description = "Run .NET OpenAI provider helper tests"
+dir = "dotnet"
+run = "dotnet test tests/Grafana.Sigil.OpenAI.Tests/Grafana.Sigil.OpenAI.Tests.csproj -c Release"
+
+[tasks."test:cs:sdk-anthropic"]
+description = "Run .NET Anthropic provider helper tests"
+dir = "dotnet"
+run = "dotnet test tests/Grafana.Sigil.Anthropic.Tests/Grafana.Sigil.Anthropic.Tests.csproj -c Release"
+
+[tasks."test:cs:sdk-gemini"]
+description = "Run .NET Gemini provider helper tests"
+dir = "dotnet"
+run = "dotnet test tests/Grafana.Sigil.Gemini.Tests/Grafana.Sigil.Gemini.Tests.csproj -c Release"
+
+[tasks."test:cs:sdk-provider-conformance"]
+description = "Run .NET provider-wrapper conformance tests"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:cs:sdk-openai
+mise run test:cs:sdk-anthropic
+mise run test:cs:sdk-gemini
+"""
+
+# --- Java SDK tests ---
+
+[tasks."test:java:sdk-core"]
+description = "Run Java SDK core tests"
+dir = "java"
+run = "./gradlew --no-daemon :core:test"
+
+[tasks."test:java:sdk-conformance"]
+description = "Run Java SDK core conformance tests"
+dir = "java"
+run = "./gradlew --no-daemon :core:test --tests 'com.grafana.sigil.sdk.ConformanceTest'"
+
+[tasks."test:java:sdk-openai"]
+description = "Run Java OpenAI provider adapter tests"
+dir = "java"
+run = "./gradlew --no-daemon :providers:openai:test"
+
+[tasks."test:java:sdk-anthropic"]
+description = "Run Java Anthropic provider adapter tests"
+dir = "java"
+run = "./gradlew --no-daemon :providers:anthropic:test"
+
+[tasks."test:java:sdk-gemini"]
+description = "Run Java Gemini provider adapter tests"
+dir = "java"
+run = "./gradlew --no-daemon :providers:gemini:test"
+
+[tasks."test:java:sdk-google-adk"]
+description = "Run Java Google ADK framework adapter tests"
+dir = "java"
+run = "./gradlew --no-daemon :frameworks:google-adk:test"
+
+[tasks."test:java:sdk-all"]
+description = "Run all Java SDK tests"
+dir = "java"
+run = "./gradlew --no-daemon :core:test :providers:openai:test :providers:anthropic:test :providers:gemini:test :frameworks:google-adk:test"
+
+[tasks."test:java:sdk-provider-conformance"]
+description = "Run Java provider-wrapper conformance tests"
+dir = "java"
+run = "./gradlew --no-daemon :providers:openai:test :providers:anthropic:test :providers:gemini:test"
+
+[tasks."test:java:sdk-framework-conformance"]
+description = "Run Java framework-adapter conformance tests"
+dir = "java"
+run = "./gradlew --no-daemon :frameworks:google-adk:test"
+
+[tasks."benchmark:java:sdk"]
+description = "Run Java SDK JMH benchmarks"
+dir = "java"
+run = "./gradlew --no-daemon :benchmarks:jmh"
+
+# --- Cross-SDK conformance ---
+
+[tasks."test:sdk:core-conformance"]
+description = "Run core conformance suites across Go, TypeScript/JavaScript, Python, Java, and .NET SDKs"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:go:sdk-conformance
+mise run test:ts:sdk-conformance
+mise run test:py:sdk-conformance
+mise run test:java:sdk-conformance
+mise run test:cs:sdk-conformance
+"""
+
+[tasks."test:sdk:provider-conformance"]
+description = "Run provider-wrapper conformance suites across all shipped SDKs"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:go:sdk-anthropic
+mise run test:go:sdk-openai
+mise run test:go:sdk-gemini
+mise run test:ts:sdk-provider-conformance
+mise run test:py:sdk-provider-conformance
+mise run test:cs:sdk-provider-conformance
+mise run test:java:sdk-provider-conformance
+"""
+
+[tasks."test:sdk:framework-conformance"]
+description = "Run framework-adapter conformance suites across all shipped SDKs"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:go:sdk-google-adk
+mise run test:ts:sdk-framework-conformance
+mise run test:py:sdk-framework-conformance
+mise run test:java:sdk-framework-conformance
+"""
+
+[tasks."test:sdk:conformance"]
+description = "Run core, provider-wrapper, and framework-adapter conformance suites across supported SDKs"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:sdk:core-conformance
+mise run test:sdk:provider-conformance
+mise run test:sdk:framework-conformance
+"""
+
+[tasks."test:sdk:all"]
+description = "Run all SDK checks (Go, TypeScript/JavaScript, Python, Java, and .NET SDK suites)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+mise run test:go:sdk-core
+mise run test:go:sdk-anthropic
+mise run test:go:sdk-openai
+mise run test:go:sdk-gemini
+mise run test:go:sdk-google-adk
+mise run test:ts:sdk-js
+mise run test:py:sdk-core
+mise run test:py:sdk-provider-conformance
+mise run test:py:sdk-framework-conformance
+mise run test:cs:sdk-core
+mise run test:cs:sdk-provider-conformance
+mise run test:java:sdk-all
+"""
+
+[tasks."sdk:conformance"]
+description = "Alias for test:sdk:conformance"
+run = "mise run test:sdk:conformance"
+
+# --- Python version bump ---
+
+[tasks."sdk:py:bump"]
+description = "Bump version across all 9 Python SDK pyproject.toml files"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="${1:?Usage: mise run sdk:py:bump <VERSION>}"
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Error: version must be in MAJOR.MINOR.PATCH format (got: $VERSION)" >&2
+  exit 1
+fi
+
+PACKAGE_DIRS=(
+  python
+  python-providers/openai
+  python-providers/anthropic
+  python-providers/gemini
+  python-frameworks/langchain
+  python-frameworks/langgraph
+  python-frameworks/openai-agents
+  python-frameworks/llamaindex
+  python-frameworks/google-adk
+)
+
+for dir in "${PACKAGE_DIRS[@]}"; do
+  file="${dir}/pyproject.toml"
+  perl -i -pe "s/^version = \".*\"/version = \"${VERSION}\"/" "$file"
+  if [[ "$dir" != "python" ]]; then
+    perl -i -pe "s/\"sigil-sdk>=.*\"/\"sigil-sdk>=${VERSION}\"/" "$file"
+  fi
+  echo "  updated ${file}"
+done
+
+echo "All Python SDK versions bumped to ${VERSION}"
+'''
+
+# --- Mock generation (stubs) ---
+
+[tasks."generate:mocks:sdk-go"]
+description = "Generate Go SDK mocks"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "==> generating Go SDK mocks"
+echo "No Go SDK mocks to generate yet."
+"""
+
+[tasks."generate:mocks:sdk-go-providers"]
+description = "Generate Go SDK provider mocks"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "==> generating Go SDK provider mocks"
+echo "No Go SDK provider mocks to generate yet."
+"""
+
+[tasks."generate:mocks:sdk-go-frameworks"]
+description = "Generate Go SDK framework mocks"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+echo "==> generating Go SDK framework mocks"
+echo "No Go SDK framework mocks to generate yet."
+"""
+
+[tasks."generate:mocks"]
+description = "Generate all mock implementations"
+depends = ["generate:mocks:sdk-go", "generate:mocks:sdk-go-providers", "generate:mocks:sdk-go-frameworks"]
+
+[tasks.check]
+description = "Run lint + typecheck + tests"
+depends = ["lint", "typecheck"]
+run = "mise run test:sdk:all"
