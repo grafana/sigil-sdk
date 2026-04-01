@@ -28,7 +28,7 @@ public sealed class AuthConfigTests
                     Mode = ExportAuthMode.None,
                     TenantId = "tenant-a",
                 },
-                "generation auth mode 'none' does not allow tenant_id or bearer_token"
+                "generation auth mode 'none' does not allow credentials"
             },
             {
                 new AuthConfig

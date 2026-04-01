@@ -35,6 +35,8 @@ jobs:
           export_env: false
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
@@ -43,10 +45,16 @@ jobs:
 
       - name: Publish
         working-directory: java
+        env:
+          PKG_VERSION: ${{ inputs.version }}
+          OSSRH_USERNAME: ${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_USERNAME }}
+          OSSRH_PASSWORD: ${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_PASSWORD }}
+          SIGNING_KEY: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}
+          SIGNING_PASSWORD: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}
         run: |
           ./gradlew --no-daemon publish \
-            -Pversion=${{ inputs.version }} \
-            -PossrhUsername="${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_USERNAME }}" \
-            -PossrhPassword="${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_PASSWORD }}" \
-            -Psigning.key="${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}" \
-            -Psigning.password="${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}"
+            -Pversion="${PKG_VERSION}" \
+            -PossrhUsername="${OSSRH_USERNAME}" \
+            -PossrhPassword="${OSSRH_PASSWORD}" \
+            -Psigning.key="${SIGNING_KEY}" \
+            -Psigning.password="${SIGNING_PASSWORD}"
