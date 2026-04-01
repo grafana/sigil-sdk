@@ -1,0 +1,59 @@
+# mise
+.mise.local.toml
+
+# dependencies
+node_modules/
+.pnpm-store/
+
+# logs
+logs/
+*.log
+
+# build output
+dist/
+coverage/
+.storybook-static/
+*.tsbuildinfo
+js/.test-dist/
+
+*.db
+coverage.out
+
+# dotnet artifacts
+dotnet/**/bin/
+dotnet/**/obj/
+
+# docker and local env
+.env
+.env.*
+!*.example
+WORKFLOW.local.md
+.venv/
+.venv*/
+.venv-*/
+
+# python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# e2e outputs
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+/output/playwright/
+
+# superpowers brainstorm artifacts
+.superpowers/
+
+# editor/OS
+.DS_Store
+.idea/
+.vscode/
+.eslintcache
+.turbo/
+scripts/mysql-port-forward.sh
