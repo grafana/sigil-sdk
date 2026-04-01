@@ -32,22 +32,28 @@ jobs:
           export_env: false
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '8.0.x'
 
       - name: Pack
+        env:
+          PKG_VERSION: ${{ inputs.version }}
         run: |
           dotnet pack dotnet/Sigil.DotNet.sln -c Release \
-            -p:PackageVersion=${{ inputs.version }} \
+            -p:PackageVersion="${PKG_VERSION}" \
             -o nupkgs/
 
       - name: Publish
+        env:
+          NUGET_API_KEY: ${{ fromJSON(steps.get-secrets.outputs.secrets).NUGET_API_KEY }}
         run: |
           for pkg in nupkgs/*.nupkg; do
             dotnet nuget push "$pkg" \
-              --api-key "${{ fromJSON(steps.get-secrets.outputs.secrets).NUGET_API_KEY }}" \
+              --api-key "${NUGET_API_KEY}" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate
           done
