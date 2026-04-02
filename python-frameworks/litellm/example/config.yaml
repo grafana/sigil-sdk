@@ -1,0 +1,11 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+
+litellm_settings:
+  callbacks: sigil_callback.sigil_handler
