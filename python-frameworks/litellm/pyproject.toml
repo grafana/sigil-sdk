@@ -1,6 +1,6 @@
 [project]
 name = "sigil-sdk-litellm"
-version = "0.1.0"
+version = "0.1.2"
 description = "LiteLLM callback handler for Sigil Python SDK"
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -8,7 +8,9 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      SIGIL_ENDPOINT: ${SIGIL_ENDPOINT:-http://host.docker.internal:8080/api/v1/generations:export}
+      SIGIL_ENDPOINT: ${SIGIL_ENDPOINT}
+      SIGIL_TENANT_ID: ${SIGIL_TENANT_ID}
+      SIGIL_API_KEY: ${SIGIL_API_KEY}
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./sigil_callback.py:/app/sigil_callback.py

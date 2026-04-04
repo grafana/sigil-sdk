@@ -1,4 +1,4 @@
-"""Sigil callback for LiteLLM proxy — local dev stack."""
+"""Sigil callback for LiteLLM proxy."""
 
 import os
 
@@ -6,17 +6,18 @@ from sigil_sdk import Client
 from sigil_sdk.config import AuthConfig, ClientConfig, GenerationExportConfig
 from sigil_sdk_litellm import SigilLiteLLMLogger
 
-_endpoint = os.environ.get(
-    "SIGIL_ENDPOINT", "http://host.docker.internal:8080/api/v1/generations:export"
-)
+_endpoint = os.environ["SIGIL_ENDPOINT"]
 
 client = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
             endpoint=_endpoint,
-            auth=AuthConfig(mode="none"),
-            insecure=True,
+            auth=AuthConfig(
+                mode="basic",
+                tenant_id=os.environ.get("SIGIL_TENANT_ID", ""),
+                basic_password=os.environ.get("SIGIL_API_KEY", ""),
+            ),
         ),
     )
 )

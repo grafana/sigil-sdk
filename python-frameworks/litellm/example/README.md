@@ -1,20 +1,25 @@
 # LiteLLM Proxy + Sigil Example
 
-Runs a LiteLLM proxy with the Sigil callback handler, exporting generations to a local Sigil instance.
+Runs a LiteLLM proxy with the Sigil callback handler, exporting generations to Grafana Cloud.
 
 ## Prerequisites
 
-- Local Sigil stack running (`mise run up` or `docker compose --profile core up` from the repo root)
+- A Grafana Cloud stack with Sigil enabled
+- A Grafana Cloud API token (`glc_...`)
 - At least one LLM API key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
 
 ## Start the proxy
 
 ```bash
 cd sdks/python-frameworks/litellm/example
-OPENAI_API_KEY=sk-... docker compose up --build
+SIGIL_ENDPOINT=https://your-sigil.grafana.net \
+  SIGIL_TENANT_ID=your-tenant \
+  SIGIL_API_KEY=glc_... \
+  OPENAI_API_KEY=sk-... \
+  docker compose up --build
 ```
 
-The proxy starts on `http://localhost:4000` and exports generations to Sigil at `localhost:8080`.
+The proxy starts on `http://localhost:4000`.
 
 ## Make a request
 
@@ -44,9 +49,3 @@ Open `http://localhost:3000/a/grafana-sigil-app/conversations`. Generations appe
 ## Configuration
 
 `config.yaml` defines the available models. Add more by following the [LiteLLM model list format](https://docs.litellm.ai/docs/proxy/configs).
-
-To point at a different Sigil instance:
-
-```bash
-SIGIL_ENDPOINT=http://your-sigil:8080/api/v1/generations:export docker compose up --build
-```
