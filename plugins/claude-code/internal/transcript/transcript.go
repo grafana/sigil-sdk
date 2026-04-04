@@ -138,12 +138,19 @@ func Read(path string, offset int64) ([]Line, int64, error) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxScannerBuf)
 
+	var lastAdvance int
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		advance, token, err := bufio.ScanLines(data, atEOF)
+		lastAdvance = advance
+		return advance, token, err
+	})
+
 	var lines []Line
 	pos := offset
 
 	for scanner.Scan() {
 		data := scanner.Bytes()
-		lineLen := int64(len(data)) + 1 // +1 for newline
+		lineLen := int64(lastAdvance)
 
 		var line Line
 		if err := json.Unmarshal(data, &line); err != nil {

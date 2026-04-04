@@ -260,6 +260,46 @@ func TestRead_EndOffset(t *testing.T) {
 	}
 }
 
+func TestRead_EndOffset_CRLF(t *testing.T) {
+	line1 := `{"type":"user","sessionId":"s1","message":{"role":"user","content":"hello"}}`
+	line2 := `{"type":"assistant","sessionId":"s1","message":{"model":"test","content":[],"usage":{"output_tokens":1}}}`
+	content := line1 + "\r\n" + line2 + "\r\n"
+	path := writeTempFile(t, content)
+
+	lines, finalOffset, err := Read(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2", len(lines))
+	}
+
+	// With \r\n each line ending is 2 bytes
+	wantFirst := int64(len(line1) + 2)
+	if lines[0].EndOffset != wantFirst {
+		t.Errorf("line[0].EndOffset = %d, want %d", lines[0].EndOffset, wantFirst)
+	}
+	wantSecond := int64(len(line1) + 2 + len(line2) + 2)
+	if lines[1].EndOffset != wantSecond {
+		t.Errorf("line[1].EndOffset = %d, want %d", lines[1].EndOffset, wantSecond)
+	}
+	if finalOffset != int64(len(content)) {
+		t.Errorf("finalOffset = %d, want %d", finalOffset, len(content))
+	}
+
+	// Re-read from first line's EndOffset should yield only the second line
+	lines2, _, err := Read(path, lines[0].EndOffset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines2) != 1 {
+		t.Fatalf("re-read got %d lines, want 1", len(lines2))
+	}
+	if lines2[0].Type != "assistant" {
+		t.Errorf("re-read line type = %q, want assistant", lines2[0].Type)
+	}
+}
+
 func TestRead_FileNotFound(t *testing.T) {
 	_, _, err := Read("/nonexistent/path.jsonl", 0)
 	if err == nil {
