@@ -207,7 +207,6 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 		OutputTokens:             msg.Usage.OutputTokens,
 		CacheReadInputTokens:     msg.Usage.CacheReadInputTokens,
 		CacheCreationInputTokens: msg.Usage.CacheCreationInputTokens,
-		CacheWriteInputTokens:    msg.Usage.CacheCreationInputTokens,
 	}
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 
