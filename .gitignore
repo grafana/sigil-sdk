@@ -18,6 +18,7 @@ js/.test-dist/
 
 *.db
 coverage.out
+plugins/claude-code/sigil-cc
 
 # dotnet artifacts
 dotnet/**/bin/
