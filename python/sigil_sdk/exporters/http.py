@@ -58,10 +58,15 @@ class HTTPGenerationExporter:
         """HTTP exporter has no persistent resources."""
 
 
+_EXPORT_PATH = "/api/v1/generations:export"
+
+
 def _normalize_endpoint(endpoint: str) -> str:
     trimmed = endpoint.strip()
     if not trimmed:
         raise ValueError("endpoint is required")
-    if trimmed.startswith("http://") or trimmed.startswith("https://"):
-        return trimmed
-    return f"http://{trimmed}"
+    if not (trimmed.startswith("http://") or trimmed.startswith("https://")):
+        trimmed = f"http://{trimmed}"
+    if not trimmed.rstrip("/").endswith(_EXPORT_PATH):
+        trimmed = trimmed.rstrip("/") + _EXPORT_PATH
+    return trimmed
