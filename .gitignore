@@ -47,6 +47,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+python-frameworks/pydantic-ai/build
 
 # e2e outputs
 /test-results/
@@ -67,3 +68,5 @@ __pycache__/
 .eslintcache
 .turbo/
 scripts/mysql-port-forward.sh
+
+examples/getting-started/python-pydantic-ai/.env

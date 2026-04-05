@@ -1,0 +1,6 @@
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http
+pydantic-ai
+python-dotenv
+sigil-sdk
+sigil-sdk-pydantic-ai
