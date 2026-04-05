@@ -54,6 +54,7 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string SpanAttrToolDescription = "gen_ai.tool.description";
     internal const string SpanAttrToolCallArguments = "gen_ai.tool.call.arguments";
     internal const string SpanAttrToolCallResult = "gen_ai.tool.call.result";
+    internal const string SpanAttrToolCallCount = "sigil.gen_ai.tool_call_count";
     private const int MaxRatingConversationIdLen = 255;
     private const int MaxRatingIdLen = 128;
     private const int MaxRatingGenerationIdLen = 255;
@@ -1186,6 +1187,12 @@ public sealed class SigilClient : IAsyncDisposable
         if (generation.Usage.ReasoningTokens != 0)
         {
             activity.SetTag(SpanAttrReasoningTokens, generation.Usage.ReasoningTokens);
+        }
+
+        var toolCallCount = CountToolCallParts(generation.Output);
+        if (toolCallCount != 0)
+        {
+            activity.SetTag(SpanAttrToolCallCount, toolCallCount);
         }
     }
 

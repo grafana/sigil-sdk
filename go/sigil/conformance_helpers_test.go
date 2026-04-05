@@ -68,6 +68,7 @@ const (
 	spanAttrCacheWriteTokens       = "gen_ai.usage.cache_write_input_tokens"
 	spanAttrCacheCreationTokens    = "gen_ai.usage.cache_creation_input_tokens"
 	spanAttrReasoningTokens        = "gen_ai.usage.reasoning_tokens"
+	spanAttrToolCallCount          = "sigil.gen_ai.tool_call_count"
 	metricOperationDuration        = "gen_ai.client.operation.duration"
 	metricTokenUsage               = "gen_ai.client.token.usage"
 	metricTimeToFirstToken         = "gen_ai.client.time_to_first_token"

@@ -101,6 +101,7 @@ _span_attr_tool_type = "gen_ai.tool.type"
 _span_attr_tool_description = "gen_ai.tool.description"
 _span_attr_tool_call_arguments = "gen_ai.tool.call.arguments"
 _span_attr_tool_call_result = "gen_ai.tool.call.result"
+_span_attr_tool_call_count = "sigil.gen_ai.tool_call_count"
 _max_rating_conversation_id_len = 255
 _max_rating_id_len = 128
 _max_rating_generation_id_len = 255
@@ -1242,6 +1243,10 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
         span.set_attribute(_span_attr_cache_creation_tokens, usage.cache_creation_input_tokens)
     if usage.reasoning_tokens:
         span.set_attribute(_span_attr_reasoning_tokens, usage.reasoning_tokens)
+
+    tool_call_count = _count_tool_call_parts(generation.output)
+    if tool_call_count:
+        span.set_attribute(_span_attr_tool_call_count, tool_call_count)
 
 
 def _set_embedding_start_span_attributes(span: Span, start: EmbeddingStart) -> None:

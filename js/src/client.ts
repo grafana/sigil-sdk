@@ -105,6 +105,7 @@ const spanAttrToolType = 'gen_ai.tool.type';
 const spanAttrToolDescription = 'gen_ai.tool.description';
 const spanAttrToolCallArguments = 'gen_ai.tool.call.arguments';
 const spanAttrToolCallResult = 'gen_ai.tool.call.result';
+const spanAttrToolCallCount = 'sigil.gen_ai.tool_call_count';
 const maxRatingConversationIdLen = 255;
 const maxRatingIdLen = 128;
 const maxRatingGenerationIdLen = 255;
@@ -1222,6 +1223,7 @@ function setGenerationSpanAttributes(
     responseId?: string;
     responseModel?: string;
     stopReason?: string;
+    output?: Message[];
     usage?: {
       inputTokens?: number;
       outputTokens?: number;
@@ -1318,6 +1320,11 @@ function setGenerationSpanAttributes(
   }
   if (notEmpty(generation.stopReason)) {
     span.setAttribute(spanAttrFinishReasons, [generation.stopReason]);
+  }
+
+  const toolCallCount = countToolCallParts(generation.output ?? []);
+  if (toolCallCount !== 0) {
+    span.setAttribute(spanAttrToolCallCount, toolCallCount);
   }
 
   const usage = generation.usage;

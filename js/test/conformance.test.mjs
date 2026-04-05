@@ -138,6 +138,7 @@ test('conformance sync roundtrip semantics', async () => {
     assert.equal(span.attributes['gen_ai.operation.name'], 'generateText');
     assert.equal(span.attributes['sigil.conversation.title'], 'Roundtrip conversation');
     assert.equal(span.attributes['user.id'], 'user-roundtrip');
+    assert.equal(span.attributes['sigil.gen_ai.tool_call_count'], 1);
     assert.ok(metricNames.includes('gen_ai.client.operation.duration'));
     assert.ok(metricNames.includes('gen_ai.client.token.usage'));
     assert.ok(!metricNames.includes('gen_ai.client.time_to_first_token'));

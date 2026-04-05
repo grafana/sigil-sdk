@@ -139,6 +139,7 @@ const (
 	spanAttrToolDescription        = "gen_ai.tool.description"
 	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
 	spanAttrToolCallResult         = "gen_ai.tool.call.result"
+	spanAttrToolCallCount          = "sigil.gen_ai.tool_call_count"
 
 	metricOperationDuration      = "gen_ai.client.operation.duration"
 	metricTokenUsage             = "gen_ai.client.token.usage"
@@ -1260,6 +1261,10 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	}
 	if g.Usage.ReasoningTokens != 0 {
 		attrs = append(attrs, attribute.Int64(spanAttrReasoningTokens, g.Usage.ReasoningTokens))
+	}
+
+	if count := countToolCalls(g.Output); count != 0 {
+		attrs = append(attrs, attribute.Int64(spanAttrToolCallCount, int64(count)))
 	}
 
 	return attrs
