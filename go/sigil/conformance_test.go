@@ -204,6 +204,7 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	requireSpanInt64Attr(t, attrs, spanAttrCacheWriteTokens, 4)
 	requireSpanInt64Attr(t, attrs, spanAttrCacheCreationTokens, 6)
 	requireSpanInt64Attr(t, attrs, spanAttrReasoningTokens, 9)
+	requireSpanInt64Attr(t, attrs, spanAttrToolCallCount, 1)
 
 	duration := findHistogram[float64](t, metrics, metricOperationDuration)
 	durationPoint := findHistogramPoint(t, duration, map[string]string{

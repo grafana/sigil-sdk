@@ -149,6 +149,7 @@ public sealed class ConformanceTests
         Assert.Equal("generateText", span.GetTagItem("gen_ai.operation.name")?.ToString());
         Assert.Equal("Roundtrip conversation", span.GetTagItem("sigil.conversation.title")?.ToString());
         Assert.Equal("user-roundtrip", span.GetTagItem("user.id")?.ToString());
+        Assert.Equal(1L, span.GetTagItem("sigil.gen_ai.tool_call_count"));
         Assert.Contains("gen_ai.client.operation.duration", env.MetricNames);
         Assert.Contains("gen_ai.client.token.usage", env.MetricNames);
         Assert.DoesNotContain("gen_ai.client.time_to_first_token", env.MetricNames);
