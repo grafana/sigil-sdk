@@ -92,6 +92,7 @@ jobs:
             python-frameworks/openai-agents
             python-frameworks/llamaindex
             python-frameworks/google-adk
+            python-frameworks/litellm
           )
 
           for dir in "${PACKAGE_DIRS[@]}"; do
@@ -116,6 +117,7 @@ jobs:
             python-frameworks/openai-agents
             python-frameworks/llamaindex
             python-frameworks/google-adk
+            python-frameworks/litellm
           )
 
           for dir in "${PACKAGE_DIRS[@]}"; do
@@ -181,6 +183,7 @@ jobs:
           - sigil-sdk-openai-agents
           - sigil-sdk-llamaindex
           - sigil-sdk-google-adk
+          - sigil-sdk-litellm
 
     steps:
       - name: Download distributions

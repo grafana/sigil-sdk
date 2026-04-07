@@ -55,6 +55,26 @@ class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceService
         )
 
 
+import pytest
+
+from sigil_sdk.exporters.http import _normalize_endpoint
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("http://host:8080/api/v1/generations:export", "http://host:8080/api/v1/generations:export"),
+        ("http://host:8080", "http://host:8080/api/v1/generations:export"),
+        ("http://host:8080/", "http://host:8080/api/v1/generations:export"),
+        ("https://host:443", "https://host:443/api/v1/generations:export"),
+        ("host:8080", "http://host:8080/api/v1/generations:export"),
+        ("host:8080/api/v1/generations:export", "http://host:8080/api/v1/generations:export"),
+    ],
+)
+def test_normalize_endpoint(raw: str, expected: str) -> None:
+    assert _normalize_endpoint(raw) == expected
+
+
 def test_sdk_exports_generation_over_http_round_trip() -> None:
     captured = []
 
@@ -128,6 +148,65 @@ def test_sdk_exports_generation_over_http_round_trip() -> None:
         assert isinstance(generations[0], dict)
 
         _assert_generation_json_payload(generations[0])
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_sdk_exports_generation_over_http_base_url_only() -> None:
+    """Endpoint with no path auto-appends /api/v1/generations:export."""
+    captured = []
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            payload = json.loads(body.decode("utf-8"))
+            captured.append({"path": self.path})
+
+            response = {
+                "results": [
+                    {"generation_id": g["id"], "accepted": True}
+                    for g in payload.get("generations", [])
+                ]
+            }
+            encoded = json.dumps(response).encode("utf-8")
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, _format, *_args):  # noqa: A003
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    # Only pass base URL — no path
+    client = _new_client(
+        GenerationExportConfig(
+            protocol="http",
+            endpoint=f"http://127.0.0.1:{server.server_address[1]}",
+            batch_size=1,
+            flush_interval=timedelta(seconds=1),
+            max_retries=1,
+            initial_backoff=timedelta(milliseconds=1),
+            max_backoff=timedelta(milliseconds=10),
+        )
+    )
+
+    try:
+        start, result = _payload_fixture()
+        rec = client.start_generation(start)
+        rec.set_result(result)
+        rec.end()
+        assert rec.err() is None
+        client.shutdown()
+
+        assert len(captured) == 1
+        assert captured[0]["path"] == "/api/v1/generations:export"
     finally:
         server.shutdown()
         server.server_close()

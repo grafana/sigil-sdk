@@ -173,6 +173,10 @@ run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-f
 description = "Run Python Google ADK framework handler tests"
 run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/google-adk[dev]' pytest python-frameworks/google-adk/tests"
 
+[tasks."test:py:sdk-litellm"]
+description = "Run Python LiteLLM framework handler tests"
+run = "uv run --python \"$PYTHON_BIN\" --with './python[dev]' --with './python-frameworks/litellm[dev]' pytest python-frameworks/litellm/tests"
+
 [tasks."test:py:sdk-provider-conformance"]
 description = "Run Python provider-wrapper conformance tests"
 run = """
@@ -193,6 +197,7 @@ mise run test:py:sdk-langgraph
 mise run test:py:sdk-openai-agents
 mise run test:py:sdk-llamaindex
 mise run test:py:sdk-google-adk
+mise run test:py:sdk-litellm
 """
 
 # --- .NET SDK tests ---
@@ -381,6 +386,7 @@ PACKAGE_DIRS=(
   python-frameworks/openai-agents
   python-frameworks/llamaindex
   python-frameworks/google-adk
+  python-frameworks/litellm
 )
 
 for dir in "${PACKAGE_DIRS[@]}"; do

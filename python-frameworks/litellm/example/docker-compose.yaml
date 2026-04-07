@@ -1,0 +1,17 @@
+services:
+  litellm-proxy:
+    build:
+      context: ../../../..
+      dockerfile: sdks/python-frameworks/litellm/example/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SIGIL_ENDPOINT: ${SIGIL_ENDPOINT}
+      SIGIL_TENANT_ID: ${SIGIL_TENANT_ID}
+      SIGIL_API_KEY: ${SIGIL_API_KEY}
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./sigil_callback.py:/app/sigil_callback.py
+    command: ["--config", "/app/config.yaml", "--port", "4000"]

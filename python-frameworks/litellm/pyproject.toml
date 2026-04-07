@@ -1,0 +1,31 @@
+[project]
+name = "sigil-sdk-litellm"
+version = "0.1.2"
+description = "LiteLLM callback handler for Sigil Python SDK"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+  "sigil-sdk>=0.1.2",
+  "litellm>=1.82.3,!=1.82.7,!=1.82.8",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.24.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sigil_sdk_litellm*"]
+
+[tool.setuptools.package-data]
+sigil_sdk_litellm = ["py.typed"]
