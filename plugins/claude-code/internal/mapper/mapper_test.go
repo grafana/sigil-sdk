@@ -1,0 +1,701 @@
+package mapper
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/sigil-sdk/plugins/claude-code/internal/redact"
+	"github.com/grafana/sigil-sdk/plugins/claude-code/internal/state"
+	"github.com/grafana/sigil-sdk/plugins/claude-code/internal/transcript"
+)
+
+func makeAssistantLine(model string, tokens int64, content []transcript.ContentBlock, stopReason string) transcript.Line {
+	msg := transcript.AssistantMessage{
+		Model:      model,
+		Content:    content,
+		StopReason: stopReason,
+		Usage:      transcript.Usage{InputTokens: 100, OutputTokens: tokens, CacheReadInputTokens: 50},
+	}
+	raw, _ := json.Marshal(msg)
+	return transcript.Line{
+		Type:      "assistant",
+		SessionID: "sess-1",
+		Timestamp: "2025-06-01T12:00:00Z",
+		Version:   "1.0.0",
+		GitBranch: "main",
+		CWD:       "/projects/test",
+		RequestID: "req-1",
+		Message:   raw,
+	}
+}
+
+func makeAssistantFragment(requestID string, tokens int64, content []transcript.ContentBlock, stopReason string) transcript.Line {
+	msg := transcript.AssistantMessage{
+		Model:      "claude-sonnet-4-20250514",
+		Content:    content,
+		StopReason: stopReason,
+		Usage:      transcript.Usage{InputTokens: 100, OutputTokens: tokens, CacheReadInputTokens: 50},
+	}
+	raw, _ := json.Marshal(msg)
+	return transcript.Line{
+		Type:      "assistant",
+		SessionID: "sess-1",
+		Timestamp: "2025-06-01T12:00:00Z",
+		Version:   "1.0.0",
+		RequestID: requestID,
+		EndOffset: 100, // placeholder
+		Message:   raw,
+	}
+}
+
+func makeUserLine(content string) transcript.Line {
+	msg := transcript.UserMessage{Role: "user", Content: json.RawMessage(`"` + content + `"`)}
+	raw, _ := json.Marshal(msg)
+	return transcript.Line{
+		Type:      "user",
+		SessionID: "sess-1",
+		Timestamp: "2025-06-01T11:59:00Z",
+		EndOffset: 50,
+		Message:   raw,
+	}
+}
+
+func makeToolResultLine(toolUseID, content string) transcript.Line {
+	contentJSON, _ := json.Marshal(content)
+	blocks := []transcript.UserContentBlock{{Type: "tool_result", ToolUseID: toolUseID, RawContent: contentJSON}}
+	blocksJSON, _ := json.Marshal(blocks)
+	msg := transcript.UserMessage{Role: "user", Content: blocksJSON}
+	raw, _ := json.Marshal(msg)
+	return transcript.Line{
+		Type:      "user",
+		SessionID: "sess-1",
+		EndOffset: 100,
+		Message:   raw,
+	}
+}
+
+func TestProcess_SinglePromptResponse(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("What is Go?"),
+		makeAssistantLine("claude-sonnet-4-20250514", 50, []transcript.ContentBlock{
+			{Type: "text", Text: "Go is a programming language."},
+		}, "end_turn"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, nil)
+
+	if len(gens) != 1 {
+		t.Fatalf("got %d generations, want 1", len(gens))
+	}
+
+	gen := gens[0]
+	if gen.ConversationID != "sess-1" {
+		t.Errorf("ConversationID = %q", gen.ConversationID)
+	}
+	if gen.Model.Provider != "anthropic" || gen.Model.Name != "claude-sonnet-4-20250514" {
+		t.Errorf("Model = %+v", gen.Model)
+	}
+	if gen.Usage.OutputTokens != 50 {
+		t.Errorf("OutputTokens = %d", gen.Usage.OutputTokens)
+	}
+	if gen.Usage.TotalTokens != gen.Usage.InputTokens+gen.Usage.OutputTokens {
+		t.Errorf("TotalTokens = %d, want %d", gen.Usage.TotalTokens, gen.Usage.InputTokens+gen.Usage.OutputTokens)
+	}
+	if gen.StopReason != "end_turn" {
+		t.Errorf("StopReason = %q", gen.StopReason)
+	}
+	if gen.AgentName != "claude-code" {
+		t.Errorf("AgentName = %q", gen.AgentName)
+	}
+	if gen.AgentVersion != "1.0.0" {
+		t.Errorf("AgentVersion = %q", gen.AgentVersion)
+	}
+	if gen.Mode != sigil.GenerationModeSync {
+		t.Errorf("Mode = %q", gen.Mode)
+	}
+}
+
+func TestProcess_SkippedLines(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []transcript.Line
+	}{
+		{
+			name: "zero output tokens",
+			lines: []transcript.Line{
+				makeAssistantLine("claude-sonnet-4-20250514", 0, []transcript.ContentBlock{}, "end_turn"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &state.Session{}
+			gens := Process(tt.lines, st, Options{SessionID: "sess-1"}, nil)
+			if len(gens) != 0 {
+				t.Errorf("got %d generations, want 0", len(gens))
+			}
+		})
+	}
+}
+
+func TestProcess_SubagentTag(t *testing.T) {
+	line := makeAssistantLine("claude-sonnet-4-20250514", 50, []transcript.ContentBlock{
+		{Type: "text", Text: "subagent response"},
+	}, "end_turn")
+	line.IsSidechain = true
+
+	st := &state.Session{}
+	gens := Process([]transcript.Line{line}, st, Options{SessionID: "sess-1"}, nil)
+
+	if len(gens) != 1 {
+		t.Fatalf("got %d generations, want 1 (sidechain should not be skipped)", len(gens))
+	}
+	if gens[0].Tags["subagent"] != "true" {
+		t.Errorf("missing subagent tag, tags = %v", gens[0].Tags)
+	}
+}
+
+func TestProcess_ContentModes(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("explain concurrency"),
+		makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+			{Type: "text", Text: "Concurrency is..."},
+		}, "end_turn"),
+	}
+
+	tests := []struct {
+		name       string
+		capture    bool
+		wantInput  bool
+		wantOutput bool
+	}{
+		{"metadata only", false, false, true},  // output has [redacted] content
+		{"content capture", true, true, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &state.Session{}
+			var r *redact.Redactor
+			if tt.capture {
+				r = redact.New()
+			}
+			gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: tt.capture}, r)
+			if len(gens) != 1 {
+				t.Fatal("expected 1 generation")
+			}
+			hasInput := gens[0].Input != nil
+			hasOutput := gens[0].Output != nil
+			if hasInput != tt.wantInput {
+				t.Errorf("Input present = %v, want %v", hasInput, tt.wantInput)
+			}
+			if hasOutput != tt.wantOutput {
+				t.Errorf("Output present = %v, want %v", hasOutput, tt.wantOutput)
+			}
+		})
+	}
+}
+
+func TestProcess_ConversationTitle(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      state.Session
+		lines      []transcript.Line
+		wantTitle  string
+		wantGenCnt int
+	}{
+		{
+			name:  "title from first prompt",
+			state: state.Session{},
+			lines: []transcript.Line{
+				makeUserLine("fix the auth bug"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "text", Text: "ok"},
+				}, "end_turn"),
+				makeUserLine("also update the tests"),
+				makeAssistantLine("claude-sonnet-4-20250514", 20, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn"),
+			},
+			wantTitle:  "fix the auth bug",
+			wantGenCnt: 2,
+		},
+		{
+			name:  "preserves existing title",
+			state: state.Session{Title: "old title"},
+			lines: []transcript.Line{
+				makeUserLine("new prompt"),
+				makeAssistantLine("claude-sonnet-4-20250514", 10, []transcript.ContentBlock{
+					{Type: "text", Text: "ok"},
+				}, "end_turn"),
+			},
+			wantTitle:  "old title",
+			wantGenCnt: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := tt.state
+			gens := Process(tt.lines, &st, Options{SessionID: "sess-1"}, nil)
+
+			if st.Title != tt.wantTitle {
+				t.Errorf("state.Title = %q, want %q", st.Title, tt.wantTitle)
+			}
+			if len(gens) != tt.wantGenCnt {
+				t.Fatalf("got %d generations, want %d", len(gens), tt.wantGenCnt)
+			}
+			// ConversationTitle always equals SessionID
+			for i, gen := range gens {
+				if gen.ConversationTitle != "sess-1" {
+					t.Errorf("gen[%d].ConversationTitle = %q, want sess-1", i, gen.ConversationTitle)
+				}
+			}
+		})
+	}
+}
+
+func TestProcess_ToolUses(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("read file.go"),
+		makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+			{Type: "text", Text: "Let me read that."},
+			{Type: "tool_use", ID: "tu_1", Name: "Read", Input: json.RawMessage(`{"path":"file.go"}`)},
+		}, "tool_use"),
+		makeToolResultLine("tu_1", "package main\nfunc main() {}"),
+		makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+			{Type: "text", Text: "The file contains a main package."},
+		}, "end_turn"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, nil)
+
+	if len(gens) != 2 {
+		t.Fatalf("got %d generations, want 2", len(gens))
+	}
+	if len(gens[0].Tools) != 1 || gens[0].Tools[0].Name != "Read" {
+		t.Errorf("gen[0].Tools = %+v", gens[0].Tools)
+	}
+}
+
+func TestProcess_DeduplicatedTools(t *testing.T) {
+	lines := []transcript.Line{
+		makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+			{Type: "tool_use", ID: "tu_1", Name: "Read", Input: json.RawMessage(`{}`)},
+			{Type: "tool_use", ID: "tu_2", Name: "Read", Input: json.RawMessage(`{}`)},
+			{Type: "tool_use", ID: "tu_3", Name: "Write", Input: json.RawMessage(`{}`)},
+		}, "tool_use"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, nil)
+
+	if len(gens[0].Tools) != 2 {
+		t.Fatalf("got %d tools, want 2 (deduplicated)", len(gens[0].Tools))
+	}
+	if gens[0].Tools[0].Name != "Read" || gens[0].Tools[1].Name != "Write" {
+		t.Errorf("tools = %v", gens[0].Tools)
+	}
+}
+
+func TestProcess_ThinkingEnabled(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("think about this"),
+		makeAssistantLine("claude-sonnet-4-20250514", 50, []transcript.ContentBlock{
+			{Type: "thinking", Text: "Let me think..."},
+			{Type: "text", Text: "Here's my answer."},
+		}, "end_turn"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, nil)
+
+	if len(gens) != 1 {
+		t.Fatal("expected 1 generation")
+	}
+	if gens[0].ThinkingEnabled == nil || *gens[0].ThinkingEnabled != true {
+		t.Error("expected ThinkingEnabled to be true")
+	}
+}
+
+func TestProcess_ContentCaptureRedaction(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("use token glc_abcdefghijklmnopqrstuvwx"),
+		makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+			{Type: "text", Text: "Found token glc_abcdefghijklmnopqrstuvwx in the code"},
+		}, "end_turn"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: true}, redact.New())
+
+	gen := gens[0]
+	// User prompt gets Tier 1 redaction
+	if !strings.Contains(gen.Input[0].Parts[0].Text, "[REDACTED:grafana-cloud-token]") {
+		t.Errorf("user prompt was NOT redacted: %q", gen.Input[0].Parts[0].Text)
+	}
+	// Assistant text also has Tier 1 redaction
+	if !strings.Contains(gen.Output[0].Parts[0].Text, "[REDACTED:grafana-cloud-token]") {
+		t.Error("assistant text was NOT redacted")
+	}
+}
+
+func TestProcess_Tags(t *testing.T) {
+	tests := []struct {
+		name      string
+		branch    string
+		cwd       string
+		entry     string
+		wantNil   bool
+		wantCount int
+	}{
+		{"all set", "feature/auth", "/project", "cli", false, 3},
+		{"all empty", "", "", "", true, 0},
+		{"partial", "main", "", "", false, 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := makeAssistantLine("claude-sonnet-4-20250514", 10, []transcript.ContentBlock{
+				{Type: "text", Text: "hi"},
+			}, "end_turn")
+			line.GitBranch = tt.branch
+			line.CWD = tt.cwd
+			line.Entrypoint = tt.entry
+
+			st := &state.Session{}
+			gens := Process([]transcript.Line{line}, st, Options{SessionID: "sess-1"}, nil)
+
+			tags := gens[0].Tags
+			if (tags == nil) != tt.wantNil {
+				t.Errorf("tags nil = %v, want %v", tags == nil, tt.wantNil)
+			}
+			if len(tags) != tt.wantCount {
+				t.Errorf("tags count = %d, want %d", len(tags), tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestProcess_ToolResultsInInput(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("read file.go"),
+		makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+			{Type: "tool_use", ID: "tu_1", Name: "Read", Input: json.RawMessage(`{"path":"file.go"}`)},
+		}, "tool_use"),
+		makeToolResultLine("tu_1", "package main"),
+		makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+			{Type: "text", Text: "The file has a main package."},
+		}, "end_turn"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: true}, redact.New())
+
+	if len(gens) != 2 {
+		t.Fatalf("got %d gens, want 2", len(gens))
+	}
+
+	// First gen: input is user prompt (redacted)
+	if gens[0].Input[0].Parts[0].Kind != sigil.PartKindText {
+		t.Errorf("gen[0] input kind = %q, want text", gens[0].Input[0].Parts[0].Kind)
+	}
+
+	// Second gen: input should be tool results
+	if len(gens[1].Input) == 0 {
+		t.Fatal("gen[1] has no input")
+	}
+	if gens[1].Input[0].Parts[0].Kind != sigil.PartKindToolResult {
+		t.Errorf("input kind = %q, want tool_result", gens[1].Input[0].Parts[0].Kind)
+	}
+}
+
+func TestCoalesce(t *testing.T) {
+	tests := []struct {
+		name       string
+		lines      func() []transcript.Line
+		wantLines  int
+		wantOffset int64
+	}{
+		{
+			name: "single complete line",
+			lines: func() []transcript.Line {
+				l := makeAssistantFragment("req-1", 50, []transcript.ContentBlock{
+					{Type: "text", Text: "hello"},
+				}, "end_turn")
+				l.EndOffset = 200
+				return []transcript.Line{l}
+			},
+			wantLines:  1,
+			wantOffset: 200,
+		},
+		{
+			name: "excludes incomplete trailing group",
+			lines: func() []transcript.Line {
+				user := makeUserLine("hello")
+				user.EndOffset = 50
+				complete := makeAssistantFragment("req-1", 50, []transcript.ContentBlock{
+					{Type: "text", Text: "hi"},
+				}, "end_turn")
+				complete.EndOffset = 150
+				incomplete := makeAssistantFragment("req-2", 10, []transcript.ContentBlock{
+					{Type: "thinking", Text: "..."},
+				}, "")
+				incomplete.EndOffset = 250
+				return []transcript.Line{user, complete, incomplete}
+			},
+			wantLines:  2,
+			wantOffset: 150,
+		},
+		{
+			name: "multiple requests with interleaved user lines",
+			lines: func() []transcript.Line {
+				user := makeUserLine("hello")
+				user.EndOffset = 50
+				f1a := makeAssistantFragment("req-1", 10, []transcript.ContentBlock{
+					{Type: "thinking", Text: "..."},
+				}, "")
+				f1a.EndOffset = 150
+				f1b := makeAssistantFragment("req-1", 100, []transcript.ContentBlock{
+					{Type: "text", Text: "response"},
+				}, "end_turn")
+				f1b.EndOffset = 250
+				tr := makeToolResultLine("tu_1", "ok")
+				tr.EndOffset = 350
+				f2 := makeAssistantFragment("req-2", 50, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn")
+				f2.EndOffset = 450
+				return []transcript.Line{user, f1a, f1b, tr, f2}
+			},
+			wantLines:  4,
+			wantOffset: 450,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines, offset := Coalesce(tt.lines())
+			if len(lines) != tt.wantLines {
+				t.Fatalf("got %d lines, want %d", len(lines), tt.wantLines)
+			}
+			if offset != tt.wantOffset {
+				t.Errorf("offset = %d, want %d", offset, tt.wantOffset)
+			}
+		})
+	}
+}
+
+func TestCoalesce_MergesFragmentContent(t *testing.T) {
+	frag1 := makeAssistantFragment("req-1", 26, []transcript.ContentBlock{
+		{Type: "thinking", Text: "Let me think..."},
+	}, "")
+	frag1.EndOffset = 100
+	frag2 := makeAssistantFragment("req-1", 26, []transcript.ContentBlock{
+		{Type: "tool_use", ID: "tu_1", Name: "Read", Input: json.RawMessage(`{}`)},
+	}, "")
+	frag2.EndOffset = 200
+	frag3 := makeAssistantFragment("req-1", 611, []transcript.ContentBlock{
+		{Type: "tool_use", ID: "tu_2", Name: "Write", Input: json.RawMessage(`{}`)},
+	}, "tool_use")
+	frag3.EndOffset = 300
+
+	lines, _ := Coalesce([]transcript.Line{frag1, frag2, frag3})
+	if len(lines) != 1 {
+		t.Fatalf("got %d lines, want 1", len(lines))
+	}
+
+	var msg transcript.AssistantMessage
+	if err := json.Unmarshal(lines[0].Message, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.Content) != 3 {
+		t.Fatalf("got %d content blocks, want 3", len(msg.Content))
+	}
+	if msg.Content[0].Type != "thinking" {
+		t.Errorf("block[0].Type = %q, want thinking", msg.Content[0].Type)
+	}
+	if msg.Usage.OutputTokens != 611 {
+		t.Errorf("OutputTokens = %d, want 611 (from final fragment)", msg.Usage.OutputTokens)
+	}
+	if msg.StopReason != "tool_use" {
+		t.Errorf("StopReason = %q, want tool_use", msg.StopReason)
+	}
+}
+
+// --- Polymorphic tool_result content tests ---
+
+func TestProcess_ToolResultContentFormats(t *testing.T) {
+	tests := []struct {
+		name        string
+		rawContent  json.RawMessage
+		wantContain string
+	}{
+		{
+			name:        "string content",
+			rawContent:  json.RawMessage(`"package main"`),
+			wantContain: "package main",
+		},
+		{
+			name:        "array content blocks",
+			rawContent:  json.RawMessage(`[{"type":"text","text":"## Result\nFound 3 files"}]`),
+			wantContain: "Found 3 files",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			blocks := []transcript.UserContentBlock{{
+				Type:       "tool_result",
+				ToolUseID:  "tu_1",
+				RawContent: tt.rawContent,
+			}}
+			blocksJSON, _ := json.Marshal(blocks)
+			msg := transcript.UserMessage{Role: "user", Content: blocksJSON}
+			raw, _ := json.Marshal(msg)
+			toolResultLine := transcript.Line{
+				Type:      "user",
+				SessionID: "sess-1",
+				Message:   raw,
+			}
+
+			lines := []transcript.Line{
+				makeUserLine("do something"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "tu_1", Name: "Grep", Input: json.RawMessage(`{}`)},
+				}, "tool_use"),
+				toolResultLine,
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "Done."},
+				}, "end_turn"),
+			}
+
+			st := &state.Session{}
+			gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: true}, redact.New())
+
+			if len(gens) != 2 {
+				t.Fatalf("got %d gens, want 2", len(gens))
+			}
+			if len(gens[1].Input) == 0 {
+				t.Fatal("gen[1] has no input")
+			}
+			if gens[1].Input[0].Parts[0].Kind != sigil.PartKindToolResult {
+				t.Errorf("gen[1] input kind = %q, want tool_result", gens[1].Input[0].Parts[0].Kind)
+			}
+			content := gens[1].Input[0].Parts[0].ToolResult.Content
+			if !strings.Contains(content, tt.wantContain) {
+				t.Errorf("tool result content = %q, want to contain %q", content, tt.wantContain)
+			}
+		})
+	}
+}
+
+func TestTruncateJSON(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         json.RawMessage
+		maxLen        int
+		wantUnchanged bool
+		wantTruncated bool
+		wantValidJSON bool
+	}{
+		{
+			name:          "no truncation needed",
+			input:         json.RawMessage(`{"path":"file.go"}`),
+			maxLen:        4096,
+			wantUnchanged: true,
+			wantValidJSON: true,
+		},
+		{
+			name:          "truncates large input",
+			input:         json.RawMessage(`"` + strings.Repeat("a", 5000) + `"`),
+			maxLen:        4096,
+			wantTruncated: true,
+			wantValidJSON: true,
+		},
+		{
+			name:          "UTF-8 safety on truncation boundary",
+			input:         json.RawMessage(`"` + strings.Repeat("é", 2048) + strings.Repeat("x", 2048) + `"`),
+			maxLen:        4096,
+			wantTruncated: true,
+			wantValidJSON: true,
+		},
+		{
+			name:          "empty input",
+			input:         json.RawMessage(``),
+			maxLen:        4096,
+			wantUnchanged: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateJSON(tt.input, tt.maxLen, nil)
+			if tt.wantUnchanged && string(result) != string(tt.input) {
+				t.Errorf("input was modified: %s", result)
+			}
+			if tt.wantTruncated && !strings.Contains(string(result), "truncated") {
+				t.Error("expected [truncated] marker")
+			}
+			if tt.wantValidJSON {
+				var v any
+				if err := json.Unmarshal(result, &v); err != nil {
+					t.Errorf("result is not valid JSON: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestProcess_UserPromptRedaction(t *testing.T) {
+	tests := []struct {
+		name        string
+		capture     bool
+		wantRedact  bool
+		wantNilInput bool
+	}{
+		{"with content capture", true, true, false},
+		{"without content capture", false, false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := []transcript.Line{
+				makeUserLine("my token is glc_abcdefghijklmnopqrstuvwx"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "text", Text: "ok"},
+				}, "end_turn"),
+			}
+
+			var r *redact.Redactor
+			if tt.capture {
+				r = redact.New()
+			}
+
+			st := &state.Session{}
+			gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: tt.capture}, r)
+
+			if tt.wantNilInput {
+				if gens[0].Input != nil {
+					t.Error("expected nil Input")
+				}
+				return
+			}
+
+			input := gens[0].Input[0].Parts[0].Text
+			if tt.wantRedact {
+				if strings.Contains(input, "glc_abcdefghijklmnopqrstuvwx") {
+					t.Errorf("unredacted token in prompt: %q", input)
+				}
+				if !strings.Contains(input, "[REDACTED:grafana-cloud-token]") {
+					t.Errorf("missing redaction marker: %q", input)
+				}
+			}
+		})
+	}
+}
