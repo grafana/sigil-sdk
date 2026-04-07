@@ -6,6 +6,7 @@ include(":providers:anthropic")
 include(":providers:gemini")
 include(":frameworks:google-adk")
 include(":benchmarks")
+include(":devex-emitter")
 
 project(":providers:openai").projectDir = file("providers/openai")
 project(":providers:anthropic").projectDir = file("providers/anthropic")
