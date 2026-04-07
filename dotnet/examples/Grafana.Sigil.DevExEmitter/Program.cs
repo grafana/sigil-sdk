@@ -517,6 +517,7 @@ internal static class Program
             request,
             (_, _) => Task.FromResult<AnthropicMessage>(new AnthropicMessage
             {
+                Container = default!,
                 ID = $"dotnet-anthropic-sync-{context.Turn}",
                 Model = AnthropicModel.ClaudeSonnet4_5,
                 Content =
@@ -601,6 +602,7 @@ internal static class Program
             Type = JsonSerializer.SerializeToElement("message_start"),
             Message = new AnthropicMessage
             {
+                Container = default!,
                 ID = $"dotnet-anthropic-stream-{turn}",
                 Model = AnthropicModel.ClaudeSonnet4_5,
                 Content =
@@ -635,6 +637,7 @@ internal static class Program
             Type = JsonSerializer.SerializeToElement("message_delta"),
             Delta = new AnthropicDelta
             {
+                Container = default!,
                 StopReason = AnthropicStopReason.EndTurn,
                 StopSequence = null,
             },
