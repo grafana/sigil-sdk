@@ -140,6 +140,46 @@ func TestValidateGenerationAllowsConversationAndResponseFields(t *testing.T) {
 	}
 }
 
+func TestValidateStrippedGeneration(t *testing.T) {
+	base := Generation{
+		Model:    ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+		Metadata: map[string]any{metadataKeyContentCaptureMode: contentCaptureModeValueMetaOnly},
+	}
+
+	t.Run("stripped text and thinking parts are valid", func(t *testing.T) {
+		g := base
+		g.Input = []Message{{Role: RoleUser, Parts: []Part{{Kind: PartKindText}}}}
+		g.Output = []Message{{Role: RoleAssistant, Parts: []Part{{Kind: PartKindThinking}}}}
+		if err := validateGeneration(g); err != nil {
+			t.Fatalf("expected valid, got %v", err)
+		}
+	})
+
+	t.Run("nil ToolCall still fails when stripped", func(t *testing.T) {
+		g := base
+		g.Output = []Message{{Role: RoleAssistant, Parts: []Part{{Kind: PartKindToolCall}}}}
+		err := validateGeneration(g)
+		if err == nil {
+			t.Fatal("expected error for nil ToolCall even when stripped")
+		}
+		if !strings.Contains(err.Error(), "must set exactly one payload field") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("nil ToolResult still fails when stripped", func(t *testing.T) {
+		g := base
+		g.Input = []Message{{Role: RoleTool, Parts: []Part{{Kind: PartKindToolResult}}}}
+		err := validateGeneration(g)
+		if err == nil {
+			t.Fatal("expected error for nil ToolResult even when stripped")
+		}
+		if !strings.Contains(err.Error(), "must set exactly one payload field") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 func TestValidateGenerationAllowsWhitespaceOnlyTextAndThinking(t *testing.T) {
 	g := Generation{
 		Model: ModelRef{

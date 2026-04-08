@@ -26,6 +26,24 @@ type Config struct {
 	GenerationExport GenerationExportConfig
 	API              APIConfig
 	EmbeddingCapture EmbeddingCaptureConfig
+	// ContentCapture controls the default content capture mode for all
+	// generations and tool executions. Per-recording overrides take precedence.
+	ContentCapture ContentCaptureMode
+	// ContentCaptureResolver, when set, is called before each generation,
+	// tool execution, and rating submission to dynamically resolve the content
+	// capture mode. It receives the request context and the recording's
+	// metadata (nil when the recording type has no metadata, e.g. tool
+	// executions).
+	//
+	// Resolution precedence (highest → lowest):
+	//   1. Per-recording ContentCapture field (explicit override)
+	//   2. ContentCaptureResolver return value
+	//   3. Config.ContentCapture (static default)
+	//
+	// Returning ContentCaptureModeDefault defers to Config.ContentCapture.
+	// Panics are recovered and treated as ContentCaptureModeMetadataOnly
+	// (fail-closed).
+	ContentCaptureResolver func(ctx context.Context, metadata map[string]any) ContentCaptureMode
 	// Tracer is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry tracer.
 	Tracer trace.Tracer
 	// Meter is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry meter.
@@ -226,11 +244,12 @@ type Client struct {
 //
 // All methods are safe to call on a nil or no-op recorder.
 type GenerationRecorder struct {
-	client    *Client
-	ctx       context.Context
-	span      trace.Span
-	seed      GenerationStart
-	startedAt time.Time
+	client             *Client
+	ctx                context.Context
+	span               trace.Span
+	seed               GenerationStart
+	startedAt          time.Time
+	contentCaptureMode ContentCaptureMode
 
 	mu             sync.Mutex
 	ended          bool
@@ -455,12 +474,19 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 		ThinkingEnabled:   cloneBoolPtr(seed.ThinkingEnabled),
 	})...)
 
+	// Resolve content capture mode: per-recording > resolver > client default.
+	resolverMode := callContentCaptureResolver(c.config.ContentCaptureResolver, ctx, seed.Metadata)
+	clientMode := resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, c.config.ContentCapture))
+	ccMode := resolveContentCaptureMode(seed.ContentCapture, clientMode)
+	callCtx = withContentCaptureMode(callCtx, ccMode)
+
 	return callCtx, &GenerationRecorder{
-		client:    c,
-		ctx:       callCtx,
-		span:      span,
-		seed:      seed,
-		startedAt: startedAt,
+		client:             c,
+		ctx:                callCtx,
+		span:               span,
+		seed:               seed,
+		startedAt:          startedAt,
+		contentCaptureMode: ccMode,
 	}
 }
 
@@ -575,13 +601,19 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 	attrs := toolSpanAttributes(seed)
 	span.SetAttributes(attrs...)
 
+	// Resolve content capture: per-tool > context (parent generation) > resolver > client default.
+	resolverMode := callContentCaptureResolver(c.config.ContentCaptureResolver, ctx, nil)
+	effectiveClientDefault := resolveContentCaptureMode(resolverMode, c.config.ContentCapture)
+	ctxMode, ctxSet := contentCaptureModeFromContext(ctx)
+	includeContent := shouldIncludeToolContent(seed.ContentCapture, ctxMode, ctxSet, effectiveClientDefault, seed.IncludeContent)
+
 	return callCtx, &ToolExecutionRecorder{
 		client:         c,
 		ctx:            callCtx,
 		span:           span,
 		seed:           seed,
 		startedAt:      startedAt,
-		includeContent: seed.IncludeContent,
+		includeContent: includeContent,
 	}
 }
 
@@ -661,6 +693,11 @@ func (r *GenerationRecorder) End() {
 	normalized := r.normalizeGeneration(generation, completedAt, callErr)
 	applyTraceContextFromSpan(r.span, &normalized)
 
+	stampContentCaptureMetadata(&normalized, r.contentCaptureMode)
+	if r.contentCaptureMode == ContentCaptureModeMetadataOnly {
+		stripContent(&normalized, classifyErrorCategory(callErr, false))
+	}
+
 	r.span.SetName(generationSpanName(normalized))
 	r.span.SetAttributes(generationSpanAttributes(normalized)...)
 
@@ -668,7 +705,7 @@ func (r *GenerationRecorder) End() {
 	r.lastGeneration = cloneGeneration(normalized)
 	r.mu.Unlock()
 
-	enqueueErr := r.client.persistGeneration(r.ctx, normalized)
+	enqueueErr := r.client.persistGeneration(normalized)
 
 	// Record errors on span.
 	if callErr != nil {
@@ -1078,11 +1115,10 @@ func combineAllErrors(errs ...error) error {
 	return errors.Join(filtered...)
 }
 
-func (c *Client) persistGeneration(_ context.Context, generation Generation) error {
-	if err := ValidateGeneration(generation); err != nil {
+func (c *Client) persistGeneration(generation Generation) error {
+	if err := validateGeneration(generation); err != nil {
 		return fmt.Errorf("%w: %v", errGenerationValidation, err)
 	}
-
 	if err := c.enqueueGeneration(generation); err != nil {
 		return fmt.Errorf("%w: %w", errGenerationEnqueue, err)
 	}

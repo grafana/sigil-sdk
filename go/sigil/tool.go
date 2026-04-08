@@ -18,7 +18,13 @@ type ToolExecutionStart struct {
 	RequestProvider string
 	StartedAt       time.Time
 	// IncludeContent enables gen_ai.tool.call.arguments and gen_ai.tool.call.result attributes.
+	// Deprecated: Use ContentCapture instead. ContentCapture takes precedence
+	// when set to a non-Default value. IncludeContent is only honored when
+	// the resolved mode is Full.
 	IncludeContent bool
+	// ContentCapture overrides the parent generation's content capture mode for
+	// this tool execution. Default (zero value) inherits from context.
+	ContentCapture ContentCaptureMode
 }
 
 // ToolExecutionEnd finalizes tool execution span attributes.

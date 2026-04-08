@@ -7,6 +7,7 @@ type conversationTitleContextKey struct{}
 type userIDContextKey struct{}
 type agentNameContextKey struct{}
 type agentVersionContextKey struct{}
+type contentCaptureModeContextKey struct{}
 
 // WithConversationID stores a conversation ID in the context.
 // StartGeneration, StartStreamingGeneration, and StartToolExecution read it when
@@ -71,4 +72,17 @@ func WithAgentVersion(ctx context.Context, version string) context.Context {
 func AgentVersionFromContext(ctx context.Context) (string, bool) {
 	version, ok := ctx.Value(agentVersionContextKey{}).(string)
 	return version, ok && version != ""
+}
+
+// withContentCaptureMode stores the resolved ContentCaptureMode in the context.
+// StartToolExecution reads it to inherit the parent generation's mode.
+func withContentCaptureMode(ctx context.Context, mode ContentCaptureMode) context.Context {
+	return context.WithValue(ctx, contentCaptureModeContextKey{}, mode)
+}
+
+// contentCaptureModeFromContext retrieves the ContentCaptureMode stored by
+// withContentCaptureMode. Returns ContentCaptureModeDefault and false if not set.
+func contentCaptureModeFromContext(ctx context.Context) (ContentCaptureMode, bool) {
+	mode, ok := ctx.Value(contentCaptureModeContextKey{}).(ContentCaptureMode)
+	return mode, ok
 }

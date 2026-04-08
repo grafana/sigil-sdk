@@ -1086,59 +1086,57 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 }
 
 func TestToolExecutionRecorderContentCapture(t *testing.T) {
+	// Backward compat: Config{} with IncludeContent controls tool content.
 	client, recorder, _ := newTestClient(t, Config{})
 
-	_, withContent := client.StartToolExecution(context.Background(), ToolExecutionStart{
-		ToolName:       "weather",
-		IncludeContent: true,
-	})
-	withContent.SetResult(ToolExecutionEnd{
-		Arguments: map[string]any{"city": "Paris"},
-		Result:    map[string]any{"temp_c": 18},
-	})
-	withContent.End()
-	if err := withContent.Err(); err != nil {
-		t.Fatalf("end tool execution with content: %v", err)
-	}
-
-	_, withoutContent := client.StartToolExecution(context.Background(), ToolExecutionStart{
-		ToolName: "weather",
-	})
-	withoutContent.SetResult(ToolExecutionEnd{
-		Arguments: map[string]any{"city": "Paris"},
-		Result:    map[string]any{"temp_c": 18},
-	})
-	withoutContent.End()
-	if err := withoutContent.Err(); err != nil {
-		t.Fatalf("end tool execution without content: %v", err)
-	}
-
-	toolSpans := make([]sdktrace.ReadOnlySpan, 0, 2)
-	for _, span := range recorder.Ended() {
-		if isToolSpan(span) {
-			toolSpans = append(toolSpans, span)
+	execTool := func(t *testing.T, start ToolExecutionStart) sdktrace.ReadOnlySpan {
+		t.Helper()
+		start.ToolName = "weather"
+		_, rec := client.StartToolExecution(context.Background(), start)
+		rec.SetResult(ToolExecutionEnd{
+			Arguments: map[string]any{"city": "Paris"},
+			Result:    map[string]any{"temp_c": 18},
+		})
+		rec.End()
+		if err := rec.Err(); err != nil {
+			t.Fatalf("tool execution error: %v", err)
 		}
-	}
-	if len(toolSpans) != 2 {
-		t.Fatalf("expected 2 tool spans, got %d", len(toolSpans))
+		spans := recorder.Ended()
+		for i := len(spans) - 1; i >= 0; i-- {
+			if isToolSpan(spans[i]) {
+				return spans[i]
+			}
+		}
+		t.Fatal("tool span not found")
+		return nil
 	}
 
-	var sawWithContent, sawWithoutContent bool
-	for _, span := range toolSpans {
+	hasContent := func(span sdktrace.ReadOnlySpan) bool {
 		attrs := spanAttributeMap(span)
 		_, hasArgs := attrs[spanAttrToolCallArguments]
-		_, hasResult := attrs[spanAttrToolCallResult]
-		if hasArgs && hasResult {
-			sawWithContent = true
-		}
-		if !hasArgs && !hasResult {
-			sawWithoutContent = true
-		}
+		return hasArgs
 	}
 
-	if !sawWithContent || !sawWithoutContent {
-		t.Fatalf("expected both content and non-content tool spans")
-	}
+	t.Run("Config{} + bare ToolExecutionStart — no content", func(t *testing.T) {
+		span := execTool(t, ToolExecutionStart{})
+		if hasContent(span) {
+			t.Fatal("expected no tool content with default config and no IncludeContent")
+		}
+	})
+
+	t.Run("Config{} + IncludeContent:true — content included", func(t *testing.T) {
+		span := execTool(t, ToolExecutionStart{IncludeContent: true})
+		if !hasContent(span) {
+			t.Fatal("expected tool content with IncludeContent: true")
+		}
+	})
+
+	t.Run("Config{} + IncludeContent:false — no content", func(t *testing.T) {
+		span := execTool(t, ToolExecutionStart{IncludeContent: false})
+		if hasContent(span) {
+			t.Fatal("expected no tool content with IncludeContent: false")
+		}
+	})
 }
 
 func TestToolExecutionRecorderErrorSetsStatusAndType(t *testing.T) {
