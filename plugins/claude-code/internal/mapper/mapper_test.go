@@ -169,32 +169,28 @@ func TestProcess_ContentModes(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		capture    bool
-		wantInput  bool
-		wantOutput bool
+		redactor   *redact.Redactor
+		wantOutput string
 	}{
-		{"metadata only", false, false, true},  // output has [redacted] content
-		{"content capture", true, true, true},
+		{"without redactor", nil, "Concurrency is..."},
+		{"with redactor", redact.New(), "Concurrency is..."},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := &state.Session{}
-			var r *redact.Redactor
-			if tt.capture {
-				r = redact.New()
-			}
-			gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: tt.capture}, r)
+			gens := Process(lines, st, Options{SessionID: "sess-1"}, tt.redactor)
 			if len(gens) != 1 {
 				t.Fatal("expected 1 generation")
 			}
-			hasInput := gens[0].Input != nil
-			hasOutput := gens[0].Output != nil
-			if hasInput != tt.wantInput {
-				t.Errorf("Input present = %v, want %v", hasInput, tt.wantInput)
+			if gens[0].Input == nil {
+				t.Error("expected Input to be present")
 			}
-			if hasOutput != tt.wantOutput {
-				t.Errorf("Output present = %v, want %v", hasOutput, tt.wantOutput)
+			if gens[0].Output == nil {
+				t.Fatal("expected Output to be present")
+			}
+			if gens[0].Output[0].Parts[0].Text != tt.wantOutput {
+				t.Errorf("Output text = %q, want %q", gens[0].Output[0].Parts[0].Text, tt.wantOutput)
 			}
 		})
 	}
@@ -332,7 +328,7 @@ func TestProcess_ContentCaptureRedaction(t *testing.T) {
 	}
 
 	st := &state.Session{}
-	gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: true}, redact.New())
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, redact.New())
 
 	gen := gens[0]
 	// User prompt gets Tier 1 redaction
@@ -422,7 +418,7 @@ func TestProcess_ToolResultsInInput(t *testing.T) {
 	}
 
 	st := &state.Session{}
-	gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: true}, redact.New())
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, redact.New())
 
 	if len(gens) != 2 {
 		t.Fatalf("got %d gens, want 2", len(gens))
@@ -603,7 +599,7 @@ func TestProcess_ToolResultContentFormats(t *testing.T) {
 			}
 
 			st := &state.Session{}
-			gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: true}, redact.New())
+			gens := Process(lines, st, Options{SessionID: "sess-1"}, redact.New())
 
 			if len(gens) != 2 {
 				t.Fatalf("got %d gens, want 2", len(gens))
@@ -681,13 +677,12 @@ func TestTruncateJSON(t *testing.T) {
 
 func TestProcess_UserPromptRedaction(t *testing.T) {
 	tests := []struct {
-		name        string
-		capture     bool
-		wantRedact  bool
-		wantNilInput bool
+		name       string
+		redactor   *redact.Redactor
+		wantRedact bool
 	}{
-		{"with content capture", true, true, false},
-		{"without content capture", false, false, true},
+		{"with redactor", redact.New(), true},
+		{"without redactor", nil, false},
 	}
 
 	for _, tt := range tests {
@@ -699,19 +694,11 @@ func TestProcess_UserPromptRedaction(t *testing.T) {
 				}, "end_turn"),
 			}
 
-			var r *redact.Redactor
-			if tt.capture {
-				r = redact.New()
-			}
-
 			st := &state.Session{}
-			gens := Process(lines, st, Options{SessionID: "sess-1", ContentCapture: tt.capture}, r)
+			gens := Process(lines, st, Options{SessionID: "sess-1"}, tt.redactor)
 
-			if tt.wantNilInput {
-				if gens[0].Input != nil {
-					t.Error("expected nil Input")
-				}
-				return
+			if gens[0].Input == nil {
+				t.Fatal("expected Input to be present")
 			}
 
 			input := gens[0].Input[0].Parts[0].Text
@@ -721,6 +708,10 @@ func TestProcess_UserPromptRedaction(t *testing.T) {
 				}
 				if !strings.Contains(input, "[REDACTED:grafana-cloud-token]") {
 					t.Errorf("missing redaction marker: %q", input)
+				}
+			} else {
+				if !strings.Contains(input, "glc_abcdefghijklmnopqrstuvwx") {
+					t.Errorf("expected raw token in prompt: %q", input)
 				}
 			}
 		})

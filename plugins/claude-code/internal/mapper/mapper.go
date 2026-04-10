@@ -22,10 +22,9 @@ const (
 
 // Options controls how transcript lines are mapped to generations.
 type Options struct {
-	SessionID      string            // authoritative session ID from the hook input
-	ContentCapture bool              // when true, include redacted Input/Output content
-	Logger         *log.Logger       // debug logger (nil = silent)
-	ExtraTags      map[string]string // user-supplied tags merged into every generation; built-in keys always win
+	SessionID string            // authoritative session ID from the hook input
+	Logger    *log.Logger       // debug logger (nil = silent)
+	ExtraTags map[string]string // user-supplied tags merged into every generation; built-in keys always win
 }
 
 func (o Options) logf(format string, args ...any) {
@@ -165,7 +164,7 @@ func processUserLine(line transcript.Line, uctx *userContext, st *state.Session,
 				st.Title = b.Text
 			}
 		}
-		if b.Type == "tool_result" && opts.ContentCapture {
+		if b.Type == "tool_result" {
 			content := b.Content()
 			if r != nil {
 				content = r.Redact(content)
@@ -250,12 +249,8 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 		gen.ThinkingEnabled = ptrBool(true)
 	}
 
-	if opts.ContentCapture {
-		gen.Input = buildInput(uctx, r)
-		gen.Output = buildOutput(msg.Content, r)
-	} else {
-		gen.Output = buildOutputRedacted(msg.Content)
-	}
+	gen.Input = buildInput(uctx, r)
+	gen.Output = buildOutput(msg.Content, r)
 
 	return gen, true
 }
@@ -344,45 +339,6 @@ func buildOutput(blocks []transcript.ContentBlock, r *redact.Redactor) []sigil.M
 					ID:        block.ID,
 					Name:      block.Name,
 					InputJSON: inputJSON,
-				},
-			})
-		}
-	}
-
-	if len(parts) == 0 {
-		return nil
-	}
-
-	return []sigil.Message{{
-		Role:  sigil.RoleAssistant,
-		Parts: parts,
-	}}
-}
-
-// buildOutputRedacted builds output with tool call structure preserved
-// but all content replaced with [redacted]. Used when content capture is off.
-func buildOutputRedacted(blocks []transcript.ContentBlock) []sigil.Message {
-	var parts []sigil.Part
-
-	for _, block := range blocks {
-		switch block.Type {
-		case "text":
-			parts = append(parts, sigil.Part{
-				Kind: sigil.PartKindText,
-				Text: "[redacted]",
-			})
-		case "thinking":
-			parts = append(parts, sigil.Part{
-				Kind:     sigil.PartKindThinking,
-				Thinking: "[redacted]",
-			})
-		case "tool_use":
-			parts = append(parts, sigil.Part{
-				Kind: sigil.PartKindToolCall,
-				ToolCall: &sigil.ToolCall{
-					ID:        block.ID,
-					Name:      block.Name,
-					InputJSON: json.RawMessage(`"[redacted]"`),
 				},
 			})
 		}

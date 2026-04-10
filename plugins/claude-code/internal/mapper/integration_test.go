@@ -36,7 +36,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 	}
 
 	coalesced, safeOffset := Coalesce(lines)
-	gens := Process(coalesced, &st, Options{SessionID: "sess-integration", ContentCapture: true}, redact.New())
+	gens := Process(coalesced, &st, Options{SessionID: "sess-integration"}, redact.New())
 	if len(gens) == 0 {
 		t.Fatal("expected at least 1 generation")
 	}
