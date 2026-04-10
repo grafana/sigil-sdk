@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
-import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 import { createSigilVercelAiSdk } from '../.test-dist/frameworks/vercel-ai-sdk/index.js';
+import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 class CapturingExporter {
   requests = [];
@@ -390,47 +389,50 @@ test('vercel ai sdk generateText hooks support multi-step loop and tool lifecycl
 });
 
 test('vercel ai sdk streamText hooks capture TTFT once and record streaming result', async () => {
-  const { generations, firstTokenCalls } = await captureSession(async (client) => {
-    const sigil = createSigilVercelAiSdk(client);
-    const hooks = sigil.streamTextHooks({ conversationId: 'conv-stream' });
+  const { generations, firstTokenCalls } = await captureSession(
+    async (client) => {
+      const sigil = createSigilVercelAiSdk(client);
+      const hooks = sigil.streamTextHooks({ conversationId: 'conv-stream' });
 
-    hooks.experimental_onStepStart?.({
-      stepNumber: 0,
-      model: { modelId: 'claude-sonnet-4-5' },
-      messages: [{ role: 'user', content: 'stream hello' }],
-    });
-    hooks.onChunk?.({
-      stepNumber: 0,
-      chunk: {
-        type: 'reasoning',
-        text: 'thinking',
-      },
-    });
-    hooks.onChunk?.({
-      stepNumber: 0,
-      chunk: {
-        type: 'text-delta',
-        text: 'hel',
-      },
-    });
-    hooks.onChunk?.({
-      stepNumber: 0,
-      chunk: {
-        type: 'text-delta',
-        text: 'lo',
-      },
-    });
-    hooks.onStepFinish?.({
-      stepNumber: 0,
-      stepType: 'initial',
-      text: 'hello',
-      finishReason: 'stop',
-      response: {
-        id: 'resp-stream',
-        modelId: 'claude-sonnet-4-5',
-      },
-    });
-  }, { countFirstTokenCalls: true });
+      hooks.experimental_onStepStart?.({
+        stepNumber: 0,
+        model: { modelId: 'claude-sonnet-4-5' },
+        messages: [{ role: 'user', content: 'stream hello' }],
+      });
+      hooks.onChunk?.({
+        stepNumber: 0,
+        chunk: {
+          type: 'reasoning',
+          text: 'thinking',
+        },
+      });
+      hooks.onChunk?.({
+        stepNumber: 0,
+        chunk: {
+          type: 'text-delta',
+          text: 'hel',
+        },
+      });
+      hooks.onChunk?.({
+        stepNumber: 0,
+        chunk: {
+          type: 'text-delta',
+          text: 'lo',
+        },
+      });
+      hooks.onStepFinish?.({
+        stepNumber: 0,
+        stepType: 'initial',
+        text: 'hello',
+        finishReason: 'stop',
+        response: {
+          id: 'resp-stream',
+          modelId: 'claude-sonnet-4-5',
+        },
+      });
+    },
+    { countFirstTokenCalls: true },
+  );
 
   assert.equal(firstTokenCalls, 1);
   assert.equal(generations.length, 1);
@@ -589,28 +591,31 @@ test('vercel ai sdk streamText synthetic step fallback does not reuse first-step
 });
 
 test('vercel ai sdk streamText synthetic step preserves pre-finish start timestamp', async () => {
-  const { generations, firstTokenCalls } = await captureSession(async (client) => {
-    const sigil = createSigilVercelAiSdk(client);
-    const hooks = sigil.streamTextHooks({ conversationId: 'conv-stream-synthetic-start' });
+  const { generations, firstTokenCalls } = await captureSession(
+    async (client) => {
+      const sigil = createSigilVercelAiSdk(client);
+      const hooks = sigil.streamTextHooks({ conversationId: 'conv-stream-synthetic-start' });
 
-    hooks.onChunk?.({
-      stepNumber: 0,
-      chunk: {
-        type: 'text-delta',
-        text: 'hel',
-      },
-    });
+      hooks.onChunk?.({
+        stepNumber: 0,
+        chunk: {
+          type: 'text-delta',
+          text: 'hel',
+        },
+      });
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setTimeout(resolve, 20));
 
-    hooks.onStepFinish?.({
-      stepNumber: 0,
-      stepType: 'initial',
-      text: 'hello',
-      finishReason: 'stop',
-      response: { id: 'resp-stream-synthetic-start', modelId: 'gpt-5' },
-    });
-  }, { countFirstTokenCalls: true });
+      hooks.onStepFinish?.({
+        stepNumber: 0,
+        stepType: 'initial',
+        text: 'hello',
+        finishReason: 'stop',
+        response: { id: 'resp-stream-synthetic-start', modelId: 'gpt-5' },
+      });
+    },
+    { countFirstTokenCalls: true },
+  );
 
   assert.equal(generations.length, 1);
   assert.equal(firstTokenCalls, 1);

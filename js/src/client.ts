@@ -1,3 +1,13 @@
+import {
+  type Histogram,
+  type Meter,
+  metrics,
+  type Span,
+  SpanKind,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from '@opentelemetry/api';
 import { defaultLogger, mergeConfig } from './config.js';
 import {
   agentNameFromContext,
@@ -7,7 +17,6 @@ import {
   userIdFromContext,
 } from './context.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
-import { metrics, SpanKind, SpanStatusCode, trace, type Histogram, type Meter, type Span, type Tracer } from '@opentelemetry/api';
 import type {
   ConversationRating,
   ConversationRatingInput,
@@ -21,6 +30,7 @@ import type {
   GenerationMode,
   GenerationRecorder,
   GenerationResult,
+  GenerationStart,
   Message,
   RecorderCallback,
   RecorderWithError,
@@ -33,22 +43,21 @@ import type {
   ToolExecutionRecorder,
   ToolExecutionResult,
   ToolExecutionStart,
-  GenerationStart,
 } from './types.js';
 import {
   asError,
+  cloneArtifact,
   cloneEmbeddingResult,
   cloneEmbeddingStart,
   cloneGeneration,
   cloneGenerationResult,
   cloneGenerationStart,
+  cloneMessage,
   cloneModelRef,
   cloneToolDefinition,
-  cloneMessage,
-  cloneArtifact,
   cloneToolExecution,
-  cloneToolExecutionStart,
   cloneToolExecutionResult,
+  cloneToolExecutionStart,
   defaultOperationNameForMode,
   defaultSleep,
   encodedSizeBytes,
@@ -163,7 +172,8 @@ export class SigilClient {
     this.nowFn = this.config.now ?? (() => new Date());
     this.sleepFn = this.config.sleep ?? defaultSleep;
     this.logger = this.config.logger ?? defaultLogger;
-    this.generationExporter = this.config.generationExporter ?? createDefaultGenerationExporter(this.config.generationExport);
+    this.generationExporter =
+      this.config.generationExporter ?? createDefaultGenerationExporter(this.config.generationExport);
     this.tracer = this.config.tracer ?? trace.getTracer(instrumentationName);
     this.meter = this.config.meter ?? metrics.getMeter(instrumentationName);
     this.operationDurationHistogram = this.meter.createHistogram(metricOperationDuration, { unit: 's' });
@@ -189,11 +199,11 @@ export class SigilClient {
   startGeneration(start: GenerationStart): GenerationRecorder;
   startGeneration<TResult>(
     start: GenerationStart,
-    callback: RecorderCallback<GenerationRecorder, TResult>
+    callback: RecorderCallback<GenerationRecorder, TResult>,
   ): Promise<TResult>;
   startGeneration<TResult>(
     start: GenerationStart,
-    callback?: RecorderCallback<GenerationRecorder, TResult>
+    callback?: RecorderCallback<GenerationRecorder, TResult>,
   ): GenerationRecorder | Promise<TResult> {
     return this.startGenerationWithMode(start, 'SYNC', callback);
   }
@@ -208,11 +218,11 @@ export class SigilClient {
   startStreamingGeneration(start: GenerationStart): GenerationRecorder;
   startStreamingGeneration<TResult>(
     start: GenerationStart,
-    callback: RecorderCallback<GenerationRecorder, TResult>
+    callback: RecorderCallback<GenerationRecorder, TResult>,
   ): Promise<TResult>;
   startStreamingGeneration<TResult>(
     start: GenerationStart,
-    callback?: RecorderCallback<GenerationRecorder, TResult>
+    callback?: RecorderCallback<GenerationRecorder, TResult>,
   ): GenerationRecorder | Promise<TResult> {
     return this.startGenerationWithMode(start, 'STREAM', callback);
   }
@@ -227,11 +237,11 @@ export class SigilClient {
   startEmbedding(start: EmbeddingStart): EmbeddingRecorder;
   startEmbedding<TResult>(
     start: EmbeddingStart,
-    callback: RecorderCallback<EmbeddingRecorder, TResult>
+    callback: RecorderCallback<EmbeddingRecorder, TResult>,
   ): Promise<TResult>;
   startEmbedding<TResult>(
     start: EmbeddingStart,
-    callback?: RecorderCallback<EmbeddingRecorder, TResult>
+    callback?: RecorderCallback<EmbeddingRecorder, TResult>,
   ): EmbeddingRecorder | Promise<TResult> {
     this.assertOpen();
     const seed = cloneEmbeddingStart(start);
@@ -256,11 +266,11 @@ export class SigilClient {
   startToolExecution(start: ToolExecutionStart): ToolExecutionRecorder;
   startToolExecution<TResult>(
     start: ToolExecutionStart,
-    callback: RecorderCallback<ToolExecutionRecorder, TResult>
+    callback: RecorderCallback<ToolExecutionRecorder, TResult>,
   ): Promise<TResult>;
   startToolExecution<TResult>(
     start: ToolExecutionStart,
-    callback?: RecorderCallback<ToolExecutionRecorder, TResult>
+    callback?: RecorderCallback<ToolExecutionRecorder, TResult>,
   ): ToolExecutionRecorder | Promise<TResult> {
     this.assertOpen();
     const recorder: ToolExecutionRecorder =
@@ -274,7 +284,7 @@ export class SigilClient {
   /** Submits a user-facing conversation rating through Sigil HTTP API. */
   async submitConversationRating(
     conversationId: string,
-    input: ConversationRatingInput
+    input: ConversationRatingInput,
   ): Promise<SubmitConversationRatingResponse> {
     this.assertOpen();
 
@@ -290,7 +300,7 @@ export class SigilClient {
     const endpoint = buildConversationRatingEndpoint(
       this.config.api.endpoint,
       this.config.generationExport.insecure,
-      normalizedConversationId
+      normalizedConversationId,
     );
     const requestBody = {
       rating_id: normalizedInput.ratingId,
@@ -320,7 +330,7 @@ export class SigilClient {
     }
     if (!response.ok) {
       throw new Error(
-        `sigil conversation rating transport failed: status ${response.status}: ${ratingErrorText(responseText, response.status)}`
+        `sigil conversation rating transport failed: status ${response.status}: ${ratingErrorText(responseText, response.status)}`,
       );
     }
 
@@ -489,7 +499,7 @@ export class SigilClient {
     callError: string | undefined,
     validationError: Error | undefined,
     enqueueError: Error | undefined,
-    firstTokenAt: Date | undefined
+    firstTokenAt: Date | undefined,
   ): void {
     span.updateName(generationSpanName(generation.operationName, generation.model.name));
 
@@ -540,7 +550,7 @@ export class SigilClient {
     callError: Error | undefined,
     localError: Error | undefined,
     startedAt: Date,
-    completedAt: Date
+    completedAt: Date,
   ): void {
     span.updateName(embeddingSpanName(seed.model.name));
     setEmbeddingEndSpanAttributes(span, result, hasResult, this.config.embeddingCapture);
@@ -576,7 +586,11 @@ export class SigilClient {
     span.end(completedAt);
   }
 
-  internalFinalizeToolExecutionSpan(span: Span, toolExecution: ToolExecution, localError: Error | undefined): Error | undefined {
+  internalFinalizeToolExecutionSpan(
+    span: Span,
+    toolExecution: ToolExecution,
+    localError: Error | undefined,
+  ): Error | undefined {
     setToolSpanAttributes(span, toolExecution);
 
     if (toolExecution.includeContent) {
@@ -609,7 +623,10 @@ export class SigilClient {
       span.setStatus({ code: SpanStatusCode.OK });
     }
 
-    this.recordToolExecutionMetrics(toolExecution, localError ?? (toolExecution.callError !== undefined ? new Error(toolExecution.callError) : undefined));
+    this.recordToolExecutionMetrics(
+      toolExecution,
+      localError ?? (toolExecution.callError !== undefined ? new Error(toolExecution.callError) : undefined),
+    );
 
     span.end(toolExecution.completedAt);
     return localError;
@@ -619,7 +636,7 @@ export class SigilClient {
     generation: Generation,
     errorType: string,
     errorCategory: string,
-    firstTokenAt: Date | undefined
+    firstTokenAt: Date | undefined,
   ): void {
     const startedMs = generation.startedAt.getTime();
     const completedMs = generation.completedAt.getTime();
@@ -667,7 +684,7 @@ export class SigilClient {
     startedAt: Date,
     completedAt: Date,
     errorType: string,
-    errorCategory: string
+    errorCategory: string,
   ): void {
     const durationSeconds = Math.max(0, (completedAt.getTime() - startedAt.getTime()) / 1_000);
     this.operationDurationHistogram.record(durationSeconds, {
@@ -729,7 +746,7 @@ export class SigilClient {
   private startGenerationWithMode<TResult>(
     start: GenerationStart,
     mode: GenerationMode,
-    callback?: RecorderCallback<GenerationRecorder, TResult>
+    callback?: RecorderCallback<GenerationRecorder, TResult>,
   ): GenerationRecorder | Promise<TResult> {
     this.assertOpen();
     const recorder = new GenerationRecorderImpl(this, start, mode);
@@ -840,7 +857,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
   constructor(
     private readonly client: SigilClient,
     seed: GenerationStart,
-    defaultMode: GenerationMode
+    defaultMode: GenerationMode,
   ) {
     this.seed = cloneGenerationStart(seed);
     if (!notEmpty(this.seed.conversationId)) {
@@ -929,7 +946,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
 
     generation.conversationTitle = firstNonEmptyString(
       generation.conversationTitle,
-      metadataStringValue(generation.metadata, spanAttrConversationTitle)
+      metadataStringValue(generation.metadata, spanAttrConversationTitle),
     )?.trim();
     if (notEmpty(generation.conversationTitle)) {
       if (generation.metadata === undefined) {
@@ -941,7 +958,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     generation.userId = firstNonEmptyString(
       generation.userId,
       metadataStringValue(generation.metadata, metadataUserIDKey),
-      metadataStringValue(generation.metadata, metadataLegacyUserIDKey)
+      metadataStringValue(generation.metadata, metadataLegacyUserIDKey),
     )?.trim();
     if (notEmpty(generation.userId)) {
       if (generation.metadata === undefined) {
@@ -986,7 +1003,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
       this.callError,
       validationError,
       enqueueError,
-      this.firstTokenAt
+      this.firstTokenAt,
     );
   }
 
@@ -1007,7 +1024,7 @@ class EmbeddingRecorderImpl implements EmbeddingRecorder {
 
   constructor(
     private readonly client: SigilClient,
-    seed: EmbeddingStart
+    seed: EmbeddingStart,
   ) {
     this.seed = cloneEmbeddingStart(seed);
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
@@ -1050,7 +1067,7 @@ class EmbeddingRecorderImpl implements EmbeddingRecorder {
       this.callError,
       localError,
       this.startedAt,
-      completedAt
+      completedAt,
     );
     this.localError = localError;
   }
@@ -1071,7 +1088,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
 
   constructor(
     private readonly client: SigilClient,
-    seed: ToolExecutionStart
+    seed: ToolExecutionStart,
   ) {
     this.seed = cloneToolExecutionStart(seed);
     if (!notEmpty(this.seed.conversationId)) {
@@ -1159,7 +1176,7 @@ class NoopToolExecutionRecorder implements ToolExecutionRecorder {
 
 async function runWithRecorder<TRecorder extends RecorderWithError, TResult>(
   recorder: TRecorder,
-  callback: RecorderCallback<TRecorder, TResult>
+  callback: RecorderCallback<TRecorder, TResult>,
 ): Promise<TResult> {
   let callbackError: unknown;
   try {
@@ -1172,6 +1189,7 @@ async function runWithRecorder<TRecorder extends RecorderWithError, TResult>(
     recorder.end();
     const recorderError = recorder.getError();
     if (callbackError === undefined && recorderError !== undefined) {
+      // biome-ignore lint/correctness/noUnsafeFinally: intentional — only throws when callback succeeded but recorder detected an error
       throw recorderError;
     }
   }
@@ -1230,7 +1248,7 @@ function setGenerationSpanAttributes(
       cacheCreationInputTokens?: number;
       reasoningTokens?: number;
     };
-  }
+  },
 ): void {
   span.setAttribute(spanAttrOperationName, generation.operationName);
   span.setAttribute(spanAttrSDKName, sdkName);
@@ -1372,7 +1390,7 @@ function setEmbeddingEndSpanAttributes(
   span: Span,
   result: EmbeddingResult,
   hasResult: boolean,
-  captureConfig: SigilSdkConfig['embeddingCapture']
+  captureConfig: SigilSdkConfig['embeddingCapture'],
 ): void {
   if (hasResult) {
     span.setAttribute(spanAttrEmbeddingInputCount, result.inputCount);
@@ -1387,7 +1405,11 @@ function setEmbeddingEndSpanAttributes(
     span.setAttribute(spanAttrEmbeddingDimCount, result.dimensions);
   }
   if (captureConfig.captureInput && result.inputTexts !== undefined) {
-    const texts = captureEmbeddingInputTexts(result.inputTexts, captureConfig.maxInputItems, captureConfig.maxTextLength);
+    const texts = captureEmbeddingInputTexts(
+      result.inputTexts,
+      captureConfig.maxInputItems,
+      captureConfig.maxTextLength,
+    );
     if (texts.length > 0) {
       span.setAttribute(spanAttrEmbeddingInputTexts, texts);
     }
@@ -1407,7 +1429,7 @@ function setToolSpanAttributes(
     agentVersion?: string;
     requestProvider?: string;
     requestModel?: string;
-  }
+  },
 ): void {
   span.setAttribute(spanAttrOperationName, 'execute_tool');
   span.setAttribute(spanAttrToolName, tool.toolName);
@@ -1491,12 +1513,9 @@ function normalizeConversationRatingInput(input: ConversationRatingInput): Conve
   if (normalized.ratingId.length > maxRatingIdLen) {
     throw new Error('sigil conversation rating validation failed: ratingId is too long');
   }
-  if (
-    normalized.rating !== 'CONVERSATION_RATING_VALUE_GOOD' &&
-    normalized.rating !== 'CONVERSATION_RATING_VALUE_BAD'
-  ) {
+  if (normalized.rating !== 'CONVERSATION_RATING_VALUE_GOOD' && normalized.rating !== 'CONVERSATION_RATING_VALUE_BAD') {
     throw new Error(
-      'sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD'
+      'sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD',
     );
   }
   if (normalized.comment !== undefined && encodedSizeBytes(normalized.comment) > maxRatingCommentBytes) {
@@ -1734,7 +1753,7 @@ function firstNonEmptyString(...values: Array<string | undefined>): string | und
 
 function mergeStringRecords(
   left: Record<string, string> | undefined,
-  right: Record<string, string> | undefined
+  right: Record<string, string> | undefined,
 ): Record<string, string> | undefined {
   if (left === undefined && right === undefined) {
     return undefined;
@@ -1747,7 +1766,7 @@ function mergeStringRecords(
 
 function mergeUnknownRecords(
   left: Record<string, unknown> | undefined,
-  right: Record<string, unknown> | undefined
+  right: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   if (left === undefined && right === undefined) {
     return undefined;

@@ -1,10 +1,5 @@
-import type { SigilClient } from "../../client.js";
-import type {
-  GenerationMode,
-  GenerationRecorder,
-  Message,
-  ToolExecutionRecorder,
-} from "../../types.js";
+import type { SigilClient } from '../../client.js';
+import type { GenerationMode, GenerationRecorder, Message, ToolExecutionRecorder } from '../../types.js';
 import {
   buildFrameworkMetadata,
   buildFrameworkTags,
@@ -19,7 +14,7 @@ import {
   parseToolCallStart,
   resolveConversationId,
   shouldTreatStepAsError,
-} from "./mapping.js";
+} from './mapping.js';
 import type {
   CallOptions,
   ConversationResolution,
@@ -29,7 +24,7 @@ import type {
   StreamTextHooks,
   ToolCallFinishEvent,
   ToolCallStartEvent,
-} from "./types.js";
+} from './types.js';
 
 interface StepState {
   recorder?: GenerationRecorder;
@@ -65,7 +60,7 @@ export class SigilVercelAiSdkInstrumentation {
   private readonly captureOutputs: boolean;
   private readonly extraTags: Record<string, string>;
   private readonly extraMetadata: Record<string, unknown>;
-  private readonly resolveConversationIdFn: SigilVercelAiSdkOptions["resolveConversationId"];
+  private readonly resolveConversationIdFn: SigilVercelAiSdkOptions['resolveConversationId'];
   private callSequence = 0;
 
   constructor(
@@ -82,26 +77,16 @@ export class SigilVercelAiSdkInstrumentation {
   }
 
   generateTextHooks(callOptions: CallOptions = {}): GenerateTextHooks {
-    return this.createHooks(
-      "SYNC",
-      "generateText",
-      callOptions,
-      false,
-    ) as GenerateTextHooks;
+    return this.createHooks('SYNC', 'generateText', callOptions, false) as GenerateTextHooks;
   }
 
   streamTextHooks(callOptions: CallOptions = {}): StreamTextHooks {
-    return this.createHooks(
-      "STREAM",
-      "streamText",
-      callOptions,
-      true,
-    ) as StreamTextHooks;
+    return this.createHooks('STREAM', 'streamText', callOptions, true) as StreamTextHooks;
   }
 
   private createHooks(
     mode: GenerationMode,
-    operationName: "generateText" | "streamText",
+    operationName: 'generateText' | 'streamText',
     callOptions: CallOptions,
     includeStreamHandlers: boolean,
   ): GenerateTextHooks | StreamTextHooks {
@@ -114,11 +99,8 @@ export class SigilVercelAiSdkInstrumentation {
       nextSyntheticStepNumber: 0,
     };
 
-    const explicitConversationId = normalizeOptionalString(
-      callOptions.conversationId,
-    );
-    const callAgentName =
-      normalizeOptionalString(callOptions.agentName) ?? this.agentName;
+    const explicitConversationId = normalizeOptionalString(callOptions.conversationId);
+    const callAgentName = normalizeOptionalString(callOptions.agentName) ?? this.agentName;
     const mergedCallMetadata = {
       ...this.extraMetadata,
       ...(callOptions.extraMetadata ?? {}),
@@ -127,13 +109,10 @@ export class SigilVercelAiSdkInstrumentation {
     let streamObservedStartAt: Date | undefined;
     let hasCreatedStreamStepState = false;
     const noteStreamObservedStartAt = (timestamp: Date): void => {
-      if (mode !== "STREAM") {
+      if (mode !== 'STREAM') {
         return;
       }
-      if (
-        streamObservedStartAt === undefined ||
-        timestamp.getTime() < streamObservedStartAt.getTime()
-      ) {
+      if (streamObservedStartAt === undefined || timestamp.getTime() < streamObservedStartAt.getTime()) {
         streamObservedStartAt = timestamp;
       }
     };
@@ -143,7 +122,7 @@ export class SigilVercelAiSdkInstrumentation {
       startedAt: Date;
     }): GenerationRecorder => {
       const model = mapModelFromStepStart(params.stepStartEvent);
-      return mode === "STREAM"
+      return mode === 'STREAM'
         ? this.client.startStreamingGeneration({
             conversationId: params.conversationId,
             agentName: callAgentName,
@@ -155,11 +134,7 @@ export class SigilVercelAiSdkInstrumentation {
               name: model.modelName,
             },
             tags,
-            metadata: buildFrameworkMetadata(
-              mergedCallMetadata,
-              undefined,
-              undefined,
-            ),
+            metadata: buildFrameworkMetadata(mergedCallMetadata, undefined, undefined),
             startedAt: params.startedAt,
           })
         : this.client.startGeneration({
@@ -173,18 +148,11 @@ export class SigilVercelAiSdkInstrumentation {
               name: model.modelName,
             },
             tags,
-            metadata: buildFrameworkMetadata(
-              mergedCallMetadata,
-              undefined,
-              undefined,
-            ),
+            metadata: buildFrameworkMetadata(mergedCallMetadata, undefined, undefined),
             startedAt: params.startedAt,
           });
     };
-    const ensureStepRecorder = (
-      stepState: StepState,
-      conversationId: string,
-    ): GenerationRecorder => {
+    const ensureStepRecorder = (stepState: StepState, conversationId: string): GenerationRecorder => {
       if (stepState.recorder !== undefined) {
         return stepState.recorder;
       }
@@ -211,7 +179,7 @@ export class SigilVercelAiSdkInstrumentation {
 
       const stepState: StepState = {
         recorder:
-          mode === "STREAM" && hasStepStartModelRef(params.stepStartEvent)
+          mode === 'STREAM' && hasStepStartModelRef(params.stepStartEvent)
             ? createGenerationRecorder({
                 stepStartEvent: params.stepStartEvent,
                 conversationId: conversation.conversationId,
@@ -229,7 +197,7 @@ export class SigilVercelAiSdkInstrumentation {
         hasToolCalls: false,
       };
       state.stepStates.set(params.stepNumber, stepState);
-      if (mode === "STREAM") {
+      if (mode === 'STREAM') {
         hasCreatedStreamStepState = true;
       }
       return stepState;
@@ -238,10 +206,7 @@ export class SigilVercelAiSdkInstrumentation {
       eventStepNumber: unknown;
       responseModel: string | undefined;
     }): { stepNumber: number; stepState: StepState } => {
-      const resolvedStepNumber = resolveStepNumberForEvent(
-        state,
-        params.eventStepNumber,
-      );
+      const resolvedStepNumber = resolveStepNumberForEvent(state, params.eventStepNumber);
       if (resolvedStepNumber !== undefined) {
         const resolvedState = state.stepStates.get(resolvedStepNumber);
         if (resolvedState !== undefined) {
@@ -253,25 +218,15 @@ export class SigilVercelAiSdkInstrumentation {
         { stepNumber: params.eventStepNumber },
         state.nextSyntheticStepNumber,
       );
-      state.nextSyntheticStepNumber = Math.max(
-        state.nextSyntheticStepNumber + 1,
-        syntheticStepNumber + 1,
-      );
+      state.nextSyntheticStepNumber = Math.max(state.nextSyntheticStepNumber + 1, syntheticStepNumber + 1);
 
       const syntheticStepStartEvent: StepStartEvent = {
         stepNumber: syntheticStepNumber,
-        model:
-          params.responseModel !== undefined
-            ? { modelId: params.responseModel }
-            : undefined,
+        model: params.responseModel !== undefined ? { modelId: params.responseModel } : undefined,
       };
       const now = new Date();
       const syntheticStartedAt =
-        mode === "STREAM"
-          ? hasCreatedStreamStepState
-            ? now
-            : (streamObservedStartAt ?? callStartedAt)
-          : now;
+        mode === 'STREAM' ? (hasCreatedStreamStepState ? now : (streamObservedStartAt ?? callStartedAt)) : now;
       const syntheticStepState = createStepState({
         stepNumber: syntheticStepNumber,
         stepStartEvent: syntheticStepStartEvent,
@@ -284,10 +239,7 @@ export class SigilVercelAiSdkInstrumentation {
       eventStepNumber: unknown;
       observedAt: Date;
     }): { stepNumber: number; stepState: StepState } => {
-      const resolvedStepNumber = resolveStepNumberForEvent(
-        state,
-        params.eventStepNumber,
-      );
+      const resolvedStepNumber = resolveStepNumberForEvent(state, params.eventStepNumber);
       if (resolvedStepNumber !== undefined) {
         const resolvedState = state.stepStates.get(resolvedStepNumber);
         if (resolvedState !== undefined) {
@@ -299,10 +251,7 @@ export class SigilVercelAiSdkInstrumentation {
         { stepNumber: params.eventStepNumber },
         state.nextSyntheticStepNumber,
       );
-      state.nextSyntheticStepNumber = Math.max(
-        state.nextSyntheticStepNumber + 1,
-        syntheticStepNumber + 1,
-      );
+      state.nextSyntheticStepNumber = Math.max(state.nextSyntheticStepNumber + 1, syntheticStepNumber + 1);
 
       const syntheticStepStartEvent: StepStartEvent = {
         stepNumber: syntheticStepNumber,
@@ -316,7 +265,7 @@ export class SigilVercelAiSdkInstrumentation {
       return { stepNumber: syntheticStepNumber, stepState: syntheticStepState };
     };
     const parseJSONIfPossible = (value: string | undefined): unknown => {
-      if (typeof value !== "string") {
+      if (typeof value !== 'string') {
         return undefined;
       }
       const trimmed = value.trim();
@@ -363,11 +312,11 @@ export class SigilVercelAiSdkInstrumentation {
           continue;
         }
         for (const part of message.parts) {
-          if (part.type === "tool_call") {
+          if (part.type === 'tool_call') {
             toolCalls.push(part.toolCall);
             continue;
           }
-          if (part.type === "tool_result") {
+          if (part.type === 'tool_result') {
             toolResults.push(part.toolResult);
           }
         }
@@ -381,21 +330,13 @@ export class SigilVercelAiSdkInstrumentation {
       conversationId: string;
       output: Message[] | undefined;
     }): Error | undefined => {
-      const { toolCalls, toolResults } = extractToolPartsFromStepOutput(
-        params.output,
-      );
+      const { toolCalls, toolResults } = extractToolPartsFromStepOutput(params.output);
       if (toolResults.length === 0) {
         return undefined;
       }
 
-      const toolCallsByID = new Map<
-        string,
-        { id?: string; name: string; inputJSON?: string }
-      >();
-      const toolCallsByName = new Map<
-        string,
-        Array<{ id?: string; name: string; inputJSON?: string }>
-      >();
+      const toolCallsByID = new Map<string, { id?: string; name: string; inputJSON?: string }>();
+      const toolCallsByName = new Map<string, Array<{ id?: string; name: string; inputJSON?: string }>>();
       for (const toolCall of toolCalls) {
         if (toolCall.id !== undefined) {
           toolCallsByID.set(toolCall.id, toolCall);
@@ -408,16 +349,13 @@ export class SigilVercelAiSdkInstrumentation {
       let firstError: Error | undefined;
       for (const [index, toolResult] of toolResults.entries()) {
         let toolCallID = toolResult.toolCallId;
-        let matchedToolCall =
-          toolCallID !== undefined ? toolCallsByID.get(toolCallID) : undefined;
+        let matchedToolCall = toolCallID !== undefined ? toolCallsByID.get(toolCallID) : undefined;
         if (matchedToolCall === undefined && toolResult.name !== undefined) {
           const matchingByName = toolCallsByName.get(toolResult.name);
           matchedToolCall = matchingByName?.shift();
         }
         if (toolCallID === undefined || toolCallID.length === 0) {
-          toolCallID =
-            matchedToolCall?.id ??
-            `${callID}:step-${params.stepNumber}:tool-${index}`;
+          toolCallID = matchedToolCall?.id ?? `${callID}:step-${params.stepNumber}:tool-${index}`;
         }
 
         if (state.completedToolCallIds.has(toolCallID)) {
@@ -438,14 +376,10 @@ export class SigilVercelAiSdkInstrumentation {
               toolResultPayload.arguments = liveToolState.input;
             }
             if (this.captureOutputs) {
-              toolResultPayload.result =
-                parseJSONIfPossible(toolResult.contentJSON) ??
-                toolResult.content;
+              toolResultPayload.result = parseJSONIfPossible(toolResult.contentJSON) ?? toolResult.content;
             }
             if (toolResult.isError) {
-              liveToolState.recorder.setCallError(
-                toolResult.content ?? new Error("tool call failed"),
-              );
+              liveToolState.recorder.setCallError(toolResult.content ?? new Error('tool call failed'));
             }
             liveToolState.recorder.setResult(toolResultPayload);
           } finally {
@@ -453,11 +387,7 @@ export class SigilVercelAiSdkInstrumentation {
           }
 
           const recorderError = liveToolState.recorder.getError();
-          if (
-            firstError === undefined &&
-            recorderError !== undefined &&
-            !toolResult.isError
-          ) {
+          if (firstError === undefined && recorderError !== undefined && !toolResult.isError) {
             firstError = recorderError;
           }
           state.toolStates.delete(toolCallID);
@@ -467,8 +397,7 @@ export class SigilVercelAiSdkInstrumentation {
           continue;
         }
 
-        const resolvedToolName =
-          toolResult.name ?? matchedToolCall?.name ?? "framework_tool";
+        const resolvedToolName = toolResult.name ?? matchedToolCall?.name ?? 'framework_tool';
         const recorder = this.client.startToolExecution({
           toolName: resolvedToolName,
           toolCallId: toolCallID,
@@ -488,18 +417,13 @@ export class SigilVercelAiSdkInstrumentation {
             completedAt: new Date(),
           };
           if (this.captureInputs) {
-            toolResultPayload.arguments = parseJSONIfPossible(
-              matchedToolCall?.inputJSON,
-            );
+            toolResultPayload.arguments = parseJSONIfPossible(matchedToolCall?.inputJSON);
           }
           if (this.captureOutputs) {
-            toolResultPayload.result =
-              parseJSONIfPossible(toolResult.contentJSON) ?? toolResult.content;
+            toolResultPayload.result = parseJSONIfPossible(toolResult.contentJSON) ?? toolResult.content;
           }
           if (toolResult.isError) {
-            recorder.setCallError(
-              toolResult.content ?? new Error("tool call failed"),
-            );
+            recorder.setCallError(toolResult.content ?? new Error('tool call failed'));
           }
           recorder.setResult(toolResultPayload);
         } finally {
@@ -507,11 +431,7 @@ export class SigilVercelAiSdkInstrumentation {
         }
 
         const recorderError = recorder.getError();
-        if (
-          firstError === undefined &&
-          recorderError !== undefined &&
-          !toolResult.isError
-        ) {
+        if (firstError === undefined && recorderError !== undefined && !toolResult.isError) {
           firstError = recorderError;
         }
         state.completedToolCallIds.add(toolCallID);
@@ -525,17 +445,12 @@ export class SigilVercelAiSdkInstrumentation {
         noteStreamObservedStartAt(new Date());
         const fallbackStep = state.nextSyntheticStepNumber;
         const stepNumber = extractStepNumber(event, fallbackStep);
-        state.nextSyntheticStepNumber = Math.max(
-          state.nextSyntheticStepNumber + 1,
-          stepNumber + 1,
-        );
+        state.nextSyntheticStepNumber = Math.max(state.nextSyntheticStepNumber + 1, stepNumber + 1);
         if (state.stepStates.has(stepNumber)) {
           return;
         }
 
-        const inputMessages = this.captureInputs
-          ? mapInputMessages(event.messages)
-          : [];
+        const inputMessages = this.captureInputs ? mapInputMessages(event.messages) : [];
         createStepState({
           stepNumber,
           stepStartEvent: event,
@@ -550,15 +465,11 @@ export class SigilVercelAiSdkInstrumentation {
           responseModel: response.responseModel,
         });
         const conversation = stepState.conversation;
-        if (
-          stepState.recorder === undefined &&
-          response.responseModel !== undefined
-        ) {
+        if (stepState.recorder === undefined && response.responseModel !== undefined) {
           stepState.stepStartEvent = {
             ...stepState.stepStartEvent,
             model: {
-              ...(stepState.stepStartEvent.model !== null &&
-              typeof stepState.stepStartEvent.model === "object"
+              ...(stepState.stepStartEvent.model !== null && typeof stepState.stepStartEvent.model === 'object'
                 ? stepState.stepStartEvent.model
                 : {}),
               modelId: response.responseModel,
@@ -605,9 +516,7 @@ export class SigilVercelAiSdkInstrumentation {
             completedAt: new Date(),
           });
           if (isError) {
-            recorder.setCallError(
-              event.error ?? new Error("step finished with error"),
-            );
+            recorder.setCallError(event.error ?? new Error('step finished with error'));
           }
         } finally {
           recorder.end();
@@ -623,8 +532,8 @@ export class SigilVercelAiSdkInstrumentation {
         state.stepStates.delete(stepNumber);
         if (stepState.toolCallIds.size > 0) {
           const closeError = isError
-            ? (event.error ?? new Error("parent step failed"))
-            : new Error("tool call did not finish before step completion");
+            ? (event.error ?? new Error('parent step failed'))
+            : new Error('tool call did not finish before step completion');
           closeStepTools(state, stepState, closeError);
         }
         if (recorderError !== undefined) {
@@ -645,14 +554,13 @@ export class SigilVercelAiSdkInstrumentation {
         }
 
         const startedAt = new Date();
-        if (mode === "STREAM") {
+        if (mode === 'STREAM') {
           noteStreamObservedStartAt(startedAt);
         }
-        const { stepNumber, stepState } =
-          resolveOrCreateStepStateForObservedEvent({
-            eventStepNumber: event.stepNumber,
-            observedAt: startedAt,
-          });
+        const { stepNumber, stepState } = resolveOrCreateStepStateForObservedEvent({
+          eventStepNumber: event.stepNumber,
+          observedAt: startedAt,
+        });
 
         const recorder = this.client.startToolExecution({
           toolName: parsed.toolName,
@@ -685,9 +593,7 @@ export class SigilVercelAiSdkInstrumentation {
           return;
         }
         const completedAt =
-          parsed.durationMs !== undefined
-            ? new Date(toolState.startedAt.getTime() + parsed.durationMs)
-            : new Date();
+          parsed.durationMs !== undefined ? new Date(toolState.startedAt.getTime() + parsed.durationMs) : new Date();
 
         try {
           if (parsed.success) {
@@ -706,9 +612,7 @@ export class SigilVercelAiSdkInstrumentation {
             }
             toolState.recorder.setResult(result);
           } else {
-            toolState.recorder.setCallError(
-              parsed.error ?? new Error("tool call failed"),
-            );
+            toolState.recorder.setCallError(parsed.error ?? new Error('tool call failed'));
             toolState.recorder.setResult({ completedAt });
           }
         } finally {
@@ -730,8 +634,7 @@ export class SigilVercelAiSdkInstrumentation {
       const finalizeStreamFailure = (error: unknown): void => {
         const observedAt = new Date();
         const fallbackStreamStartedAt =
-          streamObservedStartAt ??
-          (hasCreatedStreamStepState ? observedAt : callStartedAt);
+          streamObservedStartAt ?? (hasCreatedStreamStepState ? observedAt : callStartedAt);
         noteStreamObservedStartAt(observedAt);
         if (state.stepStates.size === 0) {
           resolveOrCreateStepStateForObservedEvent({
@@ -746,14 +649,10 @@ export class SigilVercelAiSdkInstrumentation {
           let recorder = stepState.recorder;
           if (recorder === undefined) {
             try {
-              recorder = ensureStepRecorder(
-                stepState,
-                stepState.conversation.conversationId,
-              );
+              recorder = ensureStepRecorder(stepState, stepState.conversation.conversationId);
             } catch (error) {
               if (firstError === undefined) {
-                firstError =
-                  error instanceof Error ? error : new Error(String(error));
+                firstError = error instanceof Error ? error : new Error(String(error));
               }
               if (stepState.toolCallIds.size > 0) {
                 closeStepTools(state, stepState, error);
@@ -825,7 +724,7 @@ export class SigilVercelAiSdkInstrumentation {
 }
 
 function unwrapStreamError(event: unknown): unknown {
-  if (event === null || typeof event !== "object" || !("error" in event)) {
+  if (event === null || typeof event !== 'object' || !('error' in event)) {
     return event;
   }
   return (event as { error?: unknown }).error;
@@ -834,23 +733,19 @@ function unwrapStreamError(event: unknown): unknown {
 function unwrapStreamAbortError(event: unknown): unknown {
   const unwrapped = unwrapStreamError(event);
   if (unwrapped === undefined || unwrapped === null) {
-    return new Error("stream aborted");
+    return new Error('stream aborted');
   }
   if (unwrapped instanceof Error) {
     return unwrapped;
   }
-  if (typeof unwrapped === "string") {
+  if (typeof unwrapped === 'string') {
     const trimmed = unwrapped.trim();
-    return new Error(trimmed.length > 0 ? trimmed : "stream aborted");
+    return new Error(trimmed.length > 0 ? trimmed : 'stream aborted');
   }
-  return new Error("stream aborted");
+  return new Error('stream aborted');
 }
 
-function closeStepTools(
-  state: CallState,
-  stepState: StepState,
-  error: unknown,
-): void {
+function closeStepTools(state: CallState, stepState: StepState, error: unknown): void {
   for (const toolCallId of stepState.toolCallIds) {
     const toolState = state.toolStates.get(toolCallId);
     if (toolState === undefined) {
@@ -882,10 +777,7 @@ function closeAllTools(state: CallState, error: unknown): void {
   }
 }
 
-function resolveStepNumberForEvent(
-  state: CallState,
-  eventStepNumber: unknown,
-): number | undefined {
+function resolveStepNumberForEvent(state: CallState, eventStepNumber: unknown): number | undefined {
   const parsed = parseOptionalStepNumber(eventStepNumber);
   if (parsed !== undefined) {
     if (state.stepStates.has(parsed)) {
@@ -903,13 +795,13 @@ function resolveStepNumberForEvent(
 }
 
 function parseOptionalStepNumber(value: unknown): number | undefined {
-  if (typeof value === "number") {
+  if (typeof value === 'number') {
     if (!Number.isFinite(value) || value < 0) {
       return undefined;
     }
     return Math.trunc(value);
   }
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     const trimmed = value.trim();
     if (trimmed.length === 0) {
       return undefined;
@@ -925,25 +817,19 @@ function parseOptionalStepNumber(value: unknown): number | undefined {
 
 function hasStepStartModelRef(event: StepStartEvent): boolean {
   const model = event.model;
-  if (model === null || typeof model !== "object") {
+  if (model === null || typeof model !== 'object') {
     return false;
   }
   const modelRef = model as Record<string, unknown>;
-  return (
-    hasNonEmptyString(modelRef.modelId) ||
-    hasNonEmptyString(modelRef.id) ||
-    hasNonEmptyString(modelRef.name)
-  );
+  return hasNonEmptyString(modelRef.modelId) || hasNonEmptyString(modelRef.id) || hasNonEmptyString(modelRef.name);
 }
 
 function hasNonEmptyString(value: unknown): boolean {
-  return typeof value === "string" && value.trim().length > 0;
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
-function normalizeOptionalString(
-  value: string | undefined,
-): string | undefined {
-  if (typeof value !== "string") {
+function normalizeOptionalString(value: string | undefined): string | undefined {
+  if (typeof value !== 'string') {
     return undefined;
   }
   const trimmed = value.trim();

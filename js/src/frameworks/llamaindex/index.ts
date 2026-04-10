@@ -1,7 +1,7 @@
 import { CallbackManager } from 'llamaindex';
 
 import type { SigilClient } from '../../client.js';
-import { SigilFrameworkHandler, type FrameworkHandlerOptions } from '../shared.js';
+import { type FrameworkHandlerOptions, SigilFrameworkHandler } from '../shared.js';
 
 export type { FrameworkHandlerOptions };
 
@@ -43,7 +43,7 @@ export class SigilLlamaIndexHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onLLMStart(serialized, prompts, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -56,7 +56,7 @@ export class SigilLlamaIndexHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChatModelStart(serialized, messages, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -80,7 +80,7 @@ export class SigilLlamaIndexHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onToolStart(serialized, input, runId, parentRunId, tags, metadata, runName);
   }
@@ -101,7 +101,7 @@ export class SigilLlamaIndexHandler extends SigilFrameworkHandler {
     tags?: string[],
     metadata?: Record<string, unknown>,
     runType?: string,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChainStart(serialized, runId, parentRunId, tags, metadata, runType, runName);
   }
@@ -121,7 +121,7 @@ export class SigilLlamaIndexHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onRetrieverStart(serialized, runId, parentRunId, tags, metadata, runName);
   }
@@ -137,7 +137,7 @@ export class SigilLlamaIndexHandler extends SigilFrameworkHandler {
 
 export function createSigilLlamaIndexHandler(
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): SigilLlamaIndexHandler {
   return new SigilLlamaIndexHandler(client, options);
 }
@@ -145,7 +145,7 @@ export function createSigilLlamaIndexHandler(
 export function attachSigilLlamaIndexCallbacks(
   callbackManager: LlamaIndexCallbackManager,
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): LlamaIndexCallbackRegistration {
   const existing = registrations.get(callbackManager);
   if (existing !== undefined) {
@@ -187,7 +187,7 @@ export function attachSigilLlamaIndexCallbacks(
         },
         undefined,
         buildMetadata(event, detail),
-        'llamaindex.llm'
+        'llamaindex.llm',
       );
     });
   };
@@ -196,9 +196,10 @@ export function attachSigilLlamaIndexCallbacks(
     safelyRun(async () => {
       const detail = asRecord(event.detail);
       const eventId = resolveEventId(detail);
-      const runId = eventId.length > 0
-        ? llmRunIds.get(eventId) ?? `llama_llm:${eventId}`
-        : llmFallbackRunIds[llmFallbackRunIds.length - 1];
+      const runId =
+        eventId.length > 0
+          ? (llmRunIds.get(eventId) ?? `llama_llm:${eventId}`)
+          : llmFallbackRunIds[llmFallbackRunIds.length - 1];
       if (runId === undefined) {
         return;
       }
@@ -214,9 +215,7 @@ export function attachSigilLlamaIndexCallbacks(
     safelyRun(async () => {
       const detail = asRecord(event.detail);
       const eventId = resolveEventId(detail);
-      const runId = eventId.length > 0
-        ? llmRunIds.get(eventId) ?? `llama_llm:${eventId}`
-        : llmFallbackRunIds.pop();
+      const runId = eventId.length > 0 ? (llmRunIds.get(eventId) ?? `llama_llm:${eventId}`) : llmFallbackRunIds.pop();
       if (runId === undefined) {
         return;
       }
@@ -242,7 +241,7 @@ export function attachSigilLlamaIndexCallbacks(
             token_usage: usage,
           },
         },
-        runId
+        runId,
       );
     });
   };
@@ -251,9 +250,7 @@ export function attachSigilLlamaIndexCallbacks(
     safelyRun(async () => {
       const detail = asRecord(event.detail);
       const eventId = resolveEventId(detail);
-      const runId = eventId.length > 0
-        ? llmRunIds.get(eventId) ?? `llama_llm:${eventId}`
-        : llmFallbackRunIds.pop();
+      const runId = eventId.length > 0 ? (llmRunIds.get(eventId) ?? `llama_llm:${eventId}`) : llmFallbackRunIds.pop();
       if (runId === undefined) {
         return;
       }
@@ -286,7 +283,7 @@ export function attachSigilLlamaIndexCallbacks(
         undefined,
         undefined,
         buildMetadata(event, detail, { event_id: callId }),
-        toolName
+        toolName,
       );
     });
   };
@@ -314,7 +311,7 @@ export function attachSigilLlamaIndexCallbacks(
         runType: 'query',
         name: 'llamaindex.query',
         queryField: 'query',
-      })
+      }),
     );
   };
 
@@ -329,7 +326,7 @@ export function attachSigilLlamaIndexCallbacks(
         runType: 'synthesize',
         name: 'llamaindex.synthesize',
         queryField: 'query',
-      })
+      }),
     );
   };
 
@@ -353,7 +350,7 @@ export function attachSigilLlamaIndexCallbacks(
         undefined,
         undefined,
         buildMetadata(event, detail),
-        'llamaindex.retrieve'
+        'llamaindex.retrieve',
       );
     });
   };
@@ -376,7 +373,7 @@ export function attachSigilLlamaIndexCallbacks(
         runType: 'agent',
         name: 'llamaindex.agent',
         idPath: ['startStep', 'id'],
-      })
+      }),
     );
   };
 
@@ -426,7 +423,7 @@ export function attachSigilLlamaIndexCallbacks(
 export function withSigilLlamaIndexCallbacks<T extends CallbackConfig>(
   config: T | undefined,
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): T & { callbackManager: LlamaIndexCallbackManager } {
   const base = { ...(config ?? {}) } as CallbackConfig;
   const existingManager = base.callbackManager;
@@ -459,7 +456,7 @@ type ChainStartConfig = {
 async function runChainStart(
   handler: SigilLlamaIndexHandler,
   event: LlamaIndexEvent,
-  config: ChainStartConfig
+  config: ChainStartConfig,
 ): Promise<void> {
   const detail = asRecord(event.detail);
   const eventId = resolveEventId(detail, config.idPath);
@@ -483,7 +480,7 @@ async function runChainEnd(
   handler: SigilLlamaIndexHandler,
   event: LlamaIndexEvent,
   runPrefix: string,
-  idPath?: string[]
+  idPath?: string[],
 ): Promise<void> {
   const detail = asRecord(event.detail);
   const eventId = resolveEventId(detail, idPath);
@@ -494,11 +491,7 @@ async function runChainEnd(
   await handler.handleChainEnd(undefined, `${runPrefix}:${eventId}`);
 }
 
-function buildMetadata(
-  event: LlamaIndexEvent,
-  detail: AnyRecord | undefined,
-  extras?: AnyRecord
-): AnyRecord {
+function buildMetadata(event: LlamaIndexEvent, detail: AnyRecord | undefined, extras?: AnyRecord): AnyRecord {
   const eventId = resolveEventId(detail);
   const conversationId = resolveConversationId(detail);
 
@@ -583,10 +576,11 @@ function resolveModelName(response: AnyRecord | undefined): string {
 
 function resolveStopReason(response: AnyRecord | undefined): string | undefined {
   const raw = read(response, 'raw');
-  const finishReason = asString(read(response, 'finish_reason'))
-    || asString(read(response, 'finishReason'))
-    || asString(read(raw, 'finish_reason'))
-    || asString(read(raw, 'finishReason'));
+  const finishReason =
+    asString(read(response, 'finish_reason')) ||
+    asString(read(response, 'finishReason')) ||
+    asString(read(raw, 'finish_reason')) ||
+    asString(read(raw, 'finishReason'));
   return finishReason.length > 0 ? finishReason : undefined;
 }
 
@@ -598,8 +592,7 @@ function resolveUsage(response: AnyRecord | undefined): AnyRecord | undefined {
   }
 
   const promptTokens = asNumber(read(usage, 'prompt_tokens')) ?? asNumber(read(usage, 'promptTokens'));
-  const completionTokens = asNumber(read(usage, 'completion_tokens'))
-    ?? asNumber(read(usage, 'completionTokens'));
+  const completionTokens = asNumber(read(usage, 'completion_tokens')) ?? asNumber(read(usage, 'completionTokens'));
   const totalTokens = asNumber(read(usage, 'total_tokens')) ?? asNumber(read(usage, 'totalTokens'));
 
   if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {

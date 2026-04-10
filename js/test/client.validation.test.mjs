@@ -46,7 +46,10 @@ test('validation rejects tool_call part for user role and reports input path', a
     });
     recorder.end();
 
-    assert.match(recorder.getError()?.message ?? '', /generation\.input\[0\].parts\[0\].tool_call only allowed for assistant role/);
+    assert.match(
+      recorder.getError()?.message ?? '',
+      /generation\.input\[0\].parts\[0\].tool_call only allowed for assistant role/,
+    );
     await client.flush();
     assert.equal(exporter.requests.length, 0);
   } finally {
@@ -84,7 +87,10 @@ test('validation rejects tool_result part for assistant role', async () => {
     });
     recorder.end();
 
-    assert.match(recorder.getError()?.message ?? '', /generation\.input\[0\].parts\[0\].tool_result only allowed for tool role/);
+    assert.match(
+      recorder.getError()?.message ?? '',
+      /generation\.input\[0\].parts\[0\].tool_result only allowed for tool role/,
+    );
     await client.flush();
     assert.equal(exporter.requests.length, 0);
   } finally {
@@ -119,7 +125,10 @@ test('validation rejects thinking part for non-assistant roles and reports outpu
     });
     recorder.end();
 
-    assert.match(recorder.getError()?.message ?? '', /generation\.output\[0\].parts\[0\].thinking only allowed for assistant role/);
+    assert.match(
+      recorder.getError()?.message ?? '',
+      /generation\.output\[0\].parts\[0\].thinking only allowed for assistant role/,
+    );
     await client.flush();
     assert.equal(exporter.requests.length, 0);
   } finally {

@@ -35,7 +35,7 @@ test('submitConversationRating sends HTTP request and maps response', async () =
           latest_rated_at: '2026-02-13T12:00:00Z',
           has_bad_rating: true,
         },
-      })
+      }),
     );
   });
   await listen(server);
@@ -104,7 +104,7 @@ test('submitConversationRating maps 409 to conflict error', async () => {
           ratingId: 'rat-1',
           rating: 'CONVERSATION_RATING_VALUE_GOOD',
         }),
-      /conversation rating conflict/
+      /conversation rating conflict/,
     );
   } finally {
     await client.shutdown();
@@ -124,7 +124,7 @@ test('submitConversationRating validates required input', async () => {
           ratingId: '',
           rating: 'CONVERSATION_RATING_VALUE_GOOD',
         }),
-      /validation failed: ratingId is required/
+      /validation failed: ratingId is required/,
     );
   } finally {
     await client.shutdown();
@@ -156,7 +156,7 @@ test('submitConversationRating applies bearer auth header from config', async ()
           latest_rated_at: '2026-02-13T12:00:00Z',
           has_bad_rating: false,
         },
-      })
+      }),
     );
   });
   await listen(server);

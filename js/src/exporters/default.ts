@@ -16,7 +16,9 @@ export function createDefaultGenerationExporter(config: GenerationExportConfig):
     case 'none':
       return new NoopGenerationExporter();
     default:
-      return new UnavailableGenerationExporter(new Error(`unsupported generation export protocol: ${config.protocol as string}`));
+      return new UnavailableGenerationExporter(
+        new Error(`unsupported generation export protocol: ${config.protocol as string}`),
+      );
   }
 }
 

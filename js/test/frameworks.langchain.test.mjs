@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 import { SigilLangChainHandler } from '../.test-dist/frameworks/langchain/index.js';
+import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 class CapturingExporter {
   requests = [];
@@ -39,7 +39,7 @@ test('langchain handler records sync lifecycle with framework tags', async () =>
       'parent-run-sync',
       { invocation_params: { model: 'gpt-5', retry_attempt: 2 } },
       ['prod', 'blue'],
-      { thread_id: 'chain-thread-42' }
+      { thread_id: 'chain-thread-42' },
     );
     await handler.handleLLMEnd(
       {
@@ -54,7 +54,7 @@ test('langchain handler records sync lifecycle with framework tags', async () =>
           },
         },
       },
-      'run-sync'
+      'run-sync',
     );
   });
 
@@ -85,13 +85,9 @@ test('langchain handler records stream mode and token fallback output', async ()
   const generation = await captureSingleGeneration(async (client) => {
     const handler = new SigilLangChainHandler(client);
 
-    await handler.handleLLMStart(
-      { kwargs: { model: 'claude-sonnet-4-5' } },
-      ['stream this'],
-      'run-stream',
-      undefined,
-      { invocation_params: { model: 'claude-sonnet-4-5', stream: true } }
-    );
+    await handler.handleLLMStart({ kwargs: { model: 'claude-sonnet-4-5' } }, ['stream this'], 'run-stream', undefined, {
+      invocation_params: { model: 'claude-sonnet-4-5', stream: true },
+    });
     await handler.handleLLMNewToken('hello', undefined, 'run-stream');
     await handler.handleLLMNewToken(' world', undefined, 'run-stream');
     await handler.handleLLMEnd({ llm_output: { model_name: 'claude-sonnet-4-5' } }, 'run-stream');
@@ -115,13 +111,9 @@ test('langchain handler records first token timestamp once per run', async () =>
 
   try {
     const handler = new SigilLangChainHandler(client);
-    await handler.handleLLMStart(
-      { kwargs: { model: 'gpt-5' } },
-      ['stream this'],
-      'run-ttft',
-      undefined,
-      { invocation_params: { model: 'gpt-5', stream: true } }
-    );
+    await handler.handleLLMStart({ kwargs: { model: 'gpt-5' } }, ['stream this'], 'run-ttft', undefined, {
+      invocation_params: { model: 'gpt-5', stream: true },
+    });
 
     const runState = handler.runs.get('run-ttft');
     assert.ok(runState);
@@ -181,14 +173,14 @@ test('langchain generation span tracks active parent span and preserves export l
       'parent-run-lineage',
       { invocation_params: { model: 'gpt-5' } },
       ['prod'],
-      { thread_id: 'chain-thread-lineage-42' }
+      { thread_id: 'chain-thread-lineage-42' },
     );
     await handler.handleLLMEnd(
       {
         generations: [[{ text: 'world' }]],
         llm_output: { model_name: 'gpt-5', finish_reason: 'stop' },
       },
-      'run-lineage'
+      'run-lineage',
     );
     parentSpan.end();
 
@@ -212,21 +204,30 @@ test('langchain generation span tracks active parent span and preserves export l
 test('langchain provider mapping covers openai anthopic gemini and fallback', async () => {
   const providers = [];
 
-  await captureGenerations(async (client) => {
-    const handler = new SigilLangChainHandler(client);
+  await captureGenerations(
+    async (client) => {
+      const handler = new SigilLangChainHandler(client);
 
-    await handler.handleLLMStart({}, ['x'], 'run-openai', undefined, { invocation_params: { model: 'gpt-5' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-openai');
+      await handler.handleLLMStart({}, ['x'], 'run-openai', undefined, { invocation_params: { model: 'gpt-5' } });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-openai');
 
-    await handler.handleLLMStart({}, ['x'], 'run-anthropic', undefined, { invocation_params: { model: 'claude-sonnet-4-5' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-anthropic');
+      await handler.handleLLMStart({}, ['x'], 'run-anthropic', undefined, {
+        invocation_params: { model: 'claude-sonnet-4-5' },
+      });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-anthropic');
 
-    await handler.handleLLMStart({}, ['x'], 'run-gemini', undefined, { invocation_params: { model: 'gemini-2.5-pro' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-gemini');
+      await handler.handleLLMStart({}, ['x'], 'run-gemini', undefined, {
+        invocation_params: { model: 'gemini-2.5-pro' },
+      });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-gemini');
 
-    await handler.handleLLMStart({}, ['x'], 'run-custom', undefined, { invocation_params: { model: 'mistral-large' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-custom');
-  }, (generation) => providers.push(generation.model.provider));
+      await handler.handleLLMStart({}, ['x'], 'run-custom', undefined, {
+        invocation_params: { model: 'mistral-large' },
+      });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-custom');
+    },
+    (generation) => providers.push(generation.model.provider),
+  );
 
   assert.deepEqual(providers, ['openai', 'anthropic', 'gemini', 'custom']);
 });
@@ -281,7 +282,7 @@ test('langchain handler maps tool callbacks and emits chain/retriever spans', as
       'tool-run',
       'parent-run',
       ['tools'],
-      { thread_id: 'chain-thread-42' }
+      { thread_id: 'chain-thread-42' },
     );
     await handler.handleToolEnd({ temp_c: 18 }, 'tool-run');
 
@@ -292,7 +293,7 @@ test('langchain handler maps tool callbacks and emits chain/retriever spans', as
       'parent-run',
       ['workflow'],
       { thread_id: 'chain-thread-42' },
-      'chain'
+      'chain',
     );
     await handler.handleChainEnd({}, 'chain-run');
 
@@ -302,7 +303,7 @@ test('langchain handler maps tool callbacks and emits chain/retriever spans', as
       'retriever-run',
       'parent-run',
       ['retriever'],
-      { thread_id: 'chain-thread-42' }
+      { thread_id: 'chain-thread-42' },
     );
     await handler.handleRetrieverError(new Error('retriever failed'), 'retriever-run');
 

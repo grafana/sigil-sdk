@@ -1,5 +1,5 @@
 import type { SigilClient } from '../../client.js';
-import { SigilFrameworkHandler, type FrameworkHandlerOptions } from '../shared.js';
+import { type FrameworkHandlerOptions, SigilFrameworkHandler } from '../shared.js';
 
 export type { FrameworkHandlerOptions };
 
@@ -69,22 +69,11 @@ type GoogleAdkPlugin = {
     invocationContext: GoogleAdkInvocationContext;
     userMessage: unknown;
   }): Promise<unknown>;
-  beforeRunCallback(params: {
-    invocationContext: GoogleAdkInvocationContext;
-  }): Promise<unknown>;
-  onEventCallback(params: {
-    invocationContext: GoogleAdkInvocationContext;
-    event: GoogleAdkEvent;
-  }): Promise<unknown>;
-  afterRunCallback(params: {
-    invocationContext: GoogleAdkInvocationContext;
-  }): Promise<void>;
-  beforeAgentCallback(params: {
-    callbackContext: GoogleAdkCallbackContext;
-  }): Promise<unknown>;
-  afterAgentCallback(params: {
-    callbackContext: GoogleAdkCallbackContext;
-  }): Promise<unknown>;
+  beforeRunCallback(params: { invocationContext: GoogleAdkInvocationContext }): Promise<unknown>;
+  onEventCallback(params: { invocationContext: GoogleAdkInvocationContext; event: GoogleAdkEvent }): Promise<unknown>;
+  afterRunCallback(params: { invocationContext: GoogleAdkInvocationContext }): Promise<void>;
+  beforeAgentCallback(params: { callbackContext: GoogleAdkCallbackContext }): Promise<unknown>;
+  afterAgentCallback(params: { callbackContext: GoogleAdkCallbackContext }): Promise<unknown>;
   beforeModelCallback(params: {
     callbackContext: GoogleAdkCallbackContext;
     llmRequest: GoogleAdkLlmRequest;
@@ -135,7 +124,7 @@ export class SigilGoogleAdkHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onLLMStart(serialized, prompts, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -148,7 +137,7 @@ export class SigilGoogleAdkHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChatModelStart(serialized, messages, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -172,7 +161,7 @@ export class SigilGoogleAdkHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onToolStart(serialized, input, runId, parentRunId, tags, metadata, runName);
   }
@@ -193,7 +182,7 @@ export class SigilGoogleAdkHandler extends SigilFrameworkHandler {
     tags?: string[],
     metadata?: Record<string, unknown>,
     runType?: string,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChainStart(serialized, runId, parentRunId, tags, metadata, runType, runName);
   }
@@ -213,7 +202,7 @@ export class SigilGoogleAdkHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onRetrieverStart(serialized, runId, parentRunId, tags, metadata, runName);
   }
@@ -258,9 +247,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     return undefined;
   }
 
-  async beforeRunCallback(params: {
-    invocationContext: GoogleAdkInvocationContext;
-  }): Promise<undefined> {
+  async beforeRunCallback(params: { invocationContext: GoogleAdkInvocationContext }): Promise<undefined> {
     const invocationContext = params.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext);
     const runId = `adk_invocation:${invocationId}`;
@@ -274,7 +261,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
       undefined,
       this.metadataFromInvocation(invocationContext),
       'invocation',
-      this.resolveAgentName(invocationContext)
+      this.resolveAgentName(invocationContext),
     );
 
     return undefined;
@@ -308,9 +295,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     return undefined;
   }
 
-  async afterRunCallback(params: {
-    invocationContext: GoogleAdkInvocationContext;
-  }): Promise<void> {
+  async afterRunCallback(params: { invocationContext: GoogleAdkInvocationContext }): Promise<void> {
     const invocationId = this.resolveInvocationId(params.invocationContext);
     const runId = this.invocationRunIds.get(invocationId);
     if (runId !== undefined) {
@@ -327,9 +312,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     this.pendingUserMessages.delete(invocationId);
   }
 
-  async beforeAgentCallback(params: {
-    callbackContext: GoogleAdkCallbackContext;
-  }): Promise<undefined> {
+  async beforeAgentCallback(params: { callbackContext: GoogleAdkCallbackContext }): Promise<undefined> {
     const callbackContext = params.callbackContext;
     const invocationContext = callbackContext.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext, callbackContext);
@@ -348,14 +331,12 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
       undefined,
       this.metadataFromInvocation(invocationContext, callbackContext),
       'agent',
-      agentName
+      agentName,
     );
     return undefined;
   }
 
-  async afterAgentCallback(params: {
-    callbackContext: GoogleAdkCallbackContext;
-  }): Promise<undefined> {
+  async afterAgentCallback(params: { callbackContext: GoogleAdkCallbackContext }): Promise<undefined> {
     const callbackContext = params.callbackContext;
     const invocationContext = callbackContext.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext, callbackContext);
@@ -383,11 +364,12 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     const llmRunId = `adk_llm:${invocationId}:${++this.sequence}`;
     const modelRunStack = this.llmRunStacks.get(invocationId) ?? [];
     const agentRunStack = this.agentRunStacks.get(invocationId) ?? [];
-    const parentRunId = modelRunStack.length > 0
-      ? modelRunStack[modelRunStack.length - 1]
-      : agentRunStack.length > 0
-        ? agentRunStack[agentRunStack.length - 1]
-        : this.invocationRunIds.get(invocationId);
+    const parentRunId =
+      modelRunStack.length > 0
+        ? modelRunStack[modelRunStack.length - 1]
+        : agentRunStack.length > 0
+          ? agentRunStack[agentRunStack.length - 1]
+          : this.invocationRunIds.get(invocationId);
     modelRunStack.push(llmRunId);
     this.llmRunStacks.set(invocationId, modelRunStack);
 
@@ -414,7 +396,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
       },
       undefined,
       this.metadataFromInvocation(invocationContext, callbackContext),
-      agentName
+      agentName,
     );
 
     return undefined;
@@ -433,8 +415,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     }
 
     const text = extractContentText(params.llmResponse?.content);
-    const isPartial = asBoolean(params.llmResponse?.partial)
-      || params.llmResponse?.turnComplete === false;
+    const isPartial = asBoolean(params.llmResponse?.partial) || params.llmResponse?.turnComplete === false;
 
     if (isPartial) {
       if (text.length > 0 && this.llmTokenSources.get(llmRunId) !== 'event') {
@@ -451,9 +432,10 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     const output = {
       generations: text.length > 0 ? [[{ text }]] : [],
       llm_output: {
-        model_name: asString(params.llmResponse?.customMetadata?.model)
-          || asString(params.llmResponse?.customMetadata?.model_name)
-          || undefined,
+        model_name:
+          asString(params.llmResponse?.customMetadata?.model) ||
+          asString(params.llmResponse?.customMetadata?.model_name) ||
+          undefined,
         finish_reason: asString(params.llmResponse?.finishReason) || undefined,
         token_usage: {
           prompt_tokens: asNumber(usageMetadata?.promptTokenCount),
@@ -467,10 +449,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     return params.llmResponse;
   }
 
-  async onModelErrorCallback(params: {
-    callbackContext: GoogleAdkCallbackContext;
-    error: Error;
-  }): Promise<undefined> {
+  async onModelErrorCallback(params: { callbackContext: GoogleAdkCallbackContext; error: Error }): Promise<undefined> {
     const callbackContext = params.callbackContext;
     const invocationContext = callbackContext.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext, callbackContext);
@@ -491,9 +470,8 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     const invocationContext = toolContext.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext, toolContext);
     const callId = asString(toolContext.functionCallId);
-    const runId = callId.length > 0
-      ? `adk_tool:${invocationId}:${callId}`
-      : `adk_tool:${invocationId}:${++this.sequence}`;
+    const runId =
+      callId.length > 0 ? `adk_tool:${invocationId}:${callId}` : `adk_tool:${invocationId}:${++this.sequence}`;
     if (callId.length > 0) {
       this.toolRunIds.set(`${invocationId}:${callId}`, runId);
     } else {
@@ -514,16 +492,13 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
       this.metadataFromInvocation(invocationContext, toolContext, {
         event_id: callId,
       }),
-      asString(params.tool?.name)
+      asString(params.tool?.name),
     );
 
     return undefined;
   }
 
-  async afterToolCallback(params: {
-    toolContext: GoogleAdkToolContext;
-    result: unknown;
-  }): Promise<unknown> {
+  async afterToolCallback(params: { toolContext: GoogleAdkToolContext; result: unknown }): Promise<unknown> {
     const toolContext = params.toolContext;
     const invocationContext = toolContext.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext, toolContext);
@@ -547,10 +522,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
     return params.result;
   }
 
-  async onToolErrorCallback(params: {
-    toolContext: GoogleAdkToolContext;
-    error: Error;
-  }): Promise<undefined> {
+  async onToolErrorCallback(params: { toolContext: GoogleAdkToolContext; error: Error }): Promise<undefined> {
     const toolContext = params.toolContext;
     const invocationContext = toolContext.invocationContext;
     const invocationId = this.resolveInvocationId(invocationContext, toolContext);
@@ -576,10 +548,9 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
 
   private resolveInvocationId(
     invocationContext?: GoogleAdkInvocationContext,
-    fallbackContext?: GoogleAdkCallbackContext | GoogleAdkToolContext
+    fallbackContext?: GoogleAdkCallbackContext | GoogleAdkToolContext,
   ): string {
-    const explicit = asString(invocationContext?.invocationId)
-      || asString(fallbackContext?.invocationId);
+    const explicit = asString(invocationContext?.invocationId) || asString(fallbackContext?.invocationId);
     if (explicit.length > 0) {
       return explicit;
     }
@@ -599,7 +570,7 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
 
   private resolveStableInvocationContext(
     invocationContext?: GoogleAdkInvocationContext,
-    fallbackContext?: GoogleAdkCallbackContext | GoogleAdkToolContext
+    fallbackContext?: GoogleAdkCallbackContext | GoogleAdkToolContext,
   ): object | undefined {
     if (isRecord(invocationContext)) {
       return invocationContext;
@@ -615,16 +586,15 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
 
   private resolveAgentName(
     invocationContext?: GoogleAdkInvocationContext,
-    callbackContext?: GoogleAdkCallbackContext
+    callbackContext?: GoogleAdkCallbackContext,
   ): string {
-    return asString(callbackContext?.agentName)
-      || asString(invocationContext?.agent?.name);
+    return asString(callbackContext?.agentName) || asString(invocationContext?.agent?.name);
   }
 
   private metadataFromInvocation(
     invocationContext?: GoogleAdkInvocationContext,
     callbackContext?: GoogleAdkCallbackContext | GoogleAdkToolContext,
-    extra?: AnyRecord
+    extra?: AnyRecord,
   ): AnyRecord {
     return {
       session_id: asString(invocationContext?.session?.id),
@@ -661,14 +631,14 @@ class SigilGoogleAdkPlugin implements GoogleAdkPlugin {
 
 export function createSigilGoogleAdkHandler(
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): SigilGoogleAdkHandler {
   return new SigilGoogleAdkHandler(client, options);
 }
 
 export function createSigilGoogleAdkPlugin(
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): GoogleAdkPlugin {
   return new SigilGoogleAdkPlugin(client, options);
 }
@@ -676,7 +646,7 @@ export function createSigilGoogleAdkPlugin(
 export function withSigilGoogleAdkPlugins<T extends PluginConfig>(
   config: T | undefined,
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): T & { plugins: unknown[] } {
   const plugin = createSigilGoogleAdkPlugin(client, options);
   const base = { ...(config ?? {}) } as PluginConfig;
@@ -728,9 +698,8 @@ function mapAdkUserMessage(userMessage: unknown): Array<{ role: string; content:
   }
   if (isRecord(userMessage)) {
     const role = asString(read(userMessage, 'role')) || 'user';
-    const content = extractContentText(userMessage)
-      || asString(read(userMessage, 'text'))
-      || asString(read(userMessage, 'content'));
+    const content =
+      extractContentText(userMessage) || asString(read(userMessage, 'text')) || asString(read(userMessage, 'content'));
     if (content.length > 0) {
       return [{ role, content }];
     }
@@ -743,7 +712,7 @@ function mapAdkUserMessage(userMessage: unknown): Array<{ role: string; content:
 
 function mergeAdkUserMessages(
   requestMessages: Array<{ role: string; content: string }>,
-  pendingMessages: Array<{ role: string; content: string }>
+  pendingMessages: Array<{ role: string; content: string }>,
 ): Array<{ role: string; content: string }> {
   if (requestMessages.length === 0) {
     return pendingMessages;
@@ -757,7 +726,7 @@ function mergeAdkUserMessages(
     return pendingMessages;
   }
   const duplicate = pendingMessages.some(
-    (message) => message.role === firstRequest.role && message.content === firstRequest.content
+    (message) => message.role === firstRequest.role && message.content === firstRequest.content,
   );
   if (duplicate) {
     return requestMessages;
@@ -767,18 +736,19 @@ function mergeAdkUserMessages(
 
 function resolveRequestStream(
   llmRequest: GoogleAdkLlmRequest | undefined,
-  invocationContext: GoogleAdkInvocationContext | undefined
+  invocationContext: GoogleAdkInvocationContext | undefined,
 ): boolean {
   const config = isRecord(llmRequest?.config) ? llmRequest?.config : undefined;
   const generationConfig = isRecord(read(config, 'generationConfig')) ? read(config, 'generationConfig') : undefined;
-  const stream = read(llmRequest, 'stream')
-    ?? read(llmRequest, 'streaming')
-    ?? read(config, 'stream')
-    ?? read(config, 'streaming')
-    ?? read(generationConfig, 'stream')
-    ?? read(generationConfig, 'streaming')
-    ?? read(invocationContext, 'stream')
-    ?? read(invocationContext, 'streaming');
+  const stream =
+    read(llmRequest, 'stream') ??
+    read(llmRequest, 'streaming') ??
+    read(config, 'stream') ??
+    read(config, 'streaming') ??
+    read(generationConfig, 'stream') ??
+    read(generationConfig, 'streaming') ??
+    read(invocationContext, 'stream') ??
+    read(invocationContext, 'streaming');
   return asBoolean(stream);
 }
 
@@ -786,12 +756,14 @@ function extractEventText(event: GoogleAdkEvent | undefined): string {
   if (!event) {
     return '';
   }
-  return extractContentText(event.content)
-    || extractContentText(event.partial)
-    || asString(event.text)
-    || asString(event.delta)
-    || asString(read(event.content, 'text'))
-    || asString(read(event.partial, 'text'));
+  return (
+    extractContentText(event.content) ||
+    extractContentText(event.partial) ||
+    asString(event.text) ||
+    asString(event.delta) ||
+    asString(read(event.content, 'text')) ||
+    asString(read(event.partial, 'text'))
+  );
 }
 
 function extractContentText(content: unknown): string {

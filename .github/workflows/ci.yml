@@ -56,7 +56,17 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Setup mise
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          install: true
+          install_args: biome
+          cache: true
+
       - run: pnpm install
+
+      - name: Lint
+        run: mise run lint:ts:sdk-js
 
       - name: Typecheck
         run: pnpm --filter @grafana/sigil-sdk-js run typecheck

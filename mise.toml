@@ -1,3 +1,6 @@
+[tools]
+biome = "2.4.11"
+
 [env]
 PYTHON_BIN = "python3"
 
@@ -24,9 +27,14 @@ done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; 
 description = "Format .NET SDK code"
 run = "dotnet format dotnet/Sigil.DotNet.sln"
 
+[tasks."format:ts:sdk-js"]
+description = "Format TypeScript/JavaScript SDK code"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-sdk-js run lint:fix"
+
 [tasks.format]
 description = "Format all code"
-depends = ["format:go", "format:cs"]
+depends = ["format:go", "format:cs", "format:ts:sdk-js"]
 
 # --- Linting ---
 
@@ -49,9 +57,14 @@ done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; 
 description = "Verify .NET SDK formatting and analyzer checks"
 run = "dotnet format dotnet/Sigil.DotNet.sln --verify-no-changes"
 
+[tasks."lint:ts:sdk-js"]
+description = "Lint TypeScript/JavaScript SDK code"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-sdk-js run lint"
+
 [tasks.lint]
 description = "Run all linting"
-depends = ["lint:go", "lint:cs"]
+depends = ["lint:go", "lint:cs", "lint:ts:sdk-js"]
 
 # --- Type checking ---
 

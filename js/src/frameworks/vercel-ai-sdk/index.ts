@@ -2,6 +2,7 @@ import type { SigilClient } from '../../client.js';
 import { SigilVercelAiSdkInstrumentation } from './hooks.js';
 import type { SigilVercelAiSdkOptions } from './types.js';
 
+export { SigilVercelAiSdkInstrumentation } from './hooks.js';
 export {
   buildFrameworkMetadata,
   buildFrameworkTags,
@@ -18,7 +19,6 @@ export {
   parseToolCallStart,
   resolveConversationId,
 } from './mapping.js';
-export { SigilVercelAiSdkInstrumentation } from './hooks.js';
 export type {
   CallOptions,
   ConversationResolution,
@@ -36,7 +36,7 @@ export type {
 
 export function createSigilVercelAiSdk(
   client: SigilClient,
-  options: SigilVercelAiSdkOptions = {}
+  options: SigilVercelAiSdkOptions = {},
 ): SigilVercelAiSdkInstrumentation {
   return new SigilVercelAiSdkInstrumentation(client, options);
 }

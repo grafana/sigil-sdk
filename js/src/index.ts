@@ -12,6 +12,9 @@ export {
   withConversationTitle,
   withUserId,
 } from './context.js';
+export * as anthropic from './providers/anthropic.js';
+export * as gemini from './providers/gemini.js';
+export * as openai from './providers/openai.js';
 export type {
   ApiConfig,
   Artifact,
@@ -27,8 +30,8 @@ export type {
   ExportGenerationsRequest,
   ExportGenerationsResponse,
   Generation,
-  GenerationExporter,
   GenerationExportConfig,
+  GenerationExporter,
   GenerationExportProtocol,
   GenerationMode,
   GenerationRecorder,
@@ -53,10 +56,6 @@ export type {
   ToolExecutionStart,
   ToolResultPart,
 } from './types.js';
-
-export * as openai from './providers/openai.js';
-export * as anthropic from './providers/anthropic.js';
-export * as gemini from './providers/gemini.js';
 
 import { SigilClient } from './client.js';
 import type { SigilSdkConfigInput } from './types.js';

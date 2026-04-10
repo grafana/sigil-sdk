@@ -2,30 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { context, trace } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-
-import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 import {
-  SigilLangChainHandler,
-  withSigilLangChainCallbacks,
-} from '../.test-dist/frameworks/langchain/index.js';
-import {
-  SigilLangGraphHandler,
-  withSigilLangGraphCallbacks,
-} from '../.test-dist/frameworks/langgraph/index.js';
-import {
-  SigilOpenAIAgentsHandler,
-  withSigilOpenAIAgentsHooks,
-} from '../.test-dist/frameworks/openai-agents/index.js';
-import {
-  SigilLlamaIndexHandler,
-  attachSigilLlamaIndexCallbacks,
-  withSigilLlamaIndexCallbacks,
-} from '../.test-dist/frameworks/llamaindex/index.js';
-import {
-  SigilGoogleAdkHandler,
   createSigilGoogleAdkPlugin,
+  SigilGoogleAdkHandler,
   withSigilGoogleAdkPlugins,
 } from '../.test-dist/frameworks/google-adk/index.js';
+import { SigilLangChainHandler, withSigilLangChainCallbacks } from '../.test-dist/frameworks/langchain/index.js';
+import { SigilLangGraphHandler, withSigilLangGraphCallbacks } from '../.test-dist/frameworks/langgraph/index.js';
+import {
+  attachSigilLlamaIndexCallbacks,
+  SigilLlamaIndexHandler,
+  withSigilLlamaIndexCallbacks,
+} from '../.test-dist/frameworks/llamaindex/index.js';
+import { SigilOpenAIAgentsHandler, withSigilOpenAIAgentsHooks } from '../.test-dist/frameworks/openai-agents/index.js';
+import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 class CapturingExporter {
   requests = [];
@@ -78,7 +68,7 @@ for (const framework of frameworks) {
           conversation_id: 'framework-conversation-42',
           thread_id: 'framework-thread-42',
           event_id: 'framework-event-42',
-        }
+        },
       );
       await handler.handleLLMEnd(
         {
@@ -88,7 +78,7 @@ for (const framework of frameworks) {
             finish_reason: 'stop',
           },
         },
-        'run-sync'
+        'run-sync',
       );
     });
 
@@ -123,7 +113,7 @@ for (const framework of frameworks) {
         {
           conversation_id: 'framework-conversation-split-42',
           event_id: 'framework-event-split-42',
-        }
+        },
       );
       await handler.handleLLMEnd(
         {
@@ -133,7 +123,7 @@ for (const framework of frameworks) {
             finish_reason: 'stop',
           },
         },
-        'run-split'
+        'run-split',
       );
     });
 
@@ -146,19 +136,15 @@ for (const framework of frameworks) {
     const generation = await captureSingleGeneration(async (client) => {
       const handler = new framework.handlerCtor(client);
 
-      await handler.handleLLMStart(
-        { kwargs: { model: 'gpt-5' } },
-        ['hello'],
-        'run-fallback',
-        undefined,
-        { invocation_params: { model: 'gpt-5' } }
-      );
+      await handler.handleLLMStart({ kwargs: { model: 'gpt-5' } }, ['hello'], 'run-fallback', undefined, {
+        invocation_params: { model: 'gpt-5' },
+      });
       await handler.handleLLMEnd(
         {
           generations: [[{ text: 'ok' }]],
           llm_output: { model_name: 'gpt-5' },
         },
-        'run-fallback'
+        'run-fallback',
       );
     });
 
@@ -176,26 +162,22 @@ for (const framework of frameworks) {
         },
       });
 
-      await handler.handleLLMStart(
-        { kwargs: { model: 'gpt-5' } },
-        ['hello'],
-        'run-metadata',
-        undefined,
-        { invocation_params: { model: 'gpt-5' } }
-      );
+      await handler.handleLLMStart({ kwargs: { model: 'gpt-5' } }, ['hello'], 'run-metadata', undefined, {
+        invocation_params: { model: 'gpt-5' },
+      });
       await handler.handleLLMEnd(
         {
           generations: [[{ text: 'ok' }]],
           llm_output: { model_name: 'gpt-5' },
         },
-        'run-metadata'
+        'run-metadata',
       );
     });
 
     assert.equal(generation.metadata.timestamp, '2026-02-20T00:00:00.000Z');
     assert.deepEqual(generation.metadata.list, ['a', { nested: true }]);
     assert.deepEqual(generation.metadata.object, { child: { depth: 'ok' } });
-    assert.equal(Object.prototype.hasOwnProperty.call(generation.metadata, 'callable'), false);
+    assert.equal(Object.hasOwn(generation.metadata, 'callable'), false);
   });
 
   test(`${framework.name} handler drops invalid date metadata values`, async () => {
@@ -207,24 +189,20 @@ for (const framework of frameworks) {
         },
       });
 
-      await handler.handleLLMStart(
-        { kwargs: { model: 'gpt-5' } },
-        ['hello'],
-        'run-invalid-date',
-        undefined,
-        { invocation_params: { model: 'gpt-5' } }
-      );
+      await handler.handleLLMStart({ kwargs: { model: 'gpt-5' } }, ['hello'], 'run-invalid-date', undefined, {
+        invocation_params: { model: 'gpt-5' },
+      });
       await handler.handleLLMEnd(
         {
           generations: [[{ text: 'ok' }]],
           llm_output: { model_name: 'gpt-5' },
         },
-        'run-invalid-date'
+        'run-invalid-date',
       );
     });
 
     assert.equal(generation.metadata.validDate, '2026-02-20T00:00:00.000Z');
-    assert.equal(Object.prototype.hasOwnProperty.call(generation.metadata, 'invalidDate'), false);
+    assert.equal(Object.hasOwn(generation.metadata, 'invalidDate'), false);
   });
 
   test(`${framework.name} handler does not mark repeated non-cyclic metadata objects as circular`, async () => {
@@ -237,19 +215,15 @@ for (const framework of frameworks) {
         },
       });
 
-      await handler.handleLLMStart(
-        { kwargs: { model: 'gpt-5' } },
-        ['hello'],
-        'run-shared-metadata',
-        undefined,
-        { invocation_params: { model: 'gpt-5' } }
-      );
+      await handler.handleLLMStart({ kwargs: { model: 'gpt-5' } }, ['hello'], 'run-shared-metadata', undefined, {
+        invocation_params: { model: 'gpt-5' },
+      });
       await handler.handleLLMEnd(
         {
           generations: [[{ text: 'ok' }]],
           llm_output: { model_name: 'gpt-5' },
         },
-        'run-shared-metadata'
+        'run-shared-metadata',
       );
     });
 
@@ -298,14 +272,14 @@ for (const framework of frameworks) {
         {
           conversation_id: 'framework-conversation-lineage-42',
           thread_id: 'framework-thread-lineage-42',
-        }
+        },
       );
       await handler.handleLLMEnd(
         {
           generations: [[{ text: 'world' }]],
           llm_output: { model_name: 'gpt-5', finish_reason: 'stop' },
         },
-        'run-lineage'
+        'run-lineage',
       );
       parentSpan.end();
 
@@ -411,16 +385,11 @@ test('withSigilOpenAIAgentsHooks wires to hook emitter lifecycle', async () => {
       context,
       agent,
       { name: 'weather_tool' },
-      { toolCall: { callId: 'call-1', name: 'weather_tool', arguments: '{"city":"Paris"}' } }
+      { toolCall: { callId: 'call-1', name: 'weather_tool', arguments: '{"city":"Paris"}' } },
     );
-    hooks.emit(
-      'agent_tool_end',
-      context,
-      agent,
-      { name: 'weather_tool' },
-      '{"temp_c":18}',
-      { toolCall: { callId: 'call-1', name: 'weather_tool' } }
-    );
+    hooks.emit('agent_tool_end', context, agent, { name: 'weather_tool' }, '{"temp_c":18}', {
+      toolCall: { callId: 'call-1', name: 'weather_tool' },
+    });
     hooks.emit('agent_end', context, agent, 'world');
 
     registration.detach();
@@ -472,26 +441,29 @@ test('withSigilOpenAIAgentsHooks reads usage from output payload when context us
 
 test('withSigilOpenAIAgentsHooks handles agent_error and clears stack state', async () => {
   const generations = [];
-  await captureGenerations(async (client) => {
-    const hooks = new FakeHookEmitter();
-    const registration = withSigilOpenAIAgentsHooks(hooks, client);
+  await captureGenerations(
+    async (client) => {
+      const hooks = new FakeHookEmitter();
+      const registration = withSigilOpenAIAgentsHooks(hooks, client);
 
-    const context = {
-      context: {
-        conversationId: 'oa-conversation-error',
-      },
-    };
-    const agent = {
-      name: 'triage',
-      model: 'gpt-5',
-    };
+      const context = {
+        context: {
+          conversationId: 'oa-conversation-error',
+        },
+      };
+      const agent = {
+        name: 'triage',
+        model: 'gpt-5',
+      };
 
-    hooks.emit('agent_start', context, agent, [{ role: 'user', content: 'first' }]);
-    hooks.emit('agent_error', context, agent, new Error('boom'));
-    hooks.emit('agent_start', context, agent, [{ role: 'user', content: 'second' }]);
-    hooks.emit('agent_end', context, agent, 'ok');
-    registration.detach();
-  }, (generation) => generations.push(generation));
+      hooks.emit('agent_start', context, agent, [{ role: 'user', content: 'first' }]);
+      hooks.emit('agent_error', context, agent, new Error('boom'));
+      hooks.emit('agent_start', context, agent, [{ role: 'user', content: 'second' }]);
+      hooks.emit('agent_end', context, agent, 'ok');
+      registration.detach();
+    },
+    (generation) => generations.push(generation),
+  );
 
   const secondGeneration = generations.find((generation) => extractFirstText(generation.output) === 'ok');
   assert.ok(secondGeneration);
@@ -499,51 +471,49 @@ test('withSigilOpenAIAgentsHooks handles agent_error and clears stack state', as
 });
 
 test('withSigilOpenAIAgentsHooks closes tool runs when tool call id is missing', async () => {
-  await captureGenerations(async (client) => {
-    const hooks = new FakeHookEmitter();
-    const registration = withSigilOpenAIAgentsHooks(hooks, client);
+  await captureGenerations(
+    async (client) => {
+      const hooks = new FakeHookEmitter();
+      const registration = withSigilOpenAIAgentsHooks(hooks, client);
 
-    const startedRunIds = [];
-    const endedRunIds = [];
-    const originalToolStart = registration.handler.handleToolStart.bind(registration.handler);
-    const originalToolEnd = registration.handler.handleToolEnd.bind(registration.handler);
-    registration.handler.handleToolStart = async (...args) => {
-      startedRunIds.push(args[2]);
-      await originalToolStart(...args);
-    };
-    registration.handler.handleToolEnd = async (...args) => {
-      endedRunIds.push(args[1]);
-      await originalToolEnd(...args);
-    };
+      const startedRunIds = [];
+      const endedRunIds = [];
+      const originalToolStart = registration.handler.handleToolStart.bind(registration.handler);
+      const originalToolEnd = registration.handler.handleToolEnd.bind(registration.handler);
+      registration.handler.handleToolStart = async (...args) => {
+        startedRunIds.push(args[2]);
+        await originalToolStart(...args);
+      };
+      registration.handler.handleToolEnd = async (...args) => {
+        endedRunIds.push(args[1]);
+        await originalToolEnd(...args);
+      };
 
-    const context = { context: { conversationId: 'oa-no-call-id' } };
-    const agent = { name: 'triage', model: 'gpt-5' };
-    hooks.emit('agent_start', context, agent, [{ role: 'user', content: 'hello' }]);
-    hooks.emit(
-      'agent_tool_start',
-      context,
-      agent,
-      { name: 'weather_tool' },
-      { toolCall: { name: 'weather_tool', arguments: '{"city":"Paris"}' } }
-    );
-    hooks.emit(
-      'agent_tool_end',
-      context,
-      agent,
-      { name: 'weather_tool' },
-      '{"temp_c":18}',
-      { toolCall: { name: 'weather_tool' } }
-    );
-    hooks.emit('agent_end', context, agent, 'world');
+      const context = { context: { conversationId: 'oa-no-call-id' } };
+      const agent = { name: 'triage', model: 'gpt-5' };
+      hooks.emit('agent_start', context, agent, [{ role: 'user', content: 'hello' }]);
+      hooks.emit(
+        'agent_tool_start',
+        context,
+        agent,
+        { name: 'weather_tool' },
+        { toolCall: { name: 'weather_tool', arguments: '{"city":"Paris"}' } },
+      );
+      hooks.emit('agent_tool_end', context, agent, { name: 'weather_tool' }, '{"temp_c":18}', {
+        toolCall: { name: 'weather_tool' },
+      });
+      hooks.emit('agent_end', context, agent, 'world');
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.equal(startedRunIds.length, 1);
-    assert.equal(endedRunIds.length, 1);
-    assert.equal(endedRunIds[0], startedRunIds[0]);
+      assert.equal(startedRunIds.length, 1);
+      assert.equal(endedRunIds.length, 1);
+      assert.equal(endedRunIds[0], startedRunIds[0]);
 
-    registration.detach();
-  }, () => undefined);
+      registration.detach();
+    },
+    () => undefined,
+  );
 });
 
 test('withSigilLlamaIndexCallbacks registers through callback manager API', async () => {
@@ -662,39 +632,42 @@ test('withSigilLlamaIndexCallbacks closes id-less llm runs', async () => {
 
 test('withSigilLlamaIndexCallbacks handles llm-error and clears run state', async () => {
   const generations = [];
-  await captureGenerations(async (client) => {
-    const callbackManager = new FakeCallbackManager();
-    withSigilLlamaIndexCallbacks({ callbackManager }, client);
+  await captureGenerations(
+    async (client) => {
+      const callbackManager = new FakeCallbackManager();
+      withSigilLlamaIndexCallbacks({ callbackManager }, client);
 
-    callbackManager.emit('llm-start', {
-      detail: {
-        id: 'llm-error-1',
-        conversation_id: 'llama-conversation-error',
-        messages: [{ role: 'user', content: 'first' }],
-      },
-    });
-    callbackManager.emit('llm-error', {
-      detail: {
-        id: 'llm-error-1',
-        error: new Error('boom'),
-      },
-    });
-    callbackManager.emit('llm-start', {
-      detail: {
-        id: 'llm-after-error-2',
-        conversation_id: 'llama-conversation-error',
-        messages: [{ role: 'user', content: 'second' }],
-      },
-    });
-    callbackManager.emit('llm-end', {
-      detail: {
-        id: 'llm-after-error-2',
-        response: {
-          message: { role: 'assistant', content: 'ok' },
+      callbackManager.emit('llm-start', {
+        detail: {
+          id: 'llm-error-1',
+          conversation_id: 'llama-conversation-error',
+          messages: [{ role: 'user', content: 'first' }],
         },
-      },
-    });
-  }, (generation) => generations.push(generation));
+      });
+      callbackManager.emit('llm-error', {
+        detail: {
+          id: 'llm-error-1',
+          error: new Error('boom'),
+        },
+      });
+      callbackManager.emit('llm-start', {
+        detail: {
+          id: 'llm-after-error-2',
+          conversation_id: 'llama-conversation-error',
+          messages: [{ role: 'user', content: 'second' }],
+        },
+      });
+      callbackManager.emit('llm-end', {
+        detail: {
+          id: 'llm-after-error-2',
+          response: {
+            message: { role: 'assistant', content: 'ok' },
+          },
+        },
+      });
+    },
+    (generation) => generations.push(generation),
+  );
 
   const errored = generations.find((generation) => generation.callError === 'boom');
   assert.ok(errored);
@@ -704,47 +677,50 @@ test('withSigilLlamaIndexCallbacks handles llm-error and clears run state', asyn
 });
 
 test('withSigilLlamaIndexCallbacks closes id-less tool runs', async () => {
-  await captureGenerations(async (client) => {
-    const callbackManager = new FakeCallbackManager();
-    const registration = attachSigilLlamaIndexCallbacks(callbackManager, client);
+  await captureGenerations(
+    async (client) => {
+      const callbackManager = new FakeCallbackManager();
+      const registration = attachSigilLlamaIndexCallbacks(callbackManager, client);
 
-    const startedRunIds = [];
-    const endedRunIds = [];
-    const originalToolStart = registration.handler.handleToolStart.bind(registration.handler);
-    const originalToolEnd = registration.handler.handleToolEnd.bind(registration.handler);
-    registration.handler.handleToolStart = async (...args) => {
-      startedRunIds.push(args[2]);
-      await originalToolStart(...args);
-    };
-    registration.handler.handleToolEnd = async (...args) => {
-      endedRunIds.push(args[1]);
-      await originalToolEnd(...args);
-    };
+      const startedRunIds = [];
+      const endedRunIds = [];
+      const originalToolStart = registration.handler.handleToolStart.bind(registration.handler);
+      const originalToolEnd = registration.handler.handleToolEnd.bind(registration.handler);
+      registration.handler.handleToolStart = async (...args) => {
+        startedRunIds.push(args[2]);
+        await originalToolStart(...args);
+      };
+      registration.handler.handleToolEnd = async (...args) => {
+        endedRunIds.push(args[1]);
+        await originalToolEnd(...args);
+      };
 
-    callbackManager.emit('llm-tool-call', {
-      detail: {
-        toolCall: {
-          name: 'weather_tool',
-          input: { city: 'Paris' },
+      callbackManager.emit('llm-tool-call', {
+        detail: {
+          toolCall: {
+            name: 'weather_tool',
+            input: { city: 'Paris' },
+          },
         },
-      },
-    });
-    callbackManager.emit('llm-tool-result', {
-      detail: {
-        toolCall: {
-          name: 'weather_tool',
+      });
+      callbackManager.emit('llm-tool-result', {
+        detail: {
+          toolCall: {
+            name: 'weather_tool',
+          },
+          toolResult: { temp_c: 18 },
         },
-        toolResult: { temp_c: 18 },
-      },
-    });
+      });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.equal(startedRunIds.length, 1);
-    assert.equal(endedRunIds.length, 1);
-    assert.equal(endedRunIds[0], startedRunIds[0]);
-    registration.detach();
-  }, () => undefined);
+      assert.equal(startedRunIds.length, 1);
+      assert.equal(endedRunIds.length, 1);
+      assert.equal(endedRunIds[0], startedRunIds[0]);
+      registration.detach();
+    },
+    () => undefined,
+  );
 });
 
 test('attachSigilLlamaIndexCallbacks reuses existing registration for same manager', () => {
@@ -820,42 +796,45 @@ test('withSigilGoogleAdkPlugins appends an ADK plugin callback implementation', 
 });
 
 test('google adk plugin closes tool runs when functionCallId is missing', async () => {
-  await captureGenerations(async (client) => {
-    const plugin = createSigilGoogleAdkPlugin(client);
+  await captureGenerations(
+    async (client) => {
+      const plugin = createSigilGoogleAdkPlugin(client);
 
-    const startedRunIds = [];
-    const endedRunIds = [];
-    const originalToolStart = plugin.handler.handleToolStart.bind(plugin.handler);
-    const originalToolEnd = plugin.handler.handleToolEnd.bind(plugin.handler);
-    plugin.handler.handleToolStart = async (...args) => {
-      startedRunIds.push(args[2]);
-      await originalToolStart(...args);
-    };
-    plugin.handler.handleToolEnd = async (...args) => {
-      endedRunIds.push(args[1]);
-      await originalToolEnd(...args);
-    };
+      const startedRunIds = [];
+      const endedRunIds = [];
+      const originalToolStart = plugin.handler.handleToolStart.bind(plugin.handler);
+      const originalToolEnd = plugin.handler.handleToolEnd.bind(plugin.handler);
+      plugin.handler.handleToolStart = async (...args) => {
+        startedRunIds.push(args[2]);
+        await originalToolStart(...args);
+      };
+      plugin.handler.handleToolEnd = async (...args) => {
+        endedRunIds.push(args[1]);
+        await originalToolEnd(...args);
+      };
 
-    const invocationContext = {
-      invocationId: 'inv-tool-no-call-id',
-      session: { id: 'conversation-tool-no-call-id' },
-      agent: { name: 'tool-agent' },
-    };
+      const invocationContext = {
+        invocationId: 'inv-tool-no-call-id',
+        session: { id: 'conversation-tool-no-call-id' },
+        agent: { name: 'tool-agent' },
+      };
 
-    await plugin.beforeToolCallback({
-      tool: { name: 'weather_tool' },
-      toolArgs: { city: 'Paris' },
-      toolContext: { invocationContext },
-    });
-    await plugin.afterToolCallback({
-      toolContext: { invocationContext },
-      result: { temp_c: 18 },
-    });
+      await plugin.beforeToolCallback({
+        tool: { name: 'weather_tool' },
+        toolArgs: { city: 'Paris' },
+        toolContext: { invocationContext },
+      });
+      await plugin.afterToolCallback({
+        toolContext: { invocationContext },
+        result: { temp_c: 18 },
+      });
 
-    assert.equal(startedRunIds.length, 1);
-    assert.equal(endedRunIds.length, 1);
-    assert.equal(endedRunIds[0], startedRunIds[0]);
-  }, () => undefined);
+      assert.equal(startedRunIds.length, 1);
+      assert.equal(endedRunIds.length, 1);
+      assert.equal(endedRunIds[0], startedRunIds[0]);
+    },
+    () => undefined,
+  );
 });
 
 test('google adk plugin uses onUserMessageCallback when llmRequest has no contents', async () => {
@@ -1036,7 +1015,7 @@ class FakeHookEmitter {
     const existing = this.listeners.get(event) ?? [];
     this.listeners.set(
       event,
-      existing.filter((entry) => entry !== listener)
+      existing.filter((entry) => entry !== listener),
     );
     return this;
   }
@@ -1063,7 +1042,7 @@ class FakeCallbackManager {
     const existing = this.listeners.get(event) ?? [];
     this.listeners.set(
       event,
-      existing.filter((entry) => entry !== listener)
+      existing.filter((entry) => entry !== listener),
     );
     return this;
   }

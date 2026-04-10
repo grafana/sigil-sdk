@@ -93,9 +93,7 @@ function mergeAPIConfig(config: Partial<ApiConfig> | undefined): ApiConfig {
   };
 }
 
-function mergeEmbeddingCaptureConfig(
-  config: Partial<EmbeddingCaptureConfig> | undefined
-): EmbeddingCaptureConfig {
+function mergeEmbeddingCaptureConfig(config: Partial<EmbeddingCaptureConfig> | undefined): EmbeddingCaptureConfig {
   return {
     ...defaultEmbeddingCaptureConfig,
     ...config,
@@ -112,7 +110,7 @@ function mergeAuthConfig(config: ExportAuthConfig | undefined): ExportAuthConfig
 function resolveHeadersWithAuth(
   headers: Record<string, string> | undefined,
   auth: ExportAuthConfig,
-  label: string
+  label: string,
 ): Record<string, string> | undefined {
   const mode = (auth.mode ?? 'none').trim().toLowerCase();
   const tenantId = auth.tenantId?.trim() ?? '';
@@ -175,7 +173,7 @@ function resolveHeadersWithAuth(
     const result: Record<string, string> = { ...(out ?? {}) };
     if (!hasHeaderKey(result, authorizationHeaderName)) {
       const encoded = new TextEncoder().encode(`${user}:${password}`);
-      result[authorizationHeaderName] = 'Basic ' + btoa(String.fromCharCode(...encoded));
+      result[authorizationHeaderName] = `Basic ${btoa(String.fromCharCode(...encoded))}`;
     }
     if (tenantId.length > 0 && !hasHeaderKey(result, tenantHeaderName)) {
       result[tenantHeaderName] = tenantId;
