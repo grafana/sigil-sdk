@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -150,9 +149,6 @@ func Setup(ctx context.Context, cfg Config) (*Providers, error) {
 	metricOpts := []otlpmetrichttp.Option{
 		otlpmetrichttp.WithEndpoint(host),
 		otlpmetrichttp.WithHeaders(headers),
-		otlpmetrichttp.WithTemporalitySelector(func(_ sdkmetric.InstrumentKind) metricdata.Temporality {
-			return metricdata.DeltaTemporality
-		}),
 	}
 	if metricPath != "" {
 		metricOpts = append(metricOpts, otlpmetrichttp.WithURLPath(metricPath))
