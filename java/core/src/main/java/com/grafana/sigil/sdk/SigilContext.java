@@ -11,6 +11,7 @@ public final class SigilContext {
     private static final ContextKey<String> USER_ID = ContextKey.named("sigil.user.id");
     private static final ContextKey<String> AGENT_NAME = ContextKey.named("sigil.agent.name");
     private static final ContextKey<String> AGENT_VERSION = ContextKey.named("sigil.agent.version");
+    private static final ContextKey<ContentCaptureMode> CONTENT_CAPTURE_MODE = ContextKey.named("sigil.content_capture_mode");
 
     private SigilContext() {
     }
@@ -83,6 +84,14 @@ public final class SigilContext {
     static String agentVersionFromContext() {
         String value = Context.current().get(AGENT_VERSION);
         return value == null ? "" : value;
+    }
+
+    static Scope withContentCaptureMode(ContentCaptureMode mode) {
+        return Context.current().with(CONTENT_CAPTURE_MODE, mode).makeCurrent();
+    }
+
+    static ContentCaptureMode contentCaptureModeFromContext() {
+        return Context.current().get(CONTENT_CAPTURE_MODE);
     }
 
     private static String emptyToBlank(String value) {

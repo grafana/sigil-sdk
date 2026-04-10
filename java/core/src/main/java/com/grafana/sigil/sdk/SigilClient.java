@@ -102,6 +102,7 @@ public final class SigilClient implements AutoCloseable {
     static final String SDK_NAME = "sdk-java";
     static final String METADATA_USER_ID_KEY = "sigil.user.id";
     static final String METADATA_LEGACY_USER_ID_KEY = "user.id";
+    static final String METADATA_KEY_CONTENT_CAPTURE_MODE = "sigil.sdk.content_capture_mode";
 
     private final SigilClientConfig config;
     private final GenerationExporter generationExporter;
@@ -318,13 +319,28 @@ public final class SigilClient implements AutoCloseable {
         Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
         seed.setStartedAt(startedAt);
 
+        ContentCaptureMode resolverMode = callContentCaptureResolver(config.getContentCaptureResolver(), null, config.getLogger());
+        ContentCaptureMode effectiveClientDefault = resolveContentCaptureMode(resolverMode, config.getContentCapture());
+        ContentCaptureMode ctxMode = SigilContext.contentCaptureModeFromContext();
+        ContentCaptureMode resolvedToolMode = resolveToolContentCaptureMode(
+                seed.getContentCapture(),
+                ctxMode,
+                effectiveClientDefault);
+
+        if (resolvedToolMode == ContentCaptureMode.METADATA_ONLY) {
+            seed.setConversationTitle("");
+            seed.setToolDescription("");
+        }
+        @SuppressWarnings("deprecation")
+        boolean legacyIncludeContent = seed.isIncludeContent();
+
         Span span = tracer.spanBuilder(toolSpanName(seed.getToolName()))
                 .setSpanKind(SpanKind.INTERNAL)
                 .setStartTimestamp(startedAt)
                 .startSpan();
         setToolSpanAttributes(span, seed);
 
-        return new ToolExecutionRecorder(this, seed, span, startedAt);
+        return new ToolExecutionRecorder(this, seed, span, startedAt, resolvedToolMode, legacyIncludeContent);
     }
 
     /**
@@ -362,6 +378,13 @@ public final class SigilClient implements AutoCloseable {
         }
 
         SubmitConversationRatingRequest normalizedRequest = normalizeConversationRatingRequest(request);
+
+        ContentCaptureMode resolverMode = callContentCaptureResolver(config.getContentCaptureResolver(), normalizedRequest.getMetadata(), config.getLogger());
+        ContentCaptureMode effectiveMode = resolveContentCaptureMode(resolverMode, resolveClientContentCaptureMode(config.getContentCapture()));
+        if (effectiveMode == ContentCaptureMode.METADATA_ONLY) {
+            normalizedRequest.setComment("");
+        }
+
         String endpoint = conversationRatingEndpoint(config.getApi(), config.getGenerationExport(), normalizedConversationId);
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -558,6 +581,10 @@ public final class SigilClient implements AutoCloseable {
         Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
         seed.setStartedAt(startedAt);
 
+        ContentCaptureMode resolverMode = callContentCaptureResolver(config.getContentCaptureResolver(), seed.getMetadata(), config.getLogger());
+        ContentCaptureMode clientMode = resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, config.getContentCapture()));
+        ContentCaptureMode ccMode = resolveContentCaptureMode(seed.getContentCapture(), clientMode);
+
         Span span = tracer.spanBuilder(generationSpanName(seed.getOperationName(), seed.getModel().getName()))
                 .setSpanKind(SpanKind.CLIENT)
                 .setStartTimestamp(startedAt)
@@ -579,9 +606,13 @@ public final class SigilClient implements AutoCloseable {
         initial.setToolChoice(seed.getToolChoice());
         initial.setThinkingEnabled(seed.getThinkingEnabled());
         initial.getParentGenerationIds().addAll(seed.getParentGenerationIds());
+        if (ccMode == ContentCaptureMode.METADATA_ONLY) {
+            initial.setConversationTitle("");
+        }
         setGenerationSpanAttributes(span, initial);
 
-        return new GenerationRecorder(this, seed, span, startedAt);
+        Scope contentCaptureScope = SigilContext.withContentCaptureMode(ccMode);
+        return new GenerationRecorder(this, seed, span, startedAt, ccMode, contentCaptureScope);
     }
 
     private void flushInternal() {
@@ -1409,5 +1440,104 @@ public final class SigilClient implements AutoCloseable {
             return text.substring(0, maxLength);
         }
         return text.substring(0, maxLength - 3) + "...";
+    }
+
+    // --- Content capture mode resolution ---
+
+    static ContentCaptureMode resolveContentCaptureMode(ContentCaptureMode override, ContentCaptureMode fallback) {
+        if (override != ContentCaptureMode.DEFAULT) {
+            return override;
+        }
+        return fallback;
+    }
+
+    static ContentCaptureMode resolveClientContentCaptureMode(ContentCaptureMode mode) {
+        if (mode == ContentCaptureMode.DEFAULT) {
+            return ContentCaptureMode.NO_TOOL_CONTENT;
+        }
+        return mode;
+    }
+
+    static ContentCaptureMode callContentCaptureResolver(
+            ContentCaptureResolver resolver,
+            Map<String, Object> metadata,
+            Logger logger) {
+        if (resolver == null) {
+            return ContentCaptureMode.DEFAULT;
+        }
+        try {
+            ContentCaptureMode result = resolver.resolve(metadata);
+            return result == null ? ContentCaptureMode.DEFAULT : result;
+        } catch (Exception exception) {
+            if (logger != null) {
+                logger.log(Level.WARNING, "sigil content capture resolver threw; falling back to METADATA_ONLY", exception);
+            }
+            return ContentCaptureMode.METADATA_ONLY;
+        }
+    }
+
+    static ContentCaptureMode resolveToolContentCaptureMode(
+            ContentCaptureMode toolMode,
+            ContentCaptureMode ctxMode,
+            ContentCaptureMode clientDefault) {
+        ContentCaptureMode resolved = resolveClientContentCaptureMode(clientDefault);
+        if (ctxMode != null) {
+            resolved = ctxMode;
+        }
+        if (toolMode != ContentCaptureMode.DEFAULT) {
+            resolved = toolMode;
+        }
+        return resolved;
+    }
+
+    static void stampContentCaptureMetadata(Generation generation, ContentCaptureMode mode) {
+        generation.getMetadata().put(METADATA_KEY_CONTENT_CAPTURE_MODE, mode.toMetadataValue());
+    }
+
+    static boolean isContentStripped(Generation generation) {
+        Object value = generation.getMetadata().get(METADATA_KEY_CONTENT_CAPTURE_MODE);
+        return "metadata_only".equals(value);
+    }
+
+    static void stripContent(Generation generation, String errorCategory) {
+        generation.setSystemPrompt("");
+        generation.getArtifacts().clear();
+
+        if (!generation.getCallError().isBlank()) {
+            if (errorCategory != null && !errorCategory.isBlank()) {
+                generation.setCallError(errorCategory);
+            } else {
+                generation.setCallError("sdk_error");
+            }
+        }
+        generation.getMetadata().remove("call_error");
+
+        generation.setConversationTitle("");
+        generation.getMetadata().remove(SPAN_ATTR_CONVERSATION_TITLE);
+
+        for (Message message : generation.getInput()) {
+            stripMessageContent(message);
+        }
+        for (Message message : generation.getOutput()) {
+            stripMessageContent(message);
+        }
+        for (ToolDefinition tool : generation.getTools()) {
+            tool.setDescription("");
+            tool.setInputSchemaJson(null);
+        }
+    }
+
+    private static void stripMessageContent(Message message) {
+        for (MessagePart part : message.getParts()) {
+            part.setText("");
+            part.setThinking("");
+            if (part.getToolCall() != null) {
+                part.getToolCall().setInputJson(null);
+            }
+            if (part.getToolResult() != null) {
+                part.getToolResult().setContent("");
+                part.getToolResult().setContentJson(null);
+            }
+        }
     }
 }
