@@ -3,11 +3,13 @@ export { defaultConfig } from './config.js';
 export {
   agentNameFromContext,
   agentVersionFromContext,
+  contentCaptureModeFromContext,
   conversationIdFromContext,
   conversationTitleFromContext,
   userIdFromContext,
   withAgentName,
   withAgentVersion,
+  withContentCaptureMode,
   withConversationId,
   withConversationTitle,
   withUserId,
@@ -18,6 +20,7 @@ export * as openai from './providers/openai.js';
 export type {
   ApiConfig,
   Artifact,
+  ContentCaptureMode,
   ConversationRating,
   ConversationRatingInput,
   ConversationRatingSummary,

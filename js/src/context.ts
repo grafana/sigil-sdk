@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { ContentCaptureMode } from './types.js';
 
 type SigilContextValues = {
   conversationId?: string;
@@ -6,6 +7,7 @@ type SigilContextValues = {
   userId?: string;
   agentName?: string;
   agentVersion?: string;
+  contentCaptureMode?: ContentCaptureMode;
 };
 
 const storage = new AsyncLocalStorage<SigilContextValues>();
@@ -50,17 +52,31 @@ export function agentVersionFromContext(): string | undefined {
   return normalizedString(storage.getStore()?.agentVersion);
 }
 
-function runWithContext<T>(nextValues: SigilContextValues, callback: () => T): T {
+export function withContentCaptureMode<T>(mode: ContentCaptureMode, callback: () => T): T {
+  const currentValues = storage.getStore() ?? {};
+  const mergedValues: SigilContextValues = { ...currentValues, contentCaptureMode: mode };
+  return storage.run(mergedValues, callback);
+}
+
+export function contentCaptureModeFromContext(): { mode: ContentCaptureMode; set: boolean } {
+  const value = storage.getStore()?.contentCaptureMode;
+  if (value === undefined) {
+    return { mode: 'default', set: false };
+  }
+  return { mode: value, set: true };
+}
+
+function runWithContext<T>(nextValues: Omit<SigilContextValues, 'contentCaptureMode'>, callback: () => T): T {
   const currentValues = storage.getStore() ?? {};
   const mergedValues: SigilContextValues = { ...currentValues };
 
   for (const [key, value] of Object.entries(nextValues)) {
-    const normalized = normalizedString(value);
+    const normalized = normalizedString(value as string | undefined);
     if (normalized === undefined) {
-      delete mergedValues[key as keyof SigilContextValues];
+      delete mergedValues[key as keyof typeof nextValues];
       continue;
     }
-    mergedValues[key as keyof SigilContextValues] = normalized;
+    mergedValues[key as keyof typeof nextValues] = normalized;
   }
 
   return storage.run(mergedValues, callback);

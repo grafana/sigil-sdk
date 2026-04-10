@@ -12,12 +12,15 @@ import { defaultLogger, mergeConfig } from './config.js';
 import {
   agentNameFromContext,
   agentVersionFromContext,
+  contentCaptureModeFromContext,
   conversationIdFromContext,
   conversationTitleFromContext,
   userIdFromContext,
+  withContentCaptureMode,
 } from './context.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
 import type {
+  ContentCaptureMode,
   ConversationRating,
   ConversationRatingInput,
   ConversationRatingSummary,
@@ -32,6 +35,7 @@ import type {
   GenerationResult,
   GenerationStart,
   Message,
+  MessagePart,
   RecorderCallback,
   RecorderWithError,
   SigilDebugSnapshot,
@@ -138,6 +142,7 @@ const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
 const metadataUserIDKey = 'sigil.user.id';
 const metadataLegacyUserIDKey = 'user.id';
+const metadataKeyContentCaptureMode = 'sigil.sdk.content_capture_mode';
 
 export class SigilClient {
   private readonly config: SigilSdkConfig;
@@ -296,6 +301,20 @@ export class SigilClient {
       throw new Error('sigil conversation rating validation failed: conversationId is too long');
     }
 
+    const resolverMode = callContentCaptureResolver(
+      this.config.contentCaptureResolver,
+      input.metadata,
+      (msg, err) => this.logWarn(msg, err),
+    );
+    let effectiveMode = resolveEffectiveContentCaptureMode('default', resolverMode, this.config.contentCapture);
+    const ctx = contentCaptureModeFromContext();
+    if (ctx.set && ctx.mode !== 'default') {
+      effectiveMode = ctx.mode;
+    }
+    if (effectiveMode === 'metadata_only') {
+      input = { ...input, comment: '' };
+    }
+
     const normalizedInput = normalizeConversationRatingInput(input);
     const endpoint = buildConversationRatingEndpoint(
       this.config.api.endpoint,
@@ -393,6 +412,14 @@ export class SigilClient {
 
   internalNow(): Date {
     return this.nowFn();
+  }
+
+  internalContentCapture(): ContentCaptureMode {
+    return this.config.contentCapture;
+  }
+
+  internalContentCaptureResolver(): ((metadata: Record<string, unknown> | undefined) => ContentCaptureMode) | undefined {
+    return this.config.contentCaptureResolver;
   }
 
   internalRecordGeneration(generation: Generation): void {
@@ -589,11 +616,16 @@ export class SigilClient {
   internalFinalizeToolExecutionSpan(
     span: Span,
     toolExecution: ToolExecution,
+    includeContent: boolean,
     localError: Error | undefined,
   ): Error | undefined {
     setToolSpanAttributes(span, toolExecution);
 
-    if (toolExecution.includeContent) {
+    if (!includeContent) {
+      span.setAttribute(spanAttrToolDescription, '');
+    }
+
+    if (includeContent) {
       const argumentsResult = serializeToolContent(toolExecution.arguments);
       if (argumentsResult.error !== undefined && localError === undefined) {
         localError = argumentsResult.error;
@@ -753,7 +785,9 @@ export class SigilClient {
     if (callback === undefined) {
       return recorder;
     }
-    return runWithRecorder(recorder, callback);
+    return withContentCaptureMode(recorder.resolvedContentCaptureMode(), () =>
+      runWithRecorder(recorder, callback)
+    );
   }
 
   private triggerAsyncFlush(): void {
@@ -848,6 +882,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
   private readonly startedAt: Date;
   private readonly mode: GenerationMode;
   private readonly span: Span;
+  private readonly contentCaptureMode: ContentCaptureMode;
   private ended = false;
   private result?: GenerationResult;
   private callError?: string;
@@ -881,6 +916,21 @@ class GenerationRecorderImpl implements GenerationRecorder {
     this.mode = this.seed.mode ?? defaultMode;
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
     this.span = this.client.internalStartGenerationSpan(this.seed, this.mode, this.startedAt);
+
+    const resolverMode = callContentCaptureResolver(
+      this.client.internalContentCaptureResolver(),
+      this.seed.metadata,
+      (msg, err) => this.client.internalLogWarn(msg, err),
+    );
+    this.contentCaptureMode = resolveEffectiveContentCaptureMode(
+      this.seed.contentCapture ?? 'default',
+      resolverMode,
+      this.client.internalContentCapture(),
+    );
+  }
+
+  resolvedContentCaptureMode(): ContentCaptureMode {
+    return this.contentCaptureMode;
   }
 
   setResult(result: GenerationResult): void {
@@ -977,6 +1027,11 @@ class GenerationRecorderImpl implements GenerationRecorder {
       generation.metadata = {};
     }
     generation.metadata[spanAttrSDKName] = sdkName;
+
+    stampContentCaptureMetadata(generation, this.contentCaptureMode);
+    if (this.contentCaptureMode === 'metadata_only') {
+      stripContent(generation, classifyCallErrorCategory(this.callError, false));
+    }
 
     this.client.internalSyncGenerationSpan(this.span, generation);
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
@@ -1081,6 +1136,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
   private readonly seed: ToolExecutionStart;
   private readonly startedAt: Date;
   private readonly span: Span;
+  private readonly includeContent: boolean;
   private ended = false;
   private result?: ToolExecutionResult;
   private callError?: string;
@@ -1105,6 +1161,20 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     }
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
     this.span = this.client.internalStartToolExecutionSpan(this.seed, this.startedAt);
+
+    const resolverMode = callContentCaptureResolver(
+      this.client.internalContentCaptureResolver(),
+      undefined,
+      (msg, err) => this.client.internalLogWarn(msg, err),
+    );
+    const effectiveClientDefault = resolveContentCaptureMode(resolverMode, this.client.internalContentCapture());
+    const ctx = contentCaptureModeFromContext();
+    this.includeContent = shouldIncludeToolContent(
+      this.seed.contentCapture ?? 'default',
+      ctx.mode,
+      effectiveClientDefault,
+      this.seed.includeContent ?? false,
+    );
   }
 
   setResult(result: ToolExecutionResult): void {
@@ -1140,6 +1210,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
       requestModel: this.seed.requestModel,
       requestProvider: this.seed.requestProvider,
       includeContent: this.seed.includeContent ?? false,
+      contentCapture: this.seed.contentCapture,
       startedAt: new Date(this.startedAt),
       completedAt: new Date(this.result?.completedAt ?? this.client.internalNow()),
       arguments: this.result?.arguments,
@@ -1154,7 +1225,12 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     } else {
       this.client.internalRecordToolExecution(toolExecution);
     }
-    this.localError = this.client.internalFinalizeToolExecutionSpan(this.span, toolExecution, this.localError);
+    this.localError = this.client.internalFinalizeToolExecutionSpan(
+      this.span,
+      toolExecution,
+      this.includeContent,
+      this.localError,
+    );
   }
 
   getError(): Error | undefined {
@@ -1881,4 +1957,131 @@ function isJSON(value: string): boolean {
 
 function notEmpty(value: string | undefined): value is string {
   return value !== undefined && value.trim().length > 0;
+}
+
+// --- Content capture helpers ---
+
+function resolveContentCaptureMode(override: ContentCaptureMode, fallback: ContentCaptureMode): ContentCaptureMode {
+  if (override !== 'default') {
+    return override;
+  }
+  return fallback;
+}
+
+function resolveClientContentCaptureMode(mode: ContentCaptureMode): ContentCaptureMode {
+  if (mode === 'default') {
+    return 'no_tool_content';
+  }
+  return mode;
+}
+
+function resolveEffectiveContentCaptureMode(
+  override: ContentCaptureMode,
+  resolverMode: ContentCaptureMode,
+  clientMode: ContentCaptureMode,
+): ContentCaptureMode {
+  const base = resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, clientMode));
+  return resolveContentCaptureMode(override, base);
+}
+
+const validContentCaptureModes = new Set<string>(['default', 'full', 'no_tool_content', 'metadata_only']);
+
+function callContentCaptureResolver(
+  resolver: ((metadata: Record<string, unknown> | undefined) => ContentCaptureMode) | undefined,
+  metadata: Record<string, unknown> | undefined,
+  logWarn?: (message: string, error?: unknown) => void,
+): ContentCaptureMode {
+  if (resolver === undefined) {
+    return 'default';
+  }
+  try {
+    const result = resolver(metadata);
+    if (!validContentCaptureModes.has(result)) {
+      logWarn?.(`sigil contentCaptureResolver returned invalid mode '${String(result)}', defaulting to metadata_only`);
+      return 'metadata_only';
+    }
+    return result;
+  } catch (error) {
+    logWarn?.('sigil contentCaptureResolver threw, defaulting to metadata_only', error);
+    return 'metadata_only';
+  }
+}
+
+function stampContentCaptureMetadata(generation: Generation, mode: ContentCaptureMode): void {
+  if (generation.metadata === undefined) {
+    generation.metadata = {};
+  }
+  generation.metadata[metadataKeyContentCaptureMode] = mode === 'default' ? 'no_tool_content' : mode;
+}
+
+function stripContent(generation: Generation, errorCategory: string): void {
+  generation.systemPrompt = '';
+  generation.artifacts = undefined;
+
+  if (generation.callError !== undefined && generation.callError.length > 0) {
+    generation.callError = errorCategory.length > 0 ? errorCategory : 'sdk_error';
+  }
+  delete generation.metadata?.['call_error'];
+
+  for (const message of generation.input ?? []) {
+    stripMessageContent(message);
+  }
+  for (const message of generation.output ?? []) {
+    stripMessageContent(message);
+  }
+  for (const tool of generation.tools ?? []) {
+    tool.description = undefined;
+    tool.inputSchemaJSON = undefined;
+  }
+}
+
+function stripMessageContent(message: Message): void {
+  message.content = '';
+  for (const part of message.parts ?? []) {
+    stripPart(part);
+  }
+}
+
+function stripPart(part: MessagePart): void {
+  switch (part.type) {
+    case 'text':
+      part.text = '';
+      break;
+    case 'thinking':
+      part.thinking = '';
+      break;
+    case 'tool_call':
+      part.toolCall.inputJSON = undefined;
+      break;
+    case 'tool_result':
+      part.toolResult.content = undefined;
+      part.toolResult.contentJSON = undefined;
+      break;
+  }
+}
+
+function shouldIncludeToolContent(
+  toolMode: ContentCaptureMode,
+  ctxMode: ContentCaptureMode,
+  clientDefault: ContentCaptureMode,
+  legacyInclude: boolean,
+): boolean {
+  const base = resolveClientContentCaptureMode(clientDefault);
+  const withCtx = resolveContentCaptureMode(ctxMode, base);
+  const resolved = resolveContentCaptureMode(toolMode, withCtx);
+  switch (resolved) {
+    case 'metadata_only':
+      return false;
+    case 'full':
+      return true;
+    default:
+      return legacyInclude;
+  }
+}
+
+function classifyCallErrorCategory(callError: string | undefined, fallbackSDK: boolean): string {
+  if (callError === undefined) {
+    return fallbackSDK ? 'sdk_error' : '';
+  }
+  return errorCategoryFromError(callError, fallbackSDK);
 }
