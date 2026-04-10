@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextvars
 import copy
 import json
+import logging
 import re
 import secrets
 import threading
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 from urllib import error as urllib_error
@@ -20,8 +23,10 @@ from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .config import ClientConfig, resolve_config
 from .context import (
+    _content_capture_mode,
     agent_name_from_context,
     agent_version_from_context,
+    content_capture_mode_from_context,
     conversation_id_from_context,
     conversation_title_from_context,
     user_id_from_context,
@@ -36,6 +41,7 @@ from .errors import (
 )
 from .exporters import GRPCGenerationExporter, HTTPGenerationExporter, NoopGenerationExporter
 from .models import (
+    ContentCaptureMode,
     ConversationRating,
     ConversationRatingInput,
     ConversationRatingSummary,
@@ -51,6 +57,7 @@ from .models import (
     SubmitConversationRatingResponse,
     ToolExecutionEnd,
     ToolExecutionStart,
+    _metadata_key_content_capture_mode,
 )
 from .proto_mapping import generation_to_proto
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation
@@ -126,6 +133,110 @@ _sdk_name = "sdk-python"
 _default_embedding_operation_name = "embeddings"
 _metadata_user_id_key = "sigil.user.id"
 _metadata_legacy_user_id_key = "user.id"
+
+# Stack of active GenerationRecorder capture modes, keyed by id(recorder).
+# Used to correctly restore the ContextVar when overlapping generations end in
+# non-LIFO order.
+_capture_mode_stack: contextvars.ContextVar[tuple[tuple[int, ContentCaptureMode], ...]] = contextvars.ContextVar(
+    "_sigil_capture_mode_stack", default=()
+)
+
+
+def _pop_capture_mode_stack(recorder_id: int) -> None:
+    """Removes a recorder from the stack and restores the ContextVar to the top remaining entry."""
+    stack = _capture_mode_stack.get()
+    new_stack = tuple(e for e in stack if e[0] != recorder_id)
+    _capture_mode_stack.set(new_stack)
+    _content_capture_mode.set(new_stack[-1][1] if new_stack else None)
+
+
+def _resolve_content_capture_mode(override: ContentCaptureMode, fallback: ContentCaptureMode) -> ContentCaptureMode:
+    """Returns the effective mode from an override and a fallback. DEFAULT falls through."""
+    if override != ContentCaptureMode.DEFAULT:
+        return override
+    return fallback
+
+
+def _resolve_client_content_capture_mode(mode: ContentCaptureMode) -> ContentCaptureMode:
+    """Resolves client-level mode. DEFAULT → NO_TOOL_CONTENT for backward compat."""
+    if mode == ContentCaptureMode.DEFAULT:
+        return ContentCaptureMode.NO_TOOL_CONTENT
+    return mode
+
+
+def _call_content_capture_resolver(
+    resolver: Callable | None,
+    metadata: dict[str, Any] | None,
+    logger: logging.Logger | None = None,
+) -> ContentCaptureMode:
+    """Invokes resolver callback safely. Returns DEFAULT when None. Exceptions → METADATA_ONLY."""
+    if resolver is None:
+        return ContentCaptureMode.DEFAULT
+    try:
+        return resolver(metadata)
+    except Exception:  # noqa: BLE001
+        if logger is not None:
+            logger.warning("sigil: content capture resolver failed, falling back to METADATA_ONLY", exc_info=True)
+        return ContentCaptureMode.METADATA_ONLY
+
+
+def _should_include_tool_content(
+    tool_mode: ContentCaptureMode,
+    ctx_mode: ContentCaptureMode | None,
+    client_default: ContentCaptureMode,
+    legacy_include: bool,
+) -> bool:
+    """Determines whether tool content should be included in span attributes."""
+    resolved = _resolve_client_content_capture_mode(client_default)
+    if ctx_mode is not None:
+        resolved = ctx_mode
+    if tool_mode != ContentCaptureMode.DEFAULT:
+        resolved = tool_mode
+    if resolved == ContentCaptureMode.METADATA_ONLY:
+        return False
+    if resolved == ContentCaptureMode.FULL:
+        return True
+    # NO_TOOL_CONTENT / DEFAULT: honor legacy include_content opt-in.
+    return legacy_include
+
+
+def _stamp_content_capture_metadata(generation: Generation, mode: ContentCaptureMode) -> None:
+    """Sets the content capture mode marker on the generation."""
+    generation.metadata[_metadata_key_content_capture_mode] = mode.value
+
+
+def _strip_content(generation: Generation, error_category: str) -> None:
+    """Strips sensitive content from a generation while preserving structure.
+
+    Note: user-provided metadata and tags are NOT stripped. Callers are responsible
+    for ensuring these dicts do not contain sensitive content when using MetadataOnly mode.
+    """
+    generation.system_prompt = ""
+    generation.artifacts = []
+
+    if generation.call_error != "":
+        generation.call_error = error_category if error_category else "sdk_error"
+    generation.metadata.pop("call_error", None)
+
+    for message in generation.input:
+        _strip_message_content(message)
+    for message in generation.output:
+        _strip_message_content(message)
+    for tool in generation.tools:
+        tool.description = ""
+        tool.input_schema_json = b""
+
+
+def _strip_message_content(message: Message) -> None:
+    """Strips all content from message parts (text, thinking, tool call input, tool result)."""
+    for part in message.parts:
+        part.text = ""
+        part.thinking = ""
+        if part.tool_call is not None:
+            part.tool_call.input_json = b""
+        if part.tool_result is not None:
+            part.tool_result.content = ""
+            part.tool_result.content_json = b""
 
 
 class Client:
@@ -261,12 +372,20 @@ class Client:
         )
         _set_tool_span_attributes(span, seed)
 
+        # Resolve content capture: per-tool > context (parent generation) > resolver > client default.
+        resolver_mode = _call_content_capture_resolver(self._config.content_capture_resolver, {}, self._config.logger)
+        effective_client_default = _resolve_content_capture_mode(resolver_mode, self._config.content_capture)
+        ctx_mode = content_capture_mode_from_context()
+        include_content = _should_include_tool_content(
+            seed.content_capture, ctx_mode, effective_client_default, seed.include_content
+        )
+
         return ToolExecutionRecorder(
             client=self,
             seed=seed,
             span=span,
             started_at=started_at,
-            include_content=seed.include_content,
+            include_content=include_content,
         )
 
     def submit_conversation_rating(
@@ -283,6 +402,15 @@ class Client:
             raise ValidationError("sigil conversation rating validation failed: conversation_id is required")
         if len(normalized_conversation_id) > _max_rating_conversation_id_len:
             raise ValidationError("sigil conversation rating validation failed: conversation_id is too long")
+
+        resolver_mode = _call_content_capture_resolver(
+            self._config.content_capture_resolver, rating.metadata, self._config.logger
+        )
+        effective_mode = _resolve_content_capture_mode(
+            resolver_mode, _resolve_client_content_capture_mode(self._config.content_capture)
+        )
+        if effective_mode == ContentCaptureMode.METADATA_ONLY:
+            rating = replace(rating, comment="")
 
         normalized_rating = _normalize_conversation_rating_input(rating)
         endpoint = _conversation_rating_endpoint(
@@ -436,11 +564,21 @@ class Client:
             ),
         )
 
+        # Resolve content capture mode: per-recording > resolver > client default.
+        resolver_mode = _call_content_capture_resolver(
+            self._config.content_capture_resolver, seed.metadata, self._config.logger
+        )
+        client_mode = _resolve_client_content_capture_mode(
+            _resolve_content_capture_mode(resolver_mode, self._config.content_capture)
+        )
+        cc_mode = _resolve_content_capture_mode(seed.content_capture, client_mode)
+
         return GenerationRecorder(
             client=self,
             seed=seed,
             span=span,
             started_at=started_at,
+            _content_capture_mode=cc_mode,
         )
 
     def _enqueue_generation(self, generation: Generation) -> None:
@@ -672,6 +810,7 @@ class GenerationRecorder:
     span: Span
     started_at: datetime
 
+    _content_capture_mode: ContentCaptureMode = ContentCaptureMode.NO_TOOL_CONTENT
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _ended: bool = False
     _call_error: Exception | None = None
@@ -680,6 +819,11 @@ class GenerationRecorder:
     _last_generation: Generation | None = None
     _final_error: Exception | None = None
     _first_token_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        stack = _capture_mode_stack.get()
+        _capture_mode_stack.set((*stack, (id(self), self._content_capture_mode)))
+        _content_capture_mode.set(self._content_capture_mode)
 
     def __enter__(self) -> GenerationRecorder:
         return self
@@ -733,66 +877,80 @@ class GenerationRecorder:
             result = copy.deepcopy(self._result) if self._result is not None else Generation()
             first_token_at = self._first_token_at
 
-        completed_at = _to_utc(self.client._now())
-        generation = self._normalize_generation(result, completed_at, call_error)
-        _apply_trace_context_from_span(self.span, generation)
-
-        self.span.update_name(_generation_span_name(generation.operation_name, generation.model.name))
-        _set_generation_span_attributes(self.span, generation)
-
-        local_error: Exception | None = None
         try:
-            validate_generation(generation)
-        except Exception as exc:  # noqa: BLE001
-            local_error = ValidationError(f"sigil: generation validation failed: {exc}")
+            completed_at = _to_utc(self.client._now())
+            generation = self._normalize_generation(result, completed_at, call_error)
+            _apply_trace_context_from_span(self.span, generation)
 
-        if local_error is None:
+            _stamp_content_capture_metadata(generation, self._content_capture_mode)
+            if self._content_capture_mode == ContentCaptureMode.METADATA_ONLY:
+                error_cat = _error_category_from_exception(call_error, fallback_sdk=True) if call_error else ""
+                _strip_content(generation, error_cat)
+
+            self.span.update_name(_generation_span_name(generation.operation_name, generation.model.name))
+            _set_generation_span_attributes(self.span, generation)
+
+            local_error: Exception | None = None
             try:
-                self.client._enqueue_generation(generation)
-            except QueueFullError as exc:
-                local_error = exc
-            except ClientShutdownError as exc:
-                local_error = exc
+                validate_generation(generation)
             except Exception as exc:  # noqa: BLE001
-                local_error = EnqueueError(f"sigil: generation enqueue failed: {exc}")
+                local_error = ValidationError(f"sigil: generation validation failed: {exc}")
 
-        if call_error is not None:
-            self.span.record_exception(call_error)
-        if mapping_error is not None:
-            self.span.record_exception(mapping_error)
-        if local_error is not None:
-            self.span.record_exception(local_error)
+            if local_error is None:
+                try:
+                    self.client._enqueue_generation(generation)
+                except QueueFullError as exc:
+                    local_error = exc
+                except ClientShutdownError as exc:
+                    local_error = exc
+                except Exception as exc:  # noqa: BLE001
+                    local_error = EnqueueError(f"sigil: generation enqueue failed: {exc}")
 
-        error_type = ""
-        error_category = ""
-        if call_error is not None:
-            error_type = "provider_call_error"
-            error_category = _error_category_from_exception(call_error, fallback_sdk=True)
-            self.span.set_attribute(_span_attr_error_type, error_type)
-            self.span.set_attribute(_span_attr_error_category, error_category)
-            self.span.set_status(Status(StatusCode.ERROR, str(call_error)))
-        elif mapping_error is not None:
-            error_type = "mapping_error"
-            error_category = "sdk_error"
-            self.span.set_attribute(_span_attr_error_type, error_type)
-            self.span.set_attribute(_span_attr_error_category, error_category)
-            self.span.set_status(Status(StatusCode.ERROR, str(mapping_error)))
-        elif local_error is not None:
-            error_type = "validation_error" if isinstance(local_error, ValidationError) else "enqueue_error"
-            error_category = "sdk_error"
-            self.span.set_attribute(_span_attr_error_type, error_type)
-            self.span.set_attribute(_span_attr_error_category, error_category)
-            self.span.set_status(Status(StatusCode.ERROR, str(local_error)))
-        else:
-            self.span.set_status(Status(StatusCode.OK))
+            is_metadata_only = self._content_capture_mode == ContentCaptureMode.METADATA_ONLY
 
-        self.client._record_generation_metrics(generation, error_type, error_category, first_token_at)
+            if not is_metadata_only:
+                if call_error is not None:
+                    self.span.record_exception(call_error)
+                if mapping_error is not None:
+                    self.span.record_exception(mapping_error)
+            # SDK-internal errors (validation/enqueue) contain no user content — always record.
+            if local_error is not None:
+                self.span.record_exception(local_error)
 
-        self.span.end(end_time=_datetime_to_ns(generation.completed_at or completed_at))
+            error_type = ""
+            error_category = ""
+            if call_error is not None:
+                error_type = "provider_call_error"
+                error_category = _error_category_from_exception(call_error, fallback_sdk=True)
+                self.span.set_attribute(_span_attr_error_type, error_type)
+                self.span.set_attribute(_span_attr_error_category, error_category)
+                self.span.set_status(Status(StatusCode.ERROR, error_category if is_metadata_only else str(call_error)))
+            elif mapping_error is not None:
+                error_type = "mapping_error"
+                error_category = "sdk_error"
+                self.span.set_attribute(_span_attr_error_type, error_type)
+                self.span.set_attribute(_span_attr_error_category, error_category)
+                self.span.set_status(
+                    Status(StatusCode.ERROR, error_category if is_metadata_only else str(mapping_error))
+                )
+            elif local_error is not None:
+                error_type = "validation_error" if isinstance(local_error, ValidationError) else "enqueue_error"
+                error_category = "sdk_error"
+                self.span.set_attribute(_span_attr_error_type, error_type)
+                self.span.set_attribute(_span_attr_error_category, error_category)
+                self.span.set_status(Status(StatusCode.ERROR, error_category if is_metadata_only else str(local_error)))
+            else:
+                self.span.set_status(Status(StatusCode.OK))
 
-        with self._lock:
-            self._last_generation = copy.deepcopy(generation)
-            self._final_error = local_error
+            self.client._record_generation_metrics(generation, error_type, error_category, first_token_at)
+
+            self.span.end(end_time=_datetime_to_ns(generation.completed_at or completed_at))
+
+            with self._lock:
+                self._last_generation = copy.deepcopy(generation)
+                self._final_error = local_error
+        finally:
+            _pop_capture_mode_stack(id(self))
 
     def err(self) -> Exception | None:
         """Returns local validation/enqueue error after `end()`."""

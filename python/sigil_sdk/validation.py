@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
-from .models import ArtifactKind, EmbeddingResult, EmbeddingStart, Generation, GenerationMode, MessageRole, PartKind
+from .models import (
+    ArtifactKind,
+    ContentCaptureMode,
+    EmbeddingResult,
+    EmbeddingStart,
+    Generation,
+    GenerationMode,
+    MessageRole,
+    PartKind,
+    _metadata_key_content_capture_mode,
+)
+
+
+def _is_content_stripped(generation: Generation) -> bool:
+    """Reports whether the generation has been through MetadataOnly stripping."""
+    return generation.metadata.get(_metadata_key_content_capture_mode) == ContentCaptureMode.METADATA_ONLY.value
 
 
 def validate_generation(generation: Generation) -> None:
     """Raises ValueError when a generation payload is invalid."""
+
+    content_stripped = _is_content_stripped(generation)
 
     if generation.mode is not None and generation.mode not in (GenerationMode.SYNC, GenerationMode.STREAM):
         raise ValueError("generation.mode must be one of SYNC|STREAM")
@@ -23,6 +40,7 @@ def validate_generation(generation: Generation) -> None:
             index,
             message.role.value if hasattr(message.role, "value") else str(message.role),
             message.parts,
+            content_stripped,
         )
 
     for index, message in enumerate(generation.output):
@@ -31,6 +49,7 @@ def validate_generation(generation: Generation) -> None:
             index,
             message.role.value if hasattr(message.role, "value") else str(message.role),
             message.parts,
+            content_stripped,
         )
 
     for index, tool in enumerate(generation.tools):
@@ -73,7 +92,7 @@ def validate_embedding_result(result: EmbeddingResult) -> None:
         raise ValueError("embedding.dimensions must be > 0")
 
 
-def _validate_message(path: str, index: int, role: str, parts: list[object]) -> None:
+def _validate_message(path: str, index: int, role: str, parts: list[object], content_stripped: bool = False) -> None:
     if role not in (MessageRole.USER.value, MessageRole.ASSISTANT.value, MessageRole.TOOL.value):
         raise ValueError(f"{path}[{index}].role must be one of user|assistant|tool")
 
@@ -81,10 +100,12 @@ def _validate_message(path: str, index: int, role: str, parts: list[object]) -> 
         raise ValueError(f"{path}[{index}].parts must not be empty")
 
     for part_index, part in enumerate(parts):
-        _validate_part(path, index, part_index, role, part)
+        _validate_part(path, index, part_index, role, part, content_stripped)
 
 
-def _validate_part(path: str, message_index: int, part_index: int, role: str, part: object) -> None:
+def _validate_part(
+    path: str, message_index: int, part_index: int, role: str, part: object, content_stripped: bool = False
+) -> None:
     kind = part.kind.value if hasattr(part.kind, "value") else str(part.kind)
 
     if kind not in (
@@ -105,18 +126,20 @@ def _validate_part(path: str, message_index: int, part_index: int, role: str, pa
     if getattr(part, "tool_result", None) is not None:
         field_count += 1
 
-    if field_count != 1:
+    # Stripped text/thinking parts have empty payloads — that's expected.
+    stripped_text_or_thinking = content_stripped and kind in (PartKind.TEXT.value, PartKind.THINKING.value)
+    if field_count != 1 and not stripped_text_or_thinking:
         raise ValueError(f"{path}[{message_index}].parts[{part_index}] must set exactly one payload field")
 
     if kind == PartKind.TEXT.value:
-        if getattr(part, "text", "").strip() == "":
+        if not content_stripped and getattr(part, "text", "").strip() == "":
             raise ValueError(f"{path}[{message_index}].parts[{part_index}].text is required")
         return
 
     if kind == PartKind.THINKING.value:
         if role != MessageRole.ASSISTANT.value:
             raise ValueError(f"{path}[{message_index}].parts[{part_index}].thinking only allowed for assistant role")
-        if getattr(part, "thinking", "").strip() == "":
+        if not content_stripped and getattr(part, "thinking", "").strip() == "":
             raise ValueError(f"{path}[{message_index}].parts[{part_index}].thinking is required")
         return
 

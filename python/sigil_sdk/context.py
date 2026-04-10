@@ -5,6 +5,10 @@ from __future__ import annotations
 import contextvars
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import ContentCaptureMode
 
 _conversation_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_conversation_id", default=None)
 _conversation_title: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -13,6 +17,9 @@ _conversation_title: contextvars.ContextVar[str | None] = contextvars.ContextVar
 _user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_user_id", default=None)
 _agent_name: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_agent_name", default=None)
 _agent_version: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_agent_version", default=None)
+_content_capture_mode: contextvars.ContextVar[ContentCaptureMode | None] = contextvars.ContextVar(
+    "sigil_content_capture_mode", default=None
+)
 
 
 @contextmanager
@@ -98,3 +105,20 @@ def user_id_from_context() -> str | None:
     """Returns the current user id from context variables."""
 
     return _user_id.get()
+
+
+@contextmanager
+def with_content_capture_mode(mode: ContentCaptureMode) -> Iterator[None]:
+    """Sets the content capture mode within a context block."""
+
+    token = _content_capture_mode.set(mode)
+    try:
+        yield
+    finally:
+        _content_capture_mode.reset(token)
+
+
+def content_capture_mode_from_context() -> ContentCaptureMode | None:
+    """Returns the content capture mode from context, or None if not set."""
+
+    return _content_capture_mode.get()
