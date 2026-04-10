@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class GenerationMode(str, Enum):
@@ -78,7 +78,7 @@ class TokenUsage:
     reasoning_tokens: int = 0
     cache_creation_input_tokens: int = 0
 
-    def normalize(self) -> "TokenUsage":
+    def normalize(self) -> TokenUsage:
         """Returns a copy with `total_tokens` auto-filled when missing."""
 
         normalized = TokenUsage(
@@ -129,8 +129,8 @@ class Part:
     kind: PartKind
     text: str = ""
     thinking: str = ""
-    tool_call: Optional[ToolCall] = None
-    tool_result: Optional[ToolResult] = None
+    tool_call: ToolCall | None = None
+    tool_result: ToolResult | None = None
     metadata: PartMetadata = field(default_factory=PartMetadata)
 
 
@@ -166,18 +166,18 @@ class GenerationStart:
     user_id: str = ""
     agent_name: str = ""
     agent_version: str = ""
-    mode: Optional[GenerationMode] = None
+    mode: GenerationMode | None = None
     operation_name: str = ""
     system_prompt: str = ""
-    max_tokens: Optional[int] = None
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    tool_choice: Optional[str] = None
-    thinking_enabled: Optional[bool] = None
+    max_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    tool_choice: str | None = None
+    thinking_enabled: bool | None = None
     tools: list[ToolDefinition] = field(default_factory=list)
     tags: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
-    started_at: Optional[datetime] = None
+    started_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -187,11 +187,11 @@ class EmbeddingStart:
     model: ModelRef
     agent_name: str = ""
     agent_version: str = ""
-    dimensions: Optional[int] = None
+    dimensions: int | None = None
     encoding_format: str = ""
     tags: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
-    started_at: Optional[datetime] = None
+    started_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -202,7 +202,7 @@ class EmbeddingResult:
     input_tokens: int = 0
     input_texts: list[str] = field(default_factory=list)
     response_model: str = ""
-    dimensions: Optional[int] = None
+    dimensions: int | None = None
 
 
 @dataclass(slots=True)
@@ -215,7 +215,7 @@ class Generation:
     user_id: str = ""
     agent_name: str = ""
     agent_version: str = ""
-    mode: Optional[GenerationMode] = None
+    mode: GenerationMode | None = None
     operation_name: str = ""
     trace_id: str = ""
     span_id: str = ""
@@ -223,18 +223,18 @@ class Generation:
     response_id: str = ""
     response_model: str = ""
     system_prompt: str = ""
-    max_tokens: Optional[int] = None
-    temperature: Optional[float] = None
-    top_p: Optional[float] = None
-    tool_choice: Optional[str] = None
-    thinking_enabled: Optional[bool] = None
+    max_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    tool_choice: str | None = None
+    thinking_enabled: bool | None = None
     input: list[Message] = field(default_factory=list)
     output: list[Message] = field(default_factory=list)
     tools: list[ToolDefinition] = field(default_factory=list)
     usage: TokenUsage = field(default_factory=TokenUsage)
     stop_reason: str = ""
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     tags: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     artifacts: list[Artifact] = field(default_factory=list)
@@ -256,7 +256,7 @@ class ToolExecutionStart:
     request_model: str = ""
     request_provider: str = ""
     include_content: bool = False
-    started_at: Optional[datetime] = None
+    started_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -265,7 +265,7 @@ class ToolExecutionEnd:
 
     arguments: Any = None
     result: Any = None
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 @dataclass(slots=True)

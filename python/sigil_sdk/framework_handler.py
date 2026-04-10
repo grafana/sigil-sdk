@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import math
-from typing import Any, Callable
+from typing import Any
 from uuid import UUID
 
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+
 from sigil_sdk import (
     Client,
     Generation,
@@ -20,8 +22,8 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
-    ToolExecutionStart,
     TokenUsage,
+    ToolExecutionStart,
     user_text_message,
 )
 
@@ -145,7 +147,9 @@ class SigilFrameworkHandlerBase:
         )
 
         mode = GenerationMode.STREAM if _is_streaming(invocation_params) else GenerationMode.SYNC
-        input_messages = [user_text_message(prompt) for prompt in prompts if prompt.strip() != ""] if self._capture_inputs else []
+        input_messages = (
+            [user_text_message(prompt) for prompt in prompts if prompt.strip() != ""] if self._capture_inputs else []
+        )
 
         tags = dict(self._extra_tags)
         tags["sigil.framework.name"] = self._framework_name
@@ -195,7 +199,11 @@ class SigilFrameworkHandlerBase:
             metadata=metadata,
         )
 
-        recorder = self._client.start_streaming_generation(start) if mode == GenerationMode.STREAM else self._client.start_generation(start)
+        recorder = (
+            self._client.start_streaming_generation(start)
+            if mode == GenerationMode.STREAM
+            else self._client.start_generation(start)
+        )
         self._runs[run_key] = _RunState(
             recorder=recorder,
             input_messages=input_messages,
@@ -276,7 +284,11 @@ class SigilFrameworkHandlerBase:
             metadata=metadata,
         )
 
-        recorder = self._client.start_streaming_generation(start) if mode == GenerationMode.STREAM else self._client.start_generation(start)
+        recorder = (
+            self._client.start_streaming_generation(start)
+            if mode == GenerationMode.STREAM
+            else self._client.start_generation(start)
+        )
         self._runs[run_key] = _RunState(
             recorder=recorder,
             input_messages=input_messages,
@@ -581,6 +593,7 @@ class SigilFrameworkHandlerBase:
             return tracer
         return otel_trace.get_tracer(self._framework_instrumentation_name)
 
+
 def _resolve_provider(
     *,
     explicit_provider: str,
@@ -626,7 +639,12 @@ def _resolve_model_name(serialized: dict[str, Any] | None, invocation_params: di
 
 def _infer_provider_from_model_name(model_name: str) -> str:
     normalized = model_name.strip().lower()
-    if normalized.startswith("gpt-") or normalized.startswith("o1") or normalized.startswith("o3") or normalized.startswith("o4"):
+    if (
+        normalized.startswith("gpt-")
+        or normalized.startswith("o1")
+        or normalized.startswith("o3")
+        or normalized.startswith("o4")
+    ):
         return "openai"
     if normalized.startswith("claude-"):
         return "anthropic"

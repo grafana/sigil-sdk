@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from importlib import util as importlib_util
-from pathlib import Path
 import sys
 import time
+from importlib import util as importlib_util
+from pathlib import Path
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "devex_emitter.py"
 MODULE_SPEC = importlib_util.spec_from_file_location("devex_emitter", MODULE_PATH)
@@ -180,11 +180,21 @@ def test_emit_frameworks_invokes_all_framework_handlers_for_provider_sources(mon
 
 
 def test_emit_frameworks_skips_non_provider_sources(monkeypatch) -> None:
-    monkeypatch.setattr(emitter, "SigilLangChainHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
-    monkeypatch.setattr(emitter, "SigilLangGraphHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
-    monkeypatch.setattr(emitter, "SigilOpenAIAgentsHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
-    monkeypatch.setattr(emitter, "SigilLlamaIndexHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
-    monkeypatch.setattr(emitter, "SigilGoogleAdkHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected")))
+    monkeypatch.setattr(
+        emitter, "SigilLangChainHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    )
+    monkeypatch.setattr(
+        emitter, "SigilLangGraphHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    )
+    monkeypatch.setattr(
+        emitter, "SigilOpenAIAgentsHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    )
+    monkeypatch.setattr(
+        emitter, "SigilLlamaIndexHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    )
+    monkeypatch.setattr(
+        emitter, "SigilGoogleAdkHandler", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    )
 
     context = emitter.EmitContext(
         conversation_id="conv-framework",

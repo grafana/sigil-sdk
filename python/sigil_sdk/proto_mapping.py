@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import timezone
-from google.protobuf import json_format
-from google.protobuf import struct_pb2
-from google.protobuf import timestamp_pb2
 
+from google.protobuf import json_format, struct_pb2, timestamp_pb2
+
+from .internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
 from .models import (
     ArtifactKind,
     Generation,
@@ -14,7 +14,6 @@ from .models import (
     MessageRole,
     PartKind,
 )
-from .internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
 
 
 def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:

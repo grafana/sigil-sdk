@@ -15,11 +15,11 @@ from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_google_adk import (
     SigilAsyncGoogleAdkHandler,
     SigilGoogleAdkCallbacks,
-    SigilGoogleAdkPlugin,
     SigilGoogleAdkHandler,
-    with_sigil_google_adk_callbacks,
+    SigilGoogleAdkPlugin,
     create_sigil_google_adk_handler,
     create_sigil_google_adk_plugin,
+    with_sigil_google_adk_callbacks,
     with_sigil_google_adk_plugins,
 )
 
@@ -32,8 +32,7 @@ class _CapturingExporter:
         self.requests.append(request)
         return ExportGenerationsResponse(
             results=[
-                ExportGenerationResult(generation_id=generation.id, accepted=True)
-                for generation in request.generations
+                ExportGenerationResult(generation_id=generation.id, accepted=True) for generation in request.generations
             ]
         )
 
@@ -205,7 +204,10 @@ def test_sigil_sdk_google_adk_generation_span_tracks_active_parent_span_and_expo
                 run_id=run_id,
                 parent_run_id=uuid4(),
                 invocation_params={"model": "gpt-5"},
-                metadata={"conversation_id": "framework-conversation-lineage-42", "thread_id": "framework-thread-lineage-42"},
+                metadata={
+                    "conversation_id": "framework-conversation-lineage-42",
+                    "thread_id": "framework-thread-lineage-42",
+                },
             )
             handler.on_llm_end(
                 {"generations": [[{"text": "world"}]], "llm_output": {"model_name": "gpt-5", "finish_reason": "stop"}},

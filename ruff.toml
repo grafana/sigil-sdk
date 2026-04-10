@@ -1,0 +1,19 @@
+required-version = "==0.15.10"
+target-version = "py310"
+line-length = 120
+
+exclude = [
+    ".venv",
+    "node_modules",
+    "*_pb2.py",
+    "*_pb2_grpc.py",
+]
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["E402"]
+
+[format]
+quote-style = "double"

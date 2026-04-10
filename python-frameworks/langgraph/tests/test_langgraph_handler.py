@@ -27,8 +27,7 @@ class _CapturingExporter:
         self.requests.append(request)
         return ExportGenerationsResponse(
             results=[
-                ExportGenerationResult(generation_id=generation.id, accepted=True)
-                for generation in request.generations
+                ExportGenerationResult(generation_id=generation.id, accepted=True) for generation in request.generations
             ]
         )
 
@@ -59,7 +58,11 @@ def test_langgraph_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             agent_version="v1",
             provider_resolver="auto",
             extra_tags={"env": "test", "sigil.framework.name": "override"},
-            extra_metadata={"seed": 7, "sigil.framework.run_id": "override-run", "sigil.framework.thread_id": "override-thread"},
+            extra_metadata={
+                "seed": 7,
+                "sigil.framework.run_id": "override-run",
+                "sigil.framework.thread_id": "override-thread",
+            },
         )
 
         handler.on_chat_model_start(
@@ -299,7 +302,9 @@ def test_langgraph_tool_chain_and_retriever_callbacks_emit_spans() -> None:
         spans = span_exporter.get_finished_spans()
         tool_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "execute_tool")
         chain_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "framework_chain")
-        retriever_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "framework_retriever")
+        retriever_span = next(
+            span for span in spans if span.attributes.get("gen_ai.operation.name") == "framework_retriever"
+        )
 
         assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
         assert tool_span.attributes.get("gen_ai.conversation.id") == "graph-thread-42"

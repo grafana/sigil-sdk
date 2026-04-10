@@ -3,10 +3,10 @@
 from .client import Client
 from .config import ApiConfig, AuthConfig, ClientConfig, EmbeddingCaptureConfig, GenerationExportConfig, default_config
 from .context import (
-    conversation_title_from_context,
-    conversation_id_from_context,
     agent_name_from_context,
     agent_version_from_context,
+    conversation_id_from_context,
+    conversation_title_from_context,
     user_id_from_context,
     with_agent_name,
     with_agent_version,
@@ -42,19 +42,19 @@ from .models import (
     Part,
     PartKind,
     PartMetadata,
+    SubmitConversationRatingResponse,
     TokenUsage,
     ToolCall,
     ToolDefinition,
     ToolExecutionEnd,
     ToolExecutionStart,
     ToolResult,
-    SubmitConversationRatingResponse,
     assistant_text_message,
     text_part,
     thinking_part,
     tool_call_part,
-    tool_result_part,
     tool_result_message,
+    tool_result_part,
     user_text_message,
 )
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation

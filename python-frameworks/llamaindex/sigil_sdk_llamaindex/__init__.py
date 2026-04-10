@@ -16,6 +16,7 @@ try:  # pragma: no cover - imported from llama-index at runtime
     from llama_index.core.callbacks import CallbackManager
     from llama_index.core.callbacks.base_handler import BaseCallbackHandler
 except Exception:  # pragma: no cover - lightweight fallback for local unit tests
+
     class BaseCallbackHandler:  # type: ignore[no-redef]
         """Fallback BaseCallbackHandler shape used when llama-index isn't installed."""
 

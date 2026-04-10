@@ -13,7 +13,6 @@ from sigil_sdk.models import (
     GenerationMode,
     MessageRole,
     PartKind,
-    ToolDefinition,
 )
 from sigil_sdk_litellm import SigilLiteLLMLogger, create_sigil_litellm_logger
 
@@ -25,10 +24,7 @@ class _CapturingExporter:
     def export_generations(self, request: Any) -> ExportGenerationsResponse:
         self.requests.append(request)
         return ExportGenerationsResponse(
-            results=[
-                ExportGenerationResult(generation_id=g.id, accepted=True)
-                for g in request.generations
-            ]
+            results=[ExportGenerationResult(generation_id=g.id, accepted=True) for g in request.generations]
         )
 
     def shutdown(self) -> None:
@@ -695,7 +691,10 @@ def test_litellm_session_id_used_as_conversation_id() -> None:
             },
         }
         handler.log_success_event(
-            kwargs=kwargs, response_obj=None, start_time=_START, end_time=_END,
+            kwargs=kwargs,
+            response_obj=None,
+            start_time=_START,
+            end_time=_END,
         )
         client.flush()
 
@@ -720,7 +719,10 @@ def test_litellm_trace_id_used_as_conversation_id() -> None:
             },
         }
         handler.log_success_event(
-            kwargs=kwargs, response_obj=None, start_time=_START, end_time=_END,
+            kwargs=kwargs,
+            response_obj=None,
+            start_time=_START,
+            end_time=_END,
         )
         client.flush()
 
@@ -745,7 +747,10 @@ def test_metadata_conversation_id_takes_precedence_over_litellm_session() -> Non
             },
         }
         handler.log_success_event(
-            kwargs=kwargs, response_obj=None, start_time=_START, end_time=_END,
+            kwargs=kwargs,
+            response_obj=None,
+            start_time=_START,
+            end_time=_END,
         )
         client.flush()
 
@@ -987,7 +992,7 @@ def test_non_utc_timezone_converted_to_utc() -> None:
 
         tz_plus5 = timezone(timedelta(hours=5))
         start = datetime(2024, 1, 1, 15, 0, 0, tzinfo=tz_plus5)  # = 10:00 UTC
-        end = datetime(2024, 1, 1, 15, 0, 1, tzinfo=tz_plus5)    # = 10:00:01 UTC
+        end = datetime(2024, 1, 1, 15, 0, 1, tzinfo=tz_plus5)  # = 10:00:01 UTC
 
         handler.log_success_event(
             kwargs=_make_kwargs(slo),

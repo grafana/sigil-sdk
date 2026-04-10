@@ -14,6 +14,7 @@ from .handler import SigilAsyncGoogleAdkHandler, SigilGoogleAdkHandler
 try:  # pragma: no cover - imported from google-adk at runtime
     from google.adk.plugins import BasePlugin
 except Exception:  # pragma: no cover - lightweight fallback for local unit tests
+
     class BasePlugin:  # type: ignore[no-redef]
         """Fallback BasePlugin shape used when google-adk isn't installed."""
 
@@ -51,6 +52,7 @@ except Exception:  # pragma: no cover - lightweight fallback for local unit test
         ) -> Any:
             del tool, tool_args, tool_context, result
             return None
+
 
 _adk_callback_fields = (
     "before_model_callback",
@@ -170,7 +172,9 @@ class SigilGoogleAdkCallbacks:
         )
         return None
 
-    async def after_tool_callback(self, tool: Any, args: dict[str, Any], tool_context: Any, result: dict[str, Any]) -> None:
+    async def after_tool_callback(
+        self, tool: Any, args: dict[str, Any], tool_context: Any, result: dict[str, Any]
+    ) -> None:
         del tool, args
         invocation_key = self._invocation_key(tool_context)
         function_call_id = _as_string(_read(tool_context, "function_call_id"))
@@ -184,7 +188,9 @@ class SigilGoogleAdkCallbacks:
         await _invoke_handler(self._sigil_handler, "on_tool_end", result, run_id=run_id)
         return None
 
-    async def on_tool_error_callback(self, tool: Any, args: dict[str, Any], tool_context: Any, error: Exception) -> None:
+    async def on_tool_error_callback(
+        self, tool: Any, args: dict[str, Any], tool_context: Any, error: Exception
+    ) -> None:
         del tool, args
         invocation_key = self._invocation_key(tool_context)
         function_call_id = _as_string(_read(tool_context, "function_call_id"))
@@ -454,7 +460,7 @@ def with_sigil_google_adk_plugins(
     plugins = _as_list(getattr(target, "plugins", None))
     if not _contains_sigil_plugin(plugins):
         plugins.append(plugin)
-    setattr(target, "plugins", plugins)
+    target.plugins = plugins
     return target
 
 

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, field, is_dataclass
 import json
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import TYPE_CHECKING, Any
 
 from sigil_sdk import (
     Artifact,
@@ -396,7 +396,9 @@ def _models_from_stream(
             )
         if generation.tools and not any(artifact.kind == ArtifactKind.TOOLS for artifact in generation.artifacts):
             generation.artifacts.append(_json_artifact(ArtifactKind.TOOLS, "gemini.tools", generation.tools))
-        generation.artifacts.append(_json_artifact(ArtifactKind.PROVIDER_EVENT, "gemini.stream.events", summary.responses))
+        generation.artifacts.append(
+            _json_artifact(ArtifactKind.PROVIDER_EVENT, "gemini.stream.events", summary.responses)
+        )
 
     return generation
 

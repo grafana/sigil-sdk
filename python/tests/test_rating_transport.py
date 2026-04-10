@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
 from datetime import timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from opentelemetry import trace
 import pytest
-
+from opentelemetry import trace
 from sigil_sdk import (
     ApiConfig,
     AuthConfig,

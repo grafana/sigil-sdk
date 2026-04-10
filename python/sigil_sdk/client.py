@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 import json
 import re
 import secrets
 import threading
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from opentelemetry import metrics, trace
-from opentelemetry.metrics import Histogram, Meter
+from opentelemetry.metrics import Histogram
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .config import ClientConfig, resolve_config
@@ -54,7 +54,6 @@ from .models import (
 )
 from .proto_mapping import generation_to_proto
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation
-
 
 _span_attr_generation_id = "sigil.generation.id"
 _span_attr_sdk_name = "sigil.sdk.name"
@@ -132,7 +131,7 @@ _metadata_legacy_user_id_key = "user.id"
 class Client:
     """Sigil client that records generations, tool spans, and exports in background."""
 
-    def __init__(self, config: Optional[ClientConfig] = None) -> None:
+    def __init__(self, config: ClientConfig | None = None) -> None:
         self._config = resolve_config(config)
         self._logger = self._config.logger
         self._now = self._config.now
@@ -142,7 +141,7 @@ class Client:
         self._pending_lock = threading.Lock()
         self._flush_lock = threading.Lock()
         self._flush_thread_lock = threading.Lock()
-        self._flush_thread: Optional[threading.Thread] = None
+        self._flush_thread: threading.Thread | None = None
 
         self._shutdown_lock = threading.Lock()
         self._shutting_down = False
@@ -167,7 +166,9 @@ class Client:
             else:
                 raise ValueError(f"unsupported generation export protocol {self._config.generation_export.protocol!r}")
 
-        self._tracer = self._config.tracer if self._config.tracer is not None else trace.get_tracer(_instrumentation_name)
+        self._tracer = (
+            self._config.tracer if self._config.tracer is not None else trace.get_tracer(_instrumentation_name)
+        )
         self._meter = self._config.meter if self._config.meter is not None else metrics.get_meter(_instrumentation_name)
 
         self._operation_duration_histogram: Histogram = self._meter.create_histogram(
@@ -180,23 +181,23 @@ class Client:
         )
 
         self._timer_stop = threading.Event()
-        self._timer_thread: Optional[threading.Thread] = None
+        self._timer_thread: threading.Thread | None = None
         flush_interval_s = self._config.generation_export.flush_interval.total_seconds()
         if flush_interval_s > 0:
             self._timer_thread = threading.Thread(target=self._run_flush_timer, daemon=True)
             self._timer_thread.start()
 
-    def start_generation(self, start: GenerationStart) -> "GenerationRecorder":
+    def start_generation(self, start: GenerationStart) -> GenerationRecorder:
         """Starts a non-stream generation recorder."""
 
         return self._start_generation(start=start, default_mode=GenerationMode.SYNC)
 
-    def start_streaming_generation(self, start: GenerationStart) -> "GenerationRecorder":
+    def start_streaming_generation(self, start: GenerationStart) -> GenerationRecorder:
         """Starts a stream generation recorder."""
 
         return self._start_generation(start=start, default_mode=GenerationMode.STREAM)
 
-    def start_embedding(self, start: EmbeddingStart) -> "EmbeddingRecorder":
+    def start_embedding(self, start: EmbeddingStart) -> EmbeddingRecorder:
         """Starts an embedding recorder."""
 
         self._assert_open()
@@ -226,7 +227,7 @@ class Client:
             started_at=started_at,
         )
 
-    def start_tool_execution(self, start: ToolExecutionStart) -> "ToolExecutionRecorder":
+    def start_tool_execution(self, start: ToolExecutionStart) -> ToolExecutionRecorder:
         """Starts a tool execution recorder."""
 
         self._assert_open()
@@ -332,9 +333,8 @@ class Client:
                 raise RatingConflictError(
                     f"sigil conversation rating conflict: {_rating_error_text(raw_error, exc.code)}"
                 ) from exc
-            raise RatingTransportError(
-                f"sigil conversation rating transport failed: status {exc.code}: {_rating_error_text(raw_error, exc.code)}"
-            ) from exc
+            msg = _rating_error_text(raw_error, exc.code)
+            raise RatingTransportError(f"sigil conversation rating transport failed: status {exc.code}: {msg}") from exc
         except Exception as exc:  # noqa: BLE001
             raise RatingTransportError(f"sigil conversation rating transport failed: {exc}") from exc
 
@@ -347,7 +347,9 @@ class Client:
         try:
             parsed = json.loads(raw.decode("utf-8"))
         except Exception as exc:  # noqa: BLE001
-            raise RatingTransportError(f"sigil conversation rating transport failed: invalid JSON response: {exc}") from exc
+            raise RatingTransportError(
+                f"sigil conversation rating transport failed: invalid JSON response: {exc}"
+            ) from exc
 
         return _parse_submit_conversation_rating_response(parsed)
 
@@ -384,7 +386,7 @@ class Client:
 
             self._closed = True
 
-    def _start_generation(self, start: GenerationStart, default_mode: GenerationMode) -> "GenerationRecorder":
+    def _start_generation(self, start: GenerationStart, default_mode: GenerationMode) -> GenerationRecorder:
         self._assert_open()
 
         seed = copy.deepcopy(start)
@@ -488,9 +490,7 @@ class Client:
                 response = self._export_with_retry(ExportGenerationsRequest(generations=batch))
                 for result in response.results:
                     if not result.accepted:
-                        self._log_warn(
-                            f"sigil generation rejected id={result.generation_id} error={result.error}"
-                        )
+                        self._log_warn(f"sigil generation rejected id={result.generation_id} error={result.error}")
 
     def _export_with_retry(self, request: ExportGenerationsRequest):
         attempts = self._config.generation_export.max_retries + 1
@@ -681,7 +681,7 @@ class GenerationRecorder:
     _final_error: Exception | None = None
     _first_token_at: datetime | None = None
 
-    def __enter__(self) -> "GenerationRecorder":
+    def __enter__(self) -> GenerationRecorder:
         return self
 
     def __exit__(self, exc_type, exc, _tb) -> bool:
@@ -698,7 +698,9 @@ class GenerationRecorder:
         with self._lock:
             self._call_error = error
 
-    def set_result(self, generation: Generation | None = None, mapping_error: Exception | None = None, **kwargs: Any) -> None:
+    def set_result(
+        self, generation: Generation | None = None, mapping_error: Exception | None = None, **kwargs: Any
+    ) -> None:
         """Stores mapped generation result and optional mapping error."""
 
         if generation is None:
@@ -805,7 +807,9 @@ class GenerationRecorder:
         with self._lock:
             return copy.deepcopy(self._last_generation)
 
-    def _normalize_generation(self, raw: Generation, completed_at: datetime, call_error: Exception | None) -> Generation:
+    def _normalize_generation(
+        self, raw: Generation, completed_at: datetime, call_error: Exception | None
+    ) -> Generation:
         generation = copy.deepcopy(raw)
 
         if generation.id == "":
@@ -881,7 +885,9 @@ class GenerationRecorder:
             generation.metadata[_metadata_user_id_key] = user_id
 
         generation.started_at = _to_utc(generation.started_at) if generation.started_at is not None else self.started_at
-        generation.completed_at = _to_utc(generation.completed_at) if generation.completed_at is not None else completed_at
+        generation.completed_at = (
+            _to_utc(generation.completed_at) if generation.completed_at is not None else completed_at
+        )
 
         if call_error is not None:
             if generation.call_error == "":
@@ -909,7 +915,7 @@ class EmbeddingRecorder:
     _has_result: bool = False
     _final_error: Exception | None = None
 
-    def __enter__(self) -> "EmbeddingRecorder":
+    def __enter__(self) -> EmbeddingRecorder:
         return self
 
     def __exit__(self, exc_type, exc, _tb) -> bool:
@@ -1020,7 +1026,7 @@ class ToolExecutionRecorder:
     _has_result: bool = False
     _final_error: Exception | None = None
 
-    def __enter__(self) -> "ToolExecutionRecorder":
+    def __enter__(self) -> ToolExecutionRecorder:
         return self
 
     def __exit__(self, exc_type, exc, _tb) -> bool:
@@ -1088,7 +1094,9 @@ class ToolExecutionRecorder:
         if final_error is not None:
             self.span.record_exception(final_error)
             self.span.set_attribute(_span_attr_error_type, "tool_execution_error")
-            self.span.set_attribute(_span_attr_error_category, _error_category_from_exception(final_error, fallback_sdk=True))
+            self.span.set_attribute(
+                _span_attr_error_category, _error_category_from_exception(final_error, fallback_sdk=True)
+            )
             self.span.set_status(Status(StatusCode.ERROR, str(final_error)))
         else:
             self.span.set_status(Status(StatusCode.OK))
@@ -1110,7 +1118,7 @@ class ToolExecutionRecorder:
 class NoopToolExecutionRecorder:
     """No-op tool recorder returned for empty tool names."""
 
-    def __enter__(self) -> "NoopToolExecutionRecorder":
+    def __enter__(self) -> NoopToolExecutionRecorder:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ARG002
@@ -1489,15 +1497,15 @@ def _classify_error_category(status_code: int | None, message: str, fallback_sdk
 
 
 def _extract_status_code_from_exception(error: Exception) -> int | None:
-    for field in ("status", "status_code", "Status", "StatusCode"):
-        parsed = _as_status_code(getattr(error, field, None))
+    for attr in ("status", "status_code", "Status", "StatusCode"):
+        parsed = _as_status_code(getattr(error, attr, None))
         if parsed is not None:
             return parsed
 
     response = getattr(error, "response", None)
     if response is not None:
-        for field in ("status", "status_code", "Status", "StatusCode"):
-            parsed = _as_status_code(getattr(response, field, None))
+        for attr in ("status", "status_code", "Status", "StatusCode"):
+            parsed = _as_status_code(getattr(response, attr, None))
             if parsed is not None:
                 return parsed
 
@@ -1555,7 +1563,8 @@ def _normalize_conversation_rating_input(input_value: ConversationRatingInput) -
         ConversationRatingValue.BAD.value,
     }:
         raise ValidationError(
-            "sigil conversation rating validation failed: rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD"
+            "sigil conversation rating validation failed:"
+            " rating must be CONVERSATION_RATING_VALUE_GOOD or CONVERSATION_RATING_VALUE_BAD"
         )
 
     comment = input_value.comment.strip()
@@ -1649,7 +1658,12 @@ def _parse_conversation_rating(payload: dict[str, Any]) -> ConversationRating:
     rater_id = payload.get("rater_id", "")
     source = payload.get("source", "")
     comment = payload.get("comment", "")
-    if not isinstance(generation_id, str) or not isinstance(rater_id, str) or not isinstance(source, str) or not isinstance(comment, str):
+    if (
+        not isinstance(generation_id, str)
+        or not isinstance(rater_id, str)
+        or not isinstance(source, str)
+        or not isinstance(comment, str)
+    ):
         raise RatingTransportError("sigil conversation rating transport failed: invalid rating payload")
 
     return ConversationRating(

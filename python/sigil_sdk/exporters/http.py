@@ -39,7 +39,9 @@ class HTTPGenerationExporter:
             raise RuntimeError(f"http generation export failed: {exc}") from exc
 
         if status < 200 or status >= 300:
-            raise RuntimeError(f"http generation export status {status}: {raw.decode('utf-8', errors='replace').strip()}")
+            raise RuntimeError(
+                f"http generation export status {status}: {raw.decode('utf-8', errors='replace').strip()}"
+            )
 
         parsed = json.loads(raw.decode("utf-8"))
         results = []

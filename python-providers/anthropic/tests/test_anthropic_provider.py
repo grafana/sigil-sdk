@@ -5,10 +5,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-
+import sigil_sdk_anthropic
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-import sigil_sdk_anthropic
 from sigil_sdk_anthropic import AnthropicOptions, AnthropicStreamSummary, messages
 
 
@@ -20,8 +19,7 @@ class _CapturingExporter:
         self.requests.append(request)
         return ExportGenerationsResponse(
             results=[
-                ExportGenerationResult(generation_id=generation.id, accepted=True)
-                for generation in request.generations
+                ExportGenerationResult(generation_id=generation.id, accepted=True) for generation in request.generations
             ]
         )
 
@@ -163,7 +161,9 @@ def test_anthropic_wrappers_tolerate_missing_provider_payload_fields() -> None:
         messages.stream(
             client,
             _request(),
-            lambda _request: AnthropicStreamSummary(events=[{"type": "content_block_delta", "delta": {"type": "text_delta"}}]),
+            lambda _request: AnthropicStreamSummary(
+                events=[{"type": "content_block_delta", "delta": {"type": "text_delta"}}]
+            ),
         )
 
         client.flush()
