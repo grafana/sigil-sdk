@@ -33,7 +33,8 @@ Add to `~/.claude/settings.json`:
   "env": {
     "SIGIL_URL": "https://sigil.example.com",
     "SIGIL_USER": "your-tenant-id",
-    "SIGIL_PASSWORD": "glc_..."
+    "SIGIL_PASSWORD": "glc_...",
+    "SIGIL_CONTENT_CAPTURE_MODE": "metadata_only"
   }
 }
 ```
@@ -45,7 +46,7 @@ Add to `~/.claude/settings.json`:
 | `SIGIL_URL` | yes | Sigil endpoint |
 | `SIGIL_USER` | yes | Basic auth username (also `X-Scope-OrgID`) |
 | `SIGIL_PASSWORD` | yes | Basic auth password |
-| `SIGIL_CONTENT_CAPTURE` | no | `true` to include redacted conversation content (default: metadata-only) |
+| `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`) |
 | `SIGIL_OTEL_ENDPOINT` | no | OTLP HTTP endpoint for metrics + traces (e.g. `https://otlp-gateway.grafana.net/otlp` or `host:4318`) |
 | `SIGIL_OTEL_USER` | no | OTLP auth username (defaults to `SIGIL_USER`) |
 | `SIGIL_OTEL_PASSWORD` | no | OTLP auth password (defaults to `SIGIL_PASSWORD`) |
@@ -64,9 +65,17 @@ Each assistant API response becomes one Generation with model, tokens, tools, ti
 
 ## Content Capture
 
-By default, only metadata is sent (model, tokens, tool names, timestamps). Set `SIGIL_CONTENT_CAPTURE=true` to include conversation content with automatic secret redaction:
+Content capture is controlled by `SIGIL_CONTENT_CAPTURE_MODE` (default: `metadata_only`):
 
-- User prompts: sent as-is (user's own input)
+| Mode | What's sent |
+|------|-------------|
+| `metadata_only` | Model, tokens, tool names, timestamps, tags. All text content stripped by the SDK. |
+| `full` | Full conversation content with automatic secret redaction (see below). |
+| `no_tool_content` | Full generation content but tool execution arguments/results excluded from spans. |
+
+When content is included (`full` or `no_tool_content`), automatic redaction is applied:
+
+- User prompts: Tier 1 redaction (known token formats)
 - Assistant text: Tier 1 redaction (known token formats)
 - Tool inputs/outputs: Tier 1 + Tier 2 redaction (tokens + env-file heuristics)
 - Thinking blocks: omitted (noted in metadata)
