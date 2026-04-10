@@ -27,6 +27,7 @@ from .errors import (
 from .models import (
     Artifact,
     ArtifactKind,
+    ContentCaptureMode,
     ConversationRating,
     ConversationRatingInput,
     ConversationRatingSummary,
@@ -67,6 +68,7 @@ __all__ = [
     "Client",
     "ClientConfig",
     "ClientShutdownError",
+    "ContentCaptureMode",
     "ConversationRating",
     "ConversationRatingInput",
     "ConversationRatingSummary",
