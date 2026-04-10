@@ -33,7 +33,14 @@ type Env struct {
 	closeOnce      sync.Once
 }
 
-func NewEnv(t testing.TB) *Env {
+// NewEnv creates a test environment with a fake gRPC ingest server, span
+// recorder, and metric reader. The returned Client is configured to export
+// generations synchronously (batch size 1) to the fake server.
+//
+// Optional config modifiers are applied after the base test config is built.
+// Use this to inject a ContentCaptureResolver or override other Config fields
+// while keeping the test exporter and tracing infrastructure.
+func NewEnv(t testing.TB, opts ...func(*sigil.Config)) *Env {
 	t.Helper()
 
 	ingest := &capturingIngestServer{}
@@ -68,6 +75,9 @@ func NewEnv(t testing.TB) *Env {
 		InitialBackoff:  time.Millisecond,
 		MaxBackoff:      5 * time.Millisecond,
 		PayloadMaxBytes: 4 << 20,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 
 	env := &Env{

@@ -97,6 +97,9 @@ type GenerationStart struct {
 	Tags              map[string]string
 	Metadata          map[string]any
 	StartedAt         time.Time
+	// ContentCapture overrides the client-level ContentCaptureMode for this
+	// generation. Default (zero value) inherits from Config.
+	ContentCapture ContentCaptureMode
 }
 
 func (g Generation) Validate() error {
@@ -166,6 +169,7 @@ func cloneGenerationStart(in GenerationStart) GenerationStart {
 		Tags:              cloneTags(in.Tags),
 		Metadata:          cloneMetadata(in.Metadata),
 		StartedAt:         in.StartedAt,
+		ContentCapture:    in.ContentCapture,
 	}
 }
 

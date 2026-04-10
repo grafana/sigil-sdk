@@ -79,6 +79,13 @@ func (c *Client) SubmitConversationRating(ctx context.Context, conversationID st
 		return nil, fmt.Errorf("%w: conversation id is too long", ErrRatingValidationFailed)
 	}
 
+	// Check content capture resolver — strip comment when MetadataOnly.
+	resolverMode := callContentCaptureResolver(c.config.ContentCaptureResolver, ctx, input.Metadata)
+	effectiveMode := resolveContentCaptureMode(resolverMode, resolveClientContentCaptureMode(c.config.ContentCapture))
+	if effectiveMode == ContentCaptureModeMetadataOnly {
+		input.Comment = ""
+	}
+
 	normalizedInput, err := normalizeConversationRatingInput(input)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRatingValidationFailed, err)

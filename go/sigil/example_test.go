@@ -64,7 +64,7 @@ func ExampleClient_StartToolExecution() {
 		ConversationID:  "conv-tools",
 		AgentName:       "assistant-core",
 		AgentVersion:    "1.0.0",
-		IncludeContent:  true,
+		ContentCapture:  sigil.ContentCaptureModeFull,
 	})
 	defer recorder.End()
 
@@ -75,4 +75,28 @@ func ExampleClient_StartToolExecution() {
 		Arguments: map[string]any{"city": "Paris"},
 		Result:    result,
 	})
+}
+
+func ExampleClient_StartGeneration_metadataOnly() {
+	client := sigil.NewClient(sigil.Config{
+		ContentCapture: sigil.ContentCaptureModeMetadataOnly,
+	})
+
+	ctx, recorder := client.StartGeneration(context.Background(), sigil.GenerationStart{
+		ConversationID: "conv-private",
+		AgentName:      "assistant-core",
+		AgentVersion:   "1.0.0",
+		Model:          sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+		ContentCapture: sigil.ContentCaptureModeMetadataOnly,
+	})
+	defer recorder.End()
+
+	_ = ctx
+
+	recorder.SetResult(sigil.Generation{
+		Input:  []sigil.Message{sigil.UserTextMessage("sensitive prompt")},
+		Output: []sigil.Message{sigil.AssistantTextMessage("sensitive response")},
+		Usage:  sigil.TokenUsage{InputTokens: 120, OutputTokens: 42},
+	}, nil)
+	// Content is stripped before export; only metadata (usage, timing, model) is sent.
 }

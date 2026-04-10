@@ -7,6 +7,11 @@ import (
 )
 
 func ValidateGeneration(g Generation) error {
+	return validateGeneration(g)
+}
+
+func validateGeneration(g Generation) error {
+	contentStripped := isContentStripped(g)
 	if g.Mode != "" && g.Mode != GenerationModeSync && g.Mode != GenerationModeStream {
 		return errors.New("generation.mode must be one of SYNC|STREAM")
 	}
@@ -20,13 +25,13 @@ func ValidateGeneration(g Generation) error {
 	}
 
 	for i := range g.Input {
-		if err := validateMessage("generation.input", i, g.Input[i]); err != nil {
+		if err := validateMessage("generation.input", i, g.Input[i], contentStripped); err != nil {
 			return err
 		}
 	}
 
 	for i := range g.Output {
-		if err := validateMessage("generation.output", i, g.Output[i]); err != nil {
+		if err := validateMessage("generation.output", i, g.Output[i], contentStripped); err != nil {
 			return err
 		}
 	}
@@ -75,7 +80,7 @@ func ValidateEmbeddingResult(result EmbeddingResult) error {
 	return nil
 }
 
-func validateMessage(path string, index int, message Message) error {
+func validateMessage(path string, index int, message Message, contentStripped bool) error {
 	switch message.Role {
 	case RoleUser, RoleAssistant, RoleTool:
 	default:
@@ -87,7 +92,7 @@ func validateMessage(path string, index int, message Message) error {
 	}
 
 	for i := range message.Parts {
-		if err := validatePart(path, index, i, message.Role, message.Parts[i]); err != nil {
+		if err := validatePart(path, index, i, message.Role, message.Parts[i], contentStripped); err != nil {
 			return err
 		}
 	}
@@ -95,7 +100,7 @@ func validateMessage(path string, index int, message Message) error {
 	return nil
 }
 
-func validatePart(path string, messageIndex, partIndex int, role Role, part Part) error {
+func validatePart(path string, messageIndex, partIndex int, role Role, part Part, contentStripped bool) error {
 	switch part.Kind {
 	case PartKindText, PartKindThinking, PartKindToolCall, PartKindToolResult:
 	default:
@@ -116,20 +121,23 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 		fieldCount++
 	}
 
-	if fieldCount != 1 {
+	// Stripped text/thinking parts have empty payloads — that's expected.
+	// ToolCall/ToolResult keep their struct pointers after stripping so fieldCount is still 1.
+	strippedTextOrThinking := contentStripped && (part.Kind == PartKindText || part.Kind == PartKindThinking)
+	if fieldCount != 1 && !strippedTextOrThinking {
 		return fmt.Errorf("%s[%d].parts[%d] must set exactly one payload field", path, messageIndex, partIndex)
 	}
 
 	switch part.Kind {
 	case PartKindText:
-		if part.Text == "" {
+		if !contentStripped && part.Text == "" {
 			return fmt.Errorf("%s[%d].parts[%d].text is required", path, messageIndex, partIndex)
 		}
 	case PartKindThinking:
 		if role != RoleAssistant {
 			return fmt.Errorf("%s[%d].parts[%d].thinking only allowed for assistant role", path, messageIndex, partIndex)
 		}
-		if part.Thinking == "" {
+		if !contentStripped && part.Thinking == "" {
 			return fmt.Errorf("%s[%d].parts[%d].thinking is required", path, messageIndex, partIndex)
 		}
 	case PartKindToolCall:
