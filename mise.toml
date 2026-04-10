@@ -1,3 +1,6 @@
+[tools]
+golangci-lint = "2.11.4"
+
 [env]
 PYTHON_BIN = "python3"
 
@@ -44,6 +47,11 @@ while IFS= read -r moddir; do
   (cd "${moddir}" && GOWORK=off golangci-lint run ./...)
 done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; | sort)
 """
+
+[tasks."lint:go:plugin-claude-code"]
+description = "Lint Claude Code plugin"
+dir = "plugins/claude-code"
+run = "GOWORK=off golangci-lint run ./..."
 
 [tasks."lint:cs"]
 description = "Verify .NET SDK formatting and analyzer checks"
