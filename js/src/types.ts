@@ -7,6 +7,19 @@ export type GenerationMode = 'SYNC' | 'STREAM';
 /** Supported auth modes for transport exports. */
 export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
 
+/**
+ * Controls what content is included in exported generation payloads and OTel
+ * span attributes.
+ *
+ * - `'default'` — inherits from parent or client-level default
+ *   (resolves to `'no_tool_content'` at the client level).
+ * - `'full'` — all content exported.
+ * - `'no_tool_content'` — full generation content, but tool execution
+ *   arguments/results excluded from span attributes unless opted in.
+ * - `'metadata_only'` — structure preserved, all text stripped.
+ */
+export type ContentCaptureMode = 'default' | 'full' | 'no_tool_content' | 'metadata_only';
+
 /** Per-export auth configuration. */
 export interface ExportAuthConfig {
   mode: ExportAuthMode;
@@ -141,6 +154,8 @@ export interface SigilSdkConfig {
   generationExport: GenerationExportConfig;
   api: ApiConfig;
   embeddingCapture: EmbeddingCaptureConfig;
+  contentCapture: ContentCaptureMode;
+  contentCaptureResolver?: (metadata: Record<string, unknown> | undefined) => ContentCaptureMode;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -154,6 +169,8 @@ export interface SigilSdkConfigInput {
   generationExport?: Partial<GenerationExportConfig>;
   api?: Partial<ApiConfig>;
   embeddingCapture?: Partial<EmbeddingCaptureConfig>;
+  contentCapture?: ContentCaptureMode;
+  contentCaptureResolver?: (metadata: Record<string, unknown> | undefined) => ContentCaptureMode;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -259,6 +276,7 @@ export interface GenerationStart {
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
   startedAt?: Date;
+  contentCapture?: ContentCaptureMode;
 }
 
 /** Final generation result fields. */
@@ -356,7 +374,12 @@ export interface ToolExecutionStart {
   requestModel?: string;
   /** The provider that served the model (e.g. "openai"). */
   requestProvider?: string;
+  /**
+   * @deprecated Use `contentCapture` instead. Only honored when the resolved
+   * mode is `'no_tool_content'` (the default).
+   */
   includeContent?: boolean;
+  contentCapture?: ContentCaptureMode;
   startedAt?: Date;
 }
 
@@ -380,6 +403,7 @@ export interface ToolExecution {
   requestModel?: string;
   requestProvider?: string;
   includeContent: boolean;
+  contentCapture?: ContentCaptureMode;
   startedAt: Date;
   completedAt: Date;
   arguments?: unknown;
@@ -397,6 +421,7 @@ export interface EmbeddingRecorder {
 
 /** Recorder API for generation lifecycle. */
 export interface GenerationRecorder {
+  resolvedContentCaptureMode(): ContentCaptureMode;
   setResult(result: GenerationResult): void;
   setCallError(error: unknown): void;
   setFirstTokenAt(firstTokenAt: Date): void;

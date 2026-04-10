@@ -26,6 +26,8 @@ export function defaultOperationNameForMode(mode: GenerationMode): string {
 }
 
 export function validateGeneration(generation: Generation): Error | undefined {
+  const contentStripped = isContentStripped(generation);
+
   if (generation.id.trim().length === 0) {
     return new Error('generation id is required');
   }
@@ -39,13 +41,13 @@ export function validateGeneration(generation: Generation): Error | undefined {
     return new Error('generation model name is required');
   }
   for (let index = 0; index < (generation.input ?? []).length; index++) {
-    const error = validateMessage('generation.input', index, generation.input?.[index]);
+    const error = validateMessage('generation.input', index, generation.input?.[index], contentStripped);
     if (error !== undefined) {
       return error;
     }
   }
   for (let index = 0; index < (generation.output ?? []).length; index++) {
-    const error = validateMessage('generation.output', index, generation.output?.[index]);
+    const error = validateMessage('generation.output', index, generation.output?.[index], contentStripped);
     if (error !== undefined) {
       return error;
     }
@@ -66,6 +68,13 @@ export function validateGeneration(generation: Generation): Error | undefined {
     return new Error('generation completedAt must not be earlier than startedAt');
   }
   return undefined;
+}
+
+function isContentStripped(generation: Generation): boolean {
+  if (generation.metadata === undefined) {
+    return false;
+  }
+  return generation.metadata['sigil.sdk.content_capture_mode'] === 'metadata_only';
 }
 
 export function validateToolExecution(toolExecution: ToolExecution): Error | undefined {
@@ -265,7 +274,12 @@ function cloneMessagePart(part: MessagePart): MessagePart {
   }
 }
 
-function validateMessage(path: string, index: number, message: Message | undefined): Error | undefined {
+function validateMessage(
+  path: string,
+  index: number,
+  message: Message | undefined,
+  contentStripped: boolean,
+): Error | undefined {
   if (message === undefined) {
     return new Error(`${path}[${index}] is required`);
   }
@@ -277,7 +291,7 @@ function validateMessage(path: string, index: number, message: Message | undefin
 
   const hasContent = typeof message.content === 'string' && message.content.trim().length > 0;
   const parts = message.parts ?? [];
-  if (parts.length === 0 && !hasContent) {
+  if (parts.length === 0 && !hasContent && !contentStripped) {
     return new Error(`${path}[${index}].parts must not be empty`);
   }
 
@@ -286,7 +300,7 @@ function validateMessage(path: string, index: number, message: Message | undefin
     if (part === undefined) {
       return new Error(`${path}[${index}].parts[${partIndex}] is required`);
     }
-    const error = validatePart(path, index, partIndex, role, part);
+    const error = validatePart(path, index, partIndex, role, part, contentStripped);
     if (error !== undefined) {
       return error;
     }
@@ -301,15 +315,17 @@ function validatePart(
   partIndex: number,
   role: 'user' | 'assistant' | 'tool',
   part: MessagePart,
+  contentStripped: boolean,
 ): Error | undefined {
   const payloadFieldCount = payloadFieldsCount(part);
-  if (payloadFieldCount !== 1) {
+  const strippedTextOrThinking = contentStripped && (part.type === 'text' || part.type === 'thinking');
+  if (payloadFieldCount !== 1 && !strippedTextOrThinking) {
     return new Error(`${path}[${messageIndex}].parts[${partIndex}] must set exactly one payload field`);
   }
 
   switch (part.type) {
     case 'text':
-      if (part.text.trim().length === 0) {
+      if (!contentStripped && part.text.trim().length === 0) {
         return new Error(`${path}[${messageIndex}].parts[${partIndex}].text is required`);
       }
       return undefined;
@@ -317,7 +333,7 @@ function validatePart(
       if (role !== 'assistant') {
         return new Error(`${path}[${messageIndex}].parts[${partIndex}].thinking only allowed for assistant role`);
       }
-      if (part.thinking.trim().length === 0) {
+      if (!contentStripped && part.thinking.trim().length === 0) {
         return new Error(`${path}[${messageIndex}].parts[${partIndex}].thinking is required`);
       }
       return undefined;

@@ -56,6 +56,7 @@ export function defaultConfig(): SigilSdkConfig {
     generationExport: cloneGenerationExportConfig(defaultGenerationExportConfig),
     api: cloneAPIConfig(defaultAPIConfig),
     embeddingCapture: cloneEmbeddingCaptureConfig(defaultEmbeddingCaptureConfig),
+    contentCapture: 'default',
   };
 }
 
@@ -64,6 +65,8 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
     generationExport: mergeGenerationExportConfig(config.generationExport),
     api: mergeAPIConfig(config.api),
     embeddingCapture: mergeEmbeddingCaptureConfig(config.embeddingCapture),
+    contentCapture: config.contentCapture ?? 'default',
+    contentCaptureResolver: config.contentCaptureResolver,
     generationExporter: config.generationExporter,
     tracer: config.tracer,
     meter: config.meter,
