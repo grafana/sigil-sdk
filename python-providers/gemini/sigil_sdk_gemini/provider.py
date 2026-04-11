@@ -20,11 +20,11 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
-    TokenUsage,
     ToolCall,
     ToolDefinition,
     ToolResult,
 )
+from sigil_sdk.usage import from_gemini
 
 if TYPE_CHECKING:
     from google.genai import types as genai_types
@@ -278,7 +278,7 @@ def _models_from_request_response(
 ) -> Generation:
     opts = options or GeminiOptions()
     request_controls = _request_controls(config)
-    usage = _map_usage(_read(response, "usage_metadata"))
+    usage = from_gemini(_read(response, "usage_metadata"))
     usage_metadata = _gemini_usage_metadata(_read(response, "usage_metadata"))
     output = _map_output_messages(response)
     if not output:
@@ -613,27 +613,6 @@ def _map_tools(config: GenerateContentConfig | None) -> list[ToolDefinition]:
             )
 
     return mapped
-
-
-def _map_usage(raw_usage: Any) -> TokenUsage:
-    input_tokens = _as_int(_read(raw_usage, "prompt_token_count"))
-    output_tokens = _as_int(_read(raw_usage, "candidates_token_count"))
-    total_tokens = _as_int(_read(raw_usage, "total_token_count"))
-    tool_use_prompt_tokens = _as_int(_read(raw_usage, "tool_use_prompt_token_count"))
-    reasoning_tokens = _as_int(_read(raw_usage, "thoughts_token_count"))
-    if total_tokens == 0:
-        total_tokens = input_tokens + output_tokens + tool_use_prompt_tokens + reasoning_tokens
-
-    usage = TokenUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-        cache_read_input_tokens=_as_int(_read(raw_usage, "cached_content_token_count")),
-        cache_write_input_tokens=_as_int(_read(raw_usage, "cache_write_input_token_count")),
-        cache_creation_input_tokens=_as_int(_read(raw_usage, "cache_creation_input_token_count")),
-        reasoning_tokens=reasoning_tokens,
-    )
-    return usage.normalize()
 
 
 def _response_stop_reason(response: GenerateContentResponse) -> str:

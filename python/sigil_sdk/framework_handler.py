@@ -22,10 +22,10 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
-    TokenUsage,
     ToolExecutionStart,
     user_text_message,
 )
+from sigil_sdk.usage import map_usage
 
 ProviderResolver = str | Callable[[str, dict[str, Any] | None, dict[str, Any] | None], str]
 
@@ -318,7 +318,7 @@ class SigilFrameworkHandlerBase:
         try:
             llm_output = _read(response, "llm_output")
             raw_usage = _read(llm_output, "token_usage") or _read(llm_output, "usage")
-            usage = _map_usage(raw_usage)
+            usage = map_usage(raw_usage)
             response_model = _as_str(_read(llm_output, "model_name"))
             stop_reason = _as_str(_read(llm_output, "finish_reason") or _read(llm_output, "stop_reason"))
 
@@ -1064,29 +1064,6 @@ def _normalize_role(role: str) -> MessageRole:
     if normalized == "tool":
         return MessageRole.TOOL
     return MessageRole.USER
-
-
-def _map_usage(raw_usage: Any) -> TokenUsage:
-    if raw_usage is None:
-        return TokenUsage()
-
-    input_tokens = _as_int(_read(raw_usage, "prompt_tokens"))
-    if input_tokens == 0:
-        input_tokens = _as_int(_read(raw_usage, "input_tokens"))
-
-    output_tokens = _as_int(_read(raw_usage, "completion_tokens"))
-    if output_tokens == 0:
-        output_tokens = _as_int(_read(raw_usage, "output_tokens"))
-
-    total_tokens = _as_int(_read(raw_usage, "total_tokens"))
-    if total_tokens == 0:
-        total_tokens = input_tokens + output_tokens
-
-    return TokenUsage(
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        total_tokens=total_tokens,
-    )
 
 
 def _read(value: Any, key: str) -> Any:

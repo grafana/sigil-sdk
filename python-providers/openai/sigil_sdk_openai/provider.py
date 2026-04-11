@@ -20,11 +20,11 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
-    TokenUsage,
     ToolCall,
     ToolDefinition,
     ToolResult,
 )
+from sigil_sdk.usage import from_openai_chat, from_openai_responses
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletion
@@ -207,7 +207,7 @@ def _chat_from_request_response(
     input_messages, system_prompt = _map_chat_request_messages(request)
     output_messages = _map_chat_response_output(response)
     tools = _map_chat_tools(request)
-    usage = _map_chat_usage(_read(response, "usage"))
+    usage = from_openai_chat(_read(response, "usage"))
 
     max_tokens = _chat_request_max_tokens(request)
     temperature = _as_float_or_none(_read(request, "temperature"))
@@ -507,7 +507,7 @@ def _responses_from_request_response(
         input=request_payload["input"],
         output=_map_responses_output_items(_read(response, "output")),
         tools=request_payload["tools"],
-        usage=_map_responses_usage(_read(response, "usage")),
+        usage=from_openai_responses(_read(response, "usage")),
         stop_reason=_normalize_responses_stop_reason(response),
         tags=dict(opts.tags),
         metadata=_metadata_with_thinking_budget(opts.metadata, controls["thinking_budget"]),
@@ -782,17 +782,6 @@ def _map_chat_tools(request: ChatCreateRequest | ChatStreamRequest) -> list[Tool
     return out
 
 
-def _map_chat_usage(value: Any) -> TokenUsage:
-    usage = TokenUsage(
-        input_tokens=_as_int(_read(value, "prompt_tokens")),
-        output_tokens=_as_int(_read(value, "completion_tokens")),
-        total_tokens=_as_int(_read(value, "total_tokens")),
-        cache_read_input_tokens=_as_int(_read(_read(value, "prompt_tokens_details"), "cached_tokens")),
-        reasoning_tokens=_as_int(_read(_read(value, "completion_tokens_details"), "reasoning_tokens")),
-    )
-    return usage.normalize()
-
-
 def _chat_request_max_tokens(request: ChatCreateRequest | ChatStreamRequest) -> int | None:
     first = _as_int_or_none(_read(request, "max_completion_tokens"))
     if first is not None:
@@ -981,17 +970,6 @@ def _tool_result_message(value: Any, *, tool_call_id: str, name: str, is_error: 
     )
     part.metadata.provider_type = "tool_result"
     return Message(role=MessageRole.TOOL, parts=[part])
-
-
-def _map_responses_usage(value: Any) -> TokenUsage:
-    usage = TokenUsage(
-        input_tokens=_as_int(_read(value, "input_tokens")),
-        output_tokens=_as_int(_read(value, "output_tokens")),
-        total_tokens=_as_int(_read(value, "total_tokens")),
-        cache_read_input_tokens=_as_int(_read(_read(value, "input_tokens_details"), "cached_tokens")),
-        reasoning_tokens=_as_int(_read(_read(value, "output_tokens_details"), "reasoning_tokens")),
-    )
-    return usage.normalize()
 
 
 def _normalize_responses_stop_reason(response: ResponsesCreateResponse) -> str:
