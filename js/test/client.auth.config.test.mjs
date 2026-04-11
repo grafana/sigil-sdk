@@ -12,7 +12,7 @@ test('invalid generation auth config throws at client init', () => {
           },
         },
       }),
-    /requires tenantId/
+    /requires tenantId/,
   );
 });
 
@@ -27,8 +27,8 @@ test('basic auth mode injects Authorization and X-Scope-OrgID headers', () => {
     },
   });
 
-  const expected = 'Basic ' + btoa('42:secret');
-  assert.equal(client.config.generationExport.headers?.['Authorization'], expected);
+  const expected = `Basic ${btoa('42:secret')}`;
+  assert.equal(client.config.generationExport.headers?.Authorization, expected);
   assert.equal(client.config.generationExport.headers?.['X-Scope-OrgID'], '42');
   client.shutdown();
 });
@@ -45,8 +45,8 @@ test('basic auth mode uses basicUser over tenantId for credential', () => {
     },
   });
 
-  const expected = 'Basic ' + btoa('probe-user:secret');
-  assert.equal(client.config.generationExport.headers?.['Authorization'], expected);
+  const expected = `Basic ${btoa('probe-user:secret')}`;
+  assert.equal(client.config.generationExport.headers?.Authorization, expected);
   assert.equal(client.config.generationExport.headers?.['X-Scope-OrgID'], '42');
   client.shutdown();
 });
@@ -62,7 +62,7 @@ test('basic auth mode requires basicPassword', () => {
           },
         },
       }),
-    /requires basicPassword/
+    /requires basicPassword/,
   );
 });
 
@@ -77,7 +77,7 @@ test('basic auth mode requires basicUser or tenantId', () => {
           },
         },
       }),
-    /requires basicUser or tenantId/
+    /requires basicUser or tenantId/,
   );
 });
 
@@ -92,7 +92,7 @@ test('none auth mode rejects basicUser', () => {
           },
         },
       }),
-    /does not allow credentials/
+    /does not allow credentials/,
   );
 });
 
@@ -107,7 +107,7 @@ test('none auth mode rejects basicPassword', () => {
           },
         },
       }),
-    /does not allow credentials/
+    /does not allow credentials/,
   );
 });
 
@@ -123,8 +123,8 @@ test('basic auth handles non-ASCII credentials via UTF-8 encoding', () => {
   });
 
   const encoded = Buffer.from('ユーザー:パスワード', 'utf-8').toString('base64');
-  const expected = 'Basic ' + encoded;
-  assert.equal(client.config.generationExport.headers?.['Authorization'], expected);
+  const expected = `Basic ${encoded}`;
+  assert.equal(client.config.generationExport.headers?.Authorization, expected);
   client.shutdown();
 });
 
@@ -143,7 +143,7 @@ test('basic auth explicit headers win over auth-derived headers', () => {
     },
   });
 
-  assert.equal(client.config.generationExport.headers?.['Authorization'], 'Basic override');
+  assert.equal(client.config.generationExport.headers?.Authorization, 'Basic override');
   assert.equal(client.config.generationExport.headers?.['X-Scope-OrgID'], 'override-tenant');
   client.shutdown();
 });

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 import { SigilLangGraphHandler } from '../.test-dist/frameworks/langgraph/index.js';
+import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 class CapturingExporter {
   requests = [];
@@ -39,7 +39,7 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
       'parent-run-sync',
       { invocation_params: { model: 'gpt-5', retry_attempt: 2 } },
       ['prod', 'blue'],
-      { thread_id: 'graph-thread-42', langgraph_node: 'answer_node' }
+      { thread_id: 'graph-thread-42', langgraph_node: 'answer_node' },
     );
     await handler.handleLLMEnd(
       {
@@ -54,7 +54,7 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
           },
         },
       },
-      'run-sync'
+      'run-sync',
     );
   });
 
@@ -80,13 +80,9 @@ test('langgraph handler records stream mode and token fallback output', async ()
   const generation = await captureSingleGeneration(async (client) => {
     const handler = new SigilLangGraphHandler(client);
 
-    await handler.handleLLMStart(
-      { kwargs: { model: 'gemini-2.5-pro' } },
-      ['stream this'],
-      'run-stream',
-      undefined,
-      { invocation_params: { model: 'gemini-2.5-pro', streaming: true } }
-    );
+    await handler.handleLLMStart({ kwargs: { model: 'gemini-2.5-pro' } }, ['stream this'], 'run-stream', undefined, {
+      invocation_params: { model: 'gemini-2.5-pro', streaming: true },
+    });
     await handler.handleLLMNewToken('hello', undefined, 'run-stream');
     await handler.handleLLMNewToken(' world', undefined, 'run-stream');
     await handler.handleLLMEnd({ llm_output: { model_name: 'gemini-2.5-pro' } }, 'run-stream');
@@ -135,14 +131,14 @@ test('langgraph generation span tracks active parent span and preserves export l
       'parent-run-lineage',
       { invocation_params: { model: 'gpt-5' } },
       ['prod'],
-      { thread_id: 'graph-thread-lineage-42', langgraph_node: 'answer_node' }
+      { thread_id: 'graph-thread-lineage-42', langgraph_node: 'answer_node' },
     );
     await handler.handleLLMEnd(
       {
         generations: [[{ text: 'world' }]],
         llm_output: { model_name: 'gpt-5', finish_reason: 'stop' },
       },
-      'run-lineage'
+      'run-lineage',
     );
     parentSpan.end();
 
@@ -166,21 +162,30 @@ test('langgraph generation span tracks active parent span and preserves export l
 test('langgraph provider mapping covers openai anthopic gemini and fallback', async () => {
   const providers = [];
 
-  await captureGenerations(async (client) => {
-    const handler = new SigilLangGraphHandler(client);
+  await captureGenerations(
+    async (client) => {
+      const handler = new SigilLangGraphHandler(client);
 
-    await handler.handleLLMStart({}, ['x'], 'run-openai', undefined, { invocation_params: { model: 'o3-mini' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-openai');
+      await handler.handleLLMStart({}, ['x'], 'run-openai', undefined, { invocation_params: { model: 'o3-mini' } });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-openai');
 
-    await handler.handleLLMStart({}, ['x'], 'run-anthropic', undefined, { invocation_params: { model: 'claude-sonnet-4-5' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-anthropic');
+      await handler.handleLLMStart({}, ['x'], 'run-anthropic', undefined, {
+        invocation_params: { model: 'claude-sonnet-4-5' },
+      });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-anthropic');
 
-    await handler.handleLLMStart({}, ['x'], 'run-gemini', undefined, { invocation_params: { model: 'gemini-2.5-pro' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-gemini');
+      await handler.handleLLMStart({}, ['x'], 'run-gemini', undefined, {
+        invocation_params: { model: 'gemini-2.5-pro' },
+      });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-gemini');
 
-    await handler.handleLLMStart({}, ['x'], 'run-custom', undefined, { invocation_params: { model: 'mistral-large' } });
-    await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-custom');
-  }, (generation) => providers.push(generation.model.provider));
+      await handler.handleLLMStart({}, ['x'], 'run-custom', undefined, {
+        invocation_params: { model: 'mistral-large' },
+      });
+      await handler.handleLLMEnd({ generations: [[{ text: 'ok' }]] }, 'run-custom');
+    },
+    (generation) => providers.push(generation.model.provider),
+  );
 
   assert.deepEqual(providers, ['openai', 'anthropic', 'gemini', 'custom']);
 });
@@ -235,7 +240,7 @@ test('langgraph handler maps tool callbacks and emits chain/retriever spans', as
       'tool-run',
       'parent-run',
       ['tools'],
-      { thread_id: 'graph-thread-42', langgraph_node: 'tool_node' }
+      { thread_id: 'graph-thread-42', langgraph_node: 'tool_node' },
     );
     await handler.handleToolEnd({ temp_c: 18 }, 'tool-run');
 
@@ -246,7 +251,7 @@ test('langgraph handler maps tool callbacks and emits chain/retriever spans', as
       'parent-run',
       ['workflow'],
       { thread_id: 'graph-thread-42', langgraph_node: 'chain_node' },
-      'chain'
+      'chain',
     );
     await handler.handleChainEnd({}, 'chain-run');
 
@@ -256,7 +261,7 @@ test('langgraph handler maps tool callbacks and emits chain/retriever spans', as
       'retriever-run',
       'parent-run',
       ['retriever'],
-      { thread_id: 'graph-thread-42', langgraph_node: 'retriever_node' }
+      { thread_id: 'graph-thread-42', langgraph_node: 'retriever_node' },
     );
     await handler.handleRetrieverError(new Error('retriever failed'), 'retriever-run');
 

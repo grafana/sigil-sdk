@@ -42,7 +42,7 @@ export function buildFrameworkTags(extraTags: Record<string, string> | undefined
 export function buildFrameworkMetadata(
   extraMetadata: Record<string, unknown> | undefined,
   stepType: string | undefined,
-  reasoningText: string | undefined
+  reasoningText: string | undefined,
 ): Record<string, unknown> {
   const raw: Record<string, unknown> = {
     ...(extraMetadata ?? {}),
@@ -145,20 +145,19 @@ export function mapUsageFromStepFinish(event: StepFinishEvent): TokenUsage | und
   const cacheCreationTokens = numberFromCandidates([inputDetails?.cacheCreationTokens]);
   const reasoningTokens = numberFromCandidates([outputDetails?.reasoningTokens]);
 
-  const hasUsagePayload = (
-    inputTokens !== undefined
-    || outputTokens !== undefined
-    || totalTokens !== undefined
-    || inputDetails !== undefined
-    || outputDetails !== undefined
-  );
+  const hasUsagePayload =
+    inputTokens !== undefined ||
+    outputTokens !== undefined ||
+    totalTokens !== undefined ||
+    inputDetails !== undefined ||
+    outputDetails !== undefined;
   if (!hasUsagePayload) {
     return undefined;
   }
 
   const resolvedInput = inputTokens ?? 0;
   const resolvedOutput = outputTokens ?? 0;
-  const resolvedTotal = totalTokens ?? (resolvedInput + resolvedOutput);
+  const resolvedTotal = totalTokens ?? resolvedInput + resolvedOutput;
 
   return {
     inputTokens: resolvedInput,
@@ -252,13 +251,15 @@ export function mapStepOutput(event: StepFinishEvent): StepOutputMapping {
   };
 }
 
-export function parseToolCallStart(event: ToolCallStartEvent): {
-  toolCallId: string;
-  toolName: string;
-  input: unknown;
-  toolType?: string;
-  description?: string;
-} | undefined {
+export function parseToolCallStart(event: ToolCallStartEvent):
+  | {
+      toolCallId: string;
+      toolName: string;
+      input: unknown;
+      toolType?: string;
+      description?: string;
+    }
+  | undefined {
   const toolCall = asRecord(event.toolCall);
   const toolCallId = asString(toolCall?.toolCallId);
   if (toolCallId.length === 0) {
@@ -279,13 +280,15 @@ export function parseToolCallStart(event: ToolCallStartEvent): {
   };
 }
 
-export function parseToolCallFinish(event: ToolCallFinishEvent): {
-  toolCallId: string;
-  success: boolean;
-  output: unknown;
-  error: unknown;
-  durationMs?: number;
-} | undefined {
+export function parseToolCallFinish(event: ToolCallFinishEvent):
+  | {
+      toolCallId: string;
+      success: boolean;
+      output: unknown;
+      error: unknown;
+      durationMs?: number;
+    }
+  | undefined {
   const toolCall = asRecord(event.toolCall);
   const toolCallId = asString(toolCall?.toolCallId);
   if (toolCallId.length === 0) {
@@ -431,10 +434,10 @@ function matchesProvider(value: string, providerPrefix: string): boolean {
 function inferProviderFromModel(modelName: string): string {
   const normalized = modelName.trim().toLowerCase();
   if (
-    normalized.startsWith('gpt-')
-    || normalized.startsWith('o1')
-    || normalized.startsWith('o3')
-    || normalized.startsWith('o4')
+    normalized.startsWith('gpt-') ||
+    normalized.startsWith('o1') ||
+    normalized.startsWith('o3') ||
+    normalized.startsWith('o4')
   ) {
     return 'openai';
   }

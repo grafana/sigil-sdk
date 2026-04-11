@@ -1,6 +1,6 @@
+import type { Content, GenerateContentConfig, GenerateContentResponse } from '@google/genai';
 import type { SigilClient } from '../client.js';
 import type { EmbeddingResult, GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
-import type { Content, GenerateContentConfig, GenerateContentResponse } from '@google/genai';
 
 const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
 const thinkingLevelMetadataKey = 'sigil.gen_ai.request.thinking.level';
@@ -37,12 +37,8 @@ async function geminiGenerateContent(
   model: string,
   contents: GeminiContents,
   config: GeminiConfig | undefined,
-  providerCall: (
-    model: string,
-    contents: GeminiContents,
-    config: GeminiConfig | undefined
-  ) => Promise<GeminiResponse>,
-  options: GeminiOptions = {}
+  providerCall: (model: string, contents: GeminiContents, config: GeminiConfig | undefined) => Promise<GeminiResponse>,
+  options: GeminiOptions = {},
 ): Promise<GeminiResponse> {
   const controls = mapGeminiRequestControls(config);
 
@@ -69,7 +65,7 @@ async function geminiGenerateContent(
       const response = await providerCall(model, contents, config);
       recorder.setResult(geminiFromRequestResponse(model, contents, config, response, options));
       return response;
-    }
+    },
   );
 }
 
@@ -81,9 +77,9 @@ async function geminiGenerateContentStream(
   providerCall: (
     model: string,
     contents: GeminiContents,
-    config: GeminiConfig | undefined
+    config: GeminiConfig | undefined,
   ) => Promise<ModelsStreamSummary>,
-  options: GeminiOptions = {}
+  options: GeminiOptions = {},
 ): Promise<ModelsStreamSummary> {
   const controls = mapGeminiRequestControls(config);
 
@@ -114,7 +110,7 @@ async function geminiGenerateContentStream(
       }
       recorder.setResult(geminiFromStream(model, contents, config, summary, options));
       return summary;
-    }
+    },
   );
 }
 
@@ -126,12 +122,13 @@ async function geminiEmbedContent(
   providerCall: (
     model: string,
     contents: GeminiContents,
-    config: GeminiEmbedConfig | undefined
+    config: GeminiEmbedConfig | undefined,
   ) => Promise<GeminiEmbedResponse>,
-  options: GeminiOptions = {}
+  options: GeminiOptions = {},
 ): Promise<GeminiEmbedResponse> {
-  const requestedDimensions = readIntFromAny((config as AnyRecord | undefined)?.outputDimensionality)
-    ?? readIntFromAny((config as AnyRecord | undefined)?.output_dimensionality);
+  const requestedDimensions =
+    readIntFromAny((config as AnyRecord | undefined)?.outputDimensionality) ??
+    readIntFromAny((config as AnyRecord | undefined)?.output_dimensionality);
 
   return client.startEmbedding(
     {
@@ -149,7 +146,7 @@ async function geminiEmbedContent(
       const response = await providerCall(model, contents, config);
       recorder.setResult(geminiEmbeddingFromResponse(model, contents, config, response));
       return response;
-    }
+    },
   );
 }
 
@@ -157,15 +154,16 @@ function geminiEmbeddingFromResponse(
   _model: string,
   contents: GeminiContents,
   config: GeminiEmbedConfig | undefined,
-  response: GeminiEmbedResponse | undefined
+  response: GeminiEmbedResponse | undefined,
 ): EmbeddingResult {
   const result: EmbeddingResult = {
     inputCount: embeddingInputCount(contents),
     inputTexts: embeddingInputTexts(contents),
   };
 
-  const requestedDimensions = readIntFromAny((config as AnyRecord | undefined)?.outputDimensionality)
-    ?? readIntFromAny((config as AnyRecord | undefined)?.output_dimensionality);
+  const requestedDimensions =
+    readIntFromAny((config as AnyRecord | undefined)?.outputDimensionality) ??
+    readIntFromAny((config as AnyRecord | undefined)?.output_dimensionality);
 
   if (!isRecord(response)) {
     if (requestedDimensions !== undefined && requestedDimensions > 0) {
@@ -203,7 +201,7 @@ function geminiFromRequestResponse(
   contents: GeminiContents,
   config: GeminiConfig | undefined,
   response: GeminiResponse,
-  options: GeminiOptions = {}
+  options: GeminiOptions = {},
 ): GenerationResult {
   const controls = mapGeminiRequestControls(config);
   const output = mapGeminiResponseOutput(response);
@@ -224,7 +222,7 @@ function geminiFromRequestResponse(
     stopReason: mapGeminiStopReason(response),
     metadata: mergeMetadata(
       metadataWithThinkingBudget(options.metadata, controls.thinkingBudget, controls.thinkingLevel),
-      usageMetadata
+      usageMetadata,
     ),
     tags: options.tags ? { ...options.tags } : undefined,
   };
@@ -247,24 +245,21 @@ function geminiFromStream(
   contents: GeminiContents,
   config: GeminiConfig | undefined,
   summary: ModelsStreamSummary,
-  options: GeminiOptions = {}
+  options: GeminiOptions = {},
 ): GenerationResult {
   const controls = mapGeminiRequestControls(config);
   const responses = summary.responses ?? [];
   const finalResponse = summary.finalResponse ?? (responses.length > 0 ? responses[responses.length - 1] : undefined);
 
   const outputText = summary.outputText ?? extractGeminiStreamText(responses);
-  const fallbackOutput: Message[] = outputText.length > 0
-    ? [{ role: 'assistant', content: outputText }]
-    : [];
+  const fallbackOutput: Message[] = outputText.length > 0 ? [{ role: 'assistant', content: outputText }] : [];
   const streamUsageMetadata = geminiStreamUsageMetadata(responses);
 
   const result: GenerationResult = finalResponse
     ? {
         ...geminiFromRequestResponse(model, contents, config, finalResponse, options),
-        output: mapGeminiResponseOutput(finalResponse).length > 0
-          ? mapGeminiResponseOutput(finalResponse)
-          : fallbackOutput,
+        output:
+          mapGeminiResponseOutput(finalResponse).length > 0 ? mapGeminiResponseOutput(finalResponse) : fallbackOutput,
       }
     : {
         responseModel: model,
@@ -278,7 +273,7 @@ function geminiFromStream(
         tools: mapGeminiTools(config),
         metadata: mergeMetadata(
           metadataWithThinkingBudget(options.metadata, controls.thinkingBudget, controls.thinkingLevel),
-          streamUsageMetadata
+          streamUsageMetadata,
         ),
         tags: options.tags ? { ...options.tags } : undefined,
       };
@@ -457,9 +452,7 @@ function mapGeminiParts(rawParts: unknown, role: Message['role']): NonNullable<M
           name: asString(rawPart.functionResponse.name) || undefined,
           content: extractText(responseValue) || undefined,
           contentJSON: jsonString(responseValue),
-          isError: typeof rawPart.functionResponse.isError === 'boolean'
-            ? rawPart.functionResponse.isError
-            : undefined,
+          isError: typeof rawPart.functionResponse.isError === 'boolean' ? rawPart.functionResponse.isError : undefined,
         },
         metadata: { providerType: 'function_response' },
       });
@@ -591,9 +584,8 @@ function mapGeminiRequestControls(config: GeminiConfig | undefined): {
   }
 
   const toolConfig = isRecord(config.toolConfig) ? config.toolConfig : undefined;
-  const functionCallingConfig = toolConfig && isRecord(toolConfig.functionCallingConfig)
-    ? toolConfig.functionCallingConfig
-    : undefined;
+  const functionCallingConfig =
+    toolConfig && isRecord(toolConfig.functionCallingConfig) ? toolConfig.functionCallingConfig : undefined;
   const thinkingConfig = isRecord(config.thinkingConfig) ? config.thinkingConfig : undefined;
 
   return {
@@ -601,9 +593,7 @@ function mapGeminiRequestControls(config: GeminiConfig | undefined): {
     temperature: readNumberFromAny(config.temperature),
     topP: readNumberFromAny(config.topP),
     toolChoice: canonicalToolChoice(functionCallingConfig?.mode),
-    thinkingEnabled: typeof thinkingConfig?.includeThoughts === 'boolean'
-      ? thinkingConfig.includeThoughts
-      : undefined,
+    thinkingEnabled: typeof thinkingConfig?.includeThoughts === 'boolean' ? thinkingConfig.includeThoughts : undefined,
     thinkingBudget: readIntFromAny(thinkingConfig?.thinkingBudget),
     thinkingLevel: geminiThinkingLevel(thinkingConfig?.thinkingLevel),
   };
@@ -678,7 +668,9 @@ function canonicalToolChoice(value: unknown): string | undefined {
     return normalized.length > 0 ? normalized : undefined;
   }
   if (isRecord(value) && 'value' in value) {
-    const normalized = String((value as { value: unknown }).value ?? '').trim().toLowerCase();
+    const normalized = String((value as { value: unknown }).value ?? '')
+      .trim()
+      .toLowerCase();
     return normalized.length > 0 ? normalized : undefined;
   }
   return jsonString(value);
@@ -687,7 +679,7 @@ function canonicalToolChoice(value: unknown): string | undefined {
 function metadataWithThinkingBudget(
   metadata: Record<string, unknown> | undefined,
   thinkingBudget: number | undefined,
-  thinkingLevel: string | undefined
+  thinkingLevel: string | undefined,
 ): Record<string, unknown> | undefined {
   if (thinkingBudget === undefined && thinkingLevel === undefined) {
     return metadata ? { ...metadata } : undefined;
@@ -734,7 +726,7 @@ function geminiStreamUsageMetadata(responses: GeminiResponse[]): Record<string, 
 
 function mergeMetadata(
   base: Record<string, unknown> | undefined,
-  extra: Record<string, unknown> | undefined
+  extra: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   if (base === undefined) {
     return extra ? { ...extra } : undefined;

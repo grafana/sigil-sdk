@@ -1,28 +1,12 @@
-import { SpanKind, SpanStatusCode, trace, type Span, type Tracer } from '@opentelemetry/api';
-import type {
-  GenerationRecorder,
-  GenerationResult,
-  Message,
-  TokenUsage,
-  ToolExecutionRecorder,
-} from '../types.js';
+import { type Span, SpanKind, SpanStatusCode, type Tracer, trace } from '@opentelemetry/api';
 import type { SigilClient } from '../client.js';
+import type { GenerationRecorder, GenerationResult, Message, TokenUsage, ToolExecutionRecorder } from '../types.js';
 
 type AnyRecord = Record<string, unknown>;
 
-type ProviderResolverFn = (context: {
-  modelName: string;
-  serialized?: unknown;
-  invocationParams?: unknown;
-}) => string;
+type ProviderResolverFn = (context: { modelName: string; serialized?: unknown; invocationParams?: unknown }) => string;
 
-type FrameworkName =
-  | 'langchain'
-  | 'langgraph'
-  | 'openai-agents'
-  | 'llamaindex'
-  | 'google-adk'
-  | 'vercel-ai-sdk';
+type FrameworkName = 'langchain' | 'langgraph' | 'openai-agents' | 'llamaindex' | 'google-adk' | 'vercel-ai-sdk';
 
 const frameworkInstrumentationName = 'github.com/grafana/sigil/sdks/js/frameworks';
 const spanAttrOperationName = 'gen_ai.operation.name';
@@ -100,7 +84,7 @@ export class SigilFrameworkHandler {
     private readonly client: SigilClient,
     private readonly frameworkName: FrameworkName,
     private readonly frameworkLanguage: 'javascript',
-    options: FrameworkHandlerOptions = {}
+    options: FrameworkHandlerOptions = {},
   ) {
     this.agentName = options.agentName;
     this.agentVersion = options.agentVersion;
@@ -120,7 +104,7 @@ export class SigilFrameworkHandler {
     extraParams?: AnyRecord,
     callbackTags?: string[],
     callbackMetadata?: AnyRecord,
-    runName?: string
+    runName?: string,
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.runs.has(runKey)) {
@@ -145,9 +129,7 @@ export class SigilFrameworkHandler {
     });
 
     const payload = this.startPayload(runKey, provider, modelName, context);
-    const recorder = stream
-      ? this.client.startStreamingGeneration(payload)
-      : this.client.startGeneration(payload);
+    const recorder = stream ? this.client.startStreamingGeneration(payload) : this.client.startGeneration(payload);
 
     this.runs.set(runKey, {
       recorder,
@@ -166,7 +148,7 @@ export class SigilFrameworkHandler {
     extraParams?: AnyRecord,
     callbackTags?: string[],
     callbackMetadata?: AnyRecord,
-    runName?: string
+    runName?: string,
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.runs.has(runKey)) {
@@ -191,9 +173,7 @@ export class SigilFrameworkHandler {
     });
 
     const payload = this.startPayload(runKey, provider, modelName, context);
-    const recorder = stream
-      ? this.client.startStreamingGeneration(payload)
-      : this.client.startGeneration(payload);
+    const recorder = stream ? this.client.startStreamingGeneration(payload) : this.client.startGeneration(payload);
 
     this.runs.set(runKey, {
       recorder,
@@ -296,7 +276,7 @@ export class SigilFrameworkHandler {
     callbackTags?: string[],
     callbackMetadata?: AnyRecord,
     runName?: string,
-    extraParams?: AnyRecord
+    extraParams?: AnyRecord,
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.toolRuns.has(runKey)) {
@@ -385,7 +365,7 @@ export class SigilFrameworkHandler {
     callbackMetadata?: AnyRecord,
     callbackRunType?: string,
     runName?: string,
-    extraParams?: AnyRecord
+    extraParams?: AnyRecord,
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.chainSpans.has(runKey)) {
@@ -427,7 +407,7 @@ export class SigilFrameworkHandler {
     callbackTags?: string[],
     callbackMetadata?: AnyRecord,
     runName?: string,
-    extraParams?: AnyRecord
+    extraParams?: AnyRecord,
   ): void {
     const runKey = String(runId);
     if (runKey.length === 0 || this.retrieverSpans.has(runKey)) {
@@ -462,7 +442,7 @@ export class SigilFrameworkHandler {
     this.endFrameworkSpan(this.retrieverSpans, runId, error);
   }
 
-  private startPayload(runId: string, provider: string, modelName: string, context: FrameworkContext) {
+  private startPayload(_runId: string, provider: string, modelName: string, context: FrameworkContext) {
     return {
       conversationId: context.conversationId,
       agentName: this.agentName,
@@ -513,11 +493,7 @@ export class SigilFrameworkHandler {
     }
   }
 
-  private endFrameworkSpan(
-    spans: Map<string, Span>,
-    runId: string,
-    error: unknown
-  ): void {
+  private endFrameworkSpan(spans: Map<string, Span>, runId: string, error: unknown): void {
     const runKey = String(runId);
     const span = spans.get(runKey);
     if (span === undefined) {
@@ -554,33 +530,34 @@ export class SigilFrameworkHandler {
       params.serialized,
       params.invocationParams,
       params.extraParams,
-      params.callbackMetadata
+      params.callbackMetadata,
     );
     const componentName = resolveComponentName(
       params.serialized,
       params.callbackMetadata,
       params.extraParams,
-      params.runName
+      params.runName,
     );
     const retryAttempt = resolveFrameworkRetryAttempt(
       params.callbackMetadata,
       params.extraParams,
       params.invocationParams,
-      params.serialized
+      params.serialized,
     );
     const parentRunId = normalizeRunID(params.parentRunId);
     const runType = params.runType.trim();
     const frameworkTags = normalizeFrameworkTags(
-      params.callbackTags ?? read(params.extraParams, 'tags') ?? read(params.callbackMetadata, 'tags')
+      params.callbackTags ?? read(params.extraParams, 'tags') ?? read(params.callbackMetadata, 'tags'),
     );
-    const langgraphNode = this.frameworkName === 'langgraph'
-      ? resolveLangGraphNode(params.callbackMetadata, params.extraParams, params.invocationParams, params.serialized)
-      : '';
+    const langgraphNode =
+      this.frameworkName === 'langgraph'
+        ? resolveLangGraphNode(params.callbackMetadata, params.extraParams, params.invocationParams, params.serialized)
+        : '';
     const eventId = resolveFrameworkEventID(
       params.callbackMetadata,
       params.extraParams,
       params.invocationParams,
-      params.serialized
+      params.serialized,
     );
 
     const rawMetadata: Record<string, unknown> = {
@@ -638,7 +615,7 @@ function resolveProvider(
   resolver: 'auto' | ProviderResolverFn,
   modelName: string,
   serialized: unknown,
-  invocationParams: unknown
+  invocationParams: unknown,
 ): string {
   const explicit = normalizeProvider(explicitProvider);
   if (explicit.length > 0) {
@@ -651,7 +628,7 @@ function resolveProvider(
         modelName,
         serialized,
         invocationParams,
-      })
+      }),
     );
     return resolved.length > 0 ? resolved : 'custom';
   }
@@ -702,7 +679,7 @@ function resolveFrameworkThreadId(
   serialized: unknown,
   invocationParams: AnyRecord | undefined,
   extraParams: AnyRecord | undefined,
-  callbackMetadata: AnyRecord | undefined
+  callbackMetadata: AnyRecord | undefined,
 ): string {
   for (const payload of [callbackMetadata, extraParams, invocationParams, serialized]) {
     const threadId = threadIdFromPayload(payload);
@@ -719,7 +696,7 @@ function resolveFrameworkConversationContext(
   serialized: unknown,
   invocationParams: AnyRecord | undefined,
   extraParams: AnyRecord | undefined,
-  callbackMetadata: AnyRecord | undefined
+  callbackMetadata: AnyRecord | undefined,
 ): { conversationId: string; threadId: string } {
   for (const payload of [callbackMetadata, extraParams, invocationParams, serialized]) {
     const conversationId = conversationIdFromPayload(payload);
@@ -806,7 +783,7 @@ function resolveComponentName(
   serialized: unknown,
   callbackMetadata: AnyRecord | undefined,
   extraParams: AnyRecord | undefined,
-  runName: string | undefined
+  runName: string | undefined,
 ): string {
   const candidates = [
     asString(read(serialized, 'name')),
@@ -829,7 +806,7 @@ function resolveLangGraphNode(
   callbackMetadata: AnyRecord | undefined,
   extraParams: AnyRecord | undefined,
   invocationParams: AnyRecord | undefined,
-  serialized: unknown
+  serialized: unknown,
 ): string {
   for (const payload of [callbackMetadata, extraParams, invocationParams, asRecord(serialized)]) {
     const candidate = langGraphNodeFromPayload(payload);
@@ -947,11 +924,7 @@ function normalizeFrameworkMetadata(raw: Record<string, unknown>): Record<string
   return out;
 }
 
-function normalizeFrameworkMetadataValue(
-  value: unknown,
-  depth: number,
-  seen: WeakSet<object>
-): unknown {
+function normalizeFrameworkMetadataValue(value: unknown, depth: number, seen: WeakSet<object>): unknown {
   if (depth > maxFrameworkMetadataDepth || value === undefined) {
     return undefined;
   }
@@ -1207,10 +1180,10 @@ function mapUsage(rawUsage: unknown): TokenUsage | undefined {
 function inferProviderFromModelName(modelName: string): string {
   const normalized = modelName.trim().toLowerCase();
   if (
-    normalized.startsWith('gpt-')
-    || normalized.startsWith('o1')
-    || normalized.startsWith('o3')
-    || normalized.startsWith('o4')
+    normalized.startsWith('gpt-') ||
+    normalized.startsWith('o1') ||
+    normalized.startsWith('o3') ||
+    normalized.startsWith('o4')
   ) {
     return 'openai';
   }

@@ -1,5 +1,5 @@
 import type { SigilClient } from '../../client.js';
-import { SigilFrameworkHandler, type FrameworkHandlerOptions } from '../shared.js';
+import { type FrameworkHandlerOptions, SigilFrameworkHandler } from '../shared.js';
 
 export type { FrameworkHandlerOptions };
 
@@ -20,7 +20,7 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onLLMStart(serialized, prompts, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -33,16 +33,12 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChatModelStart(serialized, messages, runId, parentRunId, extraParams, tags, metadata, runName);
   }
 
-  async handleLLMNewToken(
-    token: string,
-    _idx: unknown,
-    runId: string
-  ): Promise<void> {
+  async handleLLMNewToken(token: string, _idx: unknown, runId: string): Promise<void> {
     this.onLLMNewToken(token, runId);
   }
 
@@ -61,7 +57,7 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onToolStart(serialized, input, runId, parentRunId, tags, metadata, runName);
   }
@@ -82,7 +78,7 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     tags?: string[],
     metadata?: Record<string, unknown>,
     runType?: string,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChainStart(serialized, runId, parentRunId, tags, metadata, runType, runName);
   }
@@ -102,7 +98,7 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onRetrieverStart(serialized, runId, parentRunId, tags, metadata, runName);
   }
@@ -118,7 +114,7 @@ export class SigilLangGraphHandler extends SigilFrameworkHandler {
 
 export function createSigilLangGraphHandler(
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): SigilLangGraphHandler {
   return new SigilLangGraphHandler(client, options);
 }
@@ -126,7 +122,7 @@ export function createSigilLangGraphHandler(
 export function withSigilLangGraphCallbacks<T extends CallbackConfig>(
   config: T | undefined,
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): T & { callbacks: unknown[] } {
   const handler = createSigilLangGraphHandler(client, options);
   const base = { ...(config ?? {}) } as CallbackConfig;

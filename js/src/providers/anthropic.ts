@@ -1,10 +1,10 @@
-import type { SigilClient } from '../client.js';
-import type { GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 import type {
   Message as AnthropicMessage,
   MessageCreateParams,
   RawMessageStreamEvent,
 } from '@anthropic-ai/sdk/resources/messages';
+import type { SigilClient } from '../client.js';
+import type { GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 
 const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
 const usageServerToolUseWebSearchMetadataKey = 'sigil.gen_ai.usage.server_tool_use.web_search_requests';
@@ -38,7 +38,7 @@ async function anthropicMessagesCreate(
   client: SigilClient,
   request: MessagesCreateRequest,
   providerCall: (request: MessagesCreateRequest) => Promise<MessagesCreateResponse>,
-  options: AnthropicOptions = {}
+  options: AnthropicOptions = {},
 ): Promise<MessagesCreateResponse> {
   const mappedRequest = mapAnthropicRequest(request);
 
@@ -65,7 +65,7 @@ async function anthropicMessagesCreate(
       const response = await providerCall(request);
       recorder.setResult(anthropicMessagesFromRequestResponse(request, response, options));
       return response;
-    }
+    },
   );
 }
 
@@ -73,7 +73,7 @@ async function anthropicMessagesStream(
   client: SigilClient,
   request: MessagesCreateRequest,
   providerCall: (request: MessagesCreateRequest) => Promise<MessagesStreamSummary>,
-  options: AnthropicOptions = {}
+  options: AnthropicOptions = {},
 ): Promise<MessagesStreamSummary> {
   const mappedRequest = mapAnthropicRequest(request);
 
@@ -104,14 +104,14 @@ async function anthropicMessagesStream(
       }
       recorder.setResult(anthropicMessagesFromStream(request, summary, options));
       return summary;
-    }
+    },
   );
 }
 
 function anthropicMessagesFromRequestResponse(
   request: MessagesCreateRequest,
   response: MessagesCreateResponse,
-  options: AnthropicOptions = {}
+  options: AnthropicOptions = {},
 ): GenerationResult {
   const mappedRequest = mapAnthropicRequest(request);
   const output = mapAnthropicResponseOutput(response);
@@ -130,10 +130,7 @@ function anthropicMessagesFromRequestResponse(
     tools: mappedRequest.tools,
     usage: mapAnthropicUsage((response as AnyRecord).usage),
     stopReason: normalizeStopReason((response as AnyRecord).stop_reason),
-    metadata: mergeMetadata(
-      metadataWithThinkingBudget(options.metadata, mappedRequest.thinkingBudget),
-      usageMetadata
-    ),
+    metadata: mergeMetadata(metadataWithThinkingBudget(options.metadata, mappedRequest.thinkingBudget), usageMetadata),
     tags: options.tags ? { ...options.tags } : undefined,
   };
 
@@ -153,23 +150,22 @@ function anthropicMessagesFromRequestResponse(
 function anthropicMessagesFromStream(
   request: MessagesCreateRequest,
   summary: MessagesStreamSummary,
-  options: AnthropicOptions = {}
+  options: AnthropicOptions = {},
 ): GenerationResult {
   const mappedRequest = mapAnthropicRequest(request);
   const events = summary.events ?? [];
 
   const outputText = summary.outputText ?? extractAnthropicStreamText(events);
-  const fallbackOutput: Message[] = outputText.length > 0
-    ? [{ role: 'assistant', content: outputText }]
-    : [];
+  const fallbackOutput: Message[] = outputText.length > 0 ? [{ role: 'assistant', content: outputText }] : [];
   const streamUsageMetadata = anthropicStreamUsageMetadata(events);
 
   const result: GenerationResult = summary.finalResponse
     ? {
         ...anthropicMessagesFromRequestResponse(request, summary.finalResponse, options),
-        output: mapAnthropicResponseOutput(summary.finalResponse).length > 0
-          ? mapAnthropicResponseOutput(summary.finalResponse)
-          : fallbackOutput,
+        output:
+          mapAnthropicResponseOutput(summary.finalResponse).length > 0
+            ? mapAnthropicResponseOutput(summary.finalResponse)
+            : fallbackOutput,
       }
     : {
         responseModel: String((request as AnyRecord).model ?? ''),
@@ -183,7 +179,7 @@ function anthropicMessagesFromStream(
         tools: mappedRequest.tools,
         metadata: mergeMetadata(
           metadataWithThinkingBudget(options.metadata, mappedRequest.thinkingBudget),
-          streamUsageMetadata
+          streamUsageMetadata,
         ),
         tags: options.tags ? { ...options.tags } : undefined,
       };
@@ -295,13 +291,14 @@ function mapAnthropicContentParts(content: unknown, role: Message['role']): NonN
     }
 
     if (blockType === 'thinking' || blockType === 'redacted_thinking') {
-      const thinking = typeof rawBlock.thinking === 'string'
-        ? rawBlock.thinking
-        : typeof rawBlock.data === 'string'
-          ? rawBlock.data
-        : typeof rawBlock.text === 'string'
-          ? rawBlock.text
-          : '';
+      const thinking =
+        typeof rawBlock.thinking === 'string'
+          ? rawBlock.thinking
+          : typeof rawBlock.data === 'string'
+            ? rawBlock.data
+            : typeof rawBlock.text === 'string'
+              ? rawBlock.text
+              : '';
 
       if (thinking.trim().length > 0) {
         parts.push({
@@ -336,11 +333,12 @@ function mapAnthropicContentParts(content: unknown, role: Message['role']): NonN
       parts.push({
         type: 'tool_result',
         toolResult: {
-          toolCallId: typeof rawBlock.tool_use_id === 'string'
-            ? rawBlock.tool_use_id
-            : typeof rawBlock.tool_call_id === 'string'
-              ? rawBlock.tool_call_id
-              : undefined,
+          toolCallId:
+            typeof rawBlock.tool_use_id === 'string'
+              ? rawBlock.tool_use_id
+              : typeof rawBlock.tool_call_id === 'string'
+                ? rawBlock.tool_call_id
+                : undefined,
           name: typeof rawBlock.name === 'string' ? rawBlock.name : undefined,
           content: contentValue || undefined,
           contentJSON: jsonString(rawBlock.content),
@@ -567,7 +565,9 @@ function anthropicThinkingEnabled(value: unknown): boolean | undefined {
     if (typeof value.enabled === 'boolean') {
       return value.enabled;
     }
-    const mode = String(value.type ?? value.mode ?? '').trim().toLowerCase();
+    const mode = String(value.type ?? value.mode ?? '')
+      .trim()
+      .toLowerCase();
     if (mode === 'enabled' || mode === 'adaptive') {
       return true;
     }
@@ -595,7 +595,9 @@ function canonicalToolChoice(value: unknown): string | undefined {
     return normalized.length > 0 ? normalized : undefined;
   }
   if (isRecord(value) && 'value' in value) {
-    const normalized = String((value as { value: unknown }).value ?? '').trim().toLowerCase();
+    const normalized = String((value as { value: unknown }).value ?? '')
+      .trim()
+      .toLowerCase();
     return normalized.length > 0 ? normalized : undefined;
   }
   return jsonString(value);
@@ -661,7 +663,7 @@ function readNumberFromAny(value: unknown): number | undefined {
 
 function metadataWithThinkingBudget(
   metadata: Record<string, unknown> | undefined,
-  thinkingBudget: number | undefined
+  thinkingBudget: number | undefined,
 ): Record<string, unknown> | undefined {
   if (thinkingBudget === undefined) {
     return metadata ? { ...metadata } : undefined;
@@ -673,7 +675,7 @@ function metadataWithThinkingBudget(
 
 function mergeMetadata(
   base: Record<string, unknown> | undefined,
-  extra: Record<string, unknown> | undefined
+  extra: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
   if (base === undefined) {
     return extra ? { ...extra } : undefined;

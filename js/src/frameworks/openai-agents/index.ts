@@ -1,5 +1,5 @@
 import type { SigilClient } from '../../client.js';
-import { SigilFrameworkHandler, type FrameworkHandlerOptions } from '../shared.js';
+import { type FrameworkHandlerOptions, SigilFrameworkHandler } from '../shared.js';
 
 export type { FrameworkHandlerOptions };
 
@@ -30,7 +30,7 @@ export class SigilOpenAIAgentsHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onLLMStart(serialized, prompts, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -43,7 +43,7 @@ export class SigilOpenAIAgentsHandler extends SigilFrameworkHandler {
     extraParams?: Record<string, unknown>,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChatModelStart(serialized, messages, runId, parentRunId, extraParams, tags, metadata, runName);
   }
@@ -67,7 +67,7 @@ export class SigilOpenAIAgentsHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onToolStart(serialized, input, runId, parentRunId, tags, metadata, runName);
   }
@@ -88,7 +88,7 @@ export class SigilOpenAIAgentsHandler extends SigilFrameworkHandler {
     tags?: string[],
     metadata?: Record<string, unknown>,
     runType?: string,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onChainStart(serialized, runId, parentRunId, tags, metadata, runType, runName);
   }
@@ -108,7 +108,7 @@ export class SigilOpenAIAgentsHandler extends SigilFrameworkHandler {
     parentRunId?: string,
     tags?: string[],
     metadata?: Record<string, unknown>,
-    runName?: string
+    runName?: string,
   ): Promise<void> {
     this.onRetrieverStart(serialized, runId, parentRunId, tags, metadata, runName);
   }
@@ -124,7 +124,7 @@ export class SigilOpenAIAgentsHandler extends SigilFrameworkHandler {
 
 export function createSigilOpenAIAgentsHandler(
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): SigilOpenAIAgentsHandler {
   return new SigilOpenAIAgentsHandler(client, options);
 }
@@ -132,11 +132,11 @@ export function createSigilOpenAIAgentsHandler(
 export function withSigilOpenAIAgentsHooks(
   target: OpenAIAgentsHookTarget,
   client: SigilClient,
-  options: FrameworkHandlerOptions = {}
+  options: FrameworkHandlerOptions = {},
 ): OpenAIAgentsHookRegistration {
   if (!isHookTarget(target)) {
     throw new Error(
-      'withSigilOpenAIAgentsHooks expects an OpenAI Agents Runner or Agent (RunHooks/AgentHooks emitter).'
+      'withSigilOpenAIAgentsHooks expects an OpenAI Agents Runner or Agent (RunHooks/AgentHooks emitter).',
     );
   }
 
@@ -176,10 +176,7 @@ export function withSigilOpenAIAgentsHooks(
     return created;
   };
 
-  const makeContextMetadata = (
-    context: unknown,
-    extras?: Record<string, unknown>
-  ): Record<string, unknown> => {
+  const makeContextMetadata = (context: unknown, extras?: Record<string, unknown>): Record<string, unknown> => {
     const conversationId = resolveConversationId(context);
     return {
       conversation_id: conversationId,
@@ -212,7 +209,7 @@ export function withSigilOpenAIAgentsHooks(
       },
       undefined,
       makeContextMetadata(context),
-      agentName
+      agentName,
     );
   };
 
@@ -235,7 +232,7 @@ export function withSigilOpenAIAgentsHooks(
           token_usage: usage,
         },
       },
-      runId
+      runId,
     );
 
     const contextId = getContextId(context);
@@ -264,11 +261,7 @@ export function withSigilOpenAIAgentsHooks(
     await handler.handleLLMError(error, runId);
   };
 
-  const onAgentHandoff = async (
-    context: unknown,
-    fromAgent: unknown,
-    toAgent: unknown
-  ): Promise<void> => {
+  const onAgentHandoff = async (context: unknown, fromAgent: unknown, toAgent: unknown): Promise<void> => {
     const stack = getStack(context);
     const parentRunId = stack.length > 0 ? stack[stack.length - 1] : undefined;
     const handoffRunId = nextRunId('openai_handoff');
@@ -285,17 +278,12 @@ export function withSigilOpenAIAgentsHooks(
       undefined,
       makeContextMetadata(context),
       'handoff',
-      'agent_handoff'
+      'agent_handoff',
     );
     await handler.handleChainEnd(undefined, handoffRunId);
   };
 
-  const onToolStart = async (
-    context: unknown,
-    _agent: unknown,
-    tool: unknown,
-    details: unknown
-  ): Promise<void> => {
+  const onToolStart = async (context: unknown, _agent: unknown, tool: unknown, details: unknown): Promise<void> => {
     const callId = resolveToolCallId(details);
     const contextId = getContextId(context);
     const runId = callId.length > 0 ? callId : nextRunId('openai_tool');
@@ -324,7 +312,7 @@ export function withSigilOpenAIAgentsHooks(
       makeContextMetadata(context, {
         event_id: callId,
       }),
-      toolName
+      toolName,
     );
   };
 
@@ -536,9 +524,7 @@ function normalizeOutputText(value: unknown): string {
   }
 
   if (Array.isArray(value)) {
-    const parts = value
-      .map((entry) => normalizeOutputText(entry))
-      .filter((entry) => entry.length > 0);
+    const parts = value.map((entry) => normalizeOutputText(entry)).filter((entry) => entry.length > 0);
     return parts.join(' ').trim();
   }
 
@@ -602,7 +588,7 @@ function resolveConversationId(context: unknown): string {
       asString(read(nestedContext, 'sessionId')),
       asString(read(nestedContext, 'session_id')),
       asString(read(nestedContext, 'groupId')),
-      asString(read(nestedContext, 'group_id'))
+      asString(read(nestedContext, 'group_id')),
     );
   }
 
@@ -623,9 +609,8 @@ function resolveModelName(agent: unknown): string {
 
   const nestedModel = read(agent, 'model');
   if (isRecord(nestedModel)) {
-    const nested = asString(read(nestedModel, 'model'))
-      || asString(read(nestedModel, 'name'))
-      || asString(read(nestedModel, 'id'));
+    const nested =
+      asString(read(nestedModel, 'model')) || asString(read(nestedModel, 'name')) || asString(read(nestedModel, 'id'));
     if (nested.length > 0) {
       return nested;
     }

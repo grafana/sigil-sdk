@@ -1,6 +1,6 @@
 import type OpenAI from 'openai';
-import type { EmbeddingResult, GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 import type { SigilClient } from '../client.js';
+import type { EmbeddingResult, GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 
 const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
 type AnyRecord = Record<string, unknown>;
@@ -47,12 +47,12 @@ async function chatCompletionsCreate(
   client: SigilClient,
   request: ChatCreateRequest,
   providerCall: (request: ChatCreateRequest) => Promise<ChatResponse>,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): Promise<ChatResponse> {
   const requestMessages = mapChatRequestMessages(request);
   const mappedTools = mapChatTools(request);
-  const maxTokens = readIntFromAny((request as AnyRecord).max_completion_tokens)
-    ?? readIntFromAny((request as AnyRecord).max_tokens);
+  const maxTokens =
+    readIntFromAny((request as AnyRecord).max_completion_tokens) ?? readIntFromAny((request as AnyRecord).max_tokens);
   const temperature = readNumberFromAny((request as AnyRecord).temperature);
   const topP = readNumberFromAny((request as AnyRecord).top_p);
   const toolChoice = canonicalToolChoice((request as AnyRecord).tool_choice);
@@ -81,7 +81,7 @@ async function chatCompletionsCreate(
       const response = await providerCall(request);
       recorder.setResult(chatCompletionsFromRequestResponse(request, response, options));
       return response;
-    }
+    },
   );
 }
 
@@ -89,12 +89,12 @@ async function chatCompletionsStream(
   client: SigilClient,
   request: ChatStreamRequest,
   providerCall: (request: ChatStreamRequest) => Promise<ChatCompletionsStreamSummary>,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): Promise<ChatCompletionsStreamSummary> {
   const requestMessages = mapChatRequestMessages(request);
   const mappedTools = mapChatTools(request);
-  const maxTokens = readIntFromAny((request as AnyRecord).max_completion_tokens)
-    ?? readIntFromAny((request as AnyRecord).max_tokens);
+  const maxTokens =
+    readIntFromAny((request as AnyRecord).max_completion_tokens) ?? readIntFromAny((request as AnyRecord).max_tokens);
   const temperature = readNumberFromAny((request as AnyRecord).temperature);
   const topP = readNumberFromAny((request as AnyRecord).top_p);
   const toolChoice = canonicalToolChoice((request as AnyRecord).tool_choice);
@@ -127,19 +127,19 @@ async function chatCompletionsStream(
       }
       recorder.setResult(chatCompletionsFromStream(request, summary, options));
       return summary;
-    }
+    },
   );
 }
 
 function chatCompletionsFromRequestResponse(
   request: ChatCreateRequest,
   response: ChatResponse,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): GenerationResult {
   const requestMessages = mapChatRequestMessages(request);
   const mappedTools = mapChatTools(request);
-  const maxTokens = readIntFromAny((request as AnyRecord).max_completion_tokens)
-    ?? readIntFromAny((request as AnyRecord).max_tokens);
+  const maxTokens =
+    readIntFromAny((request as AnyRecord).max_completion_tokens) ?? readIntFromAny((request as AnyRecord).max_tokens);
   const temperature = readNumberFromAny((request as AnyRecord).temperature);
   const topP = readNumberFromAny((request as AnyRecord).top_p);
   const toolChoice = canonicalToolChoice((request as AnyRecord).tool_choice);
@@ -178,28 +178,27 @@ function chatCompletionsFromRequestResponse(
 function chatCompletionsFromStream(
   request: ChatStreamRequest,
   summary: ChatCompletionsStreamSummary,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): GenerationResult {
   const requestMessages = mapChatRequestMessages(request);
   const mappedTools = mapChatTools(request);
-  const maxTokens = readIntFromAny((request as AnyRecord).max_completion_tokens)
-    ?? readIntFromAny((request as AnyRecord).max_tokens);
+  const maxTokens =
+    readIntFromAny((request as AnyRecord).max_completion_tokens) ?? readIntFromAny((request as AnyRecord).max_tokens);
   const temperature = readNumberFromAny((request as AnyRecord).temperature);
   const topP = readNumberFromAny((request as AnyRecord).top_p);
   const toolChoice = canonicalToolChoice((request as AnyRecord).tool_choice);
   const thinkingBudget = openAIThinkingBudget((request as AnyRecord).reasoning);
 
   const outputText = summary.outputText ?? extractChatStreamText(summary.events ?? []);
-  const fallbackOutput: Message[] = outputText.length > 0
-    ? [{ role: 'assistant', content: outputText }]
-    : [];
+  const fallbackOutput: Message[] = outputText.length > 0 ? [{ role: 'assistant', content: outputText }] : [];
 
   const result: GenerationResult = summary.finalResponse
     ? {
         ...chatCompletionsFromRequestResponse(request as unknown as ChatCreateRequest, summary.finalResponse, options),
-        output: mapChatResponseOutput(summary.finalResponse).length > 0
-          ? mapChatResponseOutput(summary.finalResponse)
-          : fallbackOutput,
+        output:
+          mapChatResponseOutput(summary.finalResponse).length > 0
+            ? mapChatResponseOutput(summary.finalResponse)
+            : fallbackOutput,
       }
     : {
         responseModel: String((request as AnyRecord).model ?? ''),
@@ -234,7 +233,7 @@ async function responsesCreate(
   client: SigilClient,
   request: ResponsesCreateRequest,
   providerCall: (request: ResponsesCreateRequest) => Promise<ResponsesResponse>,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): Promise<ResponsesResponse> {
   const requestPayload = mapResponsesRequest(request);
   const controls = mapResponsesRequestControls(request);
@@ -262,7 +261,7 @@ async function responsesCreate(
       const response = await providerCall(request);
       recorder.setResult(responsesFromRequestResponse(request, response, options));
       return response;
-    }
+    },
   );
 }
 
@@ -270,7 +269,7 @@ async function responsesStream(
   client: SigilClient,
   request: ResponsesStreamRequest,
   providerCall: (request: ResponsesStreamRequest) => Promise<ResponsesStreamSummary>,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): Promise<ResponsesStreamSummary> {
   const requestPayload = mapResponsesRequest(request);
   const controls = mapResponsesRequestControls(request);
@@ -302,14 +301,14 @@ async function responsesStream(
       }
       recorder.setResult(responsesFromStream(request, summary, options));
       return summary;
-    }
+    },
   );
 }
 
 function responsesFromRequestResponse(
   request: ResponsesCreateRequest,
   response: ResponsesResponse,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): GenerationResult {
   const requestPayload = mapResponsesRequest(request);
   const controls = mapResponsesRequestControls(request);
@@ -347,7 +346,7 @@ function responsesFromRequestResponse(
 function responsesFromStream(
   request: ResponsesStreamRequest,
   summary: ResponsesStreamSummary,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): GenerationResult {
   const requestPayload = mapResponsesRequest(request);
   const controls = mapResponsesRequestControls(request);
@@ -360,11 +359,12 @@ function responsesFromStream(
   const result: GenerationResult = finalResponse
     ? {
         ...responsesFromRequestResponse(request as unknown as ResponsesCreateRequest, finalResponse, options),
-        output: mapResponsesOutputItems((finalResponse as AnyRecord).output).length > 0
-          ? mapResponsesOutputItems((finalResponse as AnyRecord).output)
-          : outputText.length > 0
-            ? [{ role: 'assistant', content: outputText }]
-            : [],
+        output:
+          mapResponsesOutputItems((finalResponse as AnyRecord).output).length > 0
+            ? mapResponsesOutputItems((finalResponse as AnyRecord).output)
+            : outputText.length > 0
+              ? [{ role: 'assistant', content: outputText }]
+              : [],
       }
     : {
         responseModel: String((request as AnyRecord).model ?? ''),
@@ -400,13 +400,11 @@ async function embeddingsCreate(
   client: SigilClient,
   request: EmbeddingsCreateRequest,
   providerCall: (request: EmbeddingsCreateRequest) => Promise<EmbeddingsCreateResponse>,
-  options: OpenAIOptions = {}
+  options: OpenAIOptions = {},
 ): Promise<EmbeddingsCreateResponse> {
   const dimensions = readIntFromAny((request as AnyRecord).dimensions);
   const rawEncodingFormat = (request as AnyRecord).encoding_format;
-  const encodingFormat = typeof rawEncodingFormat === 'string'
-    ? rawEncodingFormat.trim()
-    : '';
+  const encodingFormat = typeof rawEncodingFormat === 'string' ? rawEncodingFormat.trim() : '';
 
   return client.startEmbedding(
     {
@@ -425,13 +423,13 @@ async function embeddingsCreate(
       const response = await providerCall(request);
       recorder.setResult(embeddingsFromRequestResponse(request, response));
       return response;
-    }
+    },
   );
 }
 
 function embeddingsFromRequestResponse(
   request: EmbeddingsCreateRequest,
-  response: EmbeddingsCreateResponse | undefined
+  response: EmbeddingsCreateResponse | undefined,
 ): EmbeddingResult {
   const input = (request as AnyRecord).input;
   const result: EmbeddingResult = {
@@ -478,9 +476,7 @@ function mapChatRequestMessages(request: ChatCreateRequest | ChatStreamRequest):
   input: Message[];
   systemPrompt?: string;
 } {
-  const source = Array.isArray((request as AnyRecord).messages)
-    ? ((request as AnyRecord).messages as unknown[])
-    : [];
+  const source = Array.isArray((request as AnyRecord).messages) ? ((request as AnyRecord).messages as unknown[]) : [];
 
   const systemChunks: string[] = [];
   const input: Message[] = [];
@@ -490,7 +486,9 @@ function mapChatRequestMessages(request: ChatCreateRequest | ChatStreamRequest):
       continue;
     }
 
-    const role = String(rawMessage.role ?? '').trim().toLowerCase();
+    const role = String(rawMessage.role ?? '')
+      .trim()
+      .toLowerCase();
     const content = extractText(rawMessage.content);
 
     if (role === 'system' || role === 'developer') {
@@ -517,7 +515,7 @@ function mapChatRequestMessages(request: ChatCreateRequest | ChatStreamRequest):
         rawMessage.tool_call_id ?? rawMessage.toolCallId ?? rawMessage.id,
         rawMessage.name,
         rawMessage.is_error,
-        'tool_result'
+        'tool_result',
       );
       if (toolResult) {
         input.push(toolResult);
@@ -612,9 +610,8 @@ function mapChatToolCallParts(value: unknown): NonNullable<Message['parts']> {
       continue;
     }
 
-    const input = typeof functionCall.arguments === 'string'
-      ? functionCall.arguments
-      : jsonString(functionCall.arguments);
+    const input =
+      typeof functionCall.arguments === 'string' ? functionCall.arguments : jsonString(functionCall.arguments);
 
     parts.push({
       type: 'tool_call',
@@ -654,9 +651,7 @@ function mapChatTools(request: ChatCreateRequest | ChatStreamRequest): ToolDefin
         name,
         description: typeof rawTool.function.description === 'string' ? rawTool.function.description : undefined,
         type: 'function',
-        inputSchemaJSON: hasValue(rawTool.function.parameters)
-          ? jsonString(rawTool.function.parameters)
-          : undefined,
+        inputSchemaJSON: hasValue(rawTool.function.parameters) ? jsonString(rawTool.function.parameters) : undefined,
       });
       continue;
     }
@@ -779,7 +774,7 @@ function mapResponsesRequest(request: ResponsesCreateRequest | ResponsesStreamRe
           rawItem.call_id ?? rawItem.callId,
           rawItem.name,
           rawItem.is_error,
-          'tool_result'
+          'tool_result',
         );
         if (toolResult) {
           input.push(toolResult);
@@ -894,9 +889,7 @@ function mapResponsesOutputItems(value: unknown): Message[] {
 
     if (itemType === 'function_call') {
       const name = typeof rawItem.name === 'string' ? rawItem.name : '';
-      const args = typeof rawItem.arguments === 'string'
-        ? rawItem.arguments
-        : jsonString(rawItem.arguments);
+      const args = typeof rawItem.arguments === 'string' ? rawItem.arguments : jsonString(rawItem.arguments);
       if (name.trim().length > 0) {
         output.push({
           role: 'assistant',
@@ -923,7 +916,7 @@ function mapResponsesOutputItems(value: unknown): Message[] {
         rawItem.call_id ?? rawItem.callId,
         rawItem.name,
         rawItem.is_error,
-        'tool_result'
+        'tool_result',
       );
       if (toolResult) {
         output.push(toolResult);
@@ -980,7 +973,9 @@ function mapResponsesUsage(value: unknown): TokenUsage | undefined {
 function normalizeResponsesStopReason(response: ResponsesResponse): string | undefined {
   const status = typeof response.status === 'string' ? response.status.trim().toLowerCase() : '';
   const incomplete = isRecord(response.incomplete_details)
-    ? String(response.incomplete_details.reason ?? '').trim().toLowerCase()
+    ? String(response.incomplete_details.reason ?? '')
+        .trim()
+        .toLowerCase()
     : '';
 
   if (status === 'incomplete' && incomplete.length > 0) {
@@ -1001,7 +996,9 @@ function normalizeResponsesStopReasonFromEvents(events: ResponsesStreamEvent[]):
     const response = isRecord(event.response) ? event.response : undefined;
 
     if (eventType === 'response.incomplete' && response && isRecord(response.incomplete_details)) {
-      const reason = String(response.incomplete_details.reason ?? '').trim().toLowerCase();
+      const reason = String(response.incomplete_details.reason ?? '')
+        .trim()
+        .toLowerCase();
       if (reason.length > 0) {
         return reason;
       }
@@ -1072,7 +1069,10 @@ function extractText(value: unknown): string {
         continue;
       }
       const itemType = typeof item.type === 'string' ? item.type : '';
-      if ((itemType === 'text' || itemType === 'input_text' || itemType === 'output_text') && typeof item.text === 'string') {
+      if (
+        (itemType === 'text' || itemType === 'input_text' || itemType === 'output_text') &&
+        typeof item.text === 'string'
+      ) {
         if (item.text.trim().length > 0) {
           chunks.push(item.text.trim());
         }
@@ -1193,7 +1193,7 @@ function mapToolResultMessage(
   toolCallId: unknown,
   name: unknown,
   isError: unknown,
-  providerType: string
+  providerType: string,
 ): Message | undefined {
   const content = extractText(value);
   const contentJSON = jsonString(value);
@@ -1224,7 +1224,7 @@ function mapToolResultMessage(
 
 function metadataWithThinkingBudget(
   metadata: Record<string, unknown> | undefined,
-  thinkingBudget: number | undefined
+  thinkingBudget: number | undefined,
 ): Record<string, unknown> | undefined {
   if (thinkingBudget === undefined) {
     return metadata ? { ...metadata } : undefined;
@@ -1243,7 +1243,9 @@ function canonicalToolChoice(value: unknown): string | undefined {
     return normalized.length > 0 ? normalized : undefined;
   }
   if (isRecord(value) && 'value' in value) {
-    const normalized = String((value as { value: unknown }).value ?? '').trim().toLowerCase();
+    const normalized = String((value as { value: unknown }).value ?? '')
+      .trim()
+      .toLowerCase();
     return normalized.length > 0 ? normalized : undefined;
   }
   const encoded = jsonString(value);

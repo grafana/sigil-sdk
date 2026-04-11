@@ -44,7 +44,7 @@ test('anthropic messages wrapper maps strict request/response and records SYNC m
             web_search_requests: 2,
           },
         },
-      })
+      }),
     );
   });
 
@@ -104,7 +104,7 @@ test('gemini models wrapper maps strict request/response and records SYNC mode',
           thoughtsTokenCount: 6,
           toolUsePromptTokenCount: 5,
         },
-      })
+      }),
     );
   });
 
@@ -139,7 +139,7 @@ test('anthropic and gemini stream wrappers set STREAM mode and include artifacts
           { type: 'message_delta', usage: { server_tool_use: { web_search_requests: 1 } } },
         ],
       }),
-      { rawArtifacts: true }
+      { rawArtifacts: true },
     );
   });
 
@@ -153,7 +153,7 @@ test('anthropic and gemini stream wrappers set STREAM mode and include artifacts
   assert.ok(Array.isArray(anthropicGeneration.artifacts));
   assert.deepEqual(
     anthropicGeneration.artifacts.map((artifact) => artifact.type),
-    ['request', 'provider_event']
+    ['request', 'provider_event'],
   );
 
   const geminiGeneration = await captureSingleGeneration(async (client) => {
@@ -194,7 +194,7 @@ test('anthropic and gemini stream wrappers set STREAM mode and include artifacts
           },
         ],
       }),
-      { rawArtifacts: true }
+      { rawArtifacts: true },
     );
   });
 
@@ -208,7 +208,7 @@ test('anthropic and gemini stream wrappers set STREAM mode and include artifacts
   assert.ok(Array.isArray(geminiGeneration.artifacts));
   assert.deepEqual(
     geminiGeneration.artifacts.map((artifact) => artifact.type),
-    ['request', 'response', 'provider_event']
+    ['request', 'response', 'provider_event'],
   );
 });
 
@@ -250,7 +250,7 @@ test('openai chat completions wrapper maps strict request/response and records S
           prompt_tokens_details: { cached_tokens: 3 },
           completion_tokens_details: { reasoning_tokens: 4 },
         },
-      })
+      }),
     );
   });
 
@@ -288,7 +288,7 @@ test('openai chat completions stream wrapper records STREAM mode and stream even
           },
         ],
       }),
-      { rawArtifacts: true }
+      { rawArtifacts: true },
     );
   });
 
@@ -299,7 +299,7 @@ test('openai chat completions stream wrapper records STREAM mode and stream even
   assert.ok(Array.isArray(generation.artifacts));
   assert.deepEqual(
     generation.artifacts.map((artifact) => artifact.type),
-    ['request', 'provider_event']
+    ['request', 'provider_event'],
   );
 });
 
@@ -346,7 +346,7 @@ test('openai responses wrapper maps strict request/response and records SYNC mod
           input_tokens_details: { cached_tokens: 2 },
           output_tokens_details: { reasoning_tokens: 3 },
         },
-      })
+      }),
     );
   });
 
@@ -416,7 +416,7 @@ test('openai responses stream wrapper records STREAM mode with stream event arti
           },
         ],
       }),
-      { rawArtifacts: true }
+      { rawArtifacts: true },
     );
   });
 
@@ -442,7 +442,7 @@ test('openai embeddings wrapper records embedding span and does not enqueue gene
         model: 'text-embedding-3-small',
         usage: { prompt_tokens: 22 },
         data: [{ embedding: [0.1, 0.2, 0.3] }],
-      })
+      }),
     );
 
     await harness.client.flush();
@@ -476,7 +476,7 @@ test('openai embeddings wrapper treats token-array input as a single item', asyn
         model: 'text-embedding-3-small',
         usage: { prompt_tokens: 4 },
         data: [{ embedding: [0.1, 0.2] }],
-      })
+      }),
     );
 
     await harness.client.flush();
@@ -504,7 +504,7 @@ test('gemini embeddings wrapper maps usage and dimensions to embedding span', as
           { values: [0.1, 0.2, 0.3, 0.4], statistics: { tokenCount: 9 } },
           { values: [0.5, 0.6, 0.7, 0.8], statistics: { tokenCount: 6 } },
         ],
-      })
+      }),
     );
 
     await harness.client.flush();
@@ -536,9 +536,9 @@ test('embedding provider wrapper errors set provider_call_error span status', as
         },
         async () => {
           throw new Error('provider failure openai embedding');
-        }
+        },
       ),
-      /provider failure openai embedding/
+      /provider failure openai embedding/,
     );
 
     const span = singleEmbeddingSpan(harness.spanExporter);
@@ -551,88 +551,91 @@ test('embedding provider wrapper errors set provider_call_error span status', as
 
 test('provider mappers throw on missing provider responses and stream summaries', () => {
   assert.throws(
-    () => openai.chat.completions.fromRequestResponse(
-      {
-        model: 'gpt-5',
-        messages: [{ role: 'user', content: 'hello' }],
-      },
-      undefined
-    ),
-    /reading 'id'/
+    () =>
+      openai.chat.completions.fromRequestResponse(
+        {
+          model: 'gpt-5',
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+        undefined,
+      ),
+    /reading 'id'/,
   );
   assert.throws(
-    () => openai.responses.fromRequestResponse(
-      {
-        model: 'gpt-5',
-        input: 'hello',
-      },
-      undefined
-    ),
-    /reading 'id'/
+    () =>
+      openai.responses.fromRequestResponse(
+        {
+          model: 'gpt-5',
+          input: 'hello',
+        },
+        undefined,
+      ),
+    /reading 'id'/,
   );
   assert.throws(
-    () => openai.chat.completions.fromStream(
-      {
-        model: 'gpt-5',
-        stream: true,
-        messages: [{ role: 'user', content: 'hello' }],
-      },
-      undefined
-    ),
-    /reading 'outputText'/
+    () =>
+      openai.chat.completions.fromStream(
+        {
+          model: 'gpt-5',
+          stream: true,
+          messages: [{ role: 'user', content: 'hello' }],
+        },
+        undefined,
+      ),
+    /reading 'outputText'/,
   );
   assert.throws(
-    () => openai.responses.fromStream(
-      {
-        model: 'gpt-5',
-        stream: true,
-        input: 'hello',
-      },
-      undefined
-    ),
-    /reading 'events'/
-  );
-
-  assert.throws(
-    () => anthropic.messages.fromRequestResponse(
-      {
-        model: 'claude-sonnet-4-5',
-        max_tokens: 128,
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
-      },
-      undefined
-    ),
-    /reading 'content'/
-  );
-  assert.throws(
-    () => anthropic.messages.fromStream(
-      {
-        model: 'claude-sonnet-4-5',
-        max_tokens: 128,
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
-      },
-      undefined
-    ),
-    /reading 'events'/
+    () =>
+      openai.responses.fromStream(
+        {
+          model: 'gpt-5',
+          stream: true,
+          input: 'hello',
+        },
+        undefined,
+      ),
+    /reading 'events'/,
   );
 
   assert.throws(
-    () => gemini.models.fromRequestResponse(
-      'gemini-2.5-pro',
-      [{ role: 'user', parts: [{ text: 'hello' }] }],
-      undefined,
-      undefined
-    ),
-    /reading 'candidates'/
+    () =>
+      anthropic.messages.fromRequestResponse(
+        {
+          model: 'claude-sonnet-4-5',
+          max_tokens: 128,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+        },
+        undefined,
+      ),
+    /reading 'content'/,
   );
   assert.throws(
-    () => gemini.models.fromStream(
-      'gemini-2.5-pro',
-      [{ role: 'user', parts: [{ text: 'hello' }] }],
-      undefined,
-      undefined
-    ),
-    /reading 'responses'/
+    () =>
+      anthropic.messages.fromStream(
+        {
+          model: 'claude-sonnet-4-5',
+          max_tokens: 128,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+        },
+        undefined,
+      ),
+    /reading 'events'/,
+  );
+
+  assert.throws(
+    () =>
+      gemini.models.fromRequestResponse(
+        'gemini-2.5-pro',
+        [{ role: 'user', parts: [{ text: 'hello' }] }],
+        undefined,
+        undefined,
+      ),
+    /reading 'candidates'/,
+  );
+  assert.throws(
+    () =>
+      gemini.models.fromStream('gemini-2.5-pro', [{ role: 'user', parts: [{ text: 'hello' }] }], undefined, undefined),
+    /reading 'responses'/,
   );
 });
 
@@ -648,7 +651,7 @@ test('provider wrappers surface mapper failures when provider payloads are missi
             model: 'gpt-5',
             messages: [{ role: 'user', content: 'hello' }],
           },
-          async () => undefined
+          async () => undefined,
         );
       },
     },
@@ -662,7 +665,7 @@ test('provider wrappers surface mapper failures when provider payloads are missi
             model: 'gpt-5',
             input: 'hello',
           },
-          async () => undefined
+          async () => undefined,
         );
       },
     },
@@ -677,7 +680,7 @@ test('provider wrappers surface mapper failures when provider payloads are missi
             max_tokens: 128,
             messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
           },
-          async () => undefined
+          async () => undefined,
         );
       },
     },
@@ -690,7 +693,7 @@ test('provider wrappers surface mapper failures when provider payloads are missi
           'gemini-2.5-pro',
           [{ role: 'user', parts: [{ text: 'hello' }] }],
           undefined,
-          async () => undefined
+          async () => undefined,
         );
       },
     },
@@ -720,40 +723,39 @@ test('provider wrappers propagate provider errors and persist callError', async 
     {
       name: 'anthropic',
       provider: 'anthropic',
-      run: (client) => anthropic.messages.create(
-        client,
-        {
-          model: 'claude-sonnet-4-5',
-          max_tokens: 128,
-          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
-        },
-        async () => {
-          throw new Error('provider failure anthropic');
-        }
-      ),
+      run: (client) =>
+        anthropic.messages.create(
+          client,
+          {
+            model: 'claude-sonnet-4-5',
+            max_tokens: 128,
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+          },
+          async () => {
+            throw new Error('provider failure anthropic');
+          },
+        ),
     },
     {
       name: 'gemini',
       provider: 'gemini',
-      run: (client) => gemini.models.generateContent(
-        client,
-        'gemini-2.5-pro',
-        [{ role: 'user', parts: [{ text: 'hello' }] }],
-        undefined,
-        async () => {
-          throw new Error('provider failure gemini');
-        }
-      ),
+      run: (client) =>
+        gemini.models.generateContent(
+          client,
+          'gemini-2.5-pro',
+          [{ role: 'user', parts: [{ text: 'hello' }] }],
+          undefined,
+          async () => {
+            throw new Error('provider failure gemini');
+          },
+        ),
     },
   ]) {
     const exporter = new CapturingExporter();
     const client = newClient(exporter);
 
     try {
-      await assert.rejects(
-        suite.run(client),
-        new RegExp(`provider failure ${suite.name}`)
-      );
+      await assert.rejects(suite.run(client), new RegExp(`provider failure ${suite.name}`));
 
       await client.flush();
       const generation = firstGeneration(exporter);
@@ -775,7 +777,7 @@ test('provider wrappers propagate provider errors and persist callError', async 
         },
         async () => {
           throw new Error('provider failure openai chat');
-        }
+        },
       );
     },
     async (client) => {
@@ -787,7 +789,7 @@ test('provider wrappers propagate provider errors and persist callError', async 
         },
         async () => {
           throw new Error('provider failure openai responses');
-        }
+        },
       );
     },
   ]) {
@@ -887,7 +889,7 @@ test('openai chat mapper aggregates system/developer, preserves tool role, and a
   });
   assert.deepEqual(
     mappedWithArtifacts.artifacts.map((artifact) => artifact.type),
-    ['request', 'response', 'tools']
+    ['request', 'response', 'tools'],
   );
 });
 
@@ -1000,7 +1002,7 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
         },
       ],
     },
-    { rawArtifacts: true }
+    { rawArtifacts: true },
   );
 
   assert.equal(streamed.responseModel, 'gpt-5');
@@ -1010,7 +1012,7 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
   assert.equal(streamed.output[0].content, 'delta-one delta-two');
   assert.deepEqual(
     streamed.artifacts.map((artifact) => artifact.type),
-    ['request', 'provider_event']
+    ['request', 'provider_event'],
   );
 });
 
@@ -1027,7 +1029,7 @@ test('provider mappers expose thinking disabled when explicitly configured', () 
       model: 'claude-sonnet',
       role: 'assistant',
       content: [{ type: 'text', text: 'ok' }],
-    }
+    },
   );
   assert.equal(anthropicMapped.thinkingEnabled, false);
 
@@ -1039,7 +1041,7 @@ test('provider mappers expose thinking disabled when explicitly configured', () 
       responseId: 'resp-gemini',
       modelVersion: 'gemini-pro',
       candidates: [{ content: { role: 'model', parts: [{ text: 'ok' }] } }],
-    }
+    },
   );
   assert.equal(geminiMapped.thinkingEnabled, false);
 });
@@ -1054,7 +1056,7 @@ test('embedding mappers extract input counts, texts, usage, and dimensions', () 
       model: 'text-embedding-3-small',
       usage: { prompt_tokens: 30 },
       data: [{ embedding: [0.1, 0.2, 0.3] }],
-    }
+    },
   );
   assert.equal(openAIMapped.inputCount, 3);
   assert.deepEqual(openAIMapped.inputTexts, ['hello', 'world']);
@@ -1071,7 +1073,7 @@ test('embedding mappers extract input counts, texts, usage, and dimensions', () 
       model: 'text-embedding-3-small',
       usage: { prompt_tokens: 3 },
       data: [{ embedding: [0.1, 0.2] }],
-    }
+    },
   );
   assert.equal(openAITokenizedSingle.inputCount, 1);
   assert.equal(openAITokenizedSingle.inputTexts, undefined);
@@ -1086,7 +1088,7 @@ test('embedding mappers extract input counts, texts, usage, and dimensions', () 
         { values: [0.1, 0.2], statistics: { tokenCount: 4 } },
         { values: [0.3, 0.4], statistics: { tokenCount: 5 } },
       ],
-    }
+    },
   );
   assert.equal(geminiMapped.inputCount, 2);
   assert.deepEqual(geminiMapped.inputTexts, ['alpha', 'beta']);
@@ -1165,7 +1167,9 @@ async function shutdownEmbeddingHarness(harness) {
 }
 
 function singleEmbeddingSpan(spanExporter) {
-  const spans = spanExporter.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'embeddings');
+  const spans = spanExporter
+    .getFinishedSpans()
+    .filter((span) => span.attributes['gen_ai.operation.name'] === 'embeddings');
   assert.equal(spans.length, 1);
   return spans[0];
 }

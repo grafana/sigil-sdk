@@ -128,7 +128,7 @@ test('queue-full recorder local error is exposed and callback style throws', asy
       client.startGeneration(seedGeneration(8), async (callbackRecorder) => {
         callbackRecorder.setResult({ output: [{ role: 'assistant', content: 'callback' }] });
       }),
-      /queue is full/
+      /queue is full/,
     );
   } finally {
     await client.shutdown();
@@ -153,7 +153,7 @@ test('built-in HTTP exporter posts generation batches to configured endpoint', a
           generationId: generation.id,
           accepted: true,
         })),
-      })
+      }),
     );
   });
 

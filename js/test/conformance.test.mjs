@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
-import { AggregationTemporality, InMemoryMetricExporter, MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from '@opentelemetry/sdk-metrics';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import {
-  SigilClient,
   defaultConfig,
+  SigilClient,
   withAgentName,
   withAgentVersion,
   withConversationTitle,
@@ -147,7 +152,13 @@ test('conformance sync roundtrip semantics', async () => {
 });
 
 for (const testCase of [
-  { name: 'explicit wins', startTitle: 'Explicit', contextTitle: 'Context', metadataTitle: 'Meta', expected: 'Explicit' },
+  {
+    name: 'explicit wins',
+    startTitle: 'Explicit',
+    contextTitle: 'Context',
+    metadataTitle: 'Meta',
+    expected: 'Explicit',
+  },
   { name: 'context fallback', startTitle: '', contextTitle: 'Context', metadataTitle: '', expected: 'Context' },
   { name: 'metadata fallback', startTitle: '', contextTitle: '', metadataTitle: 'Meta', expected: 'Meta' },
   { name: 'whitespace trimmed', startTitle: '  Padded  ', contextTitle: '', metadataTitle: '', expected: 'Padded' },
@@ -161,7 +172,8 @@ for (const testCase of [
         const recorder = env.client.startGeneration({
           model: { provider: 'openai', name: 'gpt-5' },
           conversationTitle: testCase.startTitle,
-          metadata: testCase.metadataTitle.length > 0 ? { 'sigil.conversation.title': testCase.metadataTitle } : undefined,
+          metadata:
+            testCase.metadataTitle.length > 0 ? { 'sigil.conversation.title': testCase.metadataTitle } : undefined,
         });
         recorder.setResult({});
         recorder.end();
@@ -186,12 +198,54 @@ for (const testCase of [
 }
 
 for (const testCase of [
-  { name: 'explicit wins', startUserId: 'explicit', contextUserId: 'ctx', canonicalUserId: 'canonical', legacyUserId: 'legacy', expected: 'explicit' },
-  { name: 'context fallback', startUserId: '', contextUserId: 'ctx', canonicalUserId: '', legacyUserId: '', expected: 'ctx' },
-  { name: 'canonical metadata', startUserId: '', contextUserId: '', canonicalUserId: 'canonical', legacyUserId: '', expected: 'canonical' },
-  { name: 'legacy metadata', startUserId: '', contextUserId: '', canonicalUserId: '', legacyUserId: 'legacy', expected: 'legacy' },
-  { name: 'canonical beats legacy', startUserId: '', contextUserId: '', canonicalUserId: 'canonical', legacyUserId: 'legacy', expected: 'canonical' },
-  { name: 'whitespace trimmed', startUserId: '  padded  ', contextUserId: '', canonicalUserId: '', legacyUserId: '', expected: 'padded' },
+  {
+    name: 'explicit wins',
+    startUserId: 'explicit',
+    contextUserId: 'ctx',
+    canonicalUserId: 'canonical',
+    legacyUserId: 'legacy',
+    expected: 'explicit',
+  },
+  {
+    name: 'context fallback',
+    startUserId: '',
+    contextUserId: 'ctx',
+    canonicalUserId: '',
+    legacyUserId: '',
+    expected: 'ctx',
+  },
+  {
+    name: 'canonical metadata',
+    startUserId: '',
+    contextUserId: '',
+    canonicalUserId: 'canonical',
+    legacyUserId: '',
+    expected: 'canonical',
+  },
+  {
+    name: 'legacy metadata',
+    startUserId: '',
+    contextUserId: '',
+    canonicalUserId: '',
+    legacyUserId: 'legacy',
+    expected: 'legacy',
+  },
+  {
+    name: 'canonical beats legacy',
+    startUserId: '',
+    contextUserId: '',
+    canonicalUserId: 'canonical',
+    legacyUserId: 'legacy',
+    expected: 'canonical',
+  },
+  {
+    name: 'whitespace trimmed',
+    startUserId: '  padded  ',
+    contextUserId: '',
+    canonicalUserId: '',
+    legacyUserId: '',
+    expected: 'padded',
+  },
 ]) {
   test(`conformance user id semantics: ${testCase.name}`, async () => {
     const env = await createConformanceEnv();
@@ -526,7 +580,7 @@ async function createConformanceEnv(options = {}) {
   });
 
   let ratingPath = '';
-  let ratingPayload = undefined;
+  let ratingPayload;
   const ratingServer = createServer(async (request, response) => {
     ratingPath = request.url ?? '';
     const chunks = [];
@@ -551,7 +605,7 @@ async function createConformanceEnv(options = {}) {
           latest_rated_at: '2026-03-12T09:00:00Z',
           has_bad_rating: true,
         },
-      })
+      }),
     );
   });
   await listen(ratingServer);

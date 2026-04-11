@@ -10,14 +10,14 @@ import type {
   GenerationExporter,
   Message,
   MessagePart,
-  ToolDefinition,
   TokenUsage,
+  ToolDefinition,
 } from '../types.js';
 
 type ExportGenerationsMethod = (
   request: unknown,
   metadata: grpc.Metadata,
-  callback: (error: grpc.ServiceError | null, response: unknown) => void
+  callback: (error: grpc.ServiceError | null, response: unknown) => void,
 ) => void;
 
 type GRPCServiceClient = grpc.Client & {
@@ -162,10 +162,7 @@ function parseGRPCExportResponse(response: unknown, request: ExportGenerationsRe
 
       return {
         generationId:
-          asString(result.generationId) ??
-          asString(result.generation_id) ??
-          request.generations[index]?.id ??
-          '',
+          asString(result.generationId) ?? asString(result.generation_id) ?? request.generations[index]?.id ?? '',
         accepted: Boolean(result.accepted),
         error: asString(result.error),
       };
@@ -231,14 +228,14 @@ function mapMessagePartToProto(part: MessagePart): Record<string, unknown> {
         {
           text: part.text,
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
     case 'thinking':
       return withPartMetadata(
         {
           thinking: part.thinking,
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
     case 'tool_call':
       return withPartMetadata(
@@ -249,7 +246,7 @@ function mapMessagePartToProto(part: MessagePart): Record<string, unknown> {
             inputJson: toBytePayload(part.toolCall.inputJSON),
           },
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
     case 'tool_result':
       return withPartMetadata(
@@ -262,7 +259,7 @@ function mapMessagePartToProto(part: MessagePart): Record<string, unknown> {
             isError: part.toolResult.isError ?? false,
           },
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
   }
 }

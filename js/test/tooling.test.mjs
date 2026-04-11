@@ -14,6 +14,6 @@ test('sdk js package declares local TypeScript compiler tooling', async () => {
   assert.equal(
     typeof packageJson.devDependencies?.typescript,
     'string',
-    'sdks/js must declare a local typescript dependency'
+    'sdks/js must declare a local typescript dependency',
   );
 });

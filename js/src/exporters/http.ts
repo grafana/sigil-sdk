@@ -45,7 +45,7 @@ export class HTTPGenerationExporter implements GenerationExporter {
 
 function parseExportGenerationsResponse(
   payload: unknown,
-  request: ExportGenerationsRequest
+  request: ExportGenerationsRequest,
 ): ExportGenerationsResponse {
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
     throw new Error('invalid generation export response payload');
@@ -153,14 +153,14 @@ function mapMessagePartToProtoJSON(part: MessagePart): Record<string, unknown> {
         {
           text: part.text,
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
     case 'thinking':
       return withPartMetadata(
         {
           thinking: part.thinking,
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
     case 'tool_call':
       return withPartMetadata(
@@ -171,7 +171,7 @@ function mapMessagePartToProtoJSON(part: MessagePart): Record<string, unknown> {
             input_json: toBase64Payload(part.toolCall.inputJSON),
           },
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
     case 'tool_result':
       return withPartMetadata(
@@ -184,7 +184,7 @@ function mapMessagePartToProtoJSON(part: MessagePart): Record<string, unknown> {
             is_error: part.toolResult.isError ?? false,
           },
         },
-        part.metadata?.providerType
+        part.metadata?.providerType,
       );
   }
 }

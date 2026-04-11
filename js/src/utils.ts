@@ -11,8 +11,8 @@ import type {
   ModelRef,
   ToolDefinition,
   ToolExecution,
-  ToolExecutionStart,
   ToolExecutionResult,
+  ToolExecutionStart,
 } from './types.js';
 
 const textEncoder = new TextEncoder();
@@ -300,7 +300,7 @@ function validatePart(
   messageIndex: number,
   partIndex: number,
   role: 'user' | 'assistant' | 'tool',
-  part: MessagePart
+  part: MessagePart,
 ): Error | undefined {
   const payloadFieldCount = payloadFieldsCount(part);
   if (payloadFieldCount !== 1) {

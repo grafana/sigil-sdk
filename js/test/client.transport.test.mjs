@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { trace } from '@opentelemetry/api';
@@ -40,7 +40,7 @@ test('HTTP transport roundtrip preserves full generation payload shape', async (
           generationId: generation.id,
           accepted: true,
         })),
-      })
+      }),
     );
   });
 
@@ -296,7 +296,7 @@ test('HTTP transport applies generation tenant auth header', async () => {
           generationId: generation.id,
           accepted: true,
         })),
-      })
+      }),
     );
   });
 
@@ -706,14 +706,14 @@ function canonicalizeProtoMessage(message) {
   return {
     role: fromProtoMessageRole(message.role),
     name: message.name ?? '',
-    content: (message.parts ?? [])
-      .map((part) => (typeof part.text === 'string' ? part.text : ''))
-      .join(''),
+    content: (message.parts ?? []).map((part) => (typeof part.text === 'string' ? part.text : '')).join(''),
   };
 }
 
 function normalizeSDKRole(role) {
-  const normalized = String(role ?? '').trim().toLowerCase();
+  const normalized = String(role ?? '')
+    .trim()
+    .toLowerCase();
   if (normalized === 'assistant' || normalized === 'tool') {
     return normalized;
   }

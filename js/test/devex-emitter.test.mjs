@@ -53,7 +53,6 @@ test('thread rotation resets turn and assigns a new conversation id', async () =
 test('framework emit path invokes all framework handlers for provider sources', async () => {
   const calls = [];
   class FakeHandler {
-    constructor(_client, _options) {}
     async handleChatModelStart(_serialized, _messages, runID) {
       calls.push(`start:${runID}`);
     }
@@ -80,7 +79,7 @@ test('framework emit path invokes all framework handlers for provider sources', 
       agentVersion: 'v1',
       tags: { 'sigil.devex.provider': 'openai' },
       metadata: { provider_shape: 'framework' },
-    }
+    },
   );
 
   assert.equal(calls.length, 10);
@@ -112,7 +111,7 @@ test('framework emit path skips non-provider custom source', async () => {
       agentVersion: 'v1',
       tags: { 'sigil.devex.provider': 'mistral' },
       metadata: { provider_shape: 'framework' },
-    }
+    },
   );
 
   assert.equal(called, false);
