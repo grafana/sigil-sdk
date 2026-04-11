@@ -65,7 +65,7 @@ func run() {
 		return
 	}
 
-	contentCapture := strings.EqualFold(os.Getenv("SIGIL_CONTENT_CAPTURE"), "true")
+	contentMode := resolveContentMode()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -115,14 +115,13 @@ func run() {
 	logger.Printf("coalesced to %d lines, safe offset=%d", len(lines), safeOffset)
 
 	var r *redact.Redactor
-	if contentCapture {
+	if contentMode != sigil.ContentCaptureModeMetadataOnly {
 		r = redact.New()
 	}
 
 	gens := mapper.Process(lines, &st, mapper.Options{
-		SessionID:      input.SessionID,
-		ContentCapture: contentCapture,
-		Logger:         logger,
+		SessionID: input.SessionID,
+		Logger:    logger,
 	}, r)
 
 	if len(gens) == 0 {
@@ -133,6 +132,7 @@ func run() {
 	logger.Printf("produced %d generations", len(gens))
 
 	cfg := sigil.Config{
+		ContentCapture: contentMode,
 		GenerationExport: sigil.GenerationExportConfig{
 			Protocol: sigil.GenerationExportProtocolHTTP,
 			Endpoint: sigilURL + "/api/v1/generations:export",
@@ -172,7 +172,7 @@ func run() {
 		genCtx, rec := client.StartGeneration(ctx, genStart)
 		rec.SetResult(gen, nil)
 
-		emitToolSpans(genCtx, client, gen, toolResults, contentCapture)
+		emitToolSpans(genCtx, client, gen, toolResults)
 
 		rec.End()
 
@@ -243,7 +243,7 @@ func buildToolResultMap(gens []sigil.Generation) map[string]*sigil.ToolResult {
 }
 
 // emitToolSpans creates execute_tool spans for each tool call in the generation output.
-func emitToolSpans(ctx context.Context, client *sigil.Client, gen sigil.Generation, results map[string]*sigil.ToolResult, contentCapture bool) {
+func emitToolSpans(ctx context.Context, client *sigil.Client, gen sigil.Generation, results map[string]*sigil.ToolResult) {
 	for _, msg := range gen.Output {
 		for _, part := range msg.Parts {
 			if part.ToolCall == nil {
@@ -260,21 +260,18 @@ func emitToolSpans(ctx context.Context, client *sigil.Client, gen sigil.Generati
 				RequestModel:    gen.Model.Name,
 				RequestProvider: gen.Model.Provider,
 				StartedAt:       gen.CompletedAt,
-				IncludeContent:  contentCapture,
 			}
 			_, toolRec := client.StartToolExecution(ctx, start)
 
 			end := sigil.ToolExecutionEnd{
 				CompletedAt: gen.CompletedAt,
+				Arguments:   string(tc.InputJSON),
 			}
-			if contentCapture {
-				end.Arguments = string(tc.InputJSON)
-				if tr, ok := results[tc.ID]; ok {
-					if tr.Content != "" {
-						end.Result = tr.Content
-					} else if len(tr.ContentJSON) > 0 {
-						end.Result = string(tr.ContentJSON)
-					}
+			if tr, ok := results[tc.ID]; ok {
+				if tr.Content != "" {
+					end.Result = tr.Content
+				} else if len(tr.ContentJSON) > 0 {
+					end.Result = string(tr.ContentJSON)
 				}
 			}
 
@@ -286,4 +283,21 @@ func emitToolSpans(ctx context.Context, client *sigil.Client, gen sigil.Generati
 			toolRec.End()
 		}
 	}
+}
+
+// resolveContentMode returns the effective ContentCaptureMode from environment.
+// Priority: SIGIL_CONTENT_CAPTURE_MODE > SIGIL_CONTENT_CAPTURE (legacy) > MetadataOnly.
+func resolveContentMode() sigil.ContentCaptureMode {
+	if v := os.Getenv("SIGIL_CONTENT_CAPTURE_MODE"); v != "" {
+		var mode sigil.ContentCaptureMode
+		if err := mode.UnmarshalText([]byte(v)); err != nil {
+			return sigil.ContentCaptureModeMetadataOnly
+		}
+		return mode
+	}
+	// Backward compat: SIGIL_CONTENT_CAPTURE=true maps to Full.
+	if strings.EqualFold(os.Getenv("SIGIL_CONTENT_CAPTURE"), "true") {
+		return sigil.ContentCaptureModeFull
+	}
+	return sigil.ContentCaptureModeMetadataOnly
 }
