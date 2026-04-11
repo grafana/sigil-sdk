@@ -616,12 +616,13 @@ export class SigilClient {
   internalFinalizeToolExecutionSpan(
     span: Span,
     toolExecution: ToolExecution,
+    contentCaptureMode: ContentCaptureMode,
     includeContent: boolean,
     localError: Error | undefined,
   ): Error | undefined {
     setToolSpanAttributes(span, toolExecution);
 
-    if (!includeContent) {
+    if (contentCaptureMode === 'metadata_only') {
       span.setAttribute(spanAttrToolDescription, '');
     }
 
@@ -1136,6 +1137,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
   private readonly seed: ToolExecutionStart;
   private readonly startedAt: Date;
   private readonly span: Span;
+  private readonly contentCaptureMode: ContentCaptureMode;
   private readonly includeContent: boolean;
   private ended = false;
   private result?: ToolExecutionResult;
@@ -1169,6 +1171,11 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     );
     const effectiveClientDefault = resolveContentCaptureMode(resolverMode, this.client.internalContentCapture());
     const ctx = contentCaptureModeFromContext();
+    this.contentCaptureMode = resolveToolContentCaptureMode(
+      this.seed.contentCapture ?? 'default',
+      ctx.mode,
+      effectiveClientDefault,
+    );
     this.includeContent = shouldIncludeToolContent(
       this.seed.contentCapture ?? 'default',
       ctx.mode,
@@ -1228,6 +1235,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     this.localError = this.client.internalFinalizeToolExecutionSpan(
       this.span,
       toolExecution,
+      this.contentCaptureMode,
       this.includeContent,
       this.localError,
     );
@@ -2060,15 +2068,23 @@ function stripPart(part: MessagePart): void {
   }
 }
 
+function resolveToolContentCaptureMode(
+  toolMode: ContentCaptureMode,
+  ctxMode: ContentCaptureMode,
+  clientDefault: ContentCaptureMode,
+): ContentCaptureMode {
+  const base = resolveClientContentCaptureMode(clientDefault);
+  const withCtx = resolveContentCaptureMode(ctxMode, base);
+  return resolveContentCaptureMode(toolMode, withCtx);
+}
+
 function shouldIncludeToolContent(
   toolMode: ContentCaptureMode,
   ctxMode: ContentCaptureMode,
   clientDefault: ContentCaptureMode,
   legacyInclude: boolean,
 ): boolean {
-  const base = resolveClientContentCaptureMode(clientDefault);
-  const withCtx = resolveContentCaptureMode(ctxMode, base);
-  const resolved = resolveContentCaptureMode(toolMode, withCtx);
+  const resolved = resolveToolContentCaptureMode(toolMode, ctxMode, clientDefault);
   switch (resolved) {
     case 'metadata_only':
       return false;

@@ -448,6 +448,7 @@ test('backward compat: includeContent=false with default mode excludes tool cont
   try {
     const toolRec = harness.client.startToolExecution({
       toolName: 'test_tool',
+      toolDescription: 'Preserved tool description',
       includeContent: false,
     });
     toolRec.setResult({ arguments: 'tool args', result: 'tool result' });
@@ -455,6 +456,7 @@ test('backward compat: includeContent=false with default mode excludes tool cont
     assert.equal(toolRec.getError(), undefined);
 
     const span = singleToolSpan(harness.spanExporter);
+    assert.equal(span.attributes['gen_ai.tool.description'], 'Preserved tool description');
     assert.equal(span.attributes['gen_ai.tool.call.arguments'], undefined);
     assert.equal(span.attributes['gen_ai.tool.call.result'], undefined);
   } finally {
