@@ -5,6 +5,10 @@ from __future__ import annotations
 import contextvars
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from .models import ContentCaptureMode
 
 _conversation_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_conversation_id", default=None)
 _conversation_title: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -13,6 +17,45 @@ _conversation_title: contextvars.ContextVar[str | None] = contextvars.ContextVar
 _user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_user_id", default=None)
 _agent_name: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_agent_name", default=None)
 _agent_version: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_agent_version", default=None)
+_content_capture_mode: contextvars.ContextVar[ContentCaptureMode | None] = contextvars.ContextVar(
+    "sigil_content_capture_mode", default=None
+)
+
+
+class _CaptureStackEntry(NamedTuple):
+    recorder_id: int
+    mode: ContentCaptureMode
+
+
+# Stack of active GenerationRecorder capture modes.
+# Used to correctly restore the ContextVar when overlapping generations end in
+# non-LIFO order.
+_capture_mode_stack: contextvars.ContextVar[tuple[_CaptureStackEntry, ...]] = contextvars.ContextVar(
+    "_sigil_capture_mode_stack", default=()
+)
+# Snapshot of _content_capture_mode before the first recorder pushed onto the
+# stack.  Restored when the stack empties so that a surrounding
+# with_content_capture_mode() block is not clobbered.
+_capture_mode_stack_base: contextvars.ContextVar[ContentCaptureMode | None] = contextvars.ContextVar(
+    "_sigil_capture_mode_stack_base", default=None
+)
+
+
+def _push_capture_mode(recorder_id: int, mode: ContentCaptureMode) -> None:
+    """Pushes a recorder's capture mode onto the stack and sets the ContextVar."""
+    stack = _capture_mode_stack.get()
+    if not stack:
+        _capture_mode_stack_base.set(_content_capture_mode.get())
+    _capture_mode_stack.set((*stack, _CaptureStackEntry(recorder_id, mode)))
+    _content_capture_mode.set(mode)
+
+
+def _pop_capture_mode(recorder_id: int) -> None:
+    """Removes a recorder from the stack and restores the ContextVar."""
+    stack = _capture_mode_stack.get()
+    new_stack = tuple(e for e in stack if e.recorder_id != recorder_id)
+    _capture_mode_stack.set(new_stack)
+    _content_capture_mode.set(new_stack[-1].mode if new_stack else _capture_mode_stack_base.get())
 
 
 @contextmanager
@@ -98,3 +141,20 @@ def user_id_from_context() -> str | None:
     """Returns the current user id from context variables."""
 
     return _user_id.get()
+
+
+@contextmanager
+def with_content_capture_mode(mode: ContentCaptureMode) -> Iterator[None]:
+    """Sets the content capture mode within a context block."""
+
+    token = _content_capture_mode.set(mode)
+    try:
+        yield
+    finally:
+        _content_capture_mode.reset(token)
+
+
+def content_capture_mode_from_context() -> ContentCaptureMode | None:
+    """Returns the content capture mode from context, or None if not set."""
+
+    return _content_capture_mode.get()
