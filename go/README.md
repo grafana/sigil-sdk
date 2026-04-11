@@ -13,6 +13,7 @@ Cross-language parity tracks are available for:
 Framework modules:
 
 - Google ADK helper: [`go-frameworks/google-adk`](../go-frameworks/google-adk/README.md)
+- Genkit plugin: [`go-frameworks/genkit`](../go-frameworks/genkit/README.md)
 
 ## Core model
 
