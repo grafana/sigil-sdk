@@ -198,6 +198,13 @@ func TestCallError(t *testing.T) {
 	if got := stringValue(t, gen, "call_error"); got != "provider error" {
 		t.Fatalf("call_error: got %q, want %q", got, "provider error")
 	}
+
+	input := arrayValue(t, gen, "input")
+	if len(input) != 1 {
+		t.Fatalf("expected 1 input message, got %d", len(input))
+	}
+	inputMsg := asObject(t, input[0], "input[0]")
+	requireStringField(t, inputMsg, "role", "MESSAGE_ROLE_USER")
 }
 
 func TestContentCaptureMetadataOnly(t *testing.T) {
@@ -806,4 +813,3 @@ func requireStringField(t *testing.T, object map[string]any, key string, want st
 		t.Fatalf("unexpected %q: got %q want %q", key, got, want)
 	}
 }
-

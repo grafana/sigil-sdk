@@ -77,6 +77,7 @@ func createMiddleware(client *sigil.Client, modelName string, opts Options) ai.M
 
 			resp, err := next(ctx, req, wrappedCb)
 			if err != nil {
+				rec.SetResult(sigil.Generation{Input: input}, nil)
 				rec.SetCallError(err)
 				return nil, err
 			}
