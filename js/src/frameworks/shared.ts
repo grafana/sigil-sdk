@@ -296,6 +296,7 @@ export class SigilFrameworkHandler {
       callbackMetadata,
     });
     const toolName = resolveToolName(serialized, context.componentName);
+    const parentRun = parentRunId ? this.runs.get(String(parentRunId)) : undefined;
     const recorder = this.client.startToolExecution({
       toolName,
       toolDescription: resolveToolDescription(serialized),
@@ -303,6 +304,7 @@ export class SigilFrameworkHandler {
       agentName: this.agentName,
       agentVersion: this.agentVersion,
       includeContent: this.captureInputs || this.captureOutputs,
+      contentCapture: parentRun?.recorder.resolvedContentCaptureMode(),
     });
 
     this.toolRuns.set(runKey, {
