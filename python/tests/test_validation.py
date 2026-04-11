@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from sigil_sdk import (
     EmbeddingResult,
     EmbeddingStart,
@@ -42,7 +41,9 @@ def test_validate_generation_rejects_tool_call_for_user_role() -> None:
         )
     )
 
-    with pytest.raises(ValueError, match=r"generation\.input\[1\].parts\[0\].tool_call only allowed for assistant role"):
+    with pytest.raises(
+        ValueError, match=r"generation\.input\[1\].parts\[0\].tool_call only allowed for assistant role"
+    ):
         validate_generation(generation)
 
 
@@ -73,7 +74,9 @@ def test_validate_generation_rejects_thinking_for_non_assistant_role_output_path
         )
     ]
 
-    with pytest.raises(ValueError, match=r"generation\.output\[0\].parts\[0\].thinking only allowed for assistant role"):
+    with pytest.raises(
+        ValueError, match=r"generation\.output\[0\].parts\[0\].thinking only allowed for assistant role"
+    ):
         validate_generation(generation)
 
 

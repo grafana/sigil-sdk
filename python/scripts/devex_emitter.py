@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
 import random
 import signal
 import time
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -33,8 +33,9 @@ class _MissingProviderNamespace:
         self._import_error = import_error
 
     def __getattr__(self, _name: str):
+        emitter = self._package_name.removeprefix("sigil_sdk_")
         raise ModuleNotFoundError(
-            f"{self._package_name} is required to run {self._package_name.removeprefix('sigil_sdk_')} devex emitter paths"
+            f"{self._package_name} is required to run {emitter} devex emitter paths"
         ) from self._import_error
 
 
@@ -673,9 +674,12 @@ def emit_custom_sync(client: Client, cfg: RuntimeConfig, context: EmitContext) -
         recorder.set_result(
             Generation(
                 input=[user_text_message(f"Draft custom checkpoint {context.turn}.")],
-                output=[Message(role=MessageRole.ASSISTANT, parts=[text_part(
-                    f"Custom provider sync {context.turn}: all guardrails satisfied."
-                )])],
+                output=[
+                    Message(
+                        role=MessageRole.ASSISTANT,
+                        parts=[text_part(f"Custom provider sync {context.turn}: all guardrails satisfied.")],
+                    )
+                ],
                 usage=TokenUsage(
                     input_tokens=28 + (context.turn % 6),
                     output_tokens=14 + (context.turn % 5),
@@ -710,9 +714,7 @@ def emit_custom_stream(client: Client, cfg: RuntimeConfig, context: EmitContext)
                         role=MessageRole.ASSISTANT,
                         parts=[
                             thinking_part("assembling synthetic stream segments"),
-                            text_part(
-                                f"Custom stream {context.turn}: segment A complete; segment B complete."
-                            ),
+                            text_part(f"Custom stream {context.turn}: segment A complete; segment B complete."),
                         ],
                     )
                 ],

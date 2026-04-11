@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 
 import pytest
-
 from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig
 from sigil_sdk.config import resolve_config
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import concurrent.futures
 import copy
-from contextlib import nullcontext
 import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import socket
 import threading
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import grpc
@@ -18,7 +18,6 @@ from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
 from sigil_sdk import (
     ApiConfig,
     Client,
@@ -29,7 +28,6 @@ from sigil_sdk import (
     EmbeddingStart,
     Generation,
     GenerationExportConfig,
-    GenerationMode,
     GenerationStart,
     Message,
     MessageRole,
@@ -49,7 +47,6 @@ from sigil_sdk import (
 )
 from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
 from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
-
 
 _metadata_conversation_title = "sigil.conversation.title"
 _metadata_user_id = "sigil.user.id"
@@ -413,11 +410,31 @@ def test_conformance_agent_identity_semantics() -> None:
     cases = [
         ("explicit fields", "agent-explicit", "v1.2.3", "", "", "", "", "agent-explicit", "v1.2.3"),
         ("context fallback", "", "", "agent-context", "v-context", "", "", "agent-context", "v-context"),
-        ("result-time override", "agent-seed", "v-seed", "", "", "agent-result", "v-result", "agent-result", "v-result"),
+        (
+            "result-time override",
+            "agent-seed",
+            "v-seed",
+            "",
+            "",
+            "agent-result",
+            "v-result",
+            "agent-result",
+            "v-result",
+        ),
         ("empty omission", "", "", "", "", "", "", "", ""),
     ]
 
-    for _, start_name, start_version, context_name, context_version, result_name, result_version, want_name, want_version in cases:
+    for (
+        _,
+        start_name,
+        start_version,
+        context_name,
+        context_version,
+        result_name,
+        result_version,
+        want_name,
+        want_version,
+    ) in cases:
         env = _ConformanceEnv()
         try:
             with with_agent_name(context_name) if context_name else nullcontext():
@@ -597,9 +614,7 @@ def test_conformance_validation_and_error_semantics() -> None:
         assert env.servicer.requests == []
         assert env.generation_span().attributes["error.type"] == "validation_error"
 
-        call_error = env.client.start_generation(
-            GenerationStart(model=ModelRef(provider="openai", name="gpt-5"))
-        )
+        call_error = env.client.start_generation(GenerationStart(model=ModelRef(provider="openai", name="gpt-5")))
         call_error.set_call_error(RuntimeError("provider unavailable"))
         call_error.set_result(Generation())
         call_error.end()

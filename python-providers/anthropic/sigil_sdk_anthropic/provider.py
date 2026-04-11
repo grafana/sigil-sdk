@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, field, is_dataclass
 import json
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import TYPE_CHECKING, Any
 
 from sigil_sdk import (
     Artifact,
@@ -255,7 +255,9 @@ def _messages_from_stream(
             generation.artifacts.append(_json_artifact(ArtifactKind.REQUEST, "anthropic.request", request))
         if generation.tools and not any(artifact.kind == ArtifactKind.TOOLS for artifact in generation.artifacts):
             generation.artifacts.append(_json_artifact(ArtifactKind.TOOLS, "anthropic.tools", generation.tools))
-        generation.artifacts.append(_json_artifact(ArtifactKind.PROVIDER_EVENT, "anthropic.stream.events", summary.events))
+        generation.artifacts.append(
+            _json_artifact(ArtifactKind.PROVIDER_EVENT, "anthropic.stream.events", summary.events)
+        )
 
     return generation
 

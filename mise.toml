@@ -1,5 +1,6 @@
 [tools]
 biome = "2.4.11"
+ruff = "0.15.10"
 
 [env]
 PYTHON_BIN = "python3"
@@ -23,6 +24,10 @@ while IFS= read -r moddir; do
 done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; | sort)
 """
 
+[tasks."format:py"]
+description = "Format Python SDK code"
+run = "ruff format python/ python-providers/ python-frameworks/"
+
 [tasks."format:cs"]
 description = "Format .NET SDK code"
 run = "dotnet format dotnet/Sigil.DotNet.sln"
@@ -34,7 +39,7 @@ run = "pnpm --filter @grafana/sigil-sdk-js run lint:fix"
 
 [tasks.format]
 description = "Format all code"
-depends = ["format:go", "format:cs", "format:ts:sdk-js"]
+depends = ["format:go", "format:py", "format:cs", "format:ts:sdk-js"]
 
 # --- Linting ---
 
@@ -53,6 +58,15 @@ while IFS= read -r moddir; do
 done < <(find . -name go.mod -not -path './node_modules/*' -exec dirname {} \\; | sort)
 """
 
+[tasks."lint:py"]
+description = "Lint and format-check Python SDK code"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+ruff check python/ python-providers/ python-frameworks/
+ruff format --check python/ python-providers/ python-frameworks/
+"""
+
 [tasks."lint:cs"]
 description = "Verify .NET SDK formatting and analyzer checks"
 run = "dotnet format dotnet/Sigil.DotNet.sln --verify-no-changes"
@@ -64,7 +78,7 @@ run = "pnpm --filter @grafana/sigil-sdk-js run lint"
 
 [tasks.lint]
 description = "Run all linting"
-depends = ["lint:go", "lint:cs", "lint:ts:sdk-js"]
+depends = ["lint:go", "lint:py", "lint:cs", "lint:ts:sdk-js"]
 
 # --- Type checking ---
 

@@ -26,12 +26,14 @@ from sigil_sdk.models import (
 
 logger = logging.getLogger(__name__)
 
-_CHAT_CALL_TYPES = frozenset({
-    "completion",
-    "acompletion",
-    "text_completion",
-    "atext_completion",
-})
+_CHAT_CALL_TYPES = frozenset(
+    {
+        "completion",
+        "acompletion",
+        "text_completion",
+        "atext_completion",
+    }
+)
 
 
 def _make_tool_call_part(*, call_id: str, name: str, arguments: str) -> Part:
@@ -247,12 +249,14 @@ def _map_tool_definitions(kwargs: dict[str, Any]) -> list[ToolDefinition]:
         description = function.get("description", "")
         parameters = function.get("parameters")
         schema_json = json.dumps(parameters).encode("utf-8") if parameters else b""
-        out.append(ToolDefinition(
-            name=name,
-            description=description,
-            type=tool_type,
-            input_schema_json=schema_json,
-        ))
+        out.append(
+            ToolDefinition(
+                name=name,
+                description=description,
+                type=tool_type,
+                input_schema_json=schema_json,
+            )
+        )
     return out
 
 
@@ -336,10 +340,14 @@ class SigilLiteLLMLogger(CustomLogger):
     def log_failure_event(self, kwargs: dict, response_obj: Any, start_time: datetime, end_time: datetime) -> None:
         self._log_event(kwargs, response_obj, start_time, end_time, is_failure=True)
 
-    async def async_log_success_event(self, kwargs: dict, response_obj: Any, start_time: datetime, end_time: datetime) -> None:
+    async def async_log_success_event(
+        self, kwargs: dict, response_obj: Any, start_time: datetime, end_time: datetime
+    ) -> None:
         self._log_event(kwargs, response_obj, start_time, end_time, is_failure=False)
 
-    async def async_log_failure_event(self, kwargs: dict, response_obj: Any, start_time: datetime, end_time: datetime) -> None:
+    async def async_log_failure_event(
+        self, kwargs: dict, response_obj: Any, start_time: datetime, end_time: datetime
+    ) -> None:
         self._log_event(kwargs, response_obj, start_time, end_time, is_failure=True)
 
     def _log_event(

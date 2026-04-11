@@ -5,11 +5,10 @@ from __future__ import annotations
 import time
 from datetime import timedelta
 
-import pytest
+from conftest import CapturingGenerationExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
 from sigil_sdk import (
     Client,
     ClientConfig,
@@ -17,7 +16,6 @@ from sigil_sdk import (
     EmbeddingResult,
     EmbeddingStart,
     EnqueueError,
-    Generation,
     GenerationExportConfig,
     GenerationStart,
     Message,
@@ -32,8 +30,6 @@ from sigil_sdk import (
     with_agent_version,
     with_conversation_id,
 )
-
-from conftest import CapturingGenerationExporter
 
 
 def _new_client(exporter: CapturingGenerationExporter, tracer=None, **overrides) -> Client:

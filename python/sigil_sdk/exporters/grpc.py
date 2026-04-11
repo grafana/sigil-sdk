@@ -18,7 +18,11 @@ class GRPCGenerationExporter:
     def __init__(self, endpoint: str, headers: dict[str, str] | None = None, insecure: bool = False) -> None:
         host, implicit_insecure = _parse_endpoint(endpoint)
         self._headers = [(k.lower(), v) for k, v in (headers or {}).items()]
-        self._channel = grpc.insecure_channel(host) if (insecure or implicit_insecure) else grpc.secure_channel(host, grpc.ssl_channel_credentials())
+        self._channel = (
+            grpc.insecure_channel(host)
+            if (insecure or implicit_insecure)
+            else grpc.secure_channel(host, grpc.ssl_channel_credentials())
+        )
         self._stub = sigil_pb2_grpc.GenerationIngestServiceStub(self._channel)
 
     def export_generations(self, request: ExportGenerationsRequest) -> ExportGenerationsResponse:

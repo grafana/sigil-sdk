@@ -7,10 +7,10 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from agents import RunHooks
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from agents import RunHooks
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_openai_agents import (
@@ -30,8 +30,7 @@ class _CapturingExporter:
         self.requests.append(request)
         return ExportGenerationsResponse(
             results=[
-                ExportGenerationResult(generation_id=generation.id, accepted=True)
-                for generation in request.generations
+                ExportGenerationResult(generation_id=generation.id, accepted=True) for generation in request.generations
             ]
         )
 
@@ -203,7 +202,10 @@ def test_sigil_sdk_openai_agents_generation_span_tracks_active_parent_span_and_e
                 run_id=run_id,
                 parent_run_id=uuid4(),
                 invocation_params={"model": "gpt-5"},
-                metadata={"conversation_id": "framework-conversation-lineage-42", "thread_id": "framework-thread-lineage-42"},
+                metadata={
+                    "conversation_id": "framework-conversation-lineage-42",
+                    "thread_id": "framework-thread-lineage-42",
+                },
             )
             handler.on_llm_end(
                 {"generations": [[{"text": "world"}]], "llm_output": {"model_name": "gpt-5", "finish_reason": "stop"}},
@@ -328,7 +330,10 @@ def test_sigil_sdk_openai_agents_hook_helpers_append_handler() -> None:
             await hooks.on_llm_end(
                 context,
                 agent,
-                {"output": [{"role": "assistant", "content": "world"}], "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3}},
+                {
+                    "output": [{"role": "assistant", "content": "world"}],
+                    "usage": {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3},
+                },
             )
             await hooks.on_agent_end(context, agent, {"content": "world"})
 

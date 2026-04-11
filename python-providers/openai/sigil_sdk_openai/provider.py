@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, is_dataclass
 import json
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import asdict, dataclass, field, is_dataclass
+from typing import TYPE_CHECKING, Any
 
 from sigil_sdk import (
     Artifact,
@@ -297,7 +298,9 @@ def _chat_from_stream(
             generation.artifacts.append(_json_artifact(ArtifactKind.REQUEST, "openai.chat.request", request))
         if generation.tools and not any(artifact.kind == ArtifactKind.TOOLS for artifact in generation.artifacts):
             generation.artifacts.append(_json_artifact(ArtifactKind.TOOLS, "openai.chat.tools", generation.tools))
-        generation.artifacts.append(_json_artifact(ArtifactKind.PROVIDER_EVENT, "openai.chat.stream_events", summary.events))
+        generation.artifacts.append(
+            _json_artifact(ArtifactKind.PROVIDER_EVENT, "openai.chat.stream_events", summary.events)
+        )
 
     return generation
 
@@ -570,9 +573,7 @@ def _responses_from_stream(
         if not any(artifact.kind == ArtifactKind.REQUEST for artifact in generation.artifacts):
             generation.artifacts.append(_json_artifact(ArtifactKind.REQUEST, "openai.responses.request", request))
         if generation.tools and not any(artifact.kind == ArtifactKind.TOOLS for artifact in generation.artifacts):
-            generation.artifacts.append(
-                _json_artifact(ArtifactKind.TOOLS, "openai.responses.tools", generation.tools)
-            )
+            generation.artifacts.append(_json_artifact(ArtifactKind.TOOLS, "openai.responses.tools", generation.tools))
         generation.artifacts.append(
             _json_artifact(ArtifactKind.PROVIDER_EVENT, "openai.responses.stream_events", events)
         )
@@ -580,7 +581,9 @@ def _responses_from_stream(
     return generation
 
 
-def _chat_start_payload(request: ChatCreateRequest | ChatStreamRequest, options: OpenAIOptions, mode: GenerationMode) -> GenerationStart:
+def _chat_start_payload(
+    request: ChatCreateRequest | ChatStreamRequest, options: OpenAIOptions, mode: GenerationMode
+) -> GenerationStart:
     input_messages, system_prompt = _map_chat_request_messages(request)
     tools = _map_chat_tools(request)
     reasoning = _read(request, "reasoning")
@@ -669,7 +672,9 @@ def _map_chat_request_messages(request: ChatCreateRequest | ChatStreamRequest) -
         if mapped_role == MessageRole.TOOL:
             tool_message = _tool_result_message(
                 _read(message, "content"),
-                tool_call_id=_as_str(_read(message, "tool_call_id")) or _as_str(_read(message, "toolCallId")) or _as_str(_read(message, "id")),
+                tool_call_id=_as_str(_read(message, "tool_call_id"))
+                or _as_str(_read(message, "toolCallId"))
+                or _as_str(_read(message, "id")),
                 name=_as_str(_read(message, "name")),
                 is_error=_read(message, "is_error"),
             )

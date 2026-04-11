@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import logging
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 from opentelemetry.metrics import Meter
 from opentelemetry.trace import Tracer
@@ -71,12 +71,12 @@ class ClientConfig:
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     embedding_capture: EmbeddingCaptureConfig = field(default_factory=EmbeddingCaptureConfig)
-    tracer: Optional[Tracer] = None
-    meter: Optional[Meter] = None
-    logger: Optional[logging.Logger] = None
-    now: Optional[Callable[[], datetime]] = None
-    sleep: Optional[Callable[[float], None]] = None
-    generation_exporter: Optional[GenerationExporter] = None
+    tracer: Tracer | None = None
+    meter: Meter | None = None
+    logger: logging.Logger | None = None
+    now: Callable[[], datetime] | None = None
+    sleep: Callable[[float], None] | None = None
+    generation_exporter: GenerationExporter | None = None
 
     # Convenience aliases for simpler caller config wiring.
     generation_export_endpoint: str = ""
@@ -88,7 +88,7 @@ def default_config() -> ClientConfig:
     return ClientConfig()
 
 
-def resolve_config(config: Optional[ClientConfig]) -> ClientConfig:
+def resolve_config(config: ClientConfig | None) -> ClientConfig:
     """Resolves caller config against defaults."""
 
     if config is None:

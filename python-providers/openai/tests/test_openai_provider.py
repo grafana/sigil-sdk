@@ -9,7 +9,6 @@ import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_openai import (
@@ -30,8 +29,7 @@ class _CapturingExporter:
         self.requests.append(request)
         return ExportGenerationsResponse(
             results=[
-                ExportGenerationResult(generation_id=generation.id, accepted=True)
-                for generation in request.generations
+                ExportGenerationResult(generation_id=generation.id, accepted=True) for generation in request.generations
             ]
         )
 

@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import base64
 import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import socket
 import threading
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import grpc
 from opentelemetry.sdk.trace import TracerProvider
-
 from sigil_sdk import (
     Artifact,
     ArtifactKind,
@@ -56,7 +55,6 @@ class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceService
 
 
 import pytest
-
 from sigil_sdk.exporters.http import _normalize_endpoint
 
 
@@ -165,10 +163,7 @@ def test_sdk_exports_generation_over_http_base_url_only() -> None:
             captured.append({"path": self.path})
 
             response = {
-                "results": [
-                    {"generation_id": g["id"], "accepted": True}
-                    for g in payload.get("generations", [])
-                ]
+                "results": [{"generation_id": g["id"], "accepted": True} for g in payload.get("generations", [])]
             }
             encoded = json.dumps(response).encode("utf-8")
             self.send_response(202)
@@ -541,7 +536,9 @@ def _assert_generation_proto_payload(generation: sigil_pb2.Generation) -> None:
 
     assert generation.stop_reason == "end_turn"
     assert generation.started_at.ToDatetime(tzinfo=timezone.utc) == datetime(2026, 2, 11, 12, 0, tzinfo=timezone.utc)
-    assert generation.completed_at.ToDatetime(tzinfo=timezone.utc) == datetime(2026, 2, 11, 12, 0, 1, tzinfo=timezone.utc)
+    assert generation.completed_at.ToDatetime(tzinfo=timezone.utc) == datetime(
+        2026, 2, 11, 12, 0, 1, tzinfo=timezone.utc
+    )
     assert dict(generation.tags) == {"env": "test", "suite": "transport"}
 
     assert generation.metadata["seed"] in (1, 1.0)

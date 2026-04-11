@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import contextvars
-from typing import Iterator, Optional
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-
-_conversation_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("sigil_conversation_id", default=None)
-_conversation_title: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("sigil_conversation_title", default=None)
-_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("sigil_user_id", default=None)
-_agent_name: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("sigil_agent_name", default=None)
-_agent_version: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("sigil_agent_version", default=None)
+_conversation_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_conversation_id", default=None)
+_conversation_title: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "sigil_conversation_title", default=None
+)
+_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_user_id", default=None)
+_agent_name: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_agent_name", default=None)
+_agent_version: contextvars.ContextVar[str | None] = contextvars.ContextVar("sigil_agent_version", default=None)
 
 
 @contextmanager
@@ -69,31 +70,31 @@ def with_agent_version(agent_version: str) -> Iterator[None]:
         _agent_version.reset(token)
 
 
-def conversation_id_from_context() -> Optional[str]:
+def conversation_id_from_context() -> str | None:
     """Returns the current conversation id from context variables."""
 
     return _conversation_id.get()
 
 
-def agent_name_from_context() -> Optional[str]:
+def agent_name_from_context() -> str | None:
     """Returns the current agent name from context variables."""
 
     return _agent_name.get()
 
 
-def agent_version_from_context() -> Optional[str]:
+def agent_version_from_context() -> str | None:
     """Returns the current agent version from context variables."""
 
     return _agent_version.get()
 
 
-def conversation_title_from_context() -> Optional[str]:
+def conversation_title_from_context() -> str | None:
     """Returns the current conversation title from context variables."""
 
     return _conversation_title.get()
 
 
-def user_id_from_context() -> Optional[str]:
+def user_id_from_context() -> str | None:
     """Returns the current user id from context variables."""
 
     return _user_id.get()

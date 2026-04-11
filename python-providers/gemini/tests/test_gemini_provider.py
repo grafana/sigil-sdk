@@ -8,7 +8,6 @@ import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
 from sigil_sdk import Client, ClientConfig, GenerationExportConfig
 from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 from sigil_sdk_gemini import GeminiOptions, GeminiStreamSummary, models
@@ -22,8 +21,7 @@ class _CapturingExporter:
         self.requests.append(request)
         return ExportGenerationsResponse(
             results=[
-                ExportGenerationResult(generation_id=generation.id, accepted=True)
-                for generation in request.generations
+                ExportGenerationResult(generation_id=generation.id, accepted=True) for generation in request.generations
             ]
         )
 
@@ -168,7 +166,12 @@ def test_gemini_stream_wrapper_sets_stream_mode_and_opt_in_artifacts() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.mode.value == "STREAM"
-        assert [artifact.kind.value for artifact in generation.artifacts] == ["request", "response", "tools", "provider_event"]
+        assert [artifact.kind.value for artifact in generation.artifacts] == [
+            "request",
+            "response",
+            "tools",
+            "provider_event",
+        ]
     finally:
         client.shutdown()
 
@@ -321,7 +324,9 @@ def test_gemini_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
     assert mapped_default.usage.reasoning_tokens == 10
     assert mapped_default.artifacts == []
 
-    mapped_with_artifacts = models.from_request_response(model, contents, config, response, GeminiOptions(raw_artifacts=True))
+    mapped_with_artifacts = models.from_request_response(
+        model, contents, config, response, GeminiOptions(raw_artifacts=True)
+    )
     assert [artifact.kind.value for artifact in mapped_with_artifacts.artifacts] == ["request", "response", "tools"]
 
     stream_mapped = models.from_stream(
@@ -337,7 +342,12 @@ def test_gemini_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
     assert stream_mapped.tool_choice == "any"
     assert stream_mapped.thinking_enabled is True
     assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1536
-    assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "response", "tools", "provider_event"]
+    assert [artifact.kind.value for artifact in stream_mapped.artifacts] == [
+        "request",
+        "response",
+        "tools",
+        "provider_event",
+    ]
 
 
 def test_gemini_mapper_maps_thinking_disabled() -> None:

@@ -18,10 +18,20 @@ def validate_generation(generation: Generation) -> None:
         raise ValueError("generation.model.name is required")
 
     for index, message in enumerate(generation.input):
-        _validate_message("generation.input", index, message.role.value if hasattr(message.role, "value") else str(message.role), message.parts)
+        _validate_message(
+            "generation.input",
+            index,
+            message.role.value if hasattr(message.role, "value") else str(message.role),
+            message.parts,
+        )
 
     for index, message in enumerate(generation.output):
-        _validate_message("generation.output", index, message.role.value if hasattr(message.role, "value") else str(message.role), message.parts)
+        _validate_message(
+            "generation.output",
+            index,
+            message.role.value if hasattr(message.role, "value") else str(message.role),
+            message.parts,
+        )
 
     for index, tool in enumerate(generation.tools):
         if tool.name.strip() == "":

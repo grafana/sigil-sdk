@@ -14,6 +14,7 @@ from .handler import SigilAsyncOpenAIAgentsHandler, SigilOpenAIAgentsHandler
 try:  # pragma: no cover - imported from openai-agents at runtime
     from agents import RunHooks
 except Exception:  # pragma: no cover - lightweight fallback for local unit tests
+
     class RunHooks:  # type: ignore[no-redef]
         """Fallback RunHooks shape used when openai-agents isn't installed."""
 

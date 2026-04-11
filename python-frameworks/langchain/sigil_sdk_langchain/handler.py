@@ -11,6 +11,7 @@ from sigil_sdk.framework_handler import ProviderResolver, SigilFrameworkHandlerB
 try:
     from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 except ModuleNotFoundError:  # pragma: no cover - handled by package dependency in normal installs
+
     class BaseCallbackHandler:  # type: ignore[no-redef]
         """Fallback base class when langchain-core is unavailable."""
 
