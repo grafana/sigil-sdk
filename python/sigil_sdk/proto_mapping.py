@@ -42,6 +42,7 @@ def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:
             total_tokens=generation.usage.total_tokens,
             cache_read_input_tokens=generation.usage.cache_read_input_tokens,
             cache_write_input_tokens=generation.usage.cache_write_input_tokens,
+            cache_creation_input_tokens=generation.usage.cache_creation_input_tokens,
             reasoning_tokens=generation.usage.reasoning_tokens,
         ),
         stop_reason=generation.stop_reason,
