@@ -76,6 +76,7 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_TOOL_DESCRIPTION = "gen_ai.tool.description";
     static final String SPAN_ATTR_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments";
     static final String SPAN_ATTR_TOOL_CALL_RESULT = "gen_ai.tool.call.result";
+    static final String SPAN_ATTR_TOOL_CALL_COUNT = "sigil.gen_ai.tool_call_count";
     private static final int MAX_RATING_CONVERSATION_ID_LEN = 255;
     private static final int MAX_RATING_ID_LEN = 128;
     private static final int MAX_RATING_GENERATION_ID_LEN = 255;
@@ -1027,6 +1028,11 @@ public final class SigilClient implements AutoCloseable {
             span.setAttribute(SPAN_ATTR_CACHE_WRITE_TOKENS, usage.getCacheWriteInputTokens());
             span.setAttribute(SPAN_ATTR_CACHE_CREATION_TOKENS, usage.getCacheCreationInputTokens());
             span.setAttribute(SPAN_ATTR_REASONING_TOKENS, usage.getReasoningTokens());
+        }
+
+        long toolCallCount = countToolCalls(generation.getOutput());
+        if (toolCallCount != 0) {
+            span.setAttribute(SPAN_ATTR_TOOL_CALL_COUNT, toolCallCount);
         }
     }
 
