@@ -91,6 +91,11 @@ description = "Run Google ADK framework helper tests as standalone module"
 dir = "go-frameworks/google-adk"
 run = "GOWORK=off go test ./..."
 
+[tasks."test:go:sdk-genkit"]
+description = "Run Genkit framework helper tests as standalone module"
+dir = "go-frameworks/genkit"
+run = "GOWORK=off go test ./..."
+
 [tasks."test:go:plugin-claude-code"]
 description = "Run Claude Code plugin tests as standalone module"
 dir = "plugins/claude-code"
@@ -323,6 +328,7 @@ run = """
 #!/usr/bin/env bash
 set -euo pipefail
 mise run test:go:sdk-google-adk
+mise run test:go:sdk-genkit
 mise run test:ts:sdk-framework-conformance
 mise run test:py:sdk-framework-conformance
 mise run test:java:sdk-framework-conformance
@@ -348,6 +354,7 @@ mise run test:go:sdk-anthropic
 mise run test:go:sdk-openai
 mise run test:go:sdk-gemini
 mise run test:go:sdk-google-adk
+mise run test:go:sdk-genkit
 mise run test:go:plugin-claude-code
 mise run test:ts:sdk-js
 mise run test:py:sdk-core
