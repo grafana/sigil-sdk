@@ -338,6 +338,18 @@ class TestFromGeneric:
         usage = from_generic(raw)
         assert usage.input_tokens == 10
 
+    def test_preserves_explicit_zero_preferred_keys(self):
+        raw = {
+            "prompt_tokens": 0,
+            "input_tokens": 20,
+            "completion_tokens": 0,
+            "output_tokens": 5,
+        }
+        usage = from_generic(raw)
+        assert usage.input_tokens == 0
+        assert usage.output_tokens == 0
+        assert usage.total_tokens == 0
+
     def test_flat_reasoning_tokens(self):
         raw = {"input_tokens": 100, "reasoning_tokens": 25}
         usage = from_generic(raw)

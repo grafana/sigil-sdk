@@ -94,8 +94,15 @@ def from_generic(raw: Any) -> TokenUsage:
     if raw is None:
         return TokenUsage()
 
-    input_tokens = _as_int(_read(raw, "prompt_tokens")) or _as_int(_read(raw, "input_tokens"))
-    output_tokens = _as_int(_read(raw, "completion_tokens")) or _as_int(_read(raw, "output_tokens"))
+    prompt_tokens = _read(raw, "prompt_tokens")
+    completion_tokens = _read(raw, "completion_tokens")
+
+    input_tokens = _as_int(prompt_tokens) if prompt_tokens is not None else _as_int(_read(raw, "input_tokens"))
+    output_tokens = (
+        _as_int(completion_tokens)
+        if completion_tokens is not None
+        else _as_int(_read(raw, "output_tokens"))
+    )
     total_tokens = _as_int(_read(raw, "total_tokens"))
     if total_tokens == 0:
         total_tokens = input_tokens + output_tokens
