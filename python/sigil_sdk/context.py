@@ -20,6 +20,9 @@ _agent_version: contextvars.ContextVar[str | None] = contextvars.ContextVar("sig
 _content_capture_mode: contextvars.ContextVar[ContentCaptureMode | None] = contextvars.ContextVar(
     "sigil_content_capture_mode", default=None
 )
+_generation_content_capture_mode: contextvars.ContextVar[ContentCaptureMode | None] = contextvars.ContextVar(
+    "sigil_generation_content_capture_mode", default=None
+)
 
 
 @contextmanager
@@ -121,4 +124,7 @@ def with_content_capture_mode(mode: ContentCaptureMode) -> Iterator[None]:
 def content_capture_mode_from_context() -> ContentCaptureMode | None:
     """Returns the content capture mode from context, or None if not set."""
 
-    return _content_capture_mode.get()
+    mode = _content_capture_mode.get()
+    if mode is not None:
+        return mode
+    return _generation_content_capture_mode.get()

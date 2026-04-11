@@ -645,6 +645,23 @@ class TestContextPropagation:
 
         assert content_capture_mode_from_context() is None
 
+    def test_generation_end_preserves_content_capture_mode_context_manager(self):
+        exporter = CapturingGenerationExporter()
+        client = _new_client(exporter, content_capture=ContentCaptureMode.METADATA_ONLY)
+        try:
+            with with_content_capture_mode(ContentCaptureMode.FULL):
+                assert content_capture_mode_from_context() == ContentCaptureMode.FULL
+
+                with client.start_generation(_seed()) as gen_rec:
+                    gen_rec.set_result(
+                        output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="ok")])],
+                        usage=TokenUsage(input_tokens=1, output_tokens=1),
+                    )
+
+                assert content_capture_mode_from_context() == ContentCaptureMode.FULL
+        finally:
+            client.shutdown()
+
 
 # ---------------------------------------------------------------------------
 # Validation accepts stripped content

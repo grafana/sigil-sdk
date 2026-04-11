@@ -23,7 +23,7 @@ from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from .config import ClientConfig, resolve_config
 from .context import (
-    _content_capture_mode,
+    _generation_content_capture_mode,
     agent_name_from_context,
     agent_version_from_context,
     content_capture_mode_from_context,
@@ -147,7 +147,7 @@ def _pop_capture_mode_stack(recorder_id: int) -> None:
     stack = _capture_mode_stack.get()
     new_stack = tuple(e for e in stack if e[0] != recorder_id)
     _capture_mode_stack.set(new_stack)
-    _content_capture_mode.set(new_stack[-1][1] if new_stack else None)
+    _generation_content_capture_mode.set(new_stack[-1][1] if new_stack else None)
 
 
 def _resolve_content_capture_mode(override: ContentCaptureMode, fallback: ContentCaptureMode) -> ContentCaptureMode:
@@ -823,7 +823,7 @@ class GenerationRecorder:
     def __post_init__(self) -> None:
         stack = _capture_mode_stack.get()
         _capture_mode_stack.set((*stack, (id(self), self._content_capture_mode)))
-        _content_capture_mode.set(self._content_capture_mode)
+        _generation_content_capture_mode.set(self._content_capture_mode)
 
     def __enter__(self) -> GenerationRecorder:
         return self
