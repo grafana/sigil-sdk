@@ -459,6 +459,27 @@ func TestExtractModelConfig(t *testing.T) {
 			},
 			wantMaxTokens:   int64Ptr(512),
 			wantTemperature: float64Ptr(0.5),
+			wantTopP:        float64Ptr(0),
+		},
+		{
+			name: "pointer with temperature zero",
+			config: &ai.GenerationCommonConfig{
+				MaxOutputTokens: 256,
+				Temperature:     0,
+				TopP:            0.9,
+			},
+			wantMaxTokens:   int64Ptr(256),
+			wantTemperature: float64Ptr(0),
+			wantTopP:        float64Ptr(0.9),
+		},
+		{
+			name: "value with topP zero",
+			config: ai.GenerationCommonConfig{
+				Temperature: 0.7,
+				TopP:        0,
+			},
+			wantTemperature: float64Ptr(0.7),
+			wantTopP:        float64Ptr(0),
 		},
 		{
 			name: "map with float64 values",

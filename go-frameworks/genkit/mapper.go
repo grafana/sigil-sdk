@@ -115,7 +115,6 @@ func mapUsage(usage *ai.GenerationUsage) sigil.TokenUsage {
 	}
 }
 
-
 func mapTools(tools []*ai.ToolDefinition) []sigil.ToolDefinition {
 	if len(tools) == 0 {
 		return nil
@@ -152,10 +151,10 @@ func extractModelConfig(config any) (maxTokens *int64, temperature *float64, top
 			v := int64(c.MaxOutputTokens)
 			maxTokens = &v
 		}
-		if c.Temperature > 0 {
+		if c.Temperature >= 0 {
 			temperature = &c.Temperature
 		}
-		if c.TopP > 0 {
+		if c.TopP >= 0 {
 			topP = &c.TopP
 		}
 	case map[string]any:
