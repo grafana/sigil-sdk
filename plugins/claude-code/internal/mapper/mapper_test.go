@@ -351,12 +351,34 @@ func TestProcess_Tags(t *testing.T) {
 		branch    string
 		cwd       string
 		entry     string
+		extras    map[string]string
 		wantNil   bool
 		wantCount int
+		wantTags  map[string]string // optional: assert specific key/value pairs
 	}{
-		{"all set", "feature/auth", "/project", "cli", false, 3},
-		{"all empty", "", "", "", true, 0},
-		{"partial", "main", "", "", false, 1},
+		{name: "all set", branch: "feature/auth", cwd: "/project", entry: "cli", wantCount: 3},
+		{name: "all empty", wantNil: true},
+		{name: "partial", branch: "main", wantCount: 1},
+		{
+			name:      "extras merged with built-ins",
+			branch:    "main",
+			extras:    map[string]string{"account": "work", "env": "dev"},
+			wantCount: 3,
+			wantTags:  map[string]string{"git.branch": "main", "account": "work", "env": "dev"},
+		},
+		{
+			name:      "extras only, no built-ins",
+			extras:    map[string]string{"account": "personal"},
+			wantCount: 1,
+			wantTags:  map[string]string{"account": "personal"},
+		},
+		{
+			name:      "built-in wins on collision",
+			branch:    "main",
+			extras:    map[string]string{"git.branch": "user-override", "account": "work"},
+			wantCount: 2,
+			wantTags:  map[string]string{"git.branch": "main", "account": "work"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -369,14 +391,19 @@ func TestProcess_Tags(t *testing.T) {
 			line.Entrypoint = tt.entry
 
 			st := &state.Session{}
-			gens := Process([]transcript.Line{line}, st, Options{SessionID: "sess-1"}, nil)
+			gens := Process([]transcript.Line{line}, st, Options{SessionID: "sess-1", ExtraTags: tt.extras}, nil)
 
 			tags := gens[0].Tags
 			if (tags == nil) != tt.wantNil {
 				t.Errorf("tags nil = %v, want %v", tags == nil, tt.wantNil)
 			}
 			if len(tags) != tt.wantCount {
-				t.Errorf("tags count = %d, want %d", len(tags), tt.wantCount)
+				t.Errorf("tags count = %d, want %d (got %v)", len(tags), tt.wantCount, tags)
+			}
+			for k, v := range tt.wantTags {
+				if tags[k] != v {
+					t.Errorf("tags[%q] = %q, want %q", k, tags[k], v)
+				}
 			}
 		})
 	}

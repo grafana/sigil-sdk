@@ -22,9 +22,10 @@ const (
 
 // Options controls how transcript lines are mapped to generations.
 type Options struct {
-	SessionID      string      // authoritative session ID from the hook input
-	ContentCapture bool        // when true, include redacted Input/Output content
-	Logger         *log.Logger // debug logger (nil = silent)
+	SessionID      string            // authoritative session ID from the hook input
+	ContentCapture bool              // when true, include redacted Input/Output content
+	Logger         *log.Logger       // debug logger (nil = silent)
+	ExtraTags      map[string]string // user-supplied tags merged into every generation; built-in keys always win
 }
 
 func (o Options) logf(format string, args ...any) {
@@ -226,7 +227,7 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 		StopReason:  msg.StopReason,
 		StartedAt:   completedAt, // no real start time; set equal to avoid zero-value skip in SDK metrics
 		CompletedAt: completedAt,
-		Tags:        buildTags(line, isSidechain),
+		Tags:        buildTags(line, isSidechain, opts.ExtraTags),
 	}
 
 	toolNames := map[string]bool{}
@@ -259,11 +260,16 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 	return gen, true
 }
 
-func buildTags(line transcript.Line, subagent bool) map[string]string {
-	if line.GitBranch == "" && line.CWD == "" && line.Entrypoint == "" && !subagent {
+func buildTags(line transcript.Line, subagent bool, extras map[string]string) map[string]string {
+	if line.GitBranch == "" && line.CWD == "" && line.Entrypoint == "" && !subagent && len(extras) == 0 {
 		return nil
 	}
-	tags := make(map[string]string, 4)
+	tags := make(map[string]string, 4+len(extras))
+	// Extras go in first; built-ins written below overwrite any collisions
+	// so user-supplied keys can never shadow git.branch/cwd/entrypoint/subagent.
+	for k, v := range extras {
+		tags[k] = v
+	}
 	if line.GitBranch != "" {
 		tags["git.branch"] = line.GitBranch
 	}

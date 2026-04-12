@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -11,6 +12,34 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+func TestParseExtraTags(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want map[string]string
+	}{
+		{"empty string", "", nil},
+		{"single pair", "k=v", map[string]string{"k": "v"}},
+		{"multiple pairs", "k1=v1,k2=v2", map[string]string{"k1": "v1", "k2": "v2"}},
+		{"whitespace trimmed", " k = v ", map[string]string{"k": "v"}},
+		{"whitespace around multiple pairs", " a = 1 , b = 2 ", map[string]string{"a": "1", "b": "2"}},
+		{"malformed entry missing equals", "bad", nil},
+		{"empty key skipped", "=v", nil},
+		{"empty value skipped", "k=", nil},
+		{"mix of good and bad", "good=yes,bad,=v,k=,also=ok", map[string]string{"good": "yes", "also": "ok"}},
+		{"value with equals preserved after first split", "url=a=b", map[string]string{"url": "a=b"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseExtraTags(tt.in)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseExtraTags(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestBuildToolResultMap(t *testing.T) {
 	tests := []struct {

@@ -66,6 +66,7 @@ func run() {
 	}
 
 	contentCapture := strings.EqualFold(os.Getenv("SIGIL_CONTENT_CAPTURE"), "true")
+	extraTags := parseExtraTags(os.Getenv("SIGIL_EXTRA_TAGS"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -123,6 +124,7 @@ func run() {
 		SessionID:      input.SessionID,
 		ContentCapture: contentCapture,
 		Logger:         logger,
+		ExtraTags:      extraTags,
 	}, r)
 
 	if len(gens) == 0 {
@@ -224,6 +226,33 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseExtraTags parses a comma-separated "key=value" string into a tag map.
+// Malformed entries (empty keys, missing '=', empty values) are silently skipped —
+// this runs in a stop hook where logging warnings adds noise for no user benefit.
+// Empty input returns nil so the mapper can short-circuit on the zero-extras path.
+func parseExtraTags(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, pair := range strings.Split(s, ",") {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" || v == "" {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // buildToolResultMap indexes tool results by their call ID across all generations.

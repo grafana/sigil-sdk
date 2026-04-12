@@ -46,6 +46,7 @@ Add to `~/.claude/settings.json`:
 | `SIGIL_USER` | yes | Basic auth username (also `X-Scope-OrgID`) |
 | `SIGIL_PASSWORD` | yes | Basic auth password |
 | `SIGIL_CONTENT_CAPTURE` | no | `true` to include redacted conversation content (default: metadata-only) |
+| `SIGIL_EXTRA_TAGS` | no | Comma-separated `key=value` tags added to every generation (e.g. `account=work,env=dev`). Built-in tags (`git.branch`, `cwd`, `entrypoint`, `subagent`) take precedence on collision. |
 | `SIGIL_OTEL_ENDPOINT` | no | OTLP HTTP endpoint for metrics + traces (e.g. `https://otlp-gateway.grafana.net/otlp` or `host:4318`) |
 | `SIGIL_OTEL_USER` | no | OTLP auth username (defaults to `SIGIL_USER`) |
 | `SIGIL_OTEL_PASSWORD` | no | OTLP auth password (defaults to `SIGIL_PASSWORD`) |
