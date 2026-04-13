@@ -139,14 +139,15 @@ func TestBuildToolResultMap(t *testing.T) {
 	}
 }
 
-func newSpanRecordingClient(t *testing.T) (*sigil.Client, *tracetest.SpanRecorder) {
+func newSpanRecordingClient(t *testing.T, mode sigil.ContentCaptureMode) (*sigil.Client, *tracetest.SpanRecorder) {
 	t.Helper()
 	recorder := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 
 	client := sigil.NewClient(sigil.Config{
-		Tracer: tp.Tracer("test"),
+		Tracer:         tp.Tracer("test"),
+		ContentCapture: mode,
 	})
 	t.Cleanup(func() { _ = client.Shutdown(context.Background()) })
 	return client, recorder
@@ -175,14 +176,14 @@ func TestEmitToolSpans(t *testing.T) {
 	ts := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name           string
-		gen            sigil.Generation
-		results        map[string]*sigil.ToolResult
-		contentCapture bool
-		wantSpans      int
-		wantNames      []string
-		wantArgs       map[string]string // tool name → expected arguments attr
-		wantResults    map[string]string // tool name → expected result attr
+		name        string
+		gen         sigil.Generation
+		results     map[string]*sigil.ToolResult
+		contentMode sigil.ContentCaptureMode
+		wantSpans   int
+		wantNames   []string
+		wantArgs    map[string]string // tool name → expected arguments attr
+		wantResults map[string]string // tool name → expected result attr
 	}{
 		{
 			name: "no tool calls",
@@ -196,7 +197,7 @@ func TestEmitToolSpans(t *testing.T) {
 			wantSpans: 0,
 		},
 		{
-			name: "single tool call without content capture",
+			name: "single tool call metadata only",
 			gen: sigil.Generation{
 				ConversationID: "conv-1",
 				AgentName:      "claude-code",
@@ -215,12 +216,12 @@ func TestEmitToolSpans(t *testing.T) {
 					}},
 				}},
 			},
-			contentCapture: false,
-			wantSpans:      1,
-			wantNames:      []string{"Read"},
+			contentMode: sigil.ContentCaptureModeMetadataOnly,
+			wantSpans:   1,
+			wantNames:   []string{"Read"},
 		},
 		{
-			name: "multiple tool calls with content capture and results",
+			name: "multiple tool calls with full content and results",
 			gen: sigil.Generation{
 				ConversationID: "conv-1",
 				AgentName:      "claude-code",
@@ -243,9 +244,9 @@ func TestEmitToolSpans(t *testing.T) {
 				"tc_1": {ToolCallID: "tc_1", Content: "package main"},
 				"tc_2": {ToolCallID: "tc_2", Content: "found 3 matches"},
 			},
-			contentCapture: true,
-			wantSpans:      2,
-			wantNames:      []string{"Read", "Grep"},
+			contentMode: sigil.ContentCaptureModeFull,
+			wantSpans:   2,
+			wantNames:   []string{"Read", "Grep"},
 			wantArgs: map[string]string{
 				"Read": `{"path":"a.go"}`,
 				"Grep": `{"pattern":"TODO"}`,
@@ -272,9 +273,9 @@ func TestEmitToolSpans(t *testing.T) {
 			results: map[string]*sigil.ToolResult{
 				"tc_1": {ToolCallID: "tc_1", ContentJSON: json.RawMessage(`{"files":["a","b"]}`)},
 			},
-			contentCapture: true,
-			wantSpans:      1,
-			wantNames:      []string{"Bash"},
+			contentMode: sigil.ContentCaptureModeFull,
+			wantSpans:   1,
+			wantNames:   []string{"Bash"},
 			wantResults: map[string]string{
 				"Bash": `{"files":["a","b"]}`,
 			},
@@ -296,21 +297,21 @@ func TestEmitToolSpans(t *testing.T) {
 			results: map[string]*sigil.ToolResult{
 				"tc_1": {ToolCallID: "tc_1", Content: "permission denied", IsError: true},
 			},
-			contentCapture: false,
-			wantSpans:      1,
-			wantNames:      []string{"Write"},
+			contentMode: sigil.ContentCaptureModeMetadataOnly,
+			wantSpans:   1,
+			wantNames:   []string{"Write"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, recorder := newSpanRecordingClient(t)
+			client, recorder := newSpanRecordingClient(t, tt.contentMode)
 			results := tt.results
 			if results == nil {
 				results = map[string]*sigil.ToolResult{}
 			}
 
-			emitToolSpans(context.Background(), client, tt.gen, results, tt.contentCapture)
+			emitToolSpans(context.Background(), client, tt.gen, results)
 
 			// Force flush to ensure all spans are recorded.
 			_ = client.Shutdown(context.Background())
@@ -351,7 +352,7 @@ func TestEmitToolSpans(t *testing.T) {
 }
 
 func TestEmitToolSpans_ErrorStatus(t *testing.T) {
-	client, recorder := newSpanRecordingClient(t)
+	client, recorder := newSpanRecordingClient(t, sigil.ContentCaptureModeMetadataOnly)
 	ts := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
 
 	gen := sigil.Generation{
@@ -368,7 +369,7 @@ func TestEmitToolSpans_ErrorStatus(t *testing.T) {
 		"tc_err": {ToolCallID: "tc_err", Content: "denied", IsError: true},
 	}
 
-	emitToolSpans(context.Background(), client, gen, results, false)
+	emitToolSpans(context.Background(), client, gen, results)
 	_ = client.Shutdown(context.Background())
 
 	spans := spansByName(recorder.Ended(), "execute_tool")
