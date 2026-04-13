@@ -18,11 +18,11 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
-    TokenUsage,
     ToolCall,
     ToolDefinition,
     ToolResult,
 )
+from sigil_sdk.usage import from_anthropic
 
 if TYPE_CHECKING:
     from anthropic.types.message import Message as AnthropicMessage
@@ -167,7 +167,7 @@ def _messages_from_request_response(
     input_messages, system_prompt = _map_input_messages(request)
     output_message = _map_output_message(response)
     tools = _map_tools(_read(request, "tools"))
-    usage = _map_usage(_read(response, "usage"))
+    usage = from_anthropic(_read(response, "usage"))
     usage_metadata = _anthropic_usage_metadata(_read(response, "usage"))
 
     generation = Generation(
@@ -424,18 +424,6 @@ def _map_tools(raw_tools: Any) -> list[ToolDefinition]:
         )
 
     return tools
-
-
-def _map_usage(raw_usage: Any) -> TokenUsage:
-    usage = TokenUsage(
-        input_tokens=_as_int(_read(raw_usage, "input_tokens")),
-        output_tokens=_as_int(_read(raw_usage, "output_tokens")),
-        total_tokens=_as_int(_read(raw_usage, "total_tokens")),
-        cache_read_input_tokens=_as_int(_read(raw_usage, "cache_read_input_tokens")),
-        cache_write_input_tokens=_as_int(_read(raw_usage, "cache_write_input_tokens")),
-        cache_creation_input_tokens=_as_int(_read(raw_usage, "cache_creation_input_tokens")),
-    )
-    return usage.normalize()
 
 
 def _extract_stream_output_text(events: list[RawMessageStreamEvent]) -> str:

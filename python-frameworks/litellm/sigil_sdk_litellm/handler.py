@@ -23,6 +23,7 @@ from sigil_sdk.models import (
     ToolDefinition,
     ToolResult,
 )
+from sigil_sdk.usage import from_openai_chat
 
 logger = logging.getLogger(__name__)
 
@@ -285,21 +286,10 @@ def _extract_detailed_usage(response_obj: Any, slo: dict[str, Any]) -> TokenUsag
     if resp_usage is None:
         return usage
 
-    prompt_details = getattr(resp_usage, "prompt_tokens_details", None)
-    if prompt_details is not None:
-        cached = getattr(prompt_details, "cached_tokens", None)
-        if cached is not None and isinstance(cached, int):
-            usage.cache_read_input_tokens = cached
-        cache_creation = getattr(prompt_details, "cache_creation_tokens", None)
-        if cache_creation is not None and isinstance(cache_creation, int):
-            usage.cache_creation_input_tokens = cache_creation
-
-    completion_details = getattr(resp_usage, "completion_tokens_details", None)
-    if completion_details is not None:
-        reasoning = getattr(completion_details, "reasoning_tokens", None)
-        if reasoning is not None and isinstance(reasoning, int):
-            usage.reasoning_tokens = reasoning
-
+    detail = from_openai_chat(resp_usage)
+    usage.cache_read_input_tokens = detail.cache_read_input_tokens
+    usage.cache_creation_input_tokens = detail.cache_creation_input_tokens
+    usage.reasoning_tokens = detail.reasoning_tokens
     return usage
 
 
