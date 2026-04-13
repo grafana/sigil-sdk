@@ -1,0 +1,26 @@
+{
+  "name": "sigil-cc",
+  "version": "0.1.0",
+  "description": "Send Claude Code session telemetry to Grafana Sigil",
+  "author": {
+    "name": "Grafana Labs"
+  },
+  "repository": "https://github.com/grafana/sigil-sdk",
+  "homepage": "https://github.com/grafana/sigil-sdk/tree/main/plugins/claude-code",
+  "license": "Apache-2.0",
+  "keywords": ["telemetry", "observability", "sigil", "grafana"],
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sigil-cc",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

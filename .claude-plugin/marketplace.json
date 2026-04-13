@@ -1,0 +1,17 @@
+{
+  "name": "grafana-sigil",
+  "owner": {
+    "name": "Grafana Labs"
+  },
+  "plugins": [
+    {
+      "name": "sigil-cc",
+      "source": "./plugins/claude-code",
+      "description": "Send Claude Code session telemetry to Grafana Sigil",
+      "version": "0.1.0",
+      "author": {
+        "name": "Grafana Labs"
+      }
+    }
+  ]
+}

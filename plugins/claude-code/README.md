@@ -6,13 +6,40 @@ Replaces the sigil-cc OTLP proxy with a simpler, more reliable approach: read th
 
 ## Install
 
+### Plugin (recommended)
+
+Install the binary, then add the plugin:
+
 ```bash
 go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
 ```
 
-## Configure
+From within Claude Code:
 
-Add to `~/.claude/settings.json`:
+```
+/plugin marketplace add grafana/sigil-sdk
+/plugin install sigil-cc@grafana-sigil
+```
+
+The Stop hook registers automatically. Set the required environment variables in `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "SIGIL_URL": "https://sigil.example.com",
+    "SIGIL_USER": "your-tenant-id",
+    "SIGIL_PASSWORD": "glc_..."
+  }
+}
+```
+
+### Manual
+
+Install the binary and configure everything in `~/.claude/settings.json`:
+
+```bash
+go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
+```
 
 ```json
 {
