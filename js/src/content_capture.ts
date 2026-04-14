@@ -62,6 +62,7 @@ export function stampContentCaptureMetadata(generation: Generation, mode: Conten
  */
 export function stripContent(generation: Generation, errorCategory: string): void {
   generation.systemPrompt = '';
+  generation.conversationTitle = '';
   generation.artifacts = null;
 
   if (generation.callError !== undefined) {

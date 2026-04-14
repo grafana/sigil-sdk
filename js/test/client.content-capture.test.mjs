@@ -28,6 +28,7 @@ test('metadata_only strips sensitive content from generation', async () => {
     const recorder = harness.client.startGeneration({
       model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
       systemPrompt: 'You are helpful.',
+      conversationTitle: 'Weather chat with user',
     });
     recorder.setResult({
       input: [
@@ -69,6 +70,7 @@ test('metadata_only strips sensitive content from generation', async () => {
 
     // Sensitive content stripped
     assert.equal(gen.systemPrompt, '');
+    assert.equal(gen.conversationTitle, '');
     assert.equal(gen.artifacts, null);
     assert.equal(gen.input[0].parts[0].text, '');
     assert.equal(gen.output[0].parts[0].thinking, '');
@@ -460,6 +462,7 @@ test('full mode preserves all generation content', async () => {
     const recorder = harness.client.startGeneration({
       model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
       systemPrompt: 'You are helpful.',
+      conversationTitle: 'Math question',
     });
     recorder.setResult({
       input: [{ role: 'user', parts: [{ type: 'text', text: 'What is 2+2?' }] }],
@@ -473,6 +476,7 @@ test('full mode preserves all generation content', async () => {
     const gen = singleGeneration(harness.client);
     assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'full');
     assert.equal(gen.systemPrompt, 'You are helpful.');
+    assert.equal(gen.conversationTitle, 'Math question');
     assert.equal(gen.input[0].parts[0].text, 'What is 2+2?');
     assert.equal(gen.output[0].parts[0].text, '4');
     assert.equal(gen.artifacts.length, 1);
