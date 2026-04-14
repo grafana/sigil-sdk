@@ -8,12 +8,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
 from opentelemetry.metrics import Meter
 from opentelemetry.trace import Tracer
 
 from .exporters.base import GenerationExporter
-from .models import utc_now
+from .models import ContentCaptureMode, utc_now
 
 TENANT_HEADER = "X-Scope-OrgID"
 AUTHORIZATION_HEADER = "Authorization"
@@ -71,6 +72,8 @@ class ClientConfig:
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     embedding_capture: EmbeddingCaptureConfig = field(default_factory=EmbeddingCaptureConfig)
+    content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
+    content_capture_resolver: Callable[[dict[str, Any]], ContentCaptureMode] | None = None
     tracer: Tracer | None = None
     meter: Meter | None = None
     logger: logging.Logger | None = None

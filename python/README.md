@@ -260,6 +260,85 @@ with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_ve
         rec.set_result(output=[assistant_text_message("ok")])
 ```
 
+## Content Capture Mode
+
+`ContentCaptureMode` controls what content is included in exported generation payloads and OTel span attributes. Use it to prevent sensitive text (prompts, tool I/O, model responses) from leaving the process.
+
+| Mode | Generations | Tool spans |
+|------|------------|------------|
+| `FULL` | All content exported | Arguments and results in span attributes |
+| `NO_TOOL_CONTENT` (SDK default) | All content exported | Arguments and results excluded |
+| `METADATA_ONLY` | Structure preserved, all text stripped | Arguments and results excluded |
+
+The default is `NO_TOOL_CONTENT`, which matches the SDK's behavior before this feature was added.
+
+### Client-level default
+
+```python
+from sigil_sdk import Client, ClientConfig, ContentCaptureMode
+
+client = Client(ClientConfig(
+    content_capture=ContentCaptureMode.METADATA_ONLY,
+))
+```
+
+### Per-generation override
+
+```python
+from sigil_sdk import ContentCaptureMode, GenerationStart, ModelRef
+
+with client.start_generation(
+    GenerationStart(
+        model=ModelRef(provider="openai", name="gpt-5"),
+        content_capture=ContentCaptureMode.FULL,
+    )
+) as rec:
+    rec.set_result(
+        input=[user_text_message("What is the weather?")],
+        output=[assistant_text_message("18C and sunny.")],
+    )
+```
+
+### Context propagation
+
+Child tool executions inherit the active capture mode from the parent generation via `ContextVar`. You can also set it explicitly for a block:
+
+```python
+from sigil_sdk import ContentCaptureMode, with_content_capture_mode
+
+with with_content_capture_mode(ContentCaptureMode.METADATA_ONLY):
+    with client.start_tool_execution(
+        ToolExecutionStart(tool_name="search")
+    ) as rec:
+        rec.set_result(arguments={"q": "weather"}, result={"temp_c": 18})
+```
+
+### Dynamic resolution via resolver
+
+A callback on `ClientConfig` that resolves the capture mode per-recording at runtime. Useful for feature flags, per-tenant policies, or context-dependent decisions:
+
+```python
+from sigil_sdk import Client, ClientConfig, ContentCaptureMode
+
+def resolve_capture(metadata: dict) -> ContentCaptureMode:
+    if metadata.get("sigil.tenant") == "healthcare":
+        return ContentCaptureMode.METADATA_ONLY
+    return ContentCaptureMode.DEFAULT  # fall through to client default
+
+client = Client(ClientConfig(
+    content_capture_resolver=resolve_capture,
+))
+```
+
+### Resolution precedence (highest to lowest)
+
+1. Per-recording `content_capture` field (`GenerationStart` / `ToolExecutionStart`)
+2. `content_capture_resolver` return value
+3. `ContextVar` from `with_content_capture_mode()`
+4. `ClientConfig.content_capture` (defaults to `NO_TOOL_CONTENT`)
+
+Exceptions in the resolver are caught and treated as `METADATA_ONLY` (fail-closed).
+
 ## Export Configuration
 
 ### HTTP generation export
@@ -443,11 +522,13 @@ Typed payloads:
 - `GenerationStart`, `Generation`, `ModelRef`
 - `Message`, `Part`, `ToolDefinition`, `TokenUsage`
 - `ToolExecutionStart`, `ToolExecutionEnd`
+- `ContentCaptureMode`
 
 Helpers:
 
 - `user_text_message(...)`, `assistant_text_message(...)`
 - `with_conversation_id(...)`, `with_agent_name(...)`, `with_agent_version(...)`
+- `with_content_capture_mode(...)`
 
 Validation:
 

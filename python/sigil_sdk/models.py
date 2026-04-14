@@ -32,6 +32,22 @@ class PartKind(str, Enum):
     TOOL_RESULT = "tool_result"
 
 
+class ContentCaptureMode(str, Enum):
+    """Controls what content is included in exported generation payloads and OTel span attributes.
+
+    Note: user-provided metadata and tags are NOT stripped, even in METADATA_ONLY mode.
+    Callers are responsible for ensuring these dicts do not contain sensitive content.
+    """
+
+    DEFAULT = "default"
+    FULL = "full"
+    NO_TOOL_CONTENT = "no_tool_content"
+    METADATA_ONLY = "metadata_only"
+
+
+_metadata_key_content_capture_mode = "sigil.sdk.content_capture_mode"
+
+
 class ArtifactKind(str, Enum):
     """Allowed raw artifact kinds."""
 
@@ -175,6 +191,7 @@ class GenerationStart:
     tool_choice: str | None = None
     thinking_enabled: bool | None = None
     tools: list[ToolDefinition] = field(default_factory=list)
+    content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
     tags: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     started_at: datetime | None = None
@@ -256,6 +273,7 @@ class ToolExecutionStart:
     request_model: str = ""
     request_provider: str = ""
     include_content: bool = False
+    content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
     started_at: datetime | None = None
 
 
