@@ -1047,6 +1047,9 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	if g.ThinkingEnabled == nil {
 		g.ThinkingEnabled = cloneBoolPtr(r.seed.ThinkingEnabled)
 	}
+	if len(g.ParentGenerationIDs) == 0 {
+		g.ParentGenerationIDs = cloneStringSlice(r.seed.ParentGenerationIDs)
+	}
 	g.Tags = mergeTags(r.seed.Tags, g.Tags)
 	g.Metadata = mergeMetadata(r.seed.Metadata, g.Metadata)
 	if g.Metadata == nil {

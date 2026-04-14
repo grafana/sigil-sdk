@@ -931,6 +931,11 @@ class GenerationRecorderImpl implements GenerationRecorder {
       topP: this.result?.topP ?? this.seed.topP,
       toolChoice: this.result?.toolChoice ?? this.seed.toolChoice,
       thinkingEnabled: this.result?.thinkingEnabled ?? this.seed.thinkingEnabled,
+      parentGenerationIds: this.result?.parentGenerationIds?.length
+        ? [...this.result.parentGenerationIds]
+        : this.seed.parentGenerationIds?.length
+          ? [...this.seed.parentGenerationIds]
+          : undefined,
       input: this.result?.input?.map(cloneMessage),
       output: this.result?.output?.map(cloneMessage),
       tools: this.result?.tools?.map(cloneToolDefinition) ?? this.seed.tools?.map(cloneToolDefinition),

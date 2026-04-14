@@ -129,6 +129,9 @@ function mapGenerationToProtoJSON(generation: Generation): Record<string, unknow
   if (generation.thinkingEnabled !== undefined) {
     proto.thinking_enabled = generation.thinkingEnabled;
   }
+  if (generation.parentGenerationIds?.length) {
+    proto.parent_generation_ids = generation.parentGenerationIds;
+  }
 
   return proto;
 }

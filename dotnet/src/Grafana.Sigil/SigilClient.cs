@@ -474,6 +474,7 @@ public sealed class SigilClient : IAsyncDisposable
                 TopP = seed.TopP,
                 ToolChoice = seed.ToolChoice,
                 ThinkingEnabled = seed.ThinkingEnabled,
+                ParentGenerationIds = new List<string>(seed.ParentGenerationIds),
             });
         }
 
@@ -2005,6 +2006,10 @@ public sealed class GenerationRecorder
         generation.TopP ??= _seed.TopP;
         generation.ToolChoice = FirstNonEmpty(generation.ToolChoice ?? string.Empty, _seed.ToolChoice ?? string.Empty);
         generation.ThinkingEnabled ??= _seed.ThinkingEnabled;
+        if (generation.ParentGenerationIds.Count == 0)
+        {
+            generation.ParentGenerationIds.AddRange(_seed.ParentGenerationIds);
+        }
 
         if (generation.Tools.Count == 0)
         {

@@ -142,4 +142,5 @@ message Generation {
   optional double top_p = 26;
   optional string tool_choice = 27;
   optional bool thinking_enabled = 28;
+  repeated string parent_generation_ids = 29;
 }

@@ -194,6 +194,7 @@ class GenerationStart:
     content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
     tags: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    parent_generation_ids: list[str] = field(default_factory=list)
     started_at: datetime | None = None
 
 
@@ -256,6 +257,7 @@ class Generation:
     metadata: dict[str, Any] = field(default_factory=dict)
     artifacts: list[Artifact] = field(default_factory=list)
     call_error: str = ""
+    parent_generation_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

@@ -23,6 +23,7 @@ public final class GenerationStart {
     private Double topP;
     private String toolChoice = "";
     private Boolean thinkingEnabled;
+    private final List<String> parentGenerationIds = new ArrayList<>();
     private final List<ToolDefinition> tools = new ArrayList<>();
     private final Map<String, String> tags = new LinkedHashMap<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
@@ -163,6 +164,18 @@ public final class GenerationStart {
         return this;
     }
 
+    public List<String> getParentGenerationIds() {
+        return parentGenerationIds;
+    }
+
+    public GenerationStart setParentGenerationIds(List<String> parentGenerationIds) {
+        this.parentGenerationIds.clear();
+        if (parentGenerationIds != null) {
+            this.parentGenerationIds.addAll(parentGenerationIds);
+        }
+        return this;
+    }
+
     public List<ToolDefinition> getTools() {
         return tools;
     }
@@ -225,6 +238,7 @@ public final class GenerationStart {
                 .setTopP(topP)
                 .setToolChoice(toolChoice)
                 .setThinkingEnabled(thinkingEnabled)
+                .setParentGenerationIds(parentGenerationIds)
                 .setStartedAt(startedAt);
         for (ToolDefinition tool : tools) {
             out.getTools().add(tool == null ? new ToolDefinition() : tool.copy());

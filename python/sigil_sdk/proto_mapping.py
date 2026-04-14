@@ -51,6 +51,7 @@ def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:
         call_error=generation.call_error,
         agent_name=generation.agent_name,
         agent_version=generation.agent_version,
+        parent_generation_ids=list(generation.parent_generation_ids),
     )
 
     if generation.started_at is not None:
