@@ -10,6 +10,14 @@ import {
 } from '@opentelemetry/api';
 import { defaultLogger, mergeConfig } from './config.js';
 import {
+  callContentCaptureResolver,
+  resolveClientContentCaptureMode,
+  resolveContentCaptureMode,
+  shouldIncludeToolContent,
+  stampContentCaptureMetadata,
+  stripContent,
+} from './content_capture.js';
+import {
   agentNameFromContext,
   agentVersionFromContext,
   conversationIdFromContext,
@@ -18,6 +26,7 @@ import {
 } from './context.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
 import type {
+  ContentCaptureMode,
   ConversationRating,
   ConversationRatingInput,
   ConversationRatingSummary,
@@ -431,6 +440,24 @@ export class SigilClient {
 
   internalLogWarn(message: string, error?: unknown): void {
     this.logWarn(message, error);
+  }
+
+  internalResolveGenerationContentCaptureMode(seed: GenerationStart): ContentCaptureMode {
+    const resolverMode = callContentCaptureResolver(this.config.contentCaptureResolver, seed.metadata);
+    const clientMode = resolveClientContentCaptureMode(
+      resolveContentCaptureMode(resolverMode, this.config.contentCapture),
+    );
+    return resolveContentCaptureMode(seed.contentCapture ?? 'default', clientMode);
+  }
+
+  internalResolveToolIncludeContent(seed: ToolExecutionStart): boolean {
+    const resolverMode = callContentCaptureResolver(this.config.contentCaptureResolver, undefined);
+    return shouldIncludeToolContent(
+      seed.contentCapture ?? 'default',
+      this.config.contentCapture,
+      resolverMode,
+      seed.includeContent ?? false,
+    );
   }
 
   internalStartGenerationSpan(seed: GenerationStart, mode: GenerationMode, startedAt: Date): Span {
@@ -848,6 +875,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
   private readonly startedAt: Date;
   private readonly mode: GenerationMode;
   private readonly span: Span;
+  private readonly contentCaptureMode: ContentCaptureMode;
   private ended = false;
   private result?: GenerationResult;
   private callError?: string;
@@ -880,6 +908,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     this.mode = this.seed.mode ?? defaultMode;
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
+    this.contentCaptureMode = this.client.internalResolveGenerationContentCaptureMode(this.seed);
     this.span = this.client.internalStartGenerationSpan(this.seed, this.mode, this.startedAt);
   }
 
@@ -978,11 +1007,17 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     generation.metadata[spanAttrSDKName] = sdkName;
 
+    const validationError = validateGeneration(generation);
+
+    stampContentCaptureMetadata(generation, this.contentCaptureMode);
+    if (this.contentCaptureMode === 'metadata_only') {
+      stripContent(generation, errorCategoryFromError(this.callError, false));
+    }
+
     this.client.internalSyncGenerationSpan(this.span, generation);
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
     this.client.internalRecordGeneration(generation);
 
-    const validationError = validateGeneration(generation);
     let enqueueError: Error | undefined;
     if (validationError !== undefined) {
       this.localError = validationError;
@@ -1081,6 +1116,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
   private readonly seed: ToolExecutionStart;
   private readonly startedAt: Date;
   private readonly span: Span;
+  private readonly resolvedIncludeContent: boolean;
   private ended = false;
   private result?: ToolExecutionResult;
   private callError?: string;
@@ -1103,6 +1139,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     if (!notEmpty(this.seed.agentVersion)) {
       this.seed.agentVersion = agentVersionFromContext();
     }
+    this.resolvedIncludeContent = this.client.internalResolveToolIncludeContent(this.seed);
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
     this.span = this.client.internalStartToolExecutionSpan(this.seed, this.startedAt);
   }
@@ -1139,7 +1176,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
       agentVersion: this.seed.agentVersion,
       requestModel: this.seed.requestModel,
       requestProvider: this.seed.requestProvider,
-      includeContent: this.seed.includeContent ?? false,
+      includeContent: this.resolvedIncludeContent,
       startedAt: new Date(this.startedAt),
       completedAt: new Date(this.result?.completedAt ?? this.client.internalNow()),
       arguments: this.result?.arguments,

@@ -7,6 +7,35 @@ export type GenerationMode = 'SYNC' | 'STREAM';
 /** Supported auth modes for transport exports. */
 export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
 
+/**
+ * Controls what content is included in exported generation payloads and
+ * OTel span attributes.
+ *
+ * - `'default'` — inherits from the parent or client-level default (resolves
+ *   to `'no_tool_content'` at the client level for backward compatibility).
+ * - `'full'` — exports all content.
+ * - `'no_tool_content'` — exports full generation content but excludes tool
+ *   execution content (arguments and results) from span attributes unless
+ *   explicitly opted in via `includeContent` or a per-tool `contentCapture`
+ *   override.
+ * - `'metadata_only'` — preserves message structure, tool names, usage, and
+ *   timing but strips text, tool arguments, tool results, thinking, system
+ *   prompts, and raw artifacts. User-provided `metadata` and `tags` are NOT
+ *   stripped — callers are responsible for ensuring these do not contain
+ *   sensitive content.
+ */
+export type ContentCaptureMode = 'default' | 'full' | 'no_tool_content' | 'metadata_only';
+
+/**
+ * Callback invoked before each generation or tool execution to dynamically
+ * resolve the content capture mode. Receives the recording's metadata (or
+ * `undefined` when the recording type has no metadata, e.g. tool executions).
+ *
+ * Returning `'default'` defers to `Config.contentCapture`. Thrown errors are
+ * caught and treated as `'metadata_only'` (fail-closed).
+ */
+export type ContentCaptureResolver = (metadata: Record<string, unknown> | undefined) => ContentCaptureMode;
+
 /** Per-export auth configuration. */
 export interface ExportAuthConfig {
   mode: ExportAuthMode;
@@ -141,6 +170,23 @@ export interface SigilSdkConfig {
   generationExport: GenerationExportConfig;
   api: ApiConfig;
   embeddingCapture: EmbeddingCaptureConfig;
+  /**
+   * Default content capture mode for all generations and tool executions.
+   * Per-recording overrides take precedence. Defaults to `'no_tool_content'`.
+   */
+  contentCapture: ContentCaptureMode;
+  /**
+   * When set, called before each generation and tool execution to dynamically
+   * resolve the content capture mode.
+   *
+   * Resolution precedence (highest to lowest):
+   *   1. Per-recording `contentCapture` field
+   *   2. `contentCaptureResolver` return value
+   *   3. `contentCapture` (static default)
+   *
+   * Thrown errors are caught and treated as `'metadata_only'` (fail-closed).
+   */
+  contentCaptureResolver?: ContentCaptureResolver;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -154,6 +200,8 @@ export interface SigilSdkConfigInput {
   generationExport?: Partial<GenerationExportConfig>;
   api?: Partial<ApiConfig>;
   embeddingCapture?: Partial<EmbeddingCaptureConfig>;
+  contentCapture?: ContentCaptureMode;
+  contentCaptureResolver?: ContentCaptureResolver;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -259,6 +307,8 @@ export interface GenerationStart {
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
   startedAt?: Date;
+  /** Per-generation content capture override. */
+  contentCapture?: ContentCaptureMode;
 }
 
 /** Final generation result fields. */
@@ -356,7 +406,14 @@ export interface ToolExecutionStart {
   requestModel?: string;
   /** The provider that served the model (e.g. "openai"). */
   requestProvider?: string;
+  /**
+   * @deprecated Use `contentCapture` instead. When `contentCapture` is
+   * `'no_tool_content'` (the default), this field controls whether tool
+   * arguments and results are included in span attributes.
+   */
   includeContent?: boolean;
+  /** Per-tool content capture override. */
+  contentCapture?: ContentCaptureMode;
   startedAt?: Date;
 }
 

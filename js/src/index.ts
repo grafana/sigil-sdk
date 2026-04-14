@@ -18,6 +18,8 @@ export * as openai from './providers/openai.js';
 export type {
   ApiConfig,
   Artifact,
+  ContentCaptureMode,
+  ContentCaptureResolver,
   ConversationRating,
   ConversationRatingInput,
   ConversationRatingSummary,
