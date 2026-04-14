@@ -117,16 +117,25 @@ function stripMessageContent(message: Message): void {
 /**
  * Determines whether tool execution content (arguments, results) should be
  * included in span attributes. Resolves the effective mode from the
- * explicit tool override, client default, and resolver.
+ * explicit tool override, client default, resolver, and legacy
+ * `includeContent`.
  */
 export function shouldIncludeToolContent(
   toolMode: ContentCaptureMode,
   clientDefault: ContentCaptureMode,
   resolverMode: ContentCaptureMode,
+  legacyInclude: boolean,
 ): boolean {
   let resolved = resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, clientDefault));
   if (toolMode !== 'default') {
     resolved = toolMode;
   }
-  return resolved === 'full';
+  switch (resolved) {
+    case 'metadata_only':
+      return false;
+    case 'full':
+      return true;
+    default:
+      return legacyInclude;
+  }
 }

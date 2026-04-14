@@ -140,7 +140,7 @@ TraceQL examples:
 await client.startToolExecution(
   {
     toolName: "weather",
-    contentCapture: "full",
+    includeContent: true,
   },
   async (recorder) => {
     recorder.setResult({

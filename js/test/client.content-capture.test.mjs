@@ -308,32 +308,42 @@ test('throwing resolver fails closed to metadata_only', async () => {
 
 test('tool execution content capture modes', async () => {
   const cases = [
-    // client Default (→ NoToolContent) — suppressed.
+    // client Default (→ NoToolContent), legacy controls.
     {
-      name: 'client default — suppressed',
+      name: 'client default, legacy false — suppressed',
       clientMode: 'default',
       toolMode: undefined,
+      legacy: false,
       wantContent: false,
     },
-    // Explicit Full client — included.
     {
-      name: 'client full — included',
-      clientMode: 'full',
+      name: 'client default, legacy true — included',
+      clientMode: 'default',
       toolMode: undefined,
+      legacy: true,
       wantContent: true,
     },
-    // Client no_tool_content — suppressed.
+    // Explicit Full client — legacy irrelevant.
     {
-      name: 'client no_tool_content — suppressed',
-      clientMode: 'no_tool_content',
+      name: 'client full, legacy false — included',
+      clientMode: 'full',
       toolMode: undefined,
-      wantContent: false,
+      legacy: false,
+      wantContent: true,
+    },
+    {
+      name: 'client full, legacy true — included',
+      clientMode: 'full',
+      toolMode: undefined,
+      legacy: true,
+      wantContent: true,
     },
     // Client MetadataOnly — always suppressed.
     {
-      name: 'client metadata_only — suppressed',
+      name: 'client metadata_only, legacy true — suppressed',
       clientMode: 'metadata_only',
       toolMode: undefined,
+      legacy: true,
       wantContent: false,
     },
     // Per-tool overrides.
@@ -341,12 +351,14 @@ test('tool execution content capture modes', async () => {
       name: 'tool full overrides client metadata_only',
       clientMode: 'metadata_only',
       toolMode: 'full',
+      legacy: false,
       wantContent: true,
     },
     {
       name: 'tool metadata_only overrides client full',
       clientMode: 'full',
       toolMode: 'metadata_only',
+      legacy: true,
       wantContent: false,
     },
   ];
@@ -358,6 +370,7 @@ test('tool execution content capture modes', async () => {
       const recorder = harness.client.startToolExecution({
         toolName: 'test_tool',
         contentCapture: tc.toolMode,
+        includeContent: tc.legacy,
       });
       recorder.setResult({
         arguments: { city: 'Paris' },
@@ -390,6 +403,7 @@ test('tool execution with resolver overriding client mode', async () => {
   try {
     const recorder = harness.client.startToolExecution({
       toolName: 'test_tool',
+      includeContent: true,
     });
     recorder.setResult({
       arguments: 'args',
@@ -419,6 +433,7 @@ test('per-tool contentCapture full overrides resolver metadata_only', async () =
     const recorder = harness.client.startToolExecution({
       toolName: 'test_tool',
       contentCapture: 'full',
+      includeContent: false,
     });
     recorder.setResult({
       arguments: 'args',

@@ -456,6 +456,7 @@ export class SigilClient {
       seed.contentCapture ?? 'default',
       this.config.contentCapture,
       resolverMode,
+      seed.includeContent ?? false,
     );
   }
 
@@ -615,12 +616,11 @@ export class SigilClient {
   internalFinalizeToolExecutionSpan(
     span: Span,
     toolExecution: ToolExecution,
-    includeContent: boolean,
     localError: Error | undefined,
   ): Error | undefined {
     setToolSpanAttributes(span, toolExecution);
 
-    if (includeContent) {
+    if (toolExecution.includeContent) {
       const argumentsResult = serializeToolContent(toolExecution.arguments);
       if (argumentsResult.error !== undefined && localError === undefined) {
         localError = argumentsResult.error;
@@ -1176,6 +1176,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
       agentVersion: this.seed.agentVersion,
       requestModel: this.seed.requestModel,
       requestProvider: this.seed.requestProvider,
+      includeContent: this.resolvedIncludeContent,
       startedAt: new Date(this.startedAt),
       completedAt: new Date(this.result?.completedAt ?? this.client.internalNow()),
       arguments: this.result?.arguments,
@@ -1190,7 +1191,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     } else {
       this.client.internalRecordToolExecution(toolExecution);
     }
-    this.localError = this.client.internalFinalizeToolExecutionSpan(this.span, toolExecution, this.resolvedIncludeContent, this.localError);
+    this.localError = this.client.internalFinalizeToolExecutionSpan(this.span, toolExecution, this.localError);
   }
 
   getError(): Error | undefined {

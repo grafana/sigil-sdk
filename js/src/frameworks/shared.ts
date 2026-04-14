@@ -302,7 +302,7 @@ export class SigilFrameworkHandler {
       conversationId: context.conversationId,
       agentName: this.agentName,
       agentVersion: this.agentVersion,
-      contentCapture: this.captureInputs || this.captureOutputs ? 'full' : 'metadata_only',
+      includeContent: this.captureInputs || this.captureOutputs,
     });
 
     this.toolRuns.set(runKey, {

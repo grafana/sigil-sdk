@@ -16,7 +16,8 @@ export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
  * - `'full'` — exports all content.
  * - `'no_tool_content'` — exports full generation content but excludes tool
  *   execution content (arguments and results) from span attributes unless
- *   explicitly opted in via a per-tool `contentCapture` override.
+ *   explicitly opted in via `includeContent` or a per-tool `contentCapture`
+ *   override.
  * - `'metadata_only'` — preserves message structure, tool names, usage, and
  *   timing but strips text, tool arguments, tool results, thinking, system
  *   prompts, and raw artifacts. User-provided `metadata` and `tags` are NOT
@@ -405,6 +406,12 @@ export interface ToolExecutionStart {
   requestModel?: string;
   /** The provider that served the model (e.g. "openai"). */
   requestProvider?: string;
+  /**
+   * @deprecated Use `contentCapture` instead. When `contentCapture` is
+   * `'no_tool_content'` (the default), this field controls whether tool
+   * arguments and results are included in span attributes.
+   */
+  includeContent?: boolean;
   /** Per-tool content capture override. */
   contentCapture?: ContentCaptureMode;
   startedAt?: Date;
@@ -429,6 +436,7 @@ export interface ToolExecution {
   agentVersion?: string;
   requestModel?: string;
   requestProvider?: string;
+  includeContent: boolean;
   startedAt: Date;
   completedAt: Date;
   arguments?: unknown;
