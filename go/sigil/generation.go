@@ -63,8 +63,9 @@ type Generation struct {
 	Temperature     *float64          `json:"temperature,omitempty"`
 	TopP            *float64          `json:"top_p,omitempty"`
 	ToolChoice      *string           `json:"tool_choice,omitempty"`
-	ThinkingEnabled *bool             `json:"thinking_enabled,omitempty"`
-	Usage           TokenUsage        `json:"usage,omitempty"`
+	ThinkingEnabled    *bool             `json:"thinking_enabled,omitempty"`
+	ParentGenerationIDs []string        `json:"parent_generation_ids,omitempty"`
+	Usage              TokenUsage        `json:"usage,omitempty"`
 	StopReason      string            `json:"stop_reason,omitempty"`
 	StartedAt       time.Time         `json:"started_at,omitempty"`
 	CompletedAt     time.Time         `json:"completed_at,omitempty"`
@@ -93,8 +94,9 @@ type GenerationStart struct {
 	Temperature       *float64
 	TopP              *float64
 	ToolChoice        *string
-	ThinkingEnabled   *bool
-	Tags              map[string]string
+	ThinkingEnabled     *bool
+	ParentGenerationIDs []string
+	Tags                map[string]string
 	Metadata          map[string]any
 	StartedAt         time.Time
 	// ContentCapture overrides the client-level ContentCaptureMode for this
@@ -136,8 +138,9 @@ func cloneGeneration(in Generation) Generation {
 		Temperature:       cloneFloat64Ptr(in.Temperature),
 		TopP:              cloneFloat64Ptr(in.TopP),
 		ToolChoice:        cloneStringPtr(in.ToolChoice),
-		ThinkingEnabled:   cloneBoolPtr(in.ThinkingEnabled),
-		Usage:             in.Usage,
+		ThinkingEnabled:     cloneBoolPtr(in.ThinkingEnabled),
+		ParentGenerationIDs: cloneStringSlice(in.ParentGenerationIDs),
+		Usage:               in.Usage,
 		StopReason:        in.StopReason,
 		StartedAt:         in.StartedAt,
 		CompletedAt:       in.CompletedAt,
@@ -165,8 +168,9 @@ func cloneGenerationStart(in GenerationStart) GenerationStart {
 		Temperature:       cloneFloat64Ptr(in.Temperature),
 		TopP:              cloneFloat64Ptr(in.TopP),
 		ToolChoice:        cloneStringPtr(in.ToolChoice),
-		ThinkingEnabled:   cloneBoolPtr(in.ThinkingEnabled),
-		Tags:              cloneTags(in.Tags),
+		ThinkingEnabled:     cloneBoolPtr(in.ThinkingEnabled),
+		ParentGenerationIDs: cloneStringSlice(in.ParentGenerationIDs),
+		Tags:                cloneTags(in.Tags),
 		Metadata:          cloneMetadata(in.Metadata),
 		StartedAt:         in.StartedAt,
 		ContentCapture:    in.ContentCapture,

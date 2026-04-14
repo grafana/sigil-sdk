@@ -25,6 +25,7 @@ public class GenerationResult {
     private Double topP;
     private String toolChoice = "";
     private Boolean thinkingEnabled;
+    private final List<String> parentGenerationIds = new ArrayList<>();
     private final List<Message> input = new ArrayList<>();
     private final List<Message> output = new ArrayList<>();
     private final List<ToolDefinition> tools = new ArrayList<>();
@@ -190,6 +191,18 @@ public class GenerationResult {
         return this;
     }
 
+    public List<String> getParentGenerationIds() {
+        return parentGenerationIds;
+    }
+
+    public GenerationResult setParentGenerationIds(List<String> parentGenerationIds) {
+        this.parentGenerationIds.clear();
+        if (parentGenerationIds != null) {
+            this.parentGenerationIds.addAll(parentGenerationIds);
+        }
+        return this;
+    }
+
     public List<Message> getInput() {
         return input;
     }
@@ -326,6 +339,7 @@ public class GenerationResult {
                 .setTopP(topP)
                 .setToolChoice(toolChoice)
                 .setThinkingEnabled(thinkingEnabled)
+                .setParentGenerationIds(parentGenerationIds)
                 .setUsage(usage == null ? new TokenUsage() : usage.copy())
                 .setStopReason(stopReason)
                 .setStartedAt(startedAt)

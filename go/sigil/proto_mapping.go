@@ -44,7 +44,8 @@ func generationToProto(g Generation) (*sigilv1.Generation, error) {
 		Temperature:     cloneFloat64Ptr(g.Temperature),
 		TopP:            cloneFloat64Ptr(g.TopP),
 		ToolChoice:      cloneStringPtr(g.ToolChoice),
-		ThinkingEnabled: cloneBoolPtr(g.ThinkingEnabled),
+		ThinkingEnabled:     cloneBoolPtr(g.ThinkingEnabled),
+		ParentGenerationIds: cloneStringSlice(g.ParentGenerationIDs),
 	}
 
 	if !g.StartedAt.IsZero() {

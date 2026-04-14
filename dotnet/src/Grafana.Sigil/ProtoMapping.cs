@@ -74,6 +74,7 @@ internal static class ProtoMapping
         {
             proto.ThinkingEnabled = model.ThinkingEnabled.Value;
         }
+        proto.ParentGenerationIds.AddRange(model.ParentGenerationIds);
 
         foreach (var tag in model.Tags)
         {

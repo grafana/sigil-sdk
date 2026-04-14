@@ -67,6 +67,7 @@ final class ProtoMapper {
         if (generation.getThinkingEnabled() != null) {
             builder.setThinkingEnabled(generation.getThinkingEnabled());
         }
+        builder.addAllParentGenerationIds(generation.getParentGenerationIds());
 
         builder.putAllTags(generation.getTags());
         if (!generation.getMetadata().isEmpty()) {

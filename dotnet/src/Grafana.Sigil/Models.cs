@@ -216,6 +216,7 @@ public sealed class GenerationStart
     public double? TopP { get; set; }
     public string? ToolChoice { get; set; }
     public bool? ThinkingEnabled { get; set; }
+    public List<string> ParentGenerationIds { get; set; } = new();
     public List<ToolDefinition> Tools { get; set; } = new();
     public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
@@ -264,6 +265,7 @@ public sealed class Generation
     public double? TopP { get; set; }
     public string? ToolChoice { get; set; }
     public bool? ThinkingEnabled { get; set; }
+    public List<string> ParentGenerationIds { get; set; } = new();
     public List<Message> Input { get; set; } = new();
     public List<Message> Output { get; set; } = new();
     public List<ToolDefinition> Tools { get; set; } = new();

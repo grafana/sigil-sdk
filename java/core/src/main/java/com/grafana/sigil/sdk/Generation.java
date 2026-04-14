@@ -128,6 +128,7 @@ public final class Generation extends GenerationResult {
         out.setTopP(getTopP());
         out.setToolChoice(getToolChoice());
         out.setThinkingEnabled(getThinkingEnabled());
+        out.setParentGenerationIds(getParentGenerationIds());
         out.setUsage(getUsage().copy());
         out.setStopReason(getStopReason());
         out.setStartedAt(getStartedAt());

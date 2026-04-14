@@ -578,6 +578,7 @@ public final class SigilClient implements AutoCloseable {
         initial.setTopP(seed.getTopP());
         initial.setToolChoice(seed.getToolChoice());
         initial.setThinkingEnabled(seed.getThinkingEnabled());
+        initial.getParentGenerationIds().addAll(seed.getParentGenerationIds());
         setGenerationSpanAttributes(span, initial);
 
         return new GenerationRecorder(this, seed, span, startedAt);

@@ -50,7 +50,7 @@ def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:
         call_error=generation.call_error,
         agent_name=generation.agent_name,
         agent_version=generation.agent_version,
-        depends_on=list(generation.parent_generation_ids),
+        parent_generation_ids=list(generation.parent_generation_ids),
     )
 
     if generation.started_at is not None:
@@ -90,8 +90,6 @@ def generation_to_proto_json(generation: Generation) -> dict[str, object]:
         message,
         preserving_proto_field_name=True,
     )
-    if "depends_on" in result:
-        result["parent_generation_ids"] = result.pop("depends_on")
     return result
 
 

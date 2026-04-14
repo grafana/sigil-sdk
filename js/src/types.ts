@@ -255,6 +255,7 @@ export interface GenerationStart {
   topP?: number;
   toolChoice?: string;
   thinkingEnabled?: boolean;
+  parentGenerationIds?: string[];
   tools?: ToolDefinition[];
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
@@ -276,6 +277,7 @@ export interface GenerationResult {
   topP?: number;
   toolChoice?: string;
   thinkingEnabled?: boolean;
+  parentGenerationIds?: string[];
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];
@@ -329,6 +331,7 @@ export interface Generation {
   topP?: number;
   toolChoice?: string;
   thinkingEnabled?: boolean;
+  parentGenerationIds?: string[];
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];
