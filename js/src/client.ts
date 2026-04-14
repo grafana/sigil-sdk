@@ -527,6 +527,7 @@ export class SigilClient {
     validationError: Error | undefined,
     enqueueError: Error | undefined,
     firstTokenAt: Date | undefined,
+    precomputedCallErrorCategory?: string,
   ): void {
     span.updateName(generationSpanName(generation.operationName, generation.model.name));
 
@@ -544,7 +545,7 @@ export class SigilClient {
     let errorCategory = '';
     if (callError !== undefined) {
       errorType = 'provider_call_error';
-      errorCategory = errorCategoryFromError(callError, true);
+      errorCategory = precomputedCallErrorCategory ?? errorCategoryFromError(callError, true);
       span.setAttribute(spanAttrErrorType, errorType);
       span.setAttribute(spanAttrErrorCategory, errorCategory);
       span.setStatus({ code: SpanStatusCode.ERROR, message: callError });
@@ -1009,9 +1010,11 @@ class GenerationRecorderImpl implements GenerationRecorder {
 
     const validationError = validateGeneration(generation);
 
+    const callErrorCategory = errorCategoryFromError(this.callError, false);
+
     stampContentCaptureMetadata(generation, this.contentCaptureMode);
     if (this.contentCaptureMode === 'metadata_only') {
-      stripContent(generation, errorCategoryFromError(this.callError, false));
+      stripContent(generation, callErrorCategory);
     }
 
     this.client.internalSyncGenerationSpan(this.span, generation);
@@ -1041,6 +1044,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
       validationError,
       enqueueError,
       this.firstTokenAt,
+      callErrorCategory.length > 0 ? callErrorCategory : undefined,
     );
   }
 

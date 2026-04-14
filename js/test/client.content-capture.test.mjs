@@ -168,6 +168,7 @@ test('metadata_only does not leak raw callError into OTel span', async () => {
     assert.equal(span.status.code, SpanStatusCode.ERROR);
     assert.equal(span.status.message, 'rate_limit');
     assert.notEqual(span.status.message, rawError);
+    assert.equal(span.attributes['error.category'], 'rate_limit', 'error.category attribute must be rate_limit');
 
     for (const event of span.events) {
       if (event.name === 'exception') {
