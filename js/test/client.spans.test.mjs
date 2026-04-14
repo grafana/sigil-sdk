@@ -310,13 +310,13 @@ test('embedding validation error is surfaced locally and marks span', async () =
   }
 });
 
-test('tool execution includeContent controls argument/result attributes', async () => {
+test('tool execution contentCapture controls argument/result attributes', async () => {
   const harness = newHarness();
 
   try {
     const withContent = harness.client.startToolExecution({
       toolName: 'weather',
-      includeContent: true,
+      contentCapture: 'full',
       conversationId: 'conv-tool',
       agentName: 'agent-tool',
       agentVersion: 'v-tool',

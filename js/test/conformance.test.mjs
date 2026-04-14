@@ -406,7 +406,7 @@ test('conformance tool execution semantics', async () => {
             toolName: 'weather',
             toolCallId: 'call-weather-1',
             toolType: 'function',
-            includeContent: true,
+            contentCapture: 'full',
           });
           recorder.setResult({
             arguments: { city: 'Paris' },

@@ -833,7 +833,6 @@ test('vercel ai sdk capture toggles omit model and tool payload content', async 
   assert.equal(generations[0].output, undefined);
 
   assert.equal(snapshot.toolExecutions.length, 1);
-  assert.equal(snapshot.toolExecutions[0].includeContent, false);
   assert.equal(snapshot.toolExecutions[0].arguments, undefined);
   assert.equal(snapshot.toolExecutions[0].result, undefined);
 });

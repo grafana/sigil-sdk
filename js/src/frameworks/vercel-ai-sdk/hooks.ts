@@ -404,7 +404,7 @@ export class SigilVercelAiSdkInstrumentation {
           conversationId: params.conversationId,
           agentName: callAgentName,
           agentVersion: this.agentVersion,
-          includeContent: this.captureInputs || this.captureOutputs,
+          contentCapture: this.captureInputs || this.captureOutputs ? 'full' : 'metadata_only',
           startedAt: params.stepState.startedAt,
         });
 
@@ -570,7 +570,7 @@ export class SigilVercelAiSdkInstrumentation {
           conversationId: stepState.conversation.conversationId,
           agentName: callAgentName,
           agentVersion: this.agentVersion,
-          includeContent: this.captureInputs || this.captureOutputs,
+          contentCapture: this.captureInputs || this.captureOutputs ? 'full' : 'metadata_only',
           startedAt,
         });
         state.toolStates.set(parsed.toolCallId, {
