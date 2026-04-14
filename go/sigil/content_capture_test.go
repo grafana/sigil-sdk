@@ -13,13 +13,14 @@ import (
 func TestStripContent(t *testing.T) {
 	makeGen := func() Generation {
 		return Generation{
-			ID:             "gen-1",
-			ConversationID: "conv-1",
-			AgentName:      "test-agent",
-			AgentVersion:   "1.0",
-			Mode:           GenerationModeSync,
-			Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
-			SystemPrompt:   "You are helpful.",
+			ID:                "gen-1",
+			ConversationID:    "conv-1",
+			AgentName:         "test-agent",
+			AgentVersion:      "1.0",
+			ConversationTitle: "Weather chat",
+			Mode:              GenerationModeSync,
+			Model:             ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+			SystemPrompt:      "You are helpful.",
 			Input: []Message{
 				{Role: RoleUser, Parts: []Part{{Kind: PartKindText, Text: "What is the weather?"}}},
 				{Role: RoleTool, Parts: []Part{{Kind: PartKindToolResult, ToolResult: &ToolResult{
@@ -43,7 +44,7 @@ func TestStripContent(t *testing.T) {
 			StopReason: "end_turn",
 			CallError:  "rate limit exceeded: prompt too long for model",
 			Artifacts:  []Artifact{{Kind: "request", Payload: []byte("raw")}},
-			Metadata:   map[string]any{"sigil.sdk.name": "sdk-go", "call_error": "rate limit exceeded: prompt too long for model"},
+			Metadata:   map[string]any{"sigil.sdk.name": "sdk-go", "call_error": "rate limit exceeded: prompt too long for model", "sigil.conversation.title": "Weather chat"},
 		}
 	}
 
@@ -80,6 +81,12 @@ func TestStripContent(t *testing.T) {
 		}
 		if gen.Artifacts != nil {
 			t.Fatal("Artifacts not stripped")
+		}
+		if gen.ConversationTitle != "" {
+			t.Fatal("ConversationTitle not stripped")
+		}
+		if _, ok := gen.Metadata["sigil.conversation.title"]; ok {
+			t.Fatal("Metadata[sigil.conversation.title] should be deleted")
 		}
 	})
 
@@ -186,29 +193,31 @@ func TestGenerationContentCapture(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC) }
 
 	cases := []struct {
-		name         string
-		clientMode   ContentCaptureMode
-		genMode      ContentCaptureMode
-		wantStripped bool
-		wantMarker   string
+		name            string
+		clientMode      ContentCaptureMode
+		genMode         ContentCaptureMode
+		wantStripped    bool
+		wantMarker      string
+		wantTitleOnSpan bool
 	}{
-		{"client default, gen default — no_tool_content", ContentCaptureModeDefault, ContentCaptureModeDefault, false, contentCaptureModeValueNoToolContent},
-		{"client MetadataOnly, gen default — stripped", ContentCaptureModeMetadataOnly, ContentCaptureModeDefault, true, contentCaptureModeValueMetaOnly},
-		{"client Full, gen MetadataOnly — stripped", ContentCaptureModeFull, ContentCaptureModeMetadataOnly, true, contentCaptureModeValueMetaOnly},
-		{"client MetadataOnly, gen Full — full", ContentCaptureModeMetadataOnly, ContentCaptureModeFull, false, contentCaptureModeValueFull},
-		{"client Full, gen default — full", ContentCaptureModeFull, ContentCaptureModeDefault, false, contentCaptureModeValueFull},
+		{"client default, gen default — no_tool_content", ContentCaptureModeDefault, ContentCaptureModeDefault, false, contentCaptureModeValueNoToolContent, true},
+		{"client MetadataOnly, gen default — stripped", ContentCaptureModeMetadataOnly, ContentCaptureModeDefault, true, contentCaptureModeValueMetaOnly, false},
+		{"client Full, gen MetadataOnly — stripped", ContentCaptureModeFull, ContentCaptureModeMetadataOnly, true, contentCaptureModeValueMetaOnly, false},
+		{"client MetadataOnly, gen Full — full", ContentCaptureModeMetadataOnly, ContentCaptureModeFull, false, contentCaptureModeValueFull, true},
+		{"client Full, gen default — full", ContentCaptureModeFull, ContentCaptureModeDefault, false, contentCaptureModeValueFull, true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			client, _, _ := newTestClient(t, Config{
+			client, spanRecorder, tp := newTestClient(t, Config{
 				ContentCapture: tc.clientMode,
 				Now:            now,
 			})
 
 			_, rec := client.StartGeneration(context.Background(), GenerationStart{
-				Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
-				ContentCapture: tc.genMode,
+				Model:             ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+				ContentCapture:    tc.genMode,
+				ConversationTitle: "Sensitive topic",
 			})
 			rec.SetResult(Generation{
 				SystemPrompt: "You are helpful.",
@@ -240,6 +249,22 @@ func TestGenerationContentCapture(t *testing.T) {
 			if gen.Usage.InputTokens != 10 {
 				t.Fatal("Usage lost")
 			}
+
+			// Verify conversation title on span
+			_ = tp.ForceFlush(context.Background())
+			for _, s := range spanRecorder.Ended() {
+				if !strings.HasPrefix(s.Name(), "generate") {
+					continue
+				}
+				attrs := spanAttributeMap(s)
+				titleVal, hasTitle := attrs[spanAttrConversationTitle]
+				if tc.wantTitleOnSpan && (!hasTitle || titleVal.AsString() != "Sensitive topic") {
+					t.Fatalf("expected conversation title on span, got present=%v value=%q", hasTitle, titleVal.AsString())
+				}
+				if !tc.wantTitleOnSpan && hasTitle {
+					t.Fatalf("expected conversation title absent from span, got %q", titleVal.AsString())
+				}
+			}
 		})
 	}
 }
@@ -253,6 +278,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 		toolOverride       ContentCaptureMode
 		toolIncludeContent bool
 		wantContent        bool
+		wantTitleOnSpan    bool
 	}{
 		{
 			name:               "parent MetadataOnly, tool inherits — suppressed",
@@ -260,6 +286,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       true,
 			toolIncludeContent: true,
 			wantContent:        false,
+			wantTitleOnSpan:    false,
 		},
 		{
 			name:               "parent MetadataOnly, tool explicit Full — included",
@@ -268,6 +295,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			toolOverride:       ContentCaptureModeFull,
 			toolIncludeContent: true,
 			wantContent:        true,
+			wantTitleOnSpan:    true,
 		},
 		{
 			name:               "parent Full (override client MetadataOnly), tool inherits — included",
@@ -276,6 +304,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       true,
 			toolIncludeContent: true,
 			wantContent:        true,
+			wantTitleOnSpan:    true,
 		},
 		{
 			name:               "no parent gen, client MetadataOnly — suppressed (fail-closed)",
@@ -283,6 +312,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       false,
 			toolIncludeContent: true,
 			wantContent:        false,
+			wantTitleOnSpan:    false,
 		},
 		{
 			name:               "no parent gen, client Full, legacy true — included",
@@ -290,6 +320,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       false,
 			toolIncludeContent: true,
 			wantContent:        true,
+			wantTitleOnSpan:    true,
 		},
 		{
 			name:               "no parent gen, client Full, legacy false — included",
@@ -297,6 +328,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       false,
 			toolIncludeContent: false,
 			wantContent:        true,
+			wantTitleOnSpan:    true,
 		},
 		{
 			name:               "parent Full, tool explicit MetadataOnly — suppressed",
@@ -305,6 +337,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			toolOverride:       ContentCaptureModeMetadataOnly,
 			toolIncludeContent: true,
 			wantContent:        false,
+			wantTitleOnSpan:    false,
 		},
 		// Backward compat: client Default (→ NoToolContent), legacy controls.
 		{
@@ -313,6 +346,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       false,
 			toolIncludeContent: false,
 			wantContent:        false,
+			wantTitleOnSpan:    true,
 		},
 		{
 			name:               "no parent gen, client Default, legacy true — included",
@@ -320,6 +354,7 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			useParentCtx:       false,
 			toolIncludeContent: true,
 			wantContent:        true,
+			wantTitleOnSpan:    true,
 		},
 	}
 
@@ -335,15 +370,17 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 
 			if tc.useParentCtx {
 				ctx, genRec = client.StartGeneration(ctx, GenerationStart{
-					Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
-					ContentCapture: tc.parentGenOverride,
+					Model:             ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+					ContentCapture:    tc.parentGenOverride,
+					ConversationTitle: "Sensitive topic",
 				})
 			}
 
 			_, toolRec := client.StartToolExecution(ctx, ToolExecutionStart{
-				ToolName:       "test_tool",
-				ContentCapture: tc.toolOverride,
-				IncludeContent: tc.toolIncludeContent,
+				ToolName:          "test_tool",
+				ContentCapture:    tc.toolOverride,
+				IncludeContent:    tc.toolIncludeContent,
+				ConversationTitle: "Sensitive topic",
 			})
 			toolRec.SetResult(ToolExecutionEnd{
 				Arguments: "args",
@@ -379,41 +416,40 @@ func TestToolExecutionContentCaptureInheritance(t *testing.T) {
 			if _, ok := attrs[spanAttrToolName]; !ok {
 				t.Fatal("tool name should always be present")
 			}
+
+			titleVal, hasTitle := attrs[spanAttrConversationTitle]
+			if tc.wantTitleOnSpan && (!hasTitle || titleVal.AsString() != "Sensitive topic") {
+				t.Fatalf("expected conversation title on tool span, got present=%v value=%q", hasTitle, titleVal.AsString())
+			}
+			if !tc.wantTitleOnSpan && hasTitle {
+				t.Fatalf("expected conversation title absent from tool span, got %q", titleVal.AsString())
+			}
 		})
 	}
 }
 
-func TestShouldIncludeToolContent(t *testing.T) {
+func TestResolveToolContentCaptureMode(t *testing.T) {
 	cases := []struct {
 		name          string
 		toolMode      ContentCaptureMode
 		ctxMode       ContentCaptureMode
 		ctxSet        bool
 		clientDefault ContentCaptureMode
-		legacy        bool
-		want          bool
+		want          ContentCaptureMode
 	}{
-		// Explicit Full client — legacy is irrelevant.
-		{"client Full, no ctx, legacy false", ContentCaptureModeDefault, ContentCaptureModeFull, false, ContentCaptureModeFull, false, true},
-		{"client Full, no ctx, legacy true", ContentCaptureModeDefault, ContentCaptureModeFull, false, ContentCaptureModeFull, true, true},
-		// Default client (resolves to NoToolContent) — legacy controls tool content.
-		{"client Default, no ctx, legacy false — suppressed", ContentCaptureModeDefault, ContentCaptureModeDefault, false, ContentCaptureModeDefault, false, false},
-		{"client Default, no ctx, legacy true — included", ContentCaptureModeDefault, ContentCaptureModeDefault, false, ContentCaptureModeDefault, true, true},
-		// Context and client overrides.
-		{"ctx MetadataOnly, legacy true", ContentCaptureModeDefault, ContentCaptureModeMetadataOnly, true, ContentCaptureModeFull, true, false},
-		{"ctx Full, client MetadataOnly — ctx wins", ContentCaptureModeDefault, ContentCaptureModeFull, true, ContentCaptureModeMetadataOnly, true, true},
-		{"ctx NoToolContent, legacy false — suppressed", ContentCaptureModeDefault, ContentCaptureModeNoToolContent, true, ContentCaptureModeFull, false, false},
-		{"ctx NoToolContent, legacy true — included", ContentCaptureModeDefault, ContentCaptureModeNoToolContent, true, ContentCaptureModeFull, true, true},
-		{"no ctx, client MetadataOnly — client wins", ContentCaptureModeDefault, ContentCaptureModeFull, false, ContentCaptureModeMetadataOnly, true, false},
-		// Per-tool overrides.
-		{"explicit Full overrides ctx MetadataOnly", ContentCaptureModeFull, ContentCaptureModeMetadataOnly, true, ContentCaptureModeFull, true, true},
-		{"explicit Full overrides ctx MetadataOnly, legacy false", ContentCaptureModeFull, ContentCaptureModeMetadataOnly, true, ContentCaptureModeFull, false, true},
-		{"explicit MetadataOnly overrides everything", ContentCaptureModeMetadataOnly, ContentCaptureModeFull, true, ContentCaptureModeFull, true, false},
+		{"client Full, no ctx", ContentCaptureModeDefault, ContentCaptureModeFull, false, ContentCaptureModeFull, ContentCaptureModeFull},
+		{"client Default, no ctx — resolves to NoToolContent", ContentCaptureModeDefault, ContentCaptureModeDefault, false, ContentCaptureModeDefault, ContentCaptureModeNoToolContent},
+		{"ctx MetadataOnly overrides client Full", ContentCaptureModeDefault, ContentCaptureModeMetadataOnly, true, ContentCaptureModeFull, ContentCaptureModeMetadataOnly},
+		{"ctx Full overrides client MetadataOnly", ContentCaptureModeDefault, ContentCaptureModeFull, true, ContentCaptureModeMetadataOnly, ContentCaptureModeFull},
+		{"ctx NoToolContent overrides client Full", ContentCaptureModeDefault, ContentCaptureModeNoToolContent, true, ContentCaptureModeFull, ContentCaptureModeNoToolContent},
+		{"no ctx, client MetadataOnly", ContentCaptureModeDefault, ContentCaptureModeFull, false, ContentCaptureModeMetadataOnly, ContentCaptureModeMetadataOnly},
+		{"explicit Full overrides ctx MetadataOnly", ContentCaptureModeFull, ContentCaptureModeMetadataOnly, true, ContentCaptureModeFull, ContentCaptureModeFull},
+		{"explicit MetadataOnly overrides everything", ContentCaptureModeMetadataOnly, ContentCaptureModeFull, true, ContentCaptureModeFull, ContentCaptureModeMetadataOnly},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := shouldIncludeToolContent(tc.toolMode, tc.ctxMode, tc.ctxSet, tc.clientDefault, tc.legacy)
+			got := resolveToolContentCaptureMode(tc.toolMode, tc.ctxMode, tc.ctxSet, tc.clientDefault)
 			if got != tc.want {
 				t.Fatalf("expected %v, got %v", tc.want, got)
 			}

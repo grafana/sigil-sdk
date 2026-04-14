@@ -27,7 +27,7 @@ const (
 	ContentCaptureModeNoToolContent
 	// ContentCaptureModeMetadataOnly preserves message structure, tool names,
 	// usage, and timing but strips text, tool arguments, tool results,
-	// thinking, system prompts, and raw artifacts.
+	// thinking, system prompts, conversation titles, and raw artifacts.
 	//
 	// Note: user-provided Metadata and Tags are NOT stripped — callers are
 	// responsible for ensuring these maps do not contain sensitive content
@@ -112,6 +112,9 @@ func stripContent(g *Generation, errorCategory string) {
 	}
 	delete(g.Metadata, "call_error")
 
+	g.ConversationTitle = ""
+	delete(g.Metadata, spanAttrConversationTitle)
+
 	for i := range g.Input {
 		stripMessageContent(&g.Input[i])
 	}
@@ -138,10 +141,10 @@ func stripMessageContent(m *Message) {
 	}
 }
 
-// shouldIncludeToolContent determines whether tool execution content (arguments,
-// results) should be included in span attributes. It resolves the effective mode
-// from the explicit override, context, client default, and legacy IncludeContent.
-func shouldIncludeToolContent(toolMode, ctxMode ContentCaptureMode, ctxSet bool, clientDefault ContentCaptureMode, legacyInclude bool) bool {
+// resolveToolContentCaptureMode resolves the effective content capture mode for
+// a tool execution from the per-tool override, parent generation context, and
+// client default.
+func resolveToolContentCaptureMode(toolMode, ctxMode ContentCaptureMode, ctxSet bool, clientDefault ContentCaptureMode) ContentCaptureMode {
 	resolved := resolveClientContentCaptureMode(clientDefault)
 	if ctxSet {
 		resolved = ctxMode
@@ -149,15 +152,7 @@ func shouldIncludeToolContent(toolMode, ctxMode ContentCaptureMode, ctxSet bool,
 	if toolMode != ContentCaptureModeDefault {
 		resolved = toolMode
 	}
-	switch resolved {
-	case ContentCaptureModeMetadataOnly:
-		return false
-	case ContentCaptureModeFull:
-		return true
-	default:
-		// NoToolContent / Default: honor legacy IncludeContent opt-in.
-		return legacyInclude
-	}
+	return resolved
 }
 
 // String returns the string representation of a ContentCaptureMode.
