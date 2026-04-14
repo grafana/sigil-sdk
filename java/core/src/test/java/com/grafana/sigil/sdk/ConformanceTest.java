@@ -147,6 +147,8 @@ class ConformanceTest {
                     .isEqualTo("Roundtrip conversation");
             assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_USER_ID)))
                     .isEqualTo("user-roundtrip");
+            assertThat(span.getAttributes().get(AttributeKey.longKey(SigilClient.SPAN_ATTR_TOOL_CALL_COUNT)))
+                    .isEqualTo(1L);
             assertThat(metricNames).contains(SigilClient.METRIC_OPERATION_DURATION, SigilClient.METRIC_TOKEN_USAGE);
             assertThat(metricNames).doesNotContain(SigilClient.METRIC_TTFT);
         }

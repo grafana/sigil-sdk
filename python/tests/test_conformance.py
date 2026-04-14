@@ -322,6 +322,7 @@ def test_conformance_sync_roundtrip_semantics() -> None:
         assert span.attributes["gen_ai.operation.name"] == "generateText"
         assert span.attributes[_span_attr_conversation_title] == "Roundtrip conversation"
         assert span.attributes[_span_attr_user_id] == "user-roundtrip"
+        assert span.attributes["sigil.gen_ai.tool_call_count"] == 1
         assert "gen_ai.client.operation.duration" in metrics
         assert "gen_ai.client.token.usage" in metrics
         assert "gen_ai.client.time_to_first_token" not in metrics
