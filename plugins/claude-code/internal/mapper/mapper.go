@@ -110,27 +110,109 @@ func mergeAssistantGroup(lines []transcript.Line) transcript.Line {
 	return final
 }
 
+// agentCall holds the metadata captured from an Agent tool_use block.
+type agentCall struct {
+	parentGenID string    // generation that spawned this call
+	parentGen   sigil.Generation // copy for inheriting fields
+}
+
 // Process walks transcript lines and produces Generation records.
 // It updates st.Title with the conversation title if discovered.
+//
+// Claude Code subagents do not produce their own transcript lines — the only
+// evidence of their execution is the Agent tool_use (spawn) and the matching
+// tool_result (output). Process synthesises a generation for each completed
+// Agent call so that the Sigil dependency graph can display the DAG.
 func Process(lines []transcript.Line, st *state.Session, opts Options, r *redact.Redactor) []sigil.Generation {
 	var (
 		gens []sigil.Generation
 		uctx userContext
+		// agentCalls indexes Agent tool_use call IDs to the generation that
+		// emitted them, so we can synthesise subagent generations when the
+		// matching tool_result arrives.
+		agentCalls = make(map[string]agentCall)
 	)
 
 	for _, line := range lines {
 		switch line.Type {
 		case "user":
 			processUserLine(line, &uctx, st, r, opts)
+			// Synthesise subagent generations from Agent tool results.
+			gens = append(gens, synthesiseSubagentGens(line, &uctx, agentCalls, opts)...)
 
 		case "assistant":
 			if gen, ok := processAssistantLine(line, &uctx, st, opts, r); ok {
+				// Index Agent tool calls from this generation's output.
+				for _, msg := range gen.Output {
+					for _, part := range msg.Parts {
+						if part.ToolCall != nil && part.ToolCall.Name == "Agent" {
+							agentCalls[part.ToolCall.ID] = agentCall{
+								parentGenID: gen.ID,
+								parentGen:   gen,
+							}
+						}
+					}
+				}
 				gens = append(gens, gen)
 			}
 		}
 	}
 
 	return gens
+}
+
+// synthesiseSubagentGens creates a generation for each Agent tool result in
+// the user line, using the Agent tool_use input for metadata (model,
+// description) and the tool_result content as output.
+func synthesiseSubagentGens(line transcript.Line, uctx *userContext, calls map[string]agentCall, opts Options) []sigil.Generation {
+	var gens []sigil.Generation
+	for _, msg := range uctx.toolResults {
+		for _, part := range msg.Parts {
+			if part.ToolResult == nil {
+				continue
+			}
+			ac, ok := calls[part.ToolResult.ToolCallID]
+			if !ok {
+				continue
+			}
+
+			completedAt, _ := time.Parse(time.RFC3339Nano, line.Timestamp)
+
+			gen := sigil.Generation{
+				ID:                  subagentGenID(opts.SessionID, part.ToolResult.ToolCallID),
+				ConversationID:      opts.SessionID,
+				ConversationTitle:   opts.SessionID,
+				ParentGenerationIDs: []string{ac.parentGenID},
+				AgentName:           agentName + "/subagent",
+				AgentVersion:        ac.parentGen.AgentVersion,
+				Mode:                sigil.GenerationModeSync,
+				OperationName:       "generateText",
+				Model:               ac.parentGen.Model,
+				StopReason:          "end_turn",
+				StartedAt:           ac.parentGen.CompletedAt,
+				CompletedAt:         completedAt,
+				Tags:                buildTags(line, true, opts.ExtraTags),
+			}
+
+			// Use the tool result content as the output.
+			outputText := part.ToolResult.Content
+			if outputText != "" {
+				gen.Output = []sigil.Message{{
+					Role:  sigil.RoleAssistant,
+					Parts: []sigil.Part{{Kind: sigil.PartKindText, Text: outputText}},
+				}}
+			}
+
+			gens = append(gens, gen)
+		}
+	}
+	return gens
+}
+
+// subagentGenID produces a deterministic generation ID for a synthesised
+// subagent generation, namespaced by session and the Agent tool call ID.
+func subagentGenID(sessionID, toolCallID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte(sessionID+":subagent:"+toolCallID)).String()
 }
 
 func processUserLine(line transcript.Line, uctx *userContext, st *state.Session, r *redact.Redactor, opts Options) {

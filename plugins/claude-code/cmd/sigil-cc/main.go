@@ -159,16 +159,17 @@ func run() {
 
 	for _, gen := range gens {
 		genStart := sigil.GenerationStart{
-			ID:                gen.ID,
-			ConversationID:    gen.ConversationID,
-			ConversationTitle: gen.ConversationTitle,
-			AgentName:         gen.AgentName,
-			AgentVersion:      gen.AgentVersion,
-			Mode:              gen.Mode,
-			OperationName:     gen.OperationName,
-			Model:             gen.Model,
-			Tags:              gen.Tags,
-			Metadata:          gen.Metadata,
+			ID:                  gen.ID,
+			ConversationID:      gen.ConversationID,
+			ConversationTitle:   gen.ConversationTitle,
+			AgentName:           gen.AgentName,
+			AgentVersion:        gen.AgentVersion,
+			Mode:                gen.Mode,
+			OperationName:       gen.OperationName,
+			Model:               gen.Model,
+			ParentGenerationIDs: gen.ParentGenerationIDs,
+			Tags:                gen.Tags,
+			Metadata:            gen.Metadata,
 		}
 
 		genCtx, rec := client.StartGeneration(ctx, genStart)
