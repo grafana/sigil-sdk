@@ -70,6 +70,7 @@ export function stripContent(generation: Generation, errorCategory: string): voi
   }
   if (generation.metadata !== undefined) {
     delete generation.metadata.call_error;
+    delete generation.metadata['sigil.conversation.title'];
   }
 
   if (generation.input !== undefined) {

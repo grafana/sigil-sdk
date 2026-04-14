@@ -71,6 +71,7 @@ test('metadata_only strips sensitive content from generation', async () => {
     // Sensitive content stripped
     assert.equal(gen.systemPrompt, '');
     assert.equal(gen.conversationTitle, '');
+    assert.equal(gen.metadata['sigil.conversation.title'], undefined);
     assert.equal(gen.artifacts, null);
     assert.equal(gen.input[0].parts[0].text, '');
     assert.equal(gen.output[0].parts[0].thinking, '');
