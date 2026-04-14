@@ -1032,10 +1032,12 @@ class GenerationRecorderImpl implements GenerationRecorder {
       }
     }
 
+    const finalCallError = this.contentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
+
     this.client.internalFinalizeGenerationSpan(
       this.span,
       generation,
-      this.callError,
+      finalCallError,
       validationError,
       enqueueError,
       this.firstTokenAt,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { SpanStatusCode } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
@@ -143,6 +144,62 @@ test('metadata_only falls back to sdk_error without category', async () => {
 
     const gen = singleGeneration(harness.client);
     assert.equal(gen.callError, 'sdk_error');
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
+test('metadata_only does not leak raw callError into OTel span', async () => {
+  const harness = newHarness({ contentCapture: 'metadata_only' });
+
+  try {
+    const rawError = 'rate limit exceeded: 429 Too Many Requests';
+    const recorder = harness.client.startGeneration({
+      model: { provider: 'openai', name: 'gpt-5' },
+    });
+    recorder.setCallError(new Error(rawError));
+    recorder.setResult({
+      input: [{ role: 'user', parts: [{ type: 'text', text: 'hello' }] }],
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'world' }] }],
+    });
+    recorder.end();
+
+    const span = singleGenerationSpan(harness.spanExporter);
+    assert.equal(span.status.code, SpanStatusCode.ERROR);
+    assert.equal(span.status.message, 'rate_limit');
+    assert.notEqual(span.status.message, rawError);
+
+    for (const event of span.events) {
+      if (event.name === 'exception') {
+        const msg = event.attributes?.['exception.message'];
+        assert.notEqual(msg, rawError, 'span exception event must not contain raw error');
+        assert.equal(msg, 'rate_limit');
+      }
+    }
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
+test('metadata_only span uses sdk_error for uncategorized callError', async () => {
+  const harness = newHarness({ contentCapture: 'metadata_only' });
+
+  try {
+    const rawError = 'something completely unexpected happened';
+    const recorder = harness.client.startGeneration({
+      model: { provider: 'openai', name: 'gpt-5' },
+    });
+    recorder.setCallError(new Error(rawError));
+    recorder.setResult({
+      input: [{ role: 'user', parts: [{ type: 'text', text: 'hello' }] }],
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'world' }] }],
+    });
+    recorder.end();
+
+    const span = singleGenerationSpan(harness.spanExporter);
+    assert.equal(span.status.code, SpanStatusCode.ERROR);
+    assert.equal(span.status.message, 'sdk_error');
+    assert.notEqual(span.status.message, rawError);
   } finally {
     await shutdownHarness(harness);
   }
@@ -589,6 +646,19 @@ function singleGeneration(client) {
   const snapshot = client.debugSnapshot();
   assert.equal(snapshot.generations.length, 1);
   return snapshot.generations[0];
+}
+
+function generationSpans(spanExporter) {
+  return spanExporter.getFinishedSpans().filter((span) => {
+    const operation = span.attributes['gen_ai.operation.name'];
+    return operation !== 'execute_tool' && operation !== 'embeddings';
+  });
+}
+
+function singleGenerationSpan(spanExporter) {
+  const spans = generationSpans(spanExporter);
+  assert.equal(spans.length, 1);
+  return spans[0];
 }
 
 function toolSpans(spanExporter) {
