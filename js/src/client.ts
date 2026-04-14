@@ -520,6 +520,10 @@ export class SigilClient {
     setGenerationSpanAttributes(span, generation);
   }
 
+  internalClearSpanConversationTitle(span: Span): void {
+    span.setAttribute(spanAttrConversationTitle, '');
+  }
+
   internalFinalizeGenerationSpan(
     span: Span,
     generation: Generation,
@@ -1018,6 +1022,9 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
 
     this.client.internalSyncGenerationSpan(this.span, generation);
+    if (this.contentCaptureMode === 'metadata_only') {
+      this.client.internalClearSpanConversationTitle(this.span);
+    }
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
     this.client.internalRecordGeneration(generation);
 

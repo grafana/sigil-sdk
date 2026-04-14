@@ -182,6 +182,41 @@ test('metadata_only does not leak raw callError into OTel span', async () => {
   }
 });
 
+test('metadata_only does not leak conversationTitle into OTel span', async () => {
+  const harness = newHarness({ contentCapture: 'metadata_only' });
+
+  try {
+    const sensitiveTitle = 'Secret project discussion with John';
+    const recorder = harness.client.startGeneration({
+      model: { provider: 'openai', name: 'gpt-5' },
+      conversationTitle: sensitiveTitle,
+    });
+    recorder.setResult({
+      input: [{ role: 'user', parts: [{ type: 'text', text: 'hello' }] }],
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'world' }] }],
+    });
+    recorder.end();
+
+    const gen = singleGeneration(harness.client);
+    assert.equal(gen.conversationTitle, '', 'conversationTitle should be stripped from generation');
+    assert.equal(gen.metadata['sigil.conversation.title'], undefined, 'metadata key should be deleted');
+
+    const span = singleGenerationSpan(harness.spanExporter);
+    assert.equal(
+      span.attributes['sigil.conversation.title'],
+      '',
+      'span conversationTitle must be cleared to empty string',
+    );
+    assert.notEqual(
+      span.attributes['sigil.conversation.title'],
+      sensitiveTitle,
+      'span must not contain sensitive conversationTitle',
+    );
+  } finally {
+    await shutdownHarness(harness);
+  }
+});
+
 test('metadata_only span uses sdk_error for uncategorized callError', async () => {
   const harness = newHarness({ contentCapture: 'metadata_only' });
 
