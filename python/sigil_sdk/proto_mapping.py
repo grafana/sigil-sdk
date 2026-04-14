@@ -86,11 +86,10 @@ def generation_to_proto_json(generation: Generation) -> dict[str, object]:
     """Converts a generation into proto-json dictionary with snake_case keys."""
 
     message = generation_to_proto(generation)
-    result = json_format.MessageToDict(
+    return json_format.MessageToDict(
         message,
         preserving_proto_field_name=True,
     )
-    return result
 
 
 def _map_generation_mode(mode: GenerationMode | None) -> int:

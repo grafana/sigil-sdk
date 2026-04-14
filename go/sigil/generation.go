@@ -50,28 +50,28 @@ type Generation struct {
 	OperationName string `json:"operation_name,omitempty"`
 	// TraceID and SpanID identify the OTel span created by StartGeneration or
 	// StartStreamingGeneration.
-	TraceID         string            `json:"trace_id,omitempty"`
-	SpanID          string            `json:"span_id,omitempty"`
-	Model           ModelRef          `json:"model"`
-	ResponseID      string            `json:"response_id,omitempty"`
-	ResponseModel   string            `json:"response_model,omitempty"`
-	SystemPrompt    string            `json:"system_prompt,omitempty"`
-	Input           []Message         `json:"input,omitempty"`
-	Output          []Message         `json:"output,omitempty"`
-	Tools           []ToolDefinition  `json:"tools,omitempty"`
-	MaxTokens       *int64            `json:"max_tokens,omitempty"`
-	Temperature     *float64          `json:"temperature,omitempty"`
-	TopP            *float64          `json:"top_p,omitempty"`
-	ToolChoice      *string           `json:"tool_choice,omitempty"`
-	ThinkingEnabled    *bool             `json:"thinking_enabled,omitempty"`
-	ParentGenerationIDs []string        `json:"parent_generation_ids,omitempty"`
-	Usage              TokenUsage        `json:"usage,omitempty"`
-	StopReason      string            `json:"stop_reason,omitempty"`
-	StartedAt       time.Time         `json:"started_at,omitempty"`
-	CompletedAt     time.Time         `json:"completed_at,omitempty"`
-	Tags            map[string]string `json:"tags,omitempty"`
-	Metadata        map[string]any    `json:"metadata,omitempty"`
-	Artifacts       []Artifact        `json:"artifacts,omitempty"`
+	TraceID             string            `json:"trace_id,omitempty"`
+	SpanID              string            `json:"span_id,omitempty"`
+	Model               ModelRef          `json:"model"`
+	ResponseID          string            `json:"response_id,omitempty"`
+	ResponseModel       string            `json:"response_model,omitempty"`
+	SystemPrompt        string            `json:"system_prompt,omitempty"`
+	Input               []Message         `json:"input,omitempty"`
+	Output              []Message         `json:"output,omitempty"`
+	Tools               []ToolDefinition  `json:"tools,omitempty"`
+	MaxTokens           *int64            `json:"max_tokens,omitempty"`
+	Temperature         *float64          `json:"temperature,omitempty"`
+	TopP                *float64          `json:"top_p,omitempty"`
+	ToolChoice          *string           `json:"tool_choice,omitempty"`
+	ThinkingEnabled     *bool             `json:"thinking_enabled,omitempty"`
+	ParentGenerationIDs []string          `json:"parent_generation_ids,omitempty"`
+	Usage               TokenUsage        `json:"usage,omitempty"`
+	StopReason          string            `json:"stop_reason,omitempty"`
+	StartedAt           time.Time         `json:"started_at,omitempty"`
+	CompletedAt         time.Time         `json:"completed_at,omitempty"`
+	Tags                map[string]string `json:"tags,omitempty"`
+	Metadata            map[string]any    `json:"metadata,omitempty"`
+	Artifacts           []Artifact        `json:"artifacts,omitempty"`
 	// CallError captures upstream call failure text when End receives callErr.
 	CallError string `json:"call_error,omitempty"`
 }
@@ -79,26 +79,26 @@ type Generation struct {
 // GenerationStart seeds generation fields before the provider call executes.
 // Any zero-valued fields can be filled later by End.
 type GenerationStart struct {
-	ID                string
-	ConversationID    string
-	ConversationTitle string
-	UserID            string
-	AgentName         string
-	AgentVersion      string
-	Mode              GenerationMode
-	OperationName     string
-	Model             ModelRef
-	SystemPrompt      string
-	Tools             []ToolDefinition
-	MaxTokens         *int64
-	Temperature       *float64
-	TopP              *float64
-	ToolChoice        *string
+	ID                  string
+	ConversationID      string
+	ConversationTitle   string
+	UserID              string
+	AgentName           string
+	AgentVersion        string
+	Mode                GenerationMode
+	OperationName       string
+	Model               ModelRef
+	SystemPrompt        string
+	Tools               []ToolDefinition
+	MaxTokens           *int64
+	Temperature         *float64
+	TopP                *float64
+	ToolChoice          *string
 	ThinkingEnabled     *bool
 	ParentGenerationIDs []string
 	Tags                map[string]string
-	Metadata          map[string]any
-	StartedAt         time.Time
+	Metadata            map[string]any
+	StartedAt           time.Time
 	// ContentCapture overrides the client-level ContentCaptureMode for this
 	// generation. Default (zero value) inherits from Config.
 	ContentCapture ContentCaptureMode
@@ -117,63 +117,63 @@ func defaultOperationNameForMode(mode GenerationMode) string {
 
 func cloneGeneration(in Generation) Generation {
 	return Generation{
-		ID:                in.ID,
-		ConversationID:    in.ConversationID,
-		ConversationTitle: in.ConversationTitle,
-		UserID:            in.UserID,
-		AgentName:         in.AgentName,
-		AgentVersion:      in.AgentVersion,
-		Mode:              in.Mode,
-		OperationName:     in.OperationName,
-		TraceID:           in.TraceID,
-		SpanID:            in.SpanID,
-		Model:             in.Model,
-		ResponseID:        in.ResponseID,
-		ResponseModel:     in.ResponseModel,
-		SystemPrompt:      in.SystemPrompt,
-		Input:             cloneMessages(in.Input),
-		Output:            cloneMessages(in.Output),
-		Tools:             cloneTools(in.Tools),
-		MaxTokens:         cloneInt64Ptr(in.MaxTokens),
-		Temperature:       cloneFloat64Ptr(in.Temperature),
-		TopP:              cloneFloat64Ptr(in.TopP),
-		ToolChoice:        cloneStringPtr(in.ToolChoice),
+		ID:                  in.ID,
+		ConversationID:      in.ConversationID,
+		ConversationTitle:   in.ConversationTitle,
+		UserID:              in.UserID,
+		AgentName:           in.AgentName,
+		AgentVersion:        in.AgentVersion,
+		Mode:                in.Mode,
+		OperationName:       in.OperationName,
+		TraceID:             in.TraceID,
+		SpanID:              in.SpanID,
+		Model:               in.Model,
+		ResponseID:          in.ResponseID,
+		ResponseModel:       in.ResponseModel,
+		SystemPrompt:        in.SystemPrompt,
+		Input:               cloneMessages(in.Input),
+		Output:              cloneMessages(in.Output),
+		Tools:               cloneTools(in.Tools),
+		MaxTokens:           cloneInt64Ptr(in.MaxTokens),
+		Temperature:         cloneFloat64Ptr(in.Temperature),
+		TopP:                cloneFloat64Ptr(in.TopP),
+		ToolChoice:          cloneStringPtr(in.ToolChoice),
 		ThinkingEnabled:     cloneBoolPtr(in.ThinkingEnabled),
 		ParentGenerationIDs: cloneStringSlice(in.ParentGenerationIDs),
 		Usage:               in.Usage,
-		StopReason:        in.StopReason,
-		StartedAt:         in.StartedAt,
-		CompletedAt:       in.CompletedAt,
-		Tags:              cloneTags(in.Tags),
-		Metadata:          cloneMetadata(in.Metadata),
-		Artifacts:         cloneArtifacts(in.Artifacts),
-		CallError:         in.CallError,
+		StopReason:          in.StopReason,
+		StartedAt:           in.StartedAt,
+		CompletedAt:         in.CompletedAt,
+		Tags:                cloneTags(in.Tags),
+		Metadata:            cloneMetadata(in.Metadata),
+		Artifacts:           cloneArtifacts(in.Artifacts),
+		CallError:           in.CallError,
 	}
 }
 
 func cloneGenerationStart(in GenerationStart) GenerationStart {
 	return GenerationStart{
-		ID:                in.ID,
-		ConversationID:    in.ConversationID,
-		ConversationTitle: in.ConversationTitle,
-		UserID:            in.UserID,
-		AgentName:         in.AgentName,
-		AgentVersion:      in.AgentVersion,
-		Mode:              in.Mode,
-		OperationName:     in.OperationName,
-		Model:             in.Model,
-		SystemPrompt:      in.SystemPrompt,
-		Tools:             cloneTools(in.Tools),
-		MaxTokens:         cloneInt64Ptr(in.MaxTokens),
-		Temperature:       cloneFloat64Ptr(in.Temperature),
-		TopP:              cloneFloat64Ptr(in.TopP),
-		ToolChoice:        cloneStringPtr(in.ToolChoice),
+		ID:                  in.ID,
+		ConversationID:      in.ConversationID,
+		ConversationTitle:   in.ConversationTitle,
+		UserID:              in.UserID,
+		AgentName:           in.AgentName,
+		AgentVersion:        in.AgentVersion,
+		Mode:                in.Mode,
+		OperationName:       in.OperationName,
+		Model:               in.Model,
+		SystemPrompt:        in.SystemPrompt,
+		Tools:               cloneTools(in.Tools),
+		MaxTokens:           cloneInt64Ptr(in.MaxTokens),
+		Temperature:         cloneFloat64Ptr(in.Temperature),
+		TopP:                cloneFloat64Ptr(in.TopP),
+		ToolChoice:          cloneStringPtr(in.ToolChoice),
 		ThinkingEnabled:     cloneBoolPtr(in.ThinkingEnabled),
 		ParentGenerationIDs: cloneStringSlice(in.ParentGenerationIDs),
 		Tags:                cloneTags(in.Tags),
-		Metadata:          cloneMetadata(in.Metadata),
-		StartedAt:         in.StartedAt,
-		ContentCapture:    in.ContentCapture,
+		Metadata:            cloneMetadata(in.Metadata),
+		StartedAt:           in.StartedAt,
+		ContentCapture:      in.ContentCapture,
 	}
 }
 
