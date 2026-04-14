@@ -100,6 +100,7 @@ _span_attr_tool_type = "gen_ai.tool.type"
 _span_attr_tool_description = "gen_ai.tool.description"
 _span_attr_tool_call_arguments = "gen_ai.tool.call.arguments"
 _span_attr_tool_call_result = "gen_ai.tool.call.result"
+_span_attr_parent_generation_ids = "sigil.generation.parent_generation_ids"
 _max_rating_conversation_id_len = 255
 _max_rating_id_len = 128
 _max_rating_generation_id_len = 255
@@ -433,6 +434,7 @@ class Client:
                 top_p=seed.top_p,
                 tool_choice=seed.tool_choice,
                 thinking_enabled=seed.thinking_enabled,
+                parent_generation_ids=list(seed.parent_generation_ids),
             ),
         )
 
@@ -860,6 +862,9 @@ class GenerationRecorder:
         if len(generation.tools) == 0:
             generation.tools = copy.deepcopy(self.seed.tools)
 
+        if len(generation.parent_generation_ids) == 0:
+            generation.parent_generation_ids = list(self.seed.parent_generation_ids)
+
         merged_tags = dict(self.seed.tags)
         merged_tags.update(generation.tags)
         generation.tags = merged_tags
@@ -1230,6 +1235,8 @@ def _set_generation_span_attributes(span: Span, generation: Generation) -> None:
     framework_event_id = _metadata_string_value(generation.metadata, _span_attr_framework_event_id)
     if framework_event_id is not None:
         span.set_attribute(_span_attr_framework_event_id, framework_event_id)
+    if generation.parent_generation_ids:
+        span.set_attribute(_span_attr_parent_generation_ids, list(generation.parent_generation_ids))
     if generation.response_id:
         span.set_attribute(_span_attr_response_id, generation.response_id)
     if generation.response_model:
