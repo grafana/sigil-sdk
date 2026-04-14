@@ -388,7 +388,7 @@ export interface Generation {
   completedAt: Date;
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
-  artifacts?: Artifact[];
+  artifacts?: Artifact[] | null;
   callError?: string;
 }
 

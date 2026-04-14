@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SpanStatusCode } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
@@ -56,7 +55,9 @@ test('metadata_only strips sensitive content from generation', async () => {
           ],
         },
       ],
-      tools: [{ name: 'weather', description: 'Get weather info', type: 'function', inputSchemaJSON: '{"type":"object"}' }],
+      tools: [
+        { name: 'weather', description: 'Get weather info', type: 'function', inputSchemaJSON: '{"type":"object"}' },
+      ],
       usage: { inputTokens: 120, outputTokens: 42 },
       stopReason: 'end_turn',
       artifacts: [{ type: 'request', payload: 'raw' }],
@@ -67,16 +68,16 @@ test('metadata_only strips sensitive content from generation', async () => {
     const gen = singleGeneration(harness.client);
 
     // Sensitive content stripped
-    assert.equal(gen.systemPrompt, undefined);
-    assert.equal(gen.artifacts, undefined);
+    assert.equal(gen.systemPrompt, '');
+    assert.equal(gen.artifacts, null);
     assert.equal(gen.input[0].parts[0].text, '');
     assert.equal(gen.output[0].parts[0].thinking, '');
-    assert.equal(gen.output[0].parts[1].toolCall.inputJSON, undefined);
+    assert.equal(gen.output[0].parts[1].toolCall.inputJSON, '');
     assert.equal(gen.output[0].parts[2].text, '');
-    assert.equal(gen.input[1].parts[0].toolResult.content, undefined);
-    assert.equal(gen.input[1].parts[0].toolResult.contentJSON, undefined);
-    assert.equal(gen.tools[0].description, undefined);
-    assert.equal(gen.tools[0].inputSchemaJSON, undefined);
+    assert.equal(gen.input[1].parts[0].toolResult.content, '');
+    assert.equal(gen.input[1].parts[0].toolResult.contentJSON, '');
+    assert.equal(gen.tools[0].description, '');
+    assert.equal(gen.tools[0].inputSchemaJSON, '');
 
     // Structure preserved
     assert.equal(gen.input.length, 2);
@@ -308,16 +309,58 @@ test('throwing resolver fails closed to metadata_only', async () => {
 test('tool execution content capture modes', async () => {
   const cases = [
     // client Default (→ NoToolContent), legacy controls.
-    { name: 'client default, legacy false — suppressed', clientMode: 'default', toolMode: undefined, legacy: false, wantContent: false },
-    { name: 'client default, legacy true — included', clientMode: 'default', toolMode: undefined, legacy: true, wantContent: true },
+    {
+      name: 'client default, legacy false — suppressed',
+      clientMode: 'default',
+      toolMode: undefined,
+      legacy: false,
+      wantContent: false,
+    },
+    {
+      name: 'client default, legacy true — included',
+      clientMode: 'default',
+      toolMode: undefined,
+      legacy: true,
+      wantContent: true,
+    },
     // Explicit Full client — legacy irrelevant.
-    { name: 'client full, legacy false — included', clientMode: 'full', toolMode: undefined, legacy: false, wantContent: true },
-    { name: 'client full, legacy true — included', clientMode: 'full', toolMode: undefined, legacy: true, wantContent: true },
+    {
+      name: 'client full, legacy false — included',
+      clientMode: 'full',
+      toolMode: undefined,
+      legacy: false,
+      wantContent: true,
+    },
+    {
+      name: 'client full, legacy true — included',
+      clientMode: 'full',
+      toolMode: undefined,
+      legacy: true,
+      wantContent: true,
+    },
     // Client MetadataOnly — always suppressed.
-    { name: 'client metadata_only, legacy true — suppressed', clientMode: 'metadata_only', toolMode: undefined, legacy: true, wantContent: false },
+    {
+      name: 'client metadata_only, legacy true — suppressed',
+      clientMode: 'metadata_only',
+      toolMode: undefined,
+      legacy: true,
+      wantContent: false,
+    },
     // Per-tool overrides.
-    { name: 'tool full overrides client metadata_only', clientMode: 'metadata_only', toolMode: 'full', legacy: false, wantContent: true },
-    { name: 'tool metadata_only overrides client full', clientMode: 'full', toolMode: 'metadata_only', legacy: true, wantContent: false },
+    {
+      name: 'tool full overrides client metadata_only',
+      clientMode: 'metadata_only',
+      toolMode: 'full',
+      legacy: false,
+      wantContent: true,
+    },
+    {
+      name: 'tool metadata_only overrides client full',
+      clientMode: 'full',
+      toolMode: 'metadata_only',
+      legacy: true,
+      wantContent: false,
+    },
   ];
 
   for (const tc of cases) {
@@ -338,7 +381,11 @@ test('tool execution content capture modes', async () => {
 
       const span = singleToolSpan(harness.spanExporter);
       const hasArgs = 'gen_ai.tool.call.arguments' in span.attributes;
-      assert.equal(hasArgs, tc.wantContent, `case "${tc.name}": tool arguments present=${hasArgs}, want=${tc.wantContent}`);
+      assert.equal(
+        hasArgs,
+        tc.wantContent,
+        `case "${tc.name}": tool arguments present=${hasArgs}, want=${tc.wantContent}`,
+      );
 
       assert.ok('gen_ai.tool.name' in span.attributes, `case "${tc.name}": tool name always present`);
     } finally {
@@ -366,7 +413,11 @@ test('tool execution with resolver overriding client mode', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const span = singleToolSpan(harness.spanExporter);
-    assert.equal('gen_ai.tool.call.arguments' in span.attributes, false, 'resolver metadata_only should suppress tool content');
+    assert.equal(
+      'gen_ai.tool.call.arguments' in span.attributes,
+      false,
+      'resolver metadata_only should suppress tool content',
+    );
   } finally {
     await shutdownHarness(harness);
   }

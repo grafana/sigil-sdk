@@ -6,7 +6,10 @@ export const metadataKeyContentCaptureMode = 'sigil.sdk.content_capture_mode';
  * Returns the effective mode from an override and a fallback. `'default'` is
  * transparent — it falls through to the fallback.
  */
-export function resolveContentCaptureMode(override: ContentCaptureMode, fallback: ContentCaptureMode): ContentCaptureMode {
+export function resolveContentCaptureMode(
+  override: ContentCaptureMode,
+  fallback: ContentCaptureMode,
+): ContentCaptureMode {
   if (override !== 'default') {
     return override;
   }
@@ -58,8 +61,8 @@ export function stampContentCaptureMetadata(generation: Generation, mode: Conten
  * used to replace the raw `callError` text.
  */
 export function stripContent(generation: Generation, errorCategory: string): void {
-  generation.systemPrompt = undefined;
-  generation.artifacts = undefined;
+  generation.systemPrompt = '';
+  generation.artifacts = null;
 
   if (generation.callError !== undefined) {
     generation.callError = errorCategory.length > 0 ? errorCategory : 'sdk_error';
@@ -80,18 +83,18 @@ export function stripContent(generation: Generation, errorCategory: string): voi
   }
   if (generation.tools !== undefined) {
     for (const tool of generation.tools) {
-      tool.description = undefined;
-      tool.inputSchemaJSON = undefined;
+      tool.description = '';
+      tool.inputSchemaJSON = '';
     }
   }
 }
 
 function stripMessageContent(message: Message): void {
   if (message.parts === undefined) {
-    message.content = undefined;
+    message.content = '';
     return;
   }
-  message.content = undefined;
+  message.content = '';
   for (const part of message.parts) {
     switch (part.type) {
       case 'text':
@@ -101,11 +104,11 @@ function stripMessageContent(message: Message): void {
         part.thinking = '';
         break;
       case 'tool_call':
-        part.toolCall.inputJSON = undefined;
+        part.toolCall.inputJSON = '';
         break;
       case 'tool_result':
-        part.toolResult.content = undefined;
-        part.toolResult.contentJSON = undefined;
+        part.toolResult.content = '';
+        part.toolResult.contentJSON = '';
         break;
     }
   }

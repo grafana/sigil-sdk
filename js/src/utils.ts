@@ -143,7 +143,7 @@ export function cloneGeneration(generation: Generation): Generation {
     completedAt: new Date(generation.completedAt),
     tags: generation.tags ? { ...generation.tags } : undefined,
     metadata: generation.metadata ? { ...generation.metadata } : undefined,
-    artifacts: generation.artifacts?.map(cloneArtifact),
+    artifacts: generation.artifacts === null ? null : generation.artifacts?.map(cloneArtifact),
   };
 }
 
