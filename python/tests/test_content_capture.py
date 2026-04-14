@@ -106,9 +106,14 @@ def _full_generation() -> Generation:
         ],
         usage=TokenUsage(input_tokens=120, output_tokens=42),
         stop_reason="end_turn",
+        conversation_title="Weather chat",
         call_error="rate limit exceeded",
         artifacts=[],
-        metadata={"sigil.sdk.name": "sdk-python", "call_error": "rate limit exceeded"},
+        metadata={
+            "sigil.sdk.name": "sdk-python",
+            "call_error": "rate limit exceeded",
+            "sigil.conversation.title": "Weather chat",
+        },
     )
 
 
@@ -193,6 +198,8 @@ class TestContentStripping:
             assert gen.input[1].parts[0].tool_result.content_json == b""
             assert gen.tools[0].description == ""
             assert gen.tools[0].input_schema_json == b""
+            assert gen.conversation_title == ""
+            assert "sigil.conversation.title" not in gen.metadata
 
             # Preserved
             assert len(gen.input) == 2
@@ -252,6 +259,35 @@ class TestContentStripping:
             assert gen.call_error == "sdk_error"
         finally:
             client.shutdown()
+
+    def test_metadata_only_strips_conversation_title_from_span(self):
+        span_exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+        tracer = provider.get_tracer("sigil-test")
+        exporter = CapturingGenerationExporter()
+        client = _new_client(exporter, tracer=tracer, content_capture=ContentCaptureMode.METADATA_ONLY)
+        try:
+            rec = client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                    conversation_title="Sensitive topic",
+                )
+            )
+            rec.set_result(
+                Generation(
+                    input=[Message(role=MessageRole.USER, parts=[Part(kind=PartKind.TEXT, text="Hello")])],
+                    output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="Hi")])],
+                    usage=TokenUsage(input_tokens=10, output_tokens=5),
+                )
+            )
+            rec.end()
+
+            gen_span = next(s for s in span_exporter.get_finished_spans() if s.name.startswith("generate"))
+            assert "sigil.conversation.title" not in gen_span.attributes
+        finally:
+            client.shutdown()
+            provider.shutdown()
 
     def test_full_mode_preserves_all_content(self):
         exporter = CapturingGenerationExporter()
@@ -506,11 +542,14 @@ class TestToolContentCapture:
     def test_client_metadata_only_suppresses_content(self):
         client, span_exporter, provider = self._make_tool_client(ContentCaptureMode.METADATA_ONLY)
         try:
-            with client.start_tool_execution(ToolExecutionStart(tool_name="test_tool", include_content=True)) as rec:
+            with client.start_tool_execution(
+                ToolExecutionStart(tool_name="test_tool", include_content=True, conversation_title="Sensitive topic")
+            ) as rec:
                 rec.set_result(arguments="args", result="result")
 
             span = self._get_tool_span(span_exporter)
             assert span.attributes.get("gen_ai.tool.call.arguments") is None
+            assert "sigil.conversation.title" not in span.attributes
         finally:
             client.shutdown()
             provider.shutdown()

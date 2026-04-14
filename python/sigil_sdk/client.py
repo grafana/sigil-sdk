@@ -174,24 +174,18 @@ def _call_content_capture_resolver(
         return ContentCaptureMode.METADATA_ONLY
 
 
-def _should_include_tool_content(
+def _resolve_tool_content_capture_mode(
     tool_mode: ContentCaptureMode,
     ctx_mode: ContentCaptureMode | None,
     client_default: ContentCaptureMode,
-    legacy_include: bool,
-) -> bool:
-    """Determines whether tool content should be included in span attributes."""
+) -> ContentCaptureMode:
+    """Resolves the effective content capture mode for a tool execution."""
     resolved = _resolve_client_content_capture_mode(client_default)
     if ctx_mode is not None and ctx_mode != ContentCaptureMode.DEFAULT:
         resolved = ctx_mode
     if tool_mode != ContentCaptureMode.DEFAULT:
         resolved = tool_mode
-    if resolved == ContentCaptureMode.METADATA_ONLY:
-        return False
-    if resolved == ContentCaptureMode.FULL:
-        return True
-    # NO_TOOL_CONTENT / DEFAULT: honor legacy include_content opt-in.
-    return legacy_include
+    return resolved
 
 
 def _stamp_content_capture_metadata(generation: Generation, mode: ContentCaptureMode) -> None:
@@ -211,6 +205,9 @@ def _strip_content(generation: Generation, error_category: str) -> None:
     if generation.call_error != "":
         generation.call_error = error_category if error_category else "sdk_error"
     generation.metadata.pop("call_error", None)
+
+    generation.conversation_title = ""
+    generation.metadata.pop(_span_attr_conversation_title, None)
 
     for message in generation.input:
         _strip_message_content(message)
@@ -359,20 +356,28 @@ class Client:
         started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
         seed.started_at = started_at
 
+        # Resolve content capture before the span starts so MetadataOnly never
+        # attaches sensitive content to live span attributes.
+        resolver_mode = _call_content_capture_resolver(self._config.content_capture_resolver, {}, self._config.logger)
+        effective_client_default = _resolve_content_capture_mode(resolver_mode, self._config.content_capture)
+        ctx_mode = content_capture_mode_from_context()
+        tool_mode = _resolve_tool_content_capture_mode(seed.content_capture, ctx_mode, effective_client_default)
+
+        if tool_mode == ContentCaptureMode.METADATA_ONLY:
+            seed.conversation_title = ""
+            include_content = False
+        elif tool_mode == ContentCaptureMode.FULL:
+            include_content = True
+        else:
+            # NO_TOOL_CONTENT / DEFAULT: honor legacy include_content opt-in.
+            include_content = seed.include_content
+
         span = self._tracer.start_span(
             _tool_span_name(seed.tool_name),
             kind=SpanKind.INTERNAL,
             start_time=_datetime_to_ns(started_at),
         )
         _set_tool_span_attributes(span, seed)
-
-        # Resolve content capture: per-tool > context (parent generation) > resolver > client default.
-        resolver_mode = _call_content_capture_resolver(self._config.content_capture_resolver, {}, self._config.logger)
-        effective_client_default = _resolve_content_capture_mode(resolver_mode, self._config.content_capture)
-        ctx_mode = content_capture_mode_from_context()
-        include_content = _should_include_tool_content(
-            seed.content_capture, ctx_mode, effective_client_default, seed.include_content
-        )
 
         return ToolExecutionRecorder(
             client=self,
@@ -533,6 +538,20 @@ class Client:
         started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
         seed.started_at = started_at
 
+        # Resolve content capture mode before the span starts so MetadataOnly
+        # never attaches sensitive content to live span attributes.
+        resolver_mode = _call_content_capture_resolver(
+            self._config.content_capture_resolver, seed.metadata, self._config.logger
+        )
+        client_mode = _resolve_client_content_capture_mode(
+            _resolve_content_capture_mode(resolver_mode, self._config.content_capture)
+        )
+        ctx_mode = content_capture_mode_from_context()
+        if ctx_mode is not None:
+            client_mode = _resolve_content_capture_mode(ctx_mode, client_mode)
+        cc_mode = _resolve_content_capture_mode(seed.content_capture, client_mode)
+        span_title = "" if cc_mode == ContentCaptureMode.METADATA_ONLY else seed.conversation_title
+
         span = self._tracer.start_span(
             _generation_span_name(seed.operation_name, seed.model.name),
             kind=SpanKind.CLIENT,
@@ -543,7 +562,7 @@ class Client:
             Generation(
                 id=seed.id,
                 conversation_id=seed.conversation_id,
-                conversation_title=seed.conversation_title,
+                conversation_title=span_title,
                 user_id=seed.user_id,
                 agent_name=seed.agent_name,
                 agent_version=seed.agent_version,
@@ -557,18 +576,6 @@ class Client:
                 thinking_enabled=seed.thinking_enabled,
             ),
         )
-
-        # Resolve content capture mode: per-recording > context > resolver > client default.
-        resolver_mode = _call_content_capture_resolver(
-            self._config.content_capture_resolver, seed.metadata, self._config.logger
-        )
-        client_mode = _resolve_client_content_capture_mode(
-            _resolve_content_capture_mode(resolver_mode, self._config.content_capture)
-        )
-        ctx_mode = content_capture_mode_from_context()
-        if ctx_mode is not None:
-            client_mode = _resolve_content_capture_mode(ctx_mode, client_mode)
-        cc_mode = _resolve_content_capture_mode(seed.content_capture, client_mode)
 
         recorder = GenerationRecorder(
             client=self,

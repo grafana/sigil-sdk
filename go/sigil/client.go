@@ -441,43 +441,35 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	}
 	seed.StartedAt = startedAt
 
-	callCtx, span := c.startSpan(ctx, Generation{
-		ID:                seed.ID,
-		ConversationID:    seed.ConversationID,
-		ConversationTitle: seed.ConversationTitle,
-		UserID:            seed.UserID,
-		AgentName:         seed.AgentName,
-		AgentVersion:      seed.AgentVersion,
-		Mode:              seed.Mode,
-		OperationName:     seed.OperationName,
-		Model:             seed.Model,
-		MaxTokens:         cloneInt64Ptr(seed.MaxTokens),
-		Temperature:       cloneFloat64Ptr(seed.Temperature),
-		TopP:              cloneFloat64Ptr(seed.TopP),
-		ToolChoice:        cloneStringPtr(seed.ToolChoice),
-		ThinkingEnabled:   cloneBoolPtr(seed.ThinkingEnabled),
-	}, trace.SpanKindClient, startedAt)
-	span.SetAttributes(generationSpanAttributes(Generation{
-		ID:                seed.ID,
-		ConversationID:    seed.ConversationID,
-		ConversationTitle: seed.ConversationTitle,
-		UserID:            seed.UserID,
-		AgentName:         seed.AgentName,
-		AgentVersion:      seed.AgentVersion,
-		Mode:              seed.Mode,
-		OperationName:     seed.OperationName,
-		Model:             seed.Model,
-		MaxTokens:         cloneInt64Ptr(seed.MaxTokens),
-		Temperature:       cloneFloat64Ptr(seed.Temperature),
-		TopP:              cloneFloat64Ptr(seed.TopP),
-		ToolChoice:        cloneStringPtr(seed.ToolChoice),
-		ThinkingEnabled:   cloneBoolPtr(seed.ThinkingEnabled),
-	})...)
-
-	// Resolve content capture mode: per-recording > resolver > client default.
+	// Resolve content capture mode before the span starts so MetadataOnly never
+	// attaches sensitive content to live span attributes.
 	resolverMode := callContentCaptureResolver(c.config.ContentCaptureResolver, ctx, seed.Metadata)
 	clientMode := resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, c.config.ContentCapture))
 	ccMode := resolveContentCaptureMode(seed.ContentCapture, clientMode)
+
+	spanGeneration := Generation{
+		ID:                seed.ID,
+		ConversationID:    seed.ConversationID,
+		ConversationTitle: seed.ConversationTitle,
+		UserID:            seed.UserID,
+		AgentName:         seed.AgentName,
+		AgentVersion:      seed.AgentVersion,
+		Mode:              seed.Mode,
+		OperationName:     seed.OperationName,
+		Model:             seed.Model,
+		MaxTokens:         cloneInt64Ptr(seed.MaxTokens),
+		Temperature:       cloneFloat64Ptr(seed.Temperature),
+		TopP:              cloneFloat64Ptr(seed.TopP),
+		ToolChoice:        cloneStringPtr(seed.ToolChoice),
+		ThinkingEnabled:   cloneBoolPtr(seed.ThinkingEnabled),
+	}
+	if ccMode == ContentCaptureModeMetadataOnly {
+		spanGeneration.ConversationTitle = ""
+	}
+
+	callCtx, span := c.startSpan(ctx, spanGeneration, trace.SpanKindClient, startedAt)
+	span.SetAttributes(generationSpanAttributes(spanGeneration)...)
+
 	callCtx = withContentCaptureMode(callCtx, ccMode)
 
 	return callCtx, &GenerationRecorder{
@@ -588,6 +580,24 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 	}
 	seed.StartedAt = startedAt
 
+	// Resolve content capture before the span starts so MetadataOnly never
+	// attaches sensitive content to live span attributes.
+	resolverMode := callContentCaptureResolver(c.config.ContentCaptureResolver, ctx, nil)
+	effectiveClientDefault := resolveContentCaptureMode(resolverMode, c.config.ContentCapture)
+	ctxMode, ctxSet := contentCaptureModeFromContext(ctx)
+	toolMode := resolveToolContentCaptureMode(seed.ContentCapture, ctxMode, ctxSet, effectiveClientDefault)
+
+	var includeContent bool
+	switch toolMode {
+	case ContentCaptureModeMetadataOnly:
+		seed.ConversationTitle = ""
+	case ContentCaptureModeFull:
+		includeContent = true
+	default:
+		// NoToolContent / Default: honor legacy IncludeContent opt-in.
+		includeContent = seed.IncludeContent
+	}
+
 	tracer := c.tracer
 	if tracer == nil {
 		tracer = otel.Tracer(instrumentationName)
@@ -598,14 +608,7 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithTimestamp(startedAt),
 	)
-	attrs := toolSpanAttributes(seed)
-	span.SetAttributes(attrs...)
-
-	// Resolve content capture: per-tool > context (parent generation) > resolver > client default.
-	resolverMode := callContentCaptureResolver(c.config.ContentCaptureResolver, ctx, nil)
-	effectiveClientDefault := resolveContentCaptureMode(resolverMode, c.config.ContentCapture)
-	ctxMode, ctxSet := contentCaptureModeFromContext(ctx)
-	includeContent := shouldIncludeToolContent(seed.ContentCapture, ctxMode, ctxSet, effectiveClientDefault, seed.IncludeContent)
+	span.SetAttributes(toolSpanAttributes(seed)...)
 
 	return callCtx, &ToolExecutionRecorder{
 		client:         c,
