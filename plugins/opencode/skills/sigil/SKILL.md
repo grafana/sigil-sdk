@@ -56,6 +56,7 @@ On generation and tool spans, capture or preserve these when available:
   - `gen_ai.conversation.id`
   - `gen_ai.agent.name`
   - `gen_ai.agent.version`
+  - `sigil.generation.parent_generation_ids`
   - `sigil.sdk.name`
 - model:
   - `gen_ai.provider.name`
@@ -76,6 +77,19 @@ On generation and tool spans, capture or preserve these when available:
   - `gen_ai.usage.reasoning_tokens`
   - `gen_ai.response.finish_reasons`
   - error classification fields (`error.type`, `error.category`)
+
+## Multi-agent dependency tracking
+
+When instrumenting multi-agent pipelines where one agent's output feeds into another:
+
+- Set `parent_generation_ids` on the GenerationStart/seed with the generation ID(s) of the upstream agent(s) whose output this generation consumes.
+- This is a list: a generation can depend on multiple parents (fan-in).
+- Sigil uses these links to build a dependency DAG and propagate quality signals: if an upstream generation fails evaluation, all downstream dependents are flagged.
+
+Example: an orchestrator spawns agents A, B, C where C depends on A and B:
+- A: parent_generation_ids = [] (no parents)
+- B: parent_generation_ids = [] (no parents)
+- C: parent_generation_ids = [A.generation_id, B.generation_id]
 
 ## SDK locations and how to instrument
 
