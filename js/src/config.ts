@@ -1,5 +1,6 @@
 import type {
   ApiConfig,
+  ContentCaptureMode,
   EmbeddingCaptureConfig,
   ExportAuthConfig,
   GenerationExportConfig,
@@ -51,11 +52,14 @@ export const defaultLogger: SigilLogger = {
   },
 };
 
+export const defaultContentCaptureMode: ContentCaptureMode = 'default';
+
 export function defaultConfig(): SigilSdkConfig {
   return {
     generationExport: cloneGenerationExportConfig(defaultGenerationExportConfig),
     api: cloneAPIConfig(defaultAPIConfig),
     embeddingCapture: cloneEmbeddingCaptureConfig(defaultEmbeddingCaptureConfig),
+    contentCapture: defaultContentCaptureMode,
   };
 }
 
@@ -64,6 +68,8 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
     generationExport: mergeGenerationExportConfig(config.generationExport),
     api: mergeAPIConfig(config.api),
     embeddingCapture: mergeEmbeddingCaptureConfig(config.embeddingCapture),
+    contentCapture: config.contentCapture ?? defaultContentCaptureMode,
+    contentCaptureResolver: config.contentCaptureResolver,
     generationExporter: config.generationExporter,
     tracer: config.tracer,
     meter: config.meter,

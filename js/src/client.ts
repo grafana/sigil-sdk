@@ -10,6 +10,14 @@ import {
 } from '@opentelemetry/api';
 import { defaultLogger, mergeConfig } from './config.js';
 import {
+  callContentCaptureResolver,
+  resolveClientContentCaptureMode,
+  resolveContentCaptureMode,
+  shouldIncludeToolContent,
+  stampContentCaptureMetadata,
+  stripContent,
+} from './content_capture.js';
+import {
   agentNameFromContext,
   agentVersionFromContext,
   conversationIdFromContext,
@@ -18,6 +26,7 @@ import {
 } from './context.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
 import type {
+  ContentCaptureMode,
   ConversationRating,
   ConversationRatingInput,
   ConversationRatingSummary,
@@ -433,6 +442,24 @@ export class SigilClient {
     this.logWarn(message, error);
   }
 
+  internalResolveGenerationContentCaptureMode(seed: GenerationStart): ContentCaptureMode {
+    const resolverMode = callContentCaptureResolver(this.config.contentCaptureResolver, seed.metadata);
+    const clientMode = resolveClientContentCaptureMode(
+      resolveContentCaptureMode(resolverMode, this.config.contentCapture),
+    );
+    return resolveContentCaptureMode(seed.contentCapture ?? 'default', clientMode);
+  }
+
+  internalResolveToolIncludeContent(seed: ToolExecutionStart): boolean {
+    const resolverMode = callContentCaptureResolver(this.config.contentCaptureResolver, undefined);
+    return shouldIncludeToolContent(
+      seed.contentCapture ?? 'default',
+      this.config.contentCapture,
+      resolverMode,
+      seed.includeContent ?? false,
+    );
+  }
+
   internalStartGenerationSpan(seed: GenerationStart, mode: GenerationMode, startedAt: Date): Span {
     const operationName = seed.operationName ?? defaultOperationNameForMode(mode);
     const span = this.tracer.startSpan(generationSpanName(operationName, seed.model.name), {
@@ -493,6 +520,10 @@ export class SigilClient {
     setGenerationSpanAttributes(span, generation);
   }
 
+  internalClearSpanConversationTitle(span: Span): void {
+    span.setAttribute(spanAttrConversationTitle, '');
+  }
+
   internalFinalizeGenerationSpan(
     span: Span,
     generation: Generation,
@@ -500,6 +531,7 @@ export class SigilClient {
     validationError: Error | undefined,
     enqueueError: Error | undefined,
     firstTokenAt: Date | undefined,
+    precomputedCallErrorCategory?: string,
   ): void {
     span.updateName(generationSpanName(generation.operationName, generation.model.name));
 
@@ -517,7 +549,7 @@ export class SigilClient {
     let errorCategory = '';
     if (callError !== undefined) {
       errorType = 'provider_call_error';
-      errorCategory = errorCategoryFromError(callError, true);
+      errorCategory = precomputedCallErrorCategory ?? errorCategoryFromError(callError, true);
       span.setAttribute(spanAttrErrorType, errorType);
       span.setAttribute(spanAttrErrorCategory, errorCategory);
       span.setStatus({ code: SpanStatusCode.ERROR, message: callError });
@@ -848,6 +880,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
   private readonly startedAt: Date;
   private readonly mode: GenerationMode;
   private readonly span: Span;
+  private readonly contentCaptureMode: ContentCaptureMode;
   private ended = false;
   private result?: GenerationResult;
   private callError?: string;
@@ -880,6 +913,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     this.mode = this.seed.mode ?? defaultMode;
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
+    this.contentCaptureMode = this.client.internalResolveGenerationContentCaptureMode(this.seed);
     this.span = this.client.internalStartGenerationSpan(this.seed, this.mode, this.startedAt);
   }
 
@@ -983,11 +1017,22 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     generation.metadata[spanAttrSDKName] = sdkName;
 
+    const validationError = validateGeneration(generation);
+
+    const callErrorCategory = errorCategoryFromError(this.callError, false);
+
+    stampContentCaptureMetadata(generation, this.contentCaptureMode);
+    if (this.contentCaptureMode === 'metadata_only') {
+      stripContent(generation, callErrorCategory);
+    }
+
     this.client.internalSyncGenerationSpan(this.span, generation);
+    if (this.contentCaptureMode === 'metadata_only') {
+      this.client.internalClearSpanConversationTitle(this.span);
+    }
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
     this.client.internalRecordGeneration(generation);
 
-    const validationError = validateGeneration(generation);
     let enqueueError: Error | undefined;
     if (validationError !== undefined) {
       this.localError = validationError;
@@ -1002,13 +1047,16 @@ class GenerationRecorderImpl implements GenerationRecorder {
       }
     }
 
+    const finalCallError = this.contentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
+
     this.client.internalFinalizeGenerationSpan(
       this.span,
       generation,
-      this.callError,
+      finalCallError,
       validationError,
       enqueueError,
       this.firstTokenAt,
+      callErrorCategory.length > 0 ? callErrorCategory : undefined,
     );
   }
 
@@ -1086,6 +1134,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
   private readonly seed: ToolExecutionStart;
   private readonly startedAt: Date;
   private readonly span: Span;
+  private readonly resolvedIncludeContent: boolean;
   private ended = false;
   private result?: ToolExecutionResult;
   private callError?: string;
@@ -1108,6 +1157,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     if (!notEmpty(this.seed.agentVersion)) {
       this.seed.agentVersion = agentVersionFromContext();
     }
+    this.resolvedIncludeContent = this.client.internalResolveToolIncludeContent(this.seed);
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
     this.span = this.client.internalStartToolExecutionSpan(this.seed, this.startedAt);
   }
@@ -1144,7 +1194,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
       agentVersion: this.seed.agentVersion,
       requestModel: this.seed.requestModel,
       requestProvider: this.seed.requestProvider,
-      includeContent: this.seed.includeContent ?? false,
+      includeContent: this.resolvedIncludeContent,
       startedAt: new Date(this.startedAt),
       completedAt: new Date(this.result?.completedAt ?? this.client.internalNow()),
       arguments: this.result?.arguments,
