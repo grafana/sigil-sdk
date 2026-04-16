@@ -898,8 +898,8 @@ class GenerationRecorder:
             _apply_trace_context_from_span(self.span, generation)
 
             effective_content_capture_mode = self._content_capture_mode
-            validation_target = copy.deepcopy(generation)
             _stamp_content_capture_metadata(generation, self._content_capture_mode)
+            validation_target = copy.deepcopy(generation)
             if self._content_capture_mode == ContentCaptureMode.METADATA_ONLY:
                 error_cat = _error_category_from_exception(call_error, fallback_sdk=True) if call_error else ""
                 _strip_content(generation, error_cat)
