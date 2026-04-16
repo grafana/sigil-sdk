@@ -79,7 +79,7 @@ _TIER2_PATTERNS: tuple[_SecretPattern, ...] = (
     _SecretPattern(
         "env-secret-value",
         re.compile(
-            r"((?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)(\S+)",
+            r"((?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)([^\s\"{}\[\],]+)",
             re.IGNORECASE,
         ),
     ),
