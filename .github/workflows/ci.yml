@@ -149,6 +149,16 @@ jobs:
       - name: Test
         run: dotnet test dotnet/Sigil.DotNet.slnx -c Release
 
+      - name: Pack
+        run: dotnet pack dotnet/Sigil.DotNet.slnx -c Release
+
+      - name: Publish packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dotnet-packages
+          path: ./dotnet/artifacts/package/release
+          retention-days: 5
+
   java:
     name: Java SDK
     runs-on: ubuntu-latest
