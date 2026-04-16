@@ -4,7 +4,7 @@ namespace Grafana.Sigil.Gemini;
 
 public sealed class GeminiStreamSummary
 {
-    public List<GenerateContentResponse> Responses { get; } = new();
+    public List<GenerateContentResponse> Responses { get; } = [];
 
     public DateTimeOffset? FirstChunkAt { get; set; }
 }

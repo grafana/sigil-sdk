@@ -4,7 +4,7 @@ namespace Grafana.Sigil.OpenAI;
 
 public sealed class OpenAIChatCompletionsStreamSummary
 {
-    public List<StreamingChatCompletionUpdate> Updates { get; } = new();
+    public List<StreamingChatCompletionUpdate> Updates { get; } = [];
 
     public ChatCompletion? FinalResponse { get; set; }
 

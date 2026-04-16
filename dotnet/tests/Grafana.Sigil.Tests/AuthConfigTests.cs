@@ -89,7 +89,9 @@ public sealed class AuthConfigTests
         };
 
     [Theory]
+#pragma warning disable xUnit1044 // Avoid using TheoryData type arguments that are not serializable
     [MemberData(nameof(InvalidGenerationAuthConfigs))]
+#pragma warning restore xUnit1044 // Avoid using TheoryData type arguments that are not serializable
     public void Constructor_RejectsInvalidGenerationAuthConfig(AuthConfig auth, string expected)
     {
         var config = TestHelpers.TestConfig(new CapturingGenerationExporter());

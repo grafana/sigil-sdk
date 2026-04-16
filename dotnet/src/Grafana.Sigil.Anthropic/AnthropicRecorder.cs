@@ -1,6 +1,6 @@
-using System.Text.Json;
 using Anthropic;
 using Anthropic.Models.Messages;
+using System.Text.Json;
 using AnthropicMessage = Anthropic.Models.Messages.Message;
 
 namespace Grafana.Sigil.Anthropic;
@@ -15,15 +15,12 @@ public static class AnthropicRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
-
-        return await MessageAsync(
+        return provider == null
+            ? throw new ArgumentNullException(nameof(provider))
+            : await MessageAsync(
             client,
             request,
-            (messageRequest, ct) => provider.Messages.Create(messageRequest, ct),
+            provider.Messages.Create,
             options,
             cancellationToken
         ).ConfigureAwait(false);
@@ -37,20 +34,9 @@ public static class AnthropicRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (request == null)
-        {
-            throw new ArgumentNullException(nameof(request));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new AnthropicSigilOptions();
         var modelName = ResolveModelName(request, effective);
@@ -106,15 +92,12 @@ public static class AnthropicRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
-
-        return await MessageStreamAsync(
+        return provider == null
+            ? throw new ArgumentNullException(nameof(provider))
+            : await MessageStreamAsync(
             client,
             request,
-            (messageRequest, ct) => provider.Messages.CreateStreaming(messageRequest, ct),
+            provider.Messages.CreateStreaming,
             options,
             cancellationToken
         ).ConfigureAwait(false);
@@ -128,20 +111,9 @@ public static class AnthropicRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (request == null)
-        {
-            throw new ArgumentNullException(nameof(request));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new AnthropicSigilOptions();
         var modelName = ResolveModelName(request, effective);

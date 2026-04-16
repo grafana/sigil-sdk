@@ -1,16 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
+	
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+	<PackageReference Include="Grpc.AspNetCore" />
+	<PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
-    <PackageReference Include="xunit" Version="2.9.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageReference Include="coverlet.collector" Version="8.0.1" />
-    <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.78.0" PrivateAssets="All" />
+    
   </ItemGroup>
 
   <ItemGroup>
@@ -22,21 +27,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="../../../js/proto/opentelemetry/proto/collector/trace/v1/trace_service.proto"
-              ProtoRoot="../../../js/proto"
-              GrpcServices="Server"
-              Link="Proto/opentelemetry/proto/collector/trace/v1/trace_service.proto" />
-    <Protobuf Include="../../../js/proto/opentelemetry/proto/trace/v1/trace.proto"
-              ProtoRoot="../../../js/proto"
-              GrpcServices="None"
-              Link="Proto/opentelemetry/proto/trace/v1/trace.proto" />
-    <Protobuf Include="../../../js/proto/opentelemetry/proto/resource/v1/resource.proto"
-              ProtoRoot="../../../js/proto"
-              GrpcServices="None"
-              Link="Proto/opentelemetry/proto/resource/v1/resource.proto" />
-    <Protobuf Include="../../../js/proto/opentelemetry/proto/common/v1/common.proto"
-              ProtoRoot="../../../js/proto"
-              GrpcServices="None"
-              Link="Proto/opentelemetry/proto/common/v1/common.proto" />
+	<AssemblyMetadata Include="SolutionRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)\..\..'))" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/collector/trace/v1/trace_service.proto" ProtoRoot="../../../js/proto" GrpcServices="Server" Link="Proto/opentelemetry/proto/collector/trace/v1/trace_service.proto" />
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/trace/v1/trace.proto" ProtoRoot="../../../js/proto" GrpcServices="None" Link="Proto/opentelemetry/proto/trace/v1/trace.proto" />
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/resource/v1/resource.proto" ProtoRoot="../../../js/proto" GrpcServices="None" Link="Proto/opentelemetry/proto/resource/v1/resource.proto" />
+    <Protobuf Include="../../../js/proto/opentelemetry/proto/common/v1/common.proto" ProtoRoot="../../../js/proto" GrpcServices="None" Link="Proto/opentelemetry/proto/common/v1/common.proto" />
   </ItemGroup>
 </Project>

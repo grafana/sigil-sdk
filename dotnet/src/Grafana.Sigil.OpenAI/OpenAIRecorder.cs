@@ -15,10 +15,7 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
+        ArgumentNullException.ThrowIfNull(provider);
 
         var effective = options ?? new OpenAISigilOptions();
         var modelName = ResolveInitialModelName(effective, provider.Model);
@@ -46,15 +43,8 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new OpenAISigilOptions();
         var messageList = messages?.ToList() ?? throw new ArgumentNullException(nameof(messages));
@@ -97,7 +87,7 @@ public static class OpenAIRecorder
             }
 
             recorder.SetResult(generation, mappingError);
-            return response;
+            return response!;
         }
         catch (Exception ex)
         {
@@ -119,10 +109,7 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
+        ArgumentNullException.ThrowIfNull(provider);
 
         var effective = options ?? new OpenAISigilOptions();
         var modelName = ResolveInitialModelName(effective, provider.Model);
@@ -146,15 +133,8 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new OpenAISigilOptions();
         var messageList = messages?.ToList() ?? throw new ArgumentNullException(nameof(messages));
@@ -222,10 +202,7 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
+        ArgumentNullException.ThrowIfNull(provider);
 
         var effective = options ?? new OpenAISigilOptions();
         var modelName = ResolveInitialModelName(effective, provider.GetType().GetProperty("Model")?.GetValue(provider) as string);
@@ -254,15 +231,8 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new OpenAISigilOptions();
         var itemList = inputItems?.ToList() ?? throw new ArgumentNullException(nameof(inputItems));
@@ -305,7 +275,7 @@ public static class OpenAIRecorder
             }
 
             recorder.SetResult(generation, mappingError);
-            return response;
+            return response!;
         }
         catch (Exception ex)
         {
@@ -327,10 +297,7 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
+        ArgumentNullException.ThrowIfNull(provider);
 
         var effective = options ?? new OpenAISigilOptions();
         var modelName = ResolveInitialModelName(effective, provider.GetType().GetProperty("Model")?.GetValue(provider) as string);
@@ -358,15 +325,8 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new OpenAISigilOptions();
         var itemList = inputItems?.ToList() ?? throw new ArgumentNullException(nameof(inputItems));
@@ -438,10 +398,7 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
+        ArgumentNullException.ThrowIfNull(provider);
 
         var effective = options ?? new OpenAISigilOptions();
         var modelName = ResolveInitialModelName(effective, provider.Model);
@@ -469,15 +426,8 @@ public static class OpenAIRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
-
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new OpenAISigilOptions();
         var inputList = inputs?.ToList() ?? throw new ArgumentNullException(nameof(inputs));

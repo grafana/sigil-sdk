@@ -4,7 +4,7 @@ namespace Grafana.Sigil.OpenAI;
 
 public sealed class OpenAIResponsesStreamSummary
 {
-    public List<StreamingResponseUpdate> Events { get; } = new();
+    public List<StreamingResponseUpdate> Events { get; } = [];
 
     public ResponseResult? FinalResponse { get; set; }
 

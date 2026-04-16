@@ -74,20 +74,15 @@ internal static class ConfigResolver
     {
         var resolved = config ?? new SigilClientConfig();
 
-        if (resolved.Logger == null)
-        {
-            resolved.Logger = _ => { };
-        }
+        resolved.Logger ??= _ => { };
 
-        if (resolved.UtcNow == null)
-        {
-            resolved.UtcNow = () => DateTimeOffset.UtcNow;
-        }
+#if NET8_0_OR_GREATER
+        resolved.UtcNow ??= TimeProvider.System.GetUtcNow;
+#else
+        resolved.UtcNow ??= () => DateTimeOffset.UtcNow;
+#endif
 
-        if (resolved.SleepAsync == null)
-        {
-            resolved.SleepAsync = static (delay, ct) => Task.Delay(delay, ct);
-        }
+        resolved.SleepAsync ??= static (delay, ct) => Task.Delay(delay, ct);
 
         resolved.GenerationExport.Headers = ResolveHeadersWithAuth(
             resolved.GenerationExport.Headers,
@@ -239,7 +234,11 @@ internal static class ConfigResolver
         var value = token.Trim();
         if (value.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
+#if NET
+            value = value["Bearer ".Length..].Trim();
+#else
             value = value.Substring("Bearer ".Length).Trim();
+#endif
         }
 
         return $"Bearer {value}";

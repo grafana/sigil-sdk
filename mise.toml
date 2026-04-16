@@ -30,7 +30,7 @@ run = "ruff format python/ python-providers/ python-frameworks/"
 
 [tasks."format:cs"]
 description = "Format .NET SDK code"
-run = "dotnet format dotnet/Sigil.DotNet.sln"
+run = "dotnet format dotnet/Sigil.DotNet.slnx"
 
 [tasks."format:ts:sdk-js"]
 description = "Format TypeScript/JavaScript SDK code"
@@ -69,7 +69,7 @@ ruff format --check python/ python-providers/ python-frameworks/
 
 [tasks."lint:cs"]
 description = "Verify .NET SDK formatting and analyzer checks"
-run = "dotnet format dotnet/Sigil.DotNet.sln --verify-no-changes"
+run = "dotnet format dotnet/Sigil.DotNet.slnx --verify-no-changes"
 
 [tasks."lint:ts:sdk-js"]
 description = "Lint TypeScript/JavaScript SDK code"

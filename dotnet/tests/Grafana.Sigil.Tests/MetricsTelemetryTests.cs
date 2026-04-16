@@ -49,7 +49,7 @@ public sealed class MetricsTelemetryTests
         recorder.SetResult(result);
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var instrumentNames = observations.Select(item => item.InstrumentName).ToHashSet(StringComparer.Ordinal);
         Assert.Contains("gen_ai.client.operation.duration", instrumentNames);

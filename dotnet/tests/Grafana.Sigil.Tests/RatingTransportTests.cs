@@ -72,7 +72,8 @@ public sealed class RatingTransportTests
                 {
                     ["channel"] = "assistant",
                 },
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal("rat-1", response.Rating.RatingId);
@@ -119,7 +120,8 @@ public sealed class RatingTransportTests
                 {
                     RatingId = "rat-1",
                     Rating = ConversationRatingValue.Good,
-                }
+                },
+                TestContext.Current.CancellationToken
             )
         );
 
@@ -154,7 +156,8 @@ public sealed class RatingTransportTests
                 {
                     RatingId = "rat-1",
                     Rating = ConversationRatingValue.Good,
-                }
+                },
+                TestContext.Current.CancellationToken
             )
         );
 
@@ -165,7 +168,8 @@ public sealed class RatingTransportTests
                 {
                     RatingId = " ",
                     Rating = ConversationRatingValue.Good,
-                }
+                },
+                TestContext.Current.CancellationToken
             )
         );
     }
@@ -229,7 +233,8 @@ public sealed class RatingTransportTests
             {
                 RatingId = "rat-1",
                 Rating = ConversationRatingValue.Good,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.True(server.Requests.TryDequeue(out var captured));
@@ -292,10 +297,10 @@ internal sealed class RatingCaptureServer : IDisposable
                     var path = context.Request.Url?.AbsolutePath ?? string.Empty;
                     Requests.Enqueue((path, headers, body));
 
-                    var response = responseFactory(path, headers, body);
-                    context.Response.StatusCode = response.StatusCode;
-                    context.Response.ContentType = response.ContentType;
-                    await context.Response.OutputStream.WriteAsync(response.Body).ConfigureAwait(false);
+                    var (statusCode, contentType, response) = responseFactory(path, headers, body);
+                    context.Response.StatusCode = statusCode;
+                    context.Response.ContentType = contentType;
+                    await context.Response.OutputStream.WriteAsync(response).ConfigureAwait(false);
                 }
                 finally
                 {

@@ -1,8 +1,7 @@
-using System.Text;
-using System.Text.Json;
-using Grafana.Sigil;
 using global::OpenAI.Chat;
 using global::OpenAI.Embeddings;
+using System.Text;
+using System.Text.Json;
 using OpenAIResponses = global::OpenAI.Responses;
 
 namespace Grafana.Sigil.OpenAI;
@@ -19,13 +18,10 @@ public static class OpenAIGenerationMapper
         OpenAISigilOptions? options = null
     )
     {
-        if (response == null)
-        {
-            throw new ArgumentNullException(nameof(response));
-        }
+        ArgumentNullException.ThrowIfNull(response);
 
         var effective = options ?? new OpenAISigilOptions();
-        var requestMessages = messages ?? Array.Empty<ChatMessage>();
+        var requestMessages = messages ?? [];
 
         var (input, systemPrompt) = MapRequestMessages(requestMessages);
         var output = MapResponseMessages(response);
@@ -83,20 +79,17 @@ public static class OpenAIGenerationMapper
         OpenAISigilOptions? options = null
     )
     {
-        if (response == null)
-        {
-            throw new ArgumentNullException(nameof(response));
-        }
+        ArgumentNullException.ThrowIfNull(response);
 
         var effective = options ?? new OpenAISigilOptions();
-        var requestItems = inputItems ?? Array.Empty<OpenAIResponses.ResponseItem>();
+        var requestItems = inputItems ?? [];
         var (input, mappedSystemPrompt) = MapResponsesInputItems(requestItems);
-        var systemPrompt = OpenAIJsonHelpers.MergeSystemPrompt(new List<string>
-        {
+        var systemPrompt = OpenAIJsonHelpers.MergeSystemPrompt(
+        [
             requestOptions?.Instructions ?? string.Empty,
             mappedSystemPrompt,
-        });
-        var outputItems = response.OutputItems?.ToList() ?? new List<OpenAIResponses.ResponseItem>();
+        ]);
+        var outputItems = response.OutputItems?.ToList() ?? [];
         var output = MapResponsesOutputItems(outputItems);
         var tools = MapResponsesTools(requestOptions);
         var thinkingBudget = ResolveResponsesThinkingBudget(requestOptions);
@@ -233,10 +226,7 @@ public static class OpenAIGenerationMapper
         OpenAISigilOptions? options = null
     )
     {
-        if (summary == null)
-        {
-            throw new ArgumentNullException(nameof(summary));
-        }
+        ArgumentNullException.ThrowIfNull(summary);
 
         if (summary.FinalResponse != null)
         {
@@ -251,13 +241,13 @@ public static class OpenAIGenerationMapper
         }
 
         var effective = options ?? new OpenAISigilOptions();
-        var requestItems = inputItems ?? Array.Empty<OpenAIResponses.ResponseItem>();
+        var requestItems = inputItems ?? [];
         var (input, mappedSystemPrompt) = MapResponsesInputItems(requestItems);
-        var systemPrompt = OpenAIJsonHelpers.MergeSystemPrompt(new List<string>
-        {
+        var systemPrompt = OpenAIJsonHelpers.MergeSystemPrompt(
+        [
             requestOptions?.Instructions ?? string.Empty,
             mappedSystemPrompt,
-        });
+        ]);
 
         var outputByIndex = new SortedDictionary<int, OpenAIResponses.ResponseItem>();
         var streamToolCalls = new Dictionary<string, ResponsesStreamToolCall>(StringComparer.Ordinal);
@@ -346,7 +336,7 @@ public static class OpenAIGenerationMapper
         }
 
         var output = outputByIndex.Count > 0
-            ? MapResponsesOutputItems(outputByIndex.Values.ToList())
+            ? MapResponsesOutputItems([.. outputByIndex.Values])
             : BuildResponsesFallbackOutput(assistantText, assistantRefusal, streamToolCalls);
 
         var tools = MapResponsesTools(requestOptions);
@@ -389,7 +379,6 @@ public static class OpenAIGenerationMapper
                 modelName,
                 systemPrompt,
                 input,
-                output,
                 tools,
                 summary
             ),
@@ -408,10 +397,7 @@ public static class OpenAIGenerationMapper
         OpenAISigilOptions? options = null
     )
     {
-        if (summary == null)
-        {
-            throw new ArgumentNullException(nameof(summary));
-        }
+        ArgumentNullException.ThrowIfNull(summary);
 
         if (summary.FinalResponse != null)
         {
@@ -426,7 +412,7 @@ public static class OpenAIGenerationMapper
         }
 
         var effective = options ?? new OpenAISigilOptions();
-        var requestMessages = messages ?? Array.Empty<ChatMessage>();
+        var requestMessages = messages ?? [];
         var (input, systemPrompt) = MapRequestMessages(requestMessages);
 
         var responseId = string.Empty;
@@ -567,7 +553,6 @@ public static class OpenAIGenerationMapper
                 modelName,
                 systemPrompt,
                 input,
-                output,
                 tools,
                 summary
             ),
@@ -582,7 +567,7 @@ public static class OpenAIGenerationMapper
     {
         if (inputs == null || inputs.Count == 0)
         {
-            return new List<string>();
+            return [];
         }
 
         var mapped = new List<string>(inputs.Count);
@@ -641,7 +626,7 @@ public static class OpenAIGenerationMapper
                         input.Add(new Message
                         {
                             Role = MessageRole.Assistant,
-                            Parts = new List<Part> { part },
+                            Parts = [part],
                         });
                         continue;
                     }
@@ -663,7 +648,7 @@ public static class OpenAIGenerationMapper
                         input.Add(new Message
                         {
                             Role = MessageRole.Tool,
-                            Parts = new List<Part> { part },
+                            Parts = [part],
                         });
                         continue;
                     }
@@ -678,7 +663,7 @@ public static class OpenAIGenerationMapper
                         input.Add(new Message
                         {
                             Role = MessageRole.Assistant,
-                            Parts = new List<Part> { Part.ThinkingPart(summary) },
+                            Parts = [Part.ThinkingPart(summary)],
                         });
                         continue;
                     }
@@ -700,7 +685,7 @@ public static class OpenAIGenerationMapper
     }
 
     private static List<Message> MapResponsesOutputItems(
-        IReadOnlyList<OpenAIResponses.ResponseItem> outputItems
+        List<OpenAIResponses.ResponseItem> outputItems
     )
     {
         var output = new List<Message>(outputItems.Count);
@@ -738,7 +723,7 @@ public static class OpenAIGenerationMapper
                         output.Add(new Message
                         {
                             Role = MessageRole.Assistant,
-                            Parts = new List<Part> { part },
+                            Parts = [part],
                         });
                         continue;
                     }
@@ -760,7 +745,7 @@ public static class OpenAIGenerationMapper
                         output.Add(new Message
                         {
                             Role = MessageRole.Tool,
-                            Parts = new List<Part> { part },
+                            Parts = [part],
                         });
                         continue;
                     }
@@ -775,7 +760,7 @@ public static class OpenAIGenerationMapper
                         output.Add(new Message
                         {
                             Role = MessageRole.Assistant,
-                            Parts = new List<Part> { Part.ThinkingPart(summary) },
+                            Parts = [Part.ThinkingPart(summary)],
                         });
                         continue;
                     }
@@ -796,7 +781,7 @@ public static class OpenAIGenerationMapper
     {
         var parts = contentParts is ICollection<OpenAIResponses.ResponseContentPart> collection
             ? new List<Part>(collection.Count)
-            : new List<Part>();
+            : [];
         foreach (var contentPart in contentParts)
         {
             switch (contentPart.Kind)
@@ -838,7 +823,7 @@ public static class OpenAIGenerationMapper
     {
         var chunks = contentParts is ICollection<OpenAIResponses.ResponseContentPart> collection
             ? new List<string>(collection.Count)
-            : new List<string>();
+            : [];
         foreach (var contentPart in contentParts)
         {
             if ((contentPart.Kind == OpenAIResponses.ResponseContentPartKind.InputText
@@ -1000,7 +985,7 @@ public static class OpenAIGenerationMapper
                 Name = normalizedType.ToLowerInvariant(),
                 Description = string.Empty,
                 Type = normalizedType.ToLowerInvariant(),
-                InputSchemaJson = Array.Empty<byte>(),
+                InputSchemaJson = [],
             });
         }
 
@@ -1072,7 +1057,7 @@ public static class OpenAIGenerationMapper
         string systemPrompt,
         IReadOnlyList<Message> input,
         IReadOnlyList<Message> output,
-        IReadOnlyList<ToolDefinition> tools,
+        List<ToolDefinition> tools,
         OpenAIResponses.ResponseResult response
     )
     {
@@ -1114,8 +1099,7 @@ public static class OpenAIGenerationMapper
         string modelName,
         string systemPrompt,
         IReadOnlyList<Message> input,
-        IReadOnlyList<Message> output,
-        IReadOnlyList<ToolDefinition> tools,
+        List<ToolDefinition> tools,
         OpenAIResponsesStreamSummary summary
     )
     {
@@ -1228,7 +1212,7 @@ public static class OpenAIGenerationMapper
                         input.Add(new Message
                         {
                             Role = MessageRole.Tool,
-                            Parts = new List<Part> { part },
+                            Parts = [part],
                         });
                         continue;
                     }
@@ -1325,17 +1309,17 @@ public static class OpenAIGenerationMapper
 
         if (parts.Count == 0)
         {
-            return new List<Message>();
+            return [];
         }
 
-        return new List<Message>
-        {
+        return
+        [
             new()
             {
                 Role = MessageRole.Assistant,
                 Parts = parts,
             },
-        };
+        ];
     }
 
     private static List<Part> MapContentParts(ChatMessageContent? content)
@@ -1445,7 +1429,7 @@ public static class OpenAIGenerationMapper
         string systemPrompt,
         IReadOnlyList<Message> input,
         IReadOnlyList<Message> output,
-        IReadOnlyList<ToolDefinition> tools,
+        List<ToolDefinition> tools,
         ChatCompletion response
     )
     {
@@ -1486,8 +1470,7 @@ public static class OpenAIGenerationMapper
         string modelName,
         string systemPrompt,
         IReadOnlyList<Message> input,
-        IReadOnlyList<Message> output,
-        IReadOnlyList<ToolDefinition> tools,
+        List<ToolDefinition> tools,
         OpenAIChatCompletionsStreamSummary summary
     )
     {

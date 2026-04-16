@@ -60,15 +60,15 @@ public sealed class GeminiConformanceTests
         {
             ResponseId = "resp_stream_1",
             ModelVersion = "gemini-2.5-pro-001",
-            Candidates = new List<Candidate>
-            {
+            Candidates =
+            [
                 new Candidate
                 {
                     Content = new Content
                     {
                         Role = "model",
-                        Parts = new List<GPart>
-                        {
+                        Parts =
+                        [
                             new GPart
                             {
                                 FunctionCall = new FunctionCall
@@ -81,33 +81,33 @@ public sealed class GeminiConformanceTests
                                     },
                                 },
                             },
-                        },
+                        ],
                     },
                 },
-            },
+            ],
         });
         summary.Responses.Add(new GenerateContentResponse
         {
             ResponseId = "resp_stream_2",
             ModelVersion = "gemini-2.5-pro-001",
-            Candidates = new List<Candidate>
-            {
+            Candidates =
+            [
                 new Candidate
                 {
                     FinishReason = FinishReason.Stop,
                     Content = new Content
                     {
                         Role = "model",
-                        Parts = new List<GPart>
-                        {
+                        Parts =
+                        [
                             new GPart
                             {
                                 Text = "It is sunny.",
                             },
-                        },
+                        ],
                     },
                 },
-            },
+            ],
             UsageMetadata = new GenerateContentResponseUsageMetadata
             {
                 PromptTokenCount = 20,
@@ -161,7 +161,8 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = "gemini-2.5-pro",
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var streamSummary = await GeminiRecorder.GenerateContentStreamAsync(
@@ -173,13 +174,14 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = "gemini-2.5-pro",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.NotEmpty(streamSummary.Responses);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.True(generations.Count >= 2);
@@ -215,13 +217,14 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = DefaultModel,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Empty(summary.Responses);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.Single(generations);
@@ -269,7 +272,7 @@ public sealed class GeminiConformanceTests
         Assert.Equal(2, result.InputCount);
         Assert.Equal(18, result.InputTokens);
         Assert.Equal(3, result.Dimensions);
-        Assert.Equal(new[] { "alpha", "beta" }, result.InputTexts);
+        Assert.Equal<string>(["alpha", "beta"], result.InputTexts);
     }
 
     [Fact]
@@ -303,7 +306,8 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = model,
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var wrapped = await GeminiRecorder.EmbedContentAsync(
@@ -315,13 +319,14 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = model,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
-        Assert.NotEmpty(wrapped.Embeddings ?? new List<ContentEmbedding>());
+        Assert.NotEmpty(wrapped.Embeddings ?? []);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(exporter.Requests);
     }
@@ -341,24 +346,24 @@ public sealed class GeminiConformanceTests
 
     private static List<Content> CreateContents()
     {
-        return new List<Content>
-        {
+        return
+        [
             new Content
             {
                 Role = "user",
-                Parts = new List<GPart>
-                {
+                Parts =
+                [
                     new GPart
                     {
                         Text = "What is the weather in Paris?",
                     },
-                },
+                ],
             },
             new Content
             {
                 Role = "user",
-                Parts = new List<GPart>
-                {
+                Parts =
+                [
                     new GPart
                     {
                         FunctionResponse = new FunctionResponse
@@ -371,9 +376,9 @@ public sealed class GeminiConformanceTests
                             },
                         },
                     },
-                },
+                ],
             },
-        };
+        ];
     }
 
     private static GenerateContentConfig CreateConfig()
@@ -401,20 +406,20 @@ public sealed class GeminiConformanceTests
             SystemInstruction = new Content
             {
                 Role = "user",
-                Parts = new List<GPart>
-                {
+                Parts =
+                [
                     new GPart
                     {
                         Text = "Be concise.",
                     },
-                },
+                ],
             },
-            Tools = new List<Tool>
-            {
+            Tools =
+            [
                 new Tool
                 {
-                    FunctionDeclarations = new List<FunctionDeclaration>
-                    {
+                    FunctionDeclarations =
+                    [
                         new FunctionDeclaration
                         {
                             Name = "weather",
@@ -424,9 +429,9 @@ public sealed class GeminiConformanceTests
                                 ["type"] = "object",
                             },
                         },
-                    },
+                    ],
                 },
-            },
+            ],
         };
     }
 
@@ -436,16 +441,16 @@ public sealed class GeminiConformanceTests
         {
             ResponseId = "resp_1",
             ModelVersion = "gemini-2.5-pro-001",
-            Candidates = new List<Candidate>
-            {
+            Candidates =
+            [
                 new Candidate
                 {
                     FinishReason = FinishReason.Stop,
                     Content = new Content
                     {
                         Role = "model",
-                        Parts = new List<GPart>
-                        {
+                        Parts =
+                        [
                             new GPart
                             {
                                 FunctionCall = new FunctionCall
@@ -462,10 +467,10 @@ public sealed class GeminiConformanceTests
                             {
                                 Text = "It is 18C and sunny.",
                             },
-                        },
+                        ],
                     },
                 },
-            },
+            ],
             UsageMetadata = new GenerateContentResponseUsageMetadata
             {
                 PromptTokenCount = 120,
@@ -480,42 +485,42 @@ public sealed class GeminiConformanceTests
 
     private static List<Content> CreateEmbeddingContents()
     {
-        return new List<Content>
-        {
+        return
+        [
             new Content
             {
                 Role = "user",
-                Parts = new List<GPart>
-                {
+                Parts =
+                [
                     new GPart
                     {
                         Text = "alpha",
                     },
-                },
+                ],
             },
             new Content
             {
                 Role = "user",
-                Parts = new List<GPart>
-                {
+                Parts =
+                [
                     new GPart
                     {
                         Text = "beta",
                     },
-                },
+                ],
             },
-        };
+        ];
     }
 
     private static EmbedContentResponse CreateEmbeddingResponse()
     {
         return new EmbedContentResponse
         {
-            Embeddings = new List<ContentEmbedding>
-            {
+            Embeddings =
+            [
                 new ContentEmbedding
                 {
-                    Values = new List<double> { 0.1, 0.2, 0.3 },
+                    Values = [0.1, 0.2, 0.3],
                     Statistics = new ContentEmbeddingStatistics
                     {
                         TokenCount = 11,
@@ -528,7 +533,7 @@ public sealed class GeminiConformanceTests
                         TokenCount = 7,
                     },
                 },
-            },
+            ],
         };
     }
 
@@ -641,7 +646,7 @@ public sealed class GeminiConformanceTests
                 && method.GetParameters()[0].ParameterType.IsInstanceOfType(value));
         if (implicitOperator != null)
         {
-            return implicitOperator.Invoke(null, new[] { value });
+            return implicitOperator.Invoke(null, [value]);
         }
 
         var convertingCtor = targetType
@@ -651,7 +656,7 @@ public sealed class GeminiConformanceTests
                 && ctor.GetParameters()[0].ParameterType.IsInstanceOfType(value));
         if (convertingCtor != null)
         {
-            return convertingCtor.Invoke(new[] { value });
+            return convertingCtor.Invoke([value]);
         }
 
         try
@@ -670,24 +675,24 @@ public sealed class GeminiConformanceTests
         {
             ResponseId = "resp_stream_recorder",
             ModelVersion = "gemini-2.5-pro-001",
-            Candidates = new List<Candidate>
-            {
+            Candidates =
+            [
                 new Candidate
                 {
                     FinishReason = FinishReason.Stop,
                     Content = new Content
                     {
                         Role = "model",
-                        Parts = new List<GPart>
-                        {
+                        Parts =
+                        [
                             new GPart
                             {
                                 Text = "hello",
                             },
-                        },
+                        ],
                     },
                 },
-            },
+            ],
             UsageMetadata = new GenerateContentResponseUsageMetadata
             {
                 PromptTokenCount = 1,
@@ -708,18 +713,18 @@ public sealed class GeminiConformanceTests
 
     private sealed class CapturingExporter : IGenerationExporter
     {
-        public List<ExportGenerationsRequest> Requests { get; } = new();
+        public List<ExportGenerationsRequest> Requests { get; } = [];
 
         public Task<ExportGenerationsResponse> ExportGenerationsAsync(ExportGenerationsRequest request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
             return Task.FromResult(new ExportGenerationsResponse
             {
-                Results = request.Generations.Select(generation => new ExportGenerationResult
+                Results = [.. request.Generations.Select(generation => new ExportGenerationResult
                 {
                     GenerationId = generation.Id,
                     Accepted = true,
-                }).ToList(),
+                })],
             });
         }
 
@@ -734,7 +739,7 @@ public sealed class GeminiConformanceTests
         return new ActivityListener
         {
             ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
                 if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")

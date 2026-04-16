@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
     <AssemblyName>Grafana.Sigil.Gemini</AssemblyName>
     <RootNamespace>Grafana.Sigil.Gemini</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Grafana.Sigil/Grafana.Sigil.csproj" />
-    <PackageReference Include="Google.GenAI" Version="1.5.0" />
+    <PackageReference Include="Google.GenAI" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,6 @@
+using Anthropic.Models.Messages;
 using System.Text;
 using System.Text.Json;
-using Anthropic.Models.Messages;
-using Grafana.Sigil;
 using AnthropicMessage = Anthropic.Models.Messages.Message;
 
 namespace Grafana.Sigil.Anthropic;
@@ -19,15 +18,8 @@ public static class AnthropicGenerationMapper
         AnthropicSigilOptions? options = null
     )
     {
-        if (request == null)
-        {
-            throw new ArgumentNullException(nameof(request));
-        }
-
-        if (response == null)
-        {
-            throw new ArgumentNullException(nameof(response));
-        }
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(response);
 
         var effective = options ?? new AnthropicSigilOptions();
         var requestJson = NormalizeRequestJson(SerializeJson(request));
@@ -90,15 +82,8 @@ public static class AnthropicGenerationMapper
         AnthropicSigilOptions? options = null
     )
     {
-        if (request == null)
-        {
-            throw new ArgumentNullException(nameof(request));
-        }
-
-        if (summary == null)
-        {
-            throw new ArgumentNullException(nameof(summary));
-        }
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(summary);
 
         if (summary.FinalMessage != null)
         {
@@ -194,16 +179,16 @@ public static class AnthropicGenerationMapper
                             break;
                         }
 
-                        var finalized = block.ToPart();
-                        if (finalized.part != null)
+                        var (part, isToolResult) = block.ToPart();
+                        if (part != null)
                         {
-                            if (finalized.isToolResult)
+                            if (isToolResult)
                             {
-                                toolParts.Add(finalized.part);
+                                toolParts.Add(part);
                             }
                             else
                             {
-                                assistantParts.Add(finalized.part);
+                                assistantParts.Add(part);
                             }
                         }
 
@@ -229,19 +214,19 @@ public static class AnthropicGenerationMapper
 
         foreach (var block in streamBlocks.Values.OrderBy(block => block.Index))
         {
-            var finalized = block.ToPart();
-            if (finalized.part == null)
+            var (part, isToolResult) = block.ToPart();
+            if (part == null)
             {
                 continue;
             }
 
-            if (finalized.isToolResult)
+            if (isToolResult)
             {
-                toolParts.Add(finalized.part);
+                toolParts.Add(part);
             }
             else
             {
-                assistantParts.Add(finalized.part);
+                assistantParts.Add(part);
             }
         }
 
@@ -301,7 +286,7 @@ public static class AnthropicGenerationMapper
     {
         if (!requestJson.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
         {
-            return new List<Message>();
+            return [];
         }
 
         var mapped = new List<Message>();
@@ -325,19 +310,19 @@ public static class AnthropicGenerationMapper
                 {
                     foreach (var block in content.EnumerateArray())
                     {
-                        var mappedBlock = MapBlock(block);
-                        if (mappedBlock.part == null)
+                        var (part, isToolResult) = MapBlock(block);
+                        if (part == null)
                         {
                             continue;
                         }
 
-                        if (mappedBlock.isToolResult)
+                        if (isToolResult)
                         {
-                            toolParts.Add(mappedBlock.part);
+                            toolParts.Add(part);
                         }
                         else
                         {
-                            roleParts.Add(mappedBlock.part);
+                            roleParts.Add(part);
                         }
                     }
                 }
@@ -369,7 +354,7 @@ public static class AnthropicGenerationMapper
     {
         if (!responseJson.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
         {
-            return new List<Message>();
+            return [];
         }
 
         var assistantParts = new List<Part>();
@@ -377,19 +362,19 @@ public static class AnthropicGenerationMapper
 
         foreach (var block in content.EnumerateArray())
         {
-            var mappedBlock = MapBlock(block);
-            if (mappedBlock.part == null)
+            var (part, isToolResult) = MapBlock(block);
+            if (part == null)
             {
                 continue;
             }
 
-            if (mappedBlock.isToolResult)
+            if (isToolResult)
             {
-                toolParts.Add(mappedBlock.part);
+                toolParts.Add(part);
             }
             else
             {
-                assistantParts.Add(mappedBlock.part);
+                assistantParts.Add(part);
             }
         }
 
@@ -460,7 +445,7 @@ public static class AnthropicGenerationMapper
                 {
                     var inputJson = block.TryGetProperty("input", out var input)
                         ? Encoding.UTF8.GetBytes(input.GetRawText())
-                        : Array.Empty<byte>();
+                        : [];
 
                     var part = Part.ToolCallPart(new ToolCall
                     {
@@ -485,7 +470,7 @@ public static class AnthropicGenerationMapper
                         : default;
 
                     var contentJson = content.ValueKind == JsonValueKind.Undefined
-                        ? Array.Empty<byte>()
+                        ? []
                         : Encoding.UTF8.GetBytes(content.GetRawText());
 
                     string contentText = content.ValueKind switch
@@ -569,7 +554,7 @@ public static class AnthropicGenerationMapper
     {
         if (!requestJson.TryGetProperty("tools", out var tools) || tools.ValueKind != JsonValueKind.Array)
         {
-            return new List<ToolDefinition>();
+            return [];
         }
 
         var mapped = new List<ToolDefinition>();
@@ -581,7 +566,7 @@ public static class AnthropicGenerationMapper
                 continue;
             }
 
-            byte[] schema = Array.Empty<byte>();
+            byte[] schema = [];
             if (tool.TryGetProperty("input_schema", out var inputSchema))
             {
                 schema = Encoding.UTF8.GetBytes(inputSchema.GetRawText());
@@ -645,7 +630,7 @@ public static class AnthropicGenerationMapper
         AnthropicSigilOptions options,
         JsonElement requestJson,
         JsonElement responseJson,
-        IReadOnlyList<ToolDefinition> tools
+        List<ToolDefinition> tools
     )
     {
         var artifacts = new List<Artifact>(3);
@@ -671,7 +656,7 @@ public static class AnthropicGenerationMapper
     private static List<Artifact> BuildStreamArtifacts(
         AnthropicSigilOptions options,
         JsonElement requestJson,
-        IReadOnlyList<ToolDefinition> tools,
+        List<ToolDefinition> tools,
         AnthropicStreamSummary summary
     )
     {
