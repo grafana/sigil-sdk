@@ -15,6 +15,11 @@ jobs:
   publish:
     if: github.repository == 'grafana/sigil-sdk' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+
+    environment:
+      name: NuGet.org
+      url: https://www.nuget.org/profiles/Grafana
+
     permissions:
       contents: read
       id-token: write
@@ -28,16 +33,6 @@ jobs:
       TERM: xterm
 
     steps:
-      - name: Get secrets from Vault
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@f1614b210386ac420af6807a997ac7f6d96e477a # get-vault-secrets/v1.3.1
-        env:
-          VAULT_INSTANCE: ops
-        with:
-          vault_instance: ${{ env.VAULT_INSTANCE }}
-          common_secrets: |
-            NUGET_API_KEY=sigil-nuget:api-key
-          export_env: false
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -54,10 +49,15 @@ jobs:
           dotnet pack dotnet/Sigil.DotNet.slnx -c Release \
             -p:PackageVersion="${PKG_VERSION}"
 
-      # TODO Use NuGet trusted publishing https://learn.microsoft.com/nuget/nuget-org/trusted-publishing
+      - name: NuGet log in
+        uses: NuGet/login@d22cc5f58ff5b88bf9bd452535b4335137e24544 # v1.1.0
+        id: nuget-login
+        with:
+          user: ${{ vars.NUGET_USERNAME }}
+
       - name: Publish
         env:
-          NUGET_API_KEY: ${{ fromJSON(steps.get-secrets.outputs.secrets).NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           dotnet nuget push "dotnet/artifacts/package/release/*.nupkg" \
             --api-key "${NUGET_API_KEY}" \
