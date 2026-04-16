@@ -67,9 +67,11 @@ func run() {
 
 	contentMode := resolveContentMode()
 	extraTags := parseExtraTags(os.Getenv("SIGIL_EXTRA_TAGS"))
+	userID := resolveUserID()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	ctx = sigil.WithUserID(ctx, userID)
 
 	// The Go OTLP SDK reads standard OTEL_EXPORTER_OTLP_* env vars automatically,
 	// which Claude Code sets for its own telemetry. Clear them so our SIGIL_OTEL_*
