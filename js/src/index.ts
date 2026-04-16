@@ -15,6 +15,7 @@ export {
 export * as anthropic from './providers/anthropic.js';
 export * as gemini from './providers/gemini.js';
 export * as openai from './providers/openai.js';
+export { createSecretRedactionSanitizer } from './redaction.js';
 export type {
   ApiConfig,
   Artifact,
@@ -34,6 +35,7 @@ export type {
   Generation,
   GenerationExportConfig,
   GenerationExporter,
+  GenerationSanitizer,
   GenerationExportProtocol,
   GenerationMode,
   GenerationRecorder,
@@ -58,6 +60,7 @@ export type {
   ToolExecutionStart,
   ToolResultPart,
 } from './types.js';
+export type { SecretRedactionOptions } from './redaction.js';
 
 import { SigilClient } from './client.js';
 import type { SigilSdkConfigInput } from './types.js';

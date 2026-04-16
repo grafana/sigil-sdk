@@ -1,0 +1,146 @@
+import type { Generation, GenerationSanitizer, Message, MessagePart } from './types.js';
+import { cloneGeneration } from './utils.js';
+
+interface SecretPattern {
+  id: string;
+  regex: RegExp;
+}
+
+export interface SecretRedactionOptions {
+  /**
+   * Redact user input messages in addition to assistant/tool content.
+   * Defaults to `false` to match the current opencode plugin behavior.
+   */
+  redactInputMessages?: boolean;
+}
+
+const tier1Patterns: SecretPattern[] = [
+  { id: 'grafana-cloud-token', regex: /\bglc_[A-Za-z0-9_-]{20,}/g },
+  { id: 'grafana-service-account-token', regex: /\bglsa_[A-Za-z0-9_-]{20,}/g },
+  { id: 'aws-access-token', regex: /\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/g },
+  { id: 'github-pat', regex: /\bghp_[A-Za-z0-9_]{36,}/g },
+  { id: 'github-oauth', regex: /\bgho_[A-Za-z0-9_]{36,}/g },
+  { id: 'github-app-token', regex: /\bghs_[A-Za-z0-9_]{36,}/g },
+  { id: 'github-fine-grained-pat', regex: /\bgithub_pat_[A-Za-z0-9_]{82}/g },
+  { id: 'anthropic-api-key', regex: /\bsk-ant-api03-[a-zA-Z0-9_-]{93}AA/g },
+  { id: 'anthropic-admin-key', regex: /\bsk-ant-admin01-[a-zA-Z0-9_-]{93}AA/g },
+  { id: 'openai-api-key', regex: /\bsk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}/g },
+  { id: 'openai-project-key', regex: /\bsk-proj-[a-zA-Z0-9_-]{40,}/g },
+  { id: 'openai-svcacct-key', regex: /\bsk-svcacct-[a-zA-Z0-9_-]{40,}/g },
+  { id: 'gcp-api-key', regex: /\bAIza[A-Za-z0-9_-]{35}/g },
+  { id: 'private-key', regex: /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g },
+  { id: 'connection-string', regex: /(?:postgres|mysql|mongodb|redis|amqp):\/\/[^\s'"]+@[^\s'"]+/g },
+  { id: 'bearer-token', regex: /[Bb]earer\s+[A-Za-z0-9_.\-~+/]{20,}={0,3}/g },
+  { id: 'slack-token', regex: /\bxox[bporas]-[A-Za-z0-9-]{10,}/g },
+  { id: 'stripe-key', regex: /\b[sr]k_(?:live|test)_[A-Za-z0-9]{20,}/g },
+  { id: 'sendgrid-api-key', regex: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g },
+  { id: 'twilio-api-key', regex: /\bSK[a-f0-9]{32}/g },
+  { id: 'npm-token', regex: /\bnpm_[A-Za-z0-9]{36}/g },
+  { id: 'pypi-token', regex: /\bpypi-[A-Za-z0-9_-]{50,}/g },
+];
+
+const tier2Patterns: SecretPattern[] = [
+  {
+    id: 'env-secret-value',
+    regex: /(?<=(?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)\S+/gi,
+  },
+];
+
+class SecretRedactor {
+  redact(text: string): string {
+    return applyPatterns(applyPatterns(text, tier1Patterns), tier2Patterns);
+  }
+
+  redactLightweight(text: string): string {
+    return applyPatterns(text, tier1Patterns);
+  }
+}
+
+export function createSecretRedactionSanitizer(
+  options: SecretRedactionOptions = {},
+): GenerationSanitizer {
+  const redactor = new SecretRedactor();
+  const redactInputMessages = options.redactInputMessages ?? false;
+
+  return (generation) => {
+    const sanitized = cloneGeneration(generation);
+
+    for (const message of sanitized.input ?? []) {
+      sanitizeMessage(message, redactor, message.role === 'user' && redactInputMessages ? 'full' : 'none');
+    }
+    for (const message of sanitized.output ?? []) {
+      sanitizeMessage(
+        message,
+        redactor,
+        message.role === 'assistant' ? 'light' : message.role === 'tool' ? 'full' : 'none',
+      );
+    }
+
+    return sanitized;
+  };
+}
+
+function sanitizeMessage(
+  message: Message,
+  redactor: SecretRedactor,
+  defaultTextMode: 'none' | 'light' | 'full',
+): void {
+  if (typeof message.content === 'string') {
+    message.content = redactString(message.content, redactor, defaultTextMode);
+  }
+  for (const part of message.parts ?? []) {
+    sanitizePart(part, redactor, defaultTextMode);
+  }
+}
+
+function sanitizePart(
+  part: MessagePart,
+  redactor: SecretRedactor,
+  defaultTextMode: 'none' | 'light' | 'full',
+): void {
+  switch (part.type) {
+    case 'text':
+      part.text = redactString(part.text, redactor, defaultTextMode);
+      break;
+    case 'thinking':
+      part.thinking = redactor.redactLightweight(part.thinking);
+      break;
+    case 'tool_call':
+      if (typeof part.toolCall.inputJSON === 'string') {
+        part.toolCall.inputJSON = redactor.redact(part.toolCall.inputJSON);
+      }
+      break;
+    case 'tool_result':
+      if (typeof part.toolResult.content === 'string') {
+        part.toolResult.content = redactor.redact(part.toolResult.content);
+      }
+      if (typeof part.toolResult.contentJSON === 'string') {
+        part.toolResult.contentJSON = redactor.redact(part.toolResult.contentJSON);
+      }
+      break;
+  }
+}
+
+function redactString(
+  value: string,
+  redactor: SecretRedactor,
+  mode: 'none' | 'light' | 'full',
+): string {
+  switch (mode) {
+    case 'full':
+      return redactor.redact(value);
+    case 'light':
+      return redactor.redactLightweight(value);
+    default:
+      return value;
+  }
+}
+
+function applyPatterns(text: string, patterns: SecretPattern[]): string {
+  let result = text;
+  for (const pattern of patterns) {
+    pattern.regex.lastIndex = 0;
+    result = result.replace(pattern.regex, `[REDACTED:${pattern.id}]`);
+  }
+  return result;
+}

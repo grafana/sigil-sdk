@@ -460,6 +460,22 @@ export class SigilClient {
     );
   }
 
+  internalHasGenerationSanitizer(): boolean {
+    return this.config.generationSanitizer !== undefined;
+  }
+
+  internalSanitizeGeneration(generation: Generation): Generation {
+    const sanitizer = this.config.generationSanitizer;
+    if (sanitizer === undefined) {
+      return generation;
+    }
+    const sanitized = sanitizer(cloneGeneration(generation));
+    if (sanitized === undefined) {
+      throw new Error('generation sanitizer must return a generation');
+    }
+    return cloneGeneration(sanitized);
+  }
+
   internalStartGenerationSpan(seed: GenerationStart, mode: GenerationMode, startedAt: Date): Span {
     const operationName = seed.operationName ?? defaultOperationNameForMode(mode);
     const span = this.tracer.startSpan(generationSpanName(operationName, seed.model.name), {
@@ -947,7 +963,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     this.ended = true;
 
-    const generation: Generation = {
+    let generation: Generation = {
       id: this.seed.id ?? newLocalID('gen'),
       conversationId: firstNonEmptyString(this.result?.conversationId, this.seed.conversationId),
       conversationTitle: firstNonEmptyString(this.result?.conversationTitle, this.seed.conversationTitle),
@@ -1017,17 +1033,29 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     generation.metadata[spanAttrSDKName] = sdkName;
 
-    const validationError = validateGeneration(generation);
-
     const callErrorCategory = errorCategoryFromError(this.callError, false);
 
+    let effectiveContentCaptureMode = this.contentCaptureMode;
+    let validationTarget = cloneGeneration(generation);
     stampContentCaptureMetadata(generation, this.contentCaptureMode);
     if (this.contentCaptureMode === 'metadata_only') {
       stripContent(generation, callErrorCategory);
+    } else if (this.client.internalHasGenerationSanitizer()) {
+      try {
+        generation = this.client.internalSanitizeGeneration(generation);
+        validationTarget = cloneGeneration(generation);
+      } catch (error) {
+        effectiveContentCaptureMode = 'metadata_only';
+        stripContent(generation, callErrorCategory);
+        stampContentCaptureMetadata(generation, effectiveContentCaptureMode);
+        this.client.internalLogWarn('sigil generation sanitization failed; falling back to metadata_only', error);
+      }
     }
 
+    const validationError = validateGeneration(validationTarget);
+
     this.client.internalSyncGenerationSpan(this.span, generation);
-    if (this.contentCaptureMode === 'metadata_only') {
+    if (effectiveContentCaptureMode === 'metadata_only') {
       this.client.internalClearSpanConversationTitle(this.span);
     }
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
@@ -1047,7 +1075,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
       }
     }
 
-    const finalCallError = this.contentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
+    const finalCallError = effectiveContentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
 
     this.client.internalFinalizeGenerationSpan(
       this.span,
