@@ -98,7 +98,12 @@ test('secret redaction sanitizer can redact user input when enabled', async () =
     model: { provider: 'openai', name: 'gpt-5' },
     startedAt: new Date('2026-01-01T00:00:00Z'),
     completedAt: new Date('2026-01-01T00:00:01Z'),
-    input: [{ role: 'user', parts: [{ type: 'text', text: 'key sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }] }],
+    input: [
+      {
+        role: 'user',
+        parts: [{ type: 'text', text: 'key sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }],
+      },
+    ],
   });
 
   assert.doesNotMatch(sanitized.input[0].parts[0].text, /sk-proj-/);

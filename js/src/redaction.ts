@@ -1,4 +1,4 @@
-import type { Generation, GenerationSanitizer, Message, MessagePart } from './types.js';
+import type { GenerationSanitizer, Message, MessagePart } from './types.js';
 import { cloneGeneration } from './utils.js';
 
 /**
@@ -71,9 +71,7 @@ class SecretRedactor {
   }
 }
 
-export function createSecretRedactionSanitizer(
-  options: SecretRedactionOptions = {},
-): GenerationSanitizer {
+export function createSecretRedactionSanitizer(options: SecretRedactionOptions = {}): GenerationSanitizer {
   const redactor = new SecretRedactor();
   const redactInputMessages = options.redactInputMessages ?? false;
 
@@ -95,11 +93,7 @@ export function createSecretRedactionSanitizer(
   };
 }
 
-function sanitizeMessage(
-  message: Message,
-  redactor: SecretRedactor,
-  defaultTextMode: 'none' | 'light' | 'full',
-): void {
+function sanitizeMessage(message: Message, redactor: SecretRedactor, defaultTextMode: 'none' | 'light' | 'full'): void {
   if (typeof message.content === 'string') {
     message.content = redactString(message.content, redactor, defaultTextMode);
   }
@@ -108,11 +102,7 @@ function sanitizeMessage(
   }
 }
 
-function sanitizePart(
-  part: MessagePart,
-  redactor: SecretRedactor,
-  defaultTextMode: 'none' | 'light' | 'full',
-): void {
+function sanitizePart(part: MessagePart, redactor: SecretRedactor, defaultTextMode: 'none' | 'light' | 'full'): void {
   switch (part.type) {
     case 'text':
       part.text = redactString(part.text, redactor, defaultTextMode);
@@ -136,11 +126,7 @@ function sanitizePart(
   }
 }
 
-function redactString(
-  value: string,
-  redactor: SecretRedactor,
-  mode: 'none' | 'light' | 'full',
-): string {
+function redactString(value: string, redactor: SecretRedactor, mode: 'none' | 'light' | 'full'): string {
   switch (mode) {
     case 'full':
       return redactor.redact(value);
