@@ -23,6 +23,12 @@ export interface SecretRedactionOptions {
    * Defaults to `false` to match the current opencode plugin behavior.
    */
   redactInputMessages?: boolean;
+  /**
+   * Redact generic email addresses.
+   * Defaults to `true`. Set to `false` to opt out when company policy allows
+   * email-like content.
+   */
+  redactEmailAddresses?: boolean;
 }
 
 // --- Tier 1: High-confidence patterns (definite secret formats) ---
@@ -51,28 +57,47 @@ const tier1Patterns: SecretPattern[] = [
   { id: 'pypi-token', regex: /\bpypi-[A-Za-z0-9_-]{50,}/g },
 ];
 
+const emailPattern: SecretPattern = {
+  id: 'email',
+  regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+};
+
 // --- Tier 2: Heuristic patterns (env file values) ---
 const tier2Patterns: SecretPattern[] = [
   {
     id: 'env-secret-value',
-    regex: /(?<=(?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)\S+/gi,
+    regex: /((?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)(\S+)/gi,
   },
 ];
 
 class SecretRedactor {
+  private readonly includeEmailAddresses: boolean;
+
+  constructor(includeEmailAddresses: boolean) {
+    this.includeEmailAddresses = includeEmailAddresses;
+  }
+
   /** Full redaction: tier 1 + tier 2. Use for tool call args and tool results. */
   redact(text: string): string {
-    return applyPatterns(applyPatterns(text, tier1Patterns), tier2Patterns);
+    let result = applyPatterns(text, tier1Patterns);
+    if (this.includeEmailAddresses) {
+      result = applyPattern(result, emailPattern);
+    }
+    return applyTier2Patterns(result, tier2Patterns);
   }
 
   /** Lightweight redaction: tier 1 only. Use for assistant text and reasoning. */
   redactLightweight(text: string): string {
-    return applyPatterns(text, tier1Patterns);
+    let result = applyPatterns(text, tier1Patterns);
+    if (this.includeEmailAddresses) {
+      result = applyPattern(result, emailPattern);
+    }
+    return result;
   }
 }
 
 export function createSecretRedactionSanitizer(options: SecretRedactionOptions = {}): GenerationSanitizer {
-  const redactor = new SecretRedactor();
+  const redactor = new SecretRedactor(options.redactEmailAddresses ?? true);
   const redactInputMessages = options.redactInputMessages ?? false;
 
   return (generation) => {
@@ -140,8 +165,21 @@ function redactString(value: string, redactor: SecretRedactor, mode: 'none' | 'l
 function applyPatterns(text: string, patterns: SecretPattern[]): string {
   let result = text;
   for (const pattern of patterns) {
+    result = applyPattern(result, pattern);
+  }
+  return result;
+}
+
+function applyPattern(text: string, pattern: SecretPattern): string {
+  pattern.regex.lastIndex = 0;
+  return text.replace(pattern.regex, `[REDACTED:${pattern.id}]`);
+}
+
+function applyTier2Patterns(text: string, patterns: SecretPattern[]): string {
+  let result = text;
+  for (const pattern of patterns) {
     pattern.regex.lastIndex = 0;
-    result = result.replace(pattern.regex, `[REDACTED:${pattern.id}]`);
+    result = result.replace(pattern.regex, `$1[REDACTED:${pattern.id}]`);
   }
   return result;
 }

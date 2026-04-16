@@ -110,6 +110,47 @@ test('secret redaction sanitizer can redact user input when enabled', async () =
   assert.match(sanitized.input[0].parts[0].text, /\[REDACTED:openai-project-key\]/);
 });
 
+test('secret redaction sanitizer can redact email addresses when enabled', async () => {
+  const sanitizer = createSecretRedactionSanitizer({ redactEmailAddresses: true });
+  const sanitized = sanitizer({
+    id: 'gen-2',
+    mode: 'SYNC',
+    operationName: 'generateText',
+    model: { provider: 'openai', name: 'gpt-5' },
+    startedAt: new Date('2026-01-01T00:00:00Z'),
+    completedAt: new Date('2026-01-01T00:00:01Z'),
+    output: [
+      {
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Send me an email at example@example.com' }],
+      },
+    ],
+  });
+
+  assert.doesNotMatch(sanitized.output[0].parts[0].text, /example@example\.com/);
+  assert.match(sanitized.output[0].parts[0].text, /\[REDACTED:email\]/);
+});
+
+test('secret redaction sanitizer leaves email addresses alone when disabled', async () => {
+  const sanitizer = createSecretRedactionSanitizer({ redactEmailAddresses: false });
+  const sanitized = sanitizer({
+    id: 'gen-3',
+    mode: 'SYNC',
+    operationName: 'generateText',
+    model: { provider: 'openai', name: 'gpt-5' },
+    startedAt: new Date('2026-01-01T00:00:00Z'),
+    completedAt: new Date('2026-01-01T00:00:01Z'),
+    output: [
+      {
+        role: 'assistant',
+        parts: [{ type: 'text', text: 'Send me an email at example@example.com' }],
+      },
+    ],
+  });
+
+  assert.match(sanitized.output[0].parts[0].text, /example@example\.com/);
+});
+
 test('generation sanitizer failure falls back to metadata_only stripping', async () => {
   const exporter = new CapturingExporter();
   const defaults = defaultConfig();
