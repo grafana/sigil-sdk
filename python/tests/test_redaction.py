@@ -20,9 +20,9 @@ from sigil_sdk import (
     Part,
     PartKind,
     SecretRedactionOptions,
+    TokenUsage,
     ToolCall,
     ToolResult,
-    TokenUsage,
     create_secret_redaction_sanitizer,
 )
 
@@ -84,9 +84,7 @@ def test_secret_redaction_sanitizer_redacts_assistant_and_tool_content_by_defaul
                                 tool_call=ToolCall(
                                     name="bash",
                                     id="call-1",
-                                    input_json=f'{{"header":"Bearer {bearer_token}","env":"{env_secret}"}}'.encode(
-                                        "utf-8"
-                                    ),
+                                    input_json=f'{{"header":"Bearer {bearer_token}","env":"{env_secret}"}}'.encode(),
                                 ),
                             ),
                         ],
