@@ -54,6 +54,42 @@ await client.startGeneration(
 await client.shutdown();
 ```
 
+## Pre-Ingest Redaction
+
+Use `generationSanitizer` when you want to redact substrings from normalized generations before
+validation, span sync, debug snapshots, and export.
+
+```ts
+import {
+  SigilClient,
+  createSecretRedactionSanitizer,
+} from "@grafana/sigil-sdk-js";
+
+const client = new SigilClient({
+  generationSanitizer: createSecretRedactionSanitizer({
+    redactInputMessages: false,
+    redactEmailAddresses: true,
+  }),
+});
+```
+
+The built-in sanitizer:
+
+- redacts high-confidence secret formats in assistant text and thinking
+- redacts secret formats plus env-style secret values in tool call inputs and tool results
+- redacts email addresses by default
+- leaves user input unchanged unless `redactInputMessages: true` is set
+
+To preserve email addresses, opt out explicitly:
+
+```ts
+const client = new SigilClient({
+  generationSanitizer: createSecretRedactionSanitizer({
+    redactEmailAddresses: false,
+  }),
+});
+```
+
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` directly to `SigilClient`.
 
 Quick OTEL setup pattern before creating the Sigil client:
@@ -195,6 +231,10 @@ const llamaIndexConfig = withSigilLlamaIndexCallbacks({ callbackManager }, clien
 const googleAdkRunnerConfig = withSigilGoogleAdkPlugins(undefined, client, { providerResolver: "auto" });
 const vercelAiSdk = createSigilVercelAiSdk(client, { agentName: "vercel-agent" });
 ```
+
+Framework handlers use the `SigilClient` instance you pass in. If that client is configured with
+`generationSanitizer`, the same redaction policy applies automatically to generations recorded
+through LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, and Vercel AI SDK integrations.
 
 Each framework handler injects:
 
