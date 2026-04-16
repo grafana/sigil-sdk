@@ -29,6 +29,24 @@ from sigil_sdk.usage import map_usage
 
 ProviderResolver = str | Callable[[str, dict[str, Any] | None, dict[str, Any] | None], str]
 
+
+def _extract_tool_output(output: Any) -> Any:
+    """Unwrap BaseMessage subclasses (e.g. ToolMessage) to their ``.content``.
+
+    Callback-based frameworks such as LangChain and LangGraph may deliver a
+    ``BaseMessage`` object to ``on_tool_end``.  These are not JSON-serialisable,
+    so we extract the ``.content`` attribute when present.  Plain strings,
+    ``None``, and other already-serialisable values pass through unchanged.
+    """
+    if output is None:
+        return output
+    if isinstance(output, str):
+        return output
+    if hasattr(output, "content"):
+        return output.content
+    return output
+
+
 _default_framework_source = "handler"
 _default_framework_language = "python"
 _default_framework_instrumentation_name = "github.com/grafana/sigil/sdks/python/frameworks"
@@ -427,7 +445,7 @@ class SigilFrameworkHandlerBase:
             if run_state.arguments is not None:
                 payload["arguments"] = run_state.arguments
             if run_state.capture_outputs:
-                payload["result"] = output
+                payload["result"] = _extract_tool_output(output)
             run_state.recorder.set_result(**payload)
         finally:
             run_state.recorder.end()
