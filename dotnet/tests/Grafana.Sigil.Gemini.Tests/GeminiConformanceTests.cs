@@ -161,7 +161,8 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = "gemini-2.5-pro",
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var streamSummary = await GeminiRecorder.GenerateContentStreamAsync(
@@ -173,13 +174,14 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = "gemini-2.5-pro",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.NotEmpty(streamSummary.Responses);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.True(generations.Count >= 2);
@@ -215,13 +217,14 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = DefaultModel,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Empty(summary.Responses);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.Single(generations);
@@ -303,7 +306,8 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = model,
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var wrapped = await GeminiRecorder.EmbedContentAsync(
@@ -315,13 +319,14 @@ public sealed class GeminiConformanceTests
             new GeminiSigilOptions
             {
                 ModelName = model,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.NotEmpty(wrapped.Embeddings ?? []);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(exporter.Requests);
     }

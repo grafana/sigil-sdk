@@ -96,7 +96,8 @@ public sealed class AnthropicConformanceTests
             new AnthropicSigilOptions
             {
                 ModelName = "claude-sonnet-4-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var streamSummary = await AnthropicRecorder.MessageStreamAsync(
@@ -106,13 +107,14 @@ public sealed class AnthropicConformanceTests
             new AnthropicSigilOptions
             {
                 ModelName = "claude-sonnet-4-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.NotEmpty(streamSummary.Events);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.True(generations.Count >= 2);
@@ -146,13 +148,14 @@ public sealed class AnthropicConformanceTests
             new AnthropicSigilOptions
             {
                 ModelName = "claude-sonnet-4-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Empty(summary.Events);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.Single(generations);

@@ -80,7 +80,7 @@ public sealed class RuntimeLifecycleTests
         await using var client = new SigilClient(config);
 
         EndSuccessfulGeneration(client, "gen-1");
-        await client.FlushAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(4, exporter.Calls);
         Assert.Equal(
@@ -124,7 +124,7 @@ public sealed class RuntimeLifecycleTests
         var client = new SigilClient(config);
         StartAndEnd(client, "gen-1");
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(exporter.Requests);
         Assert.Single(exporter.Requests[0].Generations);
@@ -144,7 +144,7 @@ public sealed class RuntimeLifecycleTests
         recorder.End();
         recorder.End();
 
-        await client.FlushAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
         Assert.Single(exporter.Requests);
         Assert.Single(exporter.Requests[0].Generations);
     }
@@ -262,7 +262,7 @@ public sealed class RuntimeLifecycleTests
         var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-span-sdk"));
         recorder.SetResult(TestHelpers.CreateSeedResult("gen-span-sdk"));
         recorder.End();
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(spans);
         var span = spans[0];

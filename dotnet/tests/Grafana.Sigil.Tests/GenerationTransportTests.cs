@@ -49,7 +49,7 @@ public sealed class GenerationTransportTests
         recorder.SetResult(TestHelpers.CreateSeedResult("gen-http"));
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.True(server.Requests.TryDequeue(out var captured));
         var request = Google.Protobuf.JsonParser.Default.Parse<SigilProto.ExportGenerationsRequest>(
@@ -103,7 +103,7 @@ public sealed class GenerationTransportTests
         var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-http-auth"));
         recorder.SetResult(TestHelpers.CreateSeedResult("gen-http-auth"));
         recorder.End();
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.True(server.Requests.TryDequeue(out var captured));
         Assert.Equal("tenant-a", captured.Headers["X-Scope-OrgID"]);
@@ -157,7 +157,7 @@ public sealed class GenerationTransportTests
         var recorder = client.StartGeneration(TestHelpers.CreateSeedStart("gen-http-override"));
         recorder.SetResult(TestHelpers.CreateSeedResult("gen-http-override"));
         recorder.End();
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.True(server.Requests.TryDequeue(out var captured));
         Assert.Equal("tenant-override", captured.Headers["x-scope-orgid"]);
@@ -187,8 +187,8 @@ public sealed class GenerationTransportTests
         recorder.SetResult(TestHelpers.CreateSeedResult("gen-none"));
         recorder.End();
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(recorder.Error);
         Assert.NotNull(recorder.LastGeneration);

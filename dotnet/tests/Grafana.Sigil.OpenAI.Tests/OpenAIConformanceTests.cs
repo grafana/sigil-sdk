@@ -402,7 +402,8 @@ public sealed class OpenAIConformanceTests
             options: new OpenAISigilOptions
             {
                 ModelName = "gpt-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var chatStreamSummary = await OpenAIRecorder.CompleteChatStreamingAsync(
@@ -413,7 +414,8 @@ public sealed class OpenAIConformanceTests
             options: new OpenAISigilOptions
             {
                 ModelName = "gpt-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => OpenAIRecorder.CreateResponseAsync(
@@ -424,7 +426,8 @@ public sealed class OpenAIConformanceTests
             options: new OpenAISigilOptions
             {
                 ModelName = "gpt-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var responsesStreamSummary = await OpenAIRecorder.CreateResponseStreamingAsync(
@@ -438,14 +441,15 @@ public sealed class OpenAIConformanceTests
             options: new OpenAISigilOptions
             {
                 ModelName = "gpt-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.NotEmpty(chatStreamSummary.Updates);
         Assert.NotEmpty(responsesStreamSummary.Events);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
 
@@ -481,7 +485,8 @@ public sealed class OpenAIConformanceTests
             options: new OpenAISigilOptions
             {
                 ModelName = "gpt-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         var responsesSummary = await OpenAIRecorder.CreateResponseStreamingAsync(
@@ -492,14 +497,15 @@ public sealed class OpenAIConformanceTests
             options: new OpenAISigilOptions
             {
                 ModelName = "gpt-5",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Empty(chatSummary.Updates);
         Assert.Empty(responsesSummary.Events);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var generations = exporter.Requests.SelectMany(request => request.Generations).ToList();
         Assert.Equal(2, generations.Count);
@@ -574,7 +580,8 @@ public sealed class OpenAIConformanceTests
             new OpenAISigilOptions
             {
                 ModelName = "text-embedding-3-small",
-            }
+            },
+            TestContext.Current.CancellationToken
         ));
 
         var response = OpenAIEmbeddingsModelFactory.OpenAIEmbeddingCollection(
@@ -593,13 +600,14 @@ public sealed class OpenAIConformanceTests
             new OpenAISigilOptions
             {
                 ModelName = "text-embedding-3-small",
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal("text-embedding-3-small", wrapped.Model);
 
-        await client.FlushAsync();
-        await client.ShutdownAsync();
+        await client.FlushAsync(TestContext.Current.CancellationToken);
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(exporter.Requests);
     }

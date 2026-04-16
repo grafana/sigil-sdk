@@ -72,7 +72,8 @@ public sealed class RatingTransportTests
                 {
                     ["channel"] = "assistant",
                 },
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.Equal("rat-1", response.Rating.RatingId);
@@ -119,7 +120,8 @@ public sealed class RatingTransportTests
                 {
                     RatingId = "rat-1",
                     Rating = ConversationRatingValue.Good,
-                }
+                },
+                TestContext.Current.CancellationToken
             )
         );
 
@@ -154,7 +156,8 @@ public sealed class RatingTransportTests
                 {
                     RatingId = "rat-1",
                     Rating = ConversationRatingValue.Good,
-                }
+                },
+                TestContext.Current.CancellationToken
             )
         );
 
@@ -165,7 +168,8 @@ public sealed class RatingTransportTests
                 {
                     RatingId = " ",
                     Rating = ConversationRatingValue.Good,
-                }
+                },
+                TestContext.Current.CancellationToken
             )
         );
     }
@@ -229,7 +233,8 @@ public sealed class RatingTransportTests
             {
                 RatingId = "rat-1",
                 Rating = ConversationRatingValue.Good,
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         Assert.True(server.Requests.TryDequeue(out var captured));

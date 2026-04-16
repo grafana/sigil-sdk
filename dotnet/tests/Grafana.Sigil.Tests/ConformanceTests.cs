@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Linq;
 using System.Text;
 using Xunit;
 using SigilProto = Sigil.V1;
@@ -455,7 +454,8 @@ public sealed class ConformanceTests
                 {
                     ["channel"] = "assistant",
                 },
-            }
+            },
+            TestContext.Current.CancellationToken
         );
 
         await env.ShutdownAsync();

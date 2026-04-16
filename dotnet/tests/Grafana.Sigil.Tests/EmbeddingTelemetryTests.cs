@@ -38,7 +38,7 @@ public sealed class EmbeddingTelemetryTests
         });
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(recorder.Error);
         Assert.Empty(exporter.Requests);
@@ -96,7 +96,7 @@ public sealed class EmbeddingTelemetryTests
         });
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(spans);
         var captured = ReadTagStringValues(spans[0].GetTagItem("gen_ai.embeddings.input_texts"));
@@ -135,7 +135,7 @@ public sealed class EmbeddingTelemetryTests
         });
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(spans);
         var captured = ReadTagStringValues(spans[0].GetTagItem("gen_ai.embeddings.input_texts"));
@@ -161,7 +161,7 @@ public sealed class EmbeddingTelemetryTests
         recorder.SetCallError(new InvalidOperationException("provider failed with status 429"));
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(recorder.Error);
         Assert.Single(spans);
@@ -193,7 +193,7 @@ public sealed class EmbeddingTelemetryTests
         });
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(recorder.Error);
         Assert.IsType<ValidationException>(recorder.Error);
@@ -226,7 +226,7 @@ public sealed class EmbeddingTelemetryTests
         });
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(spans);
         var span = spans[0];
@@ -280,7 +280,7 @@ public sealed class EmbeddingTelemetryTests
         recorder.End();
         recorder.End();
 
-        await client.ShutdownAsync();
+        await client.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var durationRecords = observations
             .Where(item => string.Equals(item.InstrumentName, "gen_ai.client.operation.duration", StringComparison.Ordinal))
