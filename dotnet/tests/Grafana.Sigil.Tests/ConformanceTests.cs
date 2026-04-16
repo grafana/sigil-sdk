@@ -511,7 +511,7 @@ public sealed class ConformanceTests
             _activityListener = new ActivityListener
             {
                 ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-                Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
                 ActivityStopped = activity =>
                 {
                     Spans.Enqueue(activity);
@@ -605,19 +605,18 @@ public sealed class ConformanceTests
 
         public Activity GenerationSpan()
         {
-            return OperationSpan(new[] { "generateText", "streamText" });
+            return OperationSpan(["generateText", "streamText"]);
         }
 
         public Activity OperationSpan(string operationName)
         {
-            return OperationSpan(new[] { operationName });
+            return OperationSpan([operationName]);
         }
 
         private Activity OperationSpan(string[] operationNames)
         {
             var span = Spans
-                .Where(activity => operationNames.Contains(activity.GetTagItem("gen_ai.operation.name")?.ToString(), StringComparer.Ordinal))
-                .LastOrDefault();
+                .LastOrDefault(activity => operationNames.Contains(activity.GetTagItem("gen_ai.operation.name")?.ToString(), StringComparer.Ordinal));
             Assert.NotNull(span);
             return span!;
         }

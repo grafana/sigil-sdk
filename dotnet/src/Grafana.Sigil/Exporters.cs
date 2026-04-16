@@ -22,11 +22,11 @@ internal sealed class NoopGenerationExporter : IGenerationExporter
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new ExportGenerationsResponse
         {
-            Results = request.Generations.Select(generation => new ExportGenerationResult
+            Results = [.. request.Generations.Select(generation => new ExportGenerationResult
             {
                 GenerationId = generation.Id,
                 Accepted = true,
-            }).ToList(),
+            })],
         });
     }
 
@@ -101,7 +101,13 @@ internal sealed class HttpGenerationExporter : IGenerationExporter
         }
 
         using var response = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+
+#if NET
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#else
         var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+#endif
+
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException($"http generation export status {(int)response.StatusCode}: {body.Trim()}");
@@ -115,7 +121,7 @@ internal sealed class HttpGenerationExporter : IGenerationExporter
         Proto.ExportGenerationsResponse parsed;
         try
         {
-            parsed = Google.Protobuf.JsonParser.Default.Parse<Proto.ExportGenerationsResponse>(body);
+            parsed = JsonParser.Default.Parse<Proto.ExportGenerationsResponse>(body);
         }
         catch (Exception ex)
         {
@@ -142,7 +148,7 @@ internal sealed class HttpGenerationExporter : IGenerationExporter
     }
 }
 
-internal sealed class GrpcGenerationExporter : IGenerationExporter
+internal sealed class GrpcGenerationExporter : IGenerationExporter, IDisposable
 {
     private readonly GrpcChannel _channel;
     private readonly Proto.GenerationIngestService.GenerationIngestServiceClient _client;
@@ -184,6 +190,12 @@ internal sealed class GrpcGenerationExporter : IGenerationExporter
         _headers = normalizedHeaders;
     }
 
+    public void Dispose()
+    {
+        _channel?.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
     public async Task<ExportGenerationsResponse> ExportGenerationsAsync(
         ExportGenerationsRequest request,
         CancellationToken cancellationToken
@@ -204,12 +216,12 @@ internal sealed class GrpcGenerationExporter : IGenerationExporter
 
         return new ExportGenerationsResponse
         {
-            Results = response.Results.Select(r => new ExportGenerationResult
+            Results = [.. response.Results.Select(r => new ExportGenerationResult
             {
                 GenerationId = r.GenerationId,
                 Accepted = r.Accepted,
                 Error = r.Error,
-            }).ToList(),
+            })],
         };
     }
 

@@ -1,5 +1,5 @@
-using System.Text;
 using Google.Protobuf;
+using System.Text;
 using Xunit;
 using SigilProto = Sigil.V1;
 

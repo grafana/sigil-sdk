@@ -1,7 +1,7 @@
-using System.Text.Json;
+using Anthropic.Models.Messages;
 using System.Diagnostics;
 using System.Reflection;
-using Anthropic.Models.Messages;
+using System.Text.Json;
 using Xunit;
 using AnthropicMessage = Anthropic.Models.Messages.Message;
 
@@ -190,14 +190,14 @@ public sealed class AnthropicConformanceTests
             MaxTokens = 512,
             Model = Model.ClaudeSonnet4_5,
             System = "Be precise.",
-            Messages = new List<MessageParam>
-            {
+            Messages =
+            [
                 new MessageParam
                 {
                     Role = Role.User,
                     Content = "What's the weather in Paris?",
                 },
-            },
+            ],
         };
 
         SetIfPresent(request, "Temperature", 0.3);
@@ -300,8 +300,8 @@ public sealed class AnthropicConformanceTests
         {
             Container = default!,
             ID = "msg_1",
-            Content = new List<ContentBlock>
-            {
+            Content =
+            [
                 new TextBlock
                 {
                     Text = "It's 18C and sunny.",
@@ -314,7 +314,7 @@ public sealed class AnthropicConformanceTests
                     Thinking = "done",
                     Type = JsonSerializer.SerializeToElement("thinking"),
                 },
-            },
+            ],
             Model = Model.ClaudeSonnet4_5,
             StopReason = StopReason.EndTurn,
             StopSequence = null,
@@ -339,15 +339,15 @@ public sealed class AnthropicConformanceTests
                 Container = default!,
                 ID = id,
                 Model = Model.ClaudeSonnet4_5,
-                Content = new List<ContentBlock>
-                {
+                Content =
+                [
                     new TextBlock
                     {
                         Type = JsonSerializer.SerializeToElement("text"),
                         Text = text,
                         Citations = null,
                     },
-                },
+                ],
                 StopReason = null,
                 StopSequence = null,
                 Usage = new Usage
@@ -480,7 +480,7 @@ public sealed class AnthropicConformanceTests
                 && method.GetParameters()[0].ParameterType.IsInstanceOfType(value));
         if (implicitOperator != null)
         {
-            return implicitOperator.Invoke(null, new[] { value });
+            return implicitOperator.Invoke(null, [value]);
         }
 
         var convertingCtor = targetType
@@ -490,7 +490,7 @@ public sealed class AnthropicConformanceTests
                 && ctor.GetParameters()[0].ParameterType.IsInstanceOfType(value));
         if (convertingCtor != null)
         {
-            return convertingCtor.Invoke(new[] { value });
+            return convertingCtor.Invoke([value]);
         }
 
         var wrapperCtor = targetType
@@ -539,18 +539,18 @@ public sealed class AnthropicConformanceTests
 
     private sealed class CapturingExporter : IGenerationExporter
     {
-        public List<ExportGenerationsRequest> Requests { get; } = new();
+        public List<ExportGenerationsRequest> Requests { get; } = [];
 
         public Task<ExportGenerationsResponse> ExportGenerationsAsync(ExportGenerationsRequest request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
             return Task.FromResult(new ExportGenerationsResponse
             {
-                Results = request.Generations.Select(generation => new ExportGenerationResult
+                Results = [.. request.Generations.Select(generation => new ExportGenerationResult
                 {
                     GenerationId = generation.Id,
                     Accepted = true,
-                }).ToList(),
+                })],
             });
         }
 
@@ -565,7 +565,7 @@ public sealed class AnthropicConformanceTests
         return new ActivityListener
         {
             ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
                 if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")

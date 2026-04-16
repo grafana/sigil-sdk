@@ -1,16 +1,15 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Globalization;
-using System.Reflection;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading;
 
 namespace Grafana.Sigil;
 
-public sealed class SigilClient : IAsyncDisposable
+public sealed partial class SigilClient : IAsyncDisposable
 {
     internal const string InstrumentationName = "github.com/grafana/sigil/sdks/dotnet";
     internal const string DefaultOperationNameSync = "generateText";
@@ -74,7 +73,13 @@ public sealed class SigilClient : IAsyncDisposable
     internal const string MetricTokenTypeCacheCreation = "cache_creation";
     internal const string MetricTokenTypeReasoning = "reasoning";
 
+#if NET
+    [GeneratedRegex(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled)]
+    private static partial Regex StatusCodeRegex();
+#else
     private static readonly Regex StatusCodeRegex = new(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled);
+#endif
+
     internal const string SdkName = "sdk-dotnet";
     internal const string MetadataUserIdKey = "sigil.user.id";
     internal const string MetadataLegacyUserIdKey = "user.id";
@@ -97,16 +102,23 @@ public sealed class SigilClient : IAsyncDisposable
         Timeout = TimeSpan.FromSeconds(10),
     };
 
+#if NET10_0_OR_GREATER
+    private readonly Lock _pendingLock = new();
+    private readonly Lock _flushBackgroundLock = new();
+    private readonly Lock _stateLock = new();
+#else
     private readonly object _pendingLock = new();
-    private readonly List<Generation> _pending = new();
-    private readonly SemaphoreSlim _flushSemaphore = new(1, 1);
     private readonly object _flushBackgroundLock = new();
+    private readonly object _stateLock = new();
+#endif
+
+    private readonly List<Generation> _pending = [];
+    private readonly SemaphoreSlim _flushSemaphore = new(1, 1);
     private Task? _backgroundFlushTask;
 
     private readonly CancellationTokenSource _timerCts = new();
     private readonly Task _timerTask;
 
-    private readonly object _stateLock = new();
     private bool _shutdown;
 
     internal EmbeddingCaptureConfig EmbeddingCapture => _embeddingCapture;
@@ -408,10 +420,7 @@ public sealed class SigilClient : IAsyncDisposable
 
         var seed = InternalUtils.DeepClone(start);
 
-        if (seed.Mode == null)
-        {
-            seed.Mode = defaultMode;
-        }
+        seed.Mode ??= defaultMode;
 
         if (string.IsNullOrWhiteSpace(seed.OperationName))
         {
@@ -474,7 +483,7 @@ public sealed class SigilClient : IAsyncDisposable
                 TopP = seed.TopP,
                 ToolChoice = seed.ToolChoice,
                 ThinkingEnabled = seed.ThinkingEnabled,
-                ParentGenerationIds = new List<string>(seed.ParentGenerationIds),
+                ParentGenerationIds = [.. seed.ParentGenerationIds],
             });
         }
 
@@ -512,7 +521,7 @@ public sealed class SigilClient : IAsyncDisposable
             }
         }
 
-        var shouldTriggerFlush = false;
+        bool shouldTriggerFlush;
         lock (_pendingLock)
         {
             if (_pending.Count >= _config.GenerationExport.QueueSize)
@@ -586,7 +595,7 @@ public sealed class SigilClient : IAsyncDisposable
                     }
 
                     var count = Math.Min(_pending.Count, _config.GenerationExport.BatchSize);
-                    batch = _pending.Take(count).Select(InternalUtils.DeepClone).ToList();
+                    batch = [.. _pending.Take(count).Select(InternalUtils.DeepClone)];
                     _pending.RemoveRange(0, count);
                 }
 
@@ -754,12 +763,20 @@ public sealed class SigilClient : IAsyncDisposable
         var host = trimmedEndpoint;
         if (host.StartsWith("grpc://", StringComparison.OrdinalIgnoreCase))
         {
+#if NET
+            host = host["grpc://".Length..];
+#else
             host = host.Substring("grpc://".Length);
+#endif
         }
         var slashIndex = host.IndexOf('/');
         if (slashIndex >= 0)
         {
+#if NET
+            host = host[..slashIndex];
+#else
             host = host.Substring(0, slashIndex);
+#endif
         }
         host = host.Trim();
         if (host.Length == 0)
@@ -1329,15 +1346,14 @@ public sealed class SigilClient : IAsyncDisposable
 
         _operationDurationHistogram.Record(
             durationSeconds,
-            new KeyValuePair<string, object?>[]
-            {
+            [
                 new(SpanAttrOperationName, OperationName(generation)),
                 new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
                 new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
                 new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
                 new(SpanAttrErrorType, errorType ?? string.Empty),
                 new(SpanAttrErrorCategory, errorCategory ?? string.Empty),
-            });
+            ]);
 
         RecordTokenUsage(generation, MetricTokenTypeInput, generation.Usage.InputTokens);
         RecordTokenUsage(generation, MetricTokenTypeOutput, generation.Usage.OutputTokens);
@@ -1348,12 +1364,11 @@ public sealed class SigilClient : IAsyncDisposable
 
         _toolCallsHistogram.Record(
             CountToolCallParts(generation.Output),
-            new KeyValuePair<string, object?>[]
-            {
+            [
                 new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
                 new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
                 new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
-            });
+            ]);
 
         if (string.Equals(OperationName(generation), DefaultOperationNameStream, StringComparison.Ordinal)
             && firstTokenAt.HasValue)
@@ -1363,12 +1378,11 @@ public sealed class SigilClient : IAsyncDisposable
             {
                 _ttftHistogram.Record(
                     ttftSeconds,
-                    new KeyValuePair<string, object?>[]
-                    {
+                    [
                         new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
                         new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
                         new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
-                    });
+                    ]);
             }
         }
     }
@@ -1385,28 +1399,26 @@ public sealed class SigilClient : IAsyncDisposable
         var durationSeconds = Math.Max(0d, (completedAt - startedAt).TotalSeconds);
         _operationDurationHistogram.Record(
             durationSeconds,
-            new KeyValuePair<string, object?>[]
-            {
+            [
                 new(SpanAttrOperationName, DefaultOperationNameEmbedding),
                 new(SpanAttrProviderName, seed.Model.Provider ?? string.Empty),
                 new(SpanAttrRequestModel, seed.Model.Name ?? string.Empty),
                 new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
                 new(SpanAttrErrorType, errorType ?? string.Empty),
                 new(SpanAttrErrorCategory, errorCategory ?? string.Empty),
-            });
+            ]);
 
         if (result.InputTokens != 0L)
         {
             _tokenUsageHistogram.Record(
                 result.InputTokens,
-                new KeyValuePair<string, object?>[]
-                {
+                [
                     new(SpanAttrOperationName, DefaultOperationNameEmbedding),
                     new(SpanAttrProviderName, seed.Model.Provider ?? string.Empty),
                     new(SpanAttrRequestModel, seed.Model.Name ?? string.Empty),
                     new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
                     new(MetricAttrTokenType, MetricTokenTypeInput),
-                });
+                ]);
         }
     }
 
@@ -1423,8 +1435,7 @@ public sealed class SigilClient : IAsyncDisposable
 
         _operationDurationHistogram.Record(
             durationSeconds,
-            new KeyValuePair<string, object?>[]
-            {
+            [
                 new(SpanAttrOperationName, "execute_tool"),
                 new(SpanAttrProviderName, (seed.RequestProvider ?? string.Empty).Trim()),
                 new(SpanAttrRequestModel, (seed.RequestModel ?? string.Empty).Trim()),
@@ -1432,7 +1443,7 @@ public sealed class SigilClient : IAsyncDisposable
                 new(SpanAttrAgentName, seed.AgentName ?? string.Empty),
                 new(SpanAttrErrorType, errorType),
                 new(SpanAttrErrorCategory, errorCategory),
-            });
+            ]);
     }
 
     internal static string ErrorCategoryFromException(Exception? error, bool fallbackSdk)
@@ -1448,8 +1459,8 @@ public sealed class SigilClient : IAsyncDisposable
         }
 
         var message = error.Message ?? string.Empty;
-        if (message.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0
-            || message.IndexOf("deadline exceeded", StringComparison.OrdinalIgnoreCase) >= 0)
+        if (message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("deadline exceeded", StringComparison.OrdinalIgnoreCase))
         {
             return "timeout";
         }
@@ -1492,14 +1503,13 @@ public sealed class SigilClient : IAsyncDisposable
 
         _tokenUsageHistogram.Record(
             value,
-            new KeyValuePair<string, object?>[]
-            {
+            [
                 new(SpanAttrOperationName, OperationName(generation)),
                 new(SpanAttrProviderName, generation.Model.Provider ?? string.Empty),
                 new(SpanAttrRequestModel, generation.Model.Name ?? string.Empty),
                 new(SpanAttrAgentName, generation.AgentName ?? string.Empty),
                 new(MetricAttrTokenType, tokenType),
-            });
+            ]);
     }
 
     private static long CountToolCallParts(IReadOnlyList<Message> messages)
@@ -1541,7 +1551,12 @@ public sealed class SigilClient : IAsyncDisposable
             }
         }
 
+#if NET
+        var matches = StatusCodeRegex().Matches(error.Message ?? string.Empty);
+#else
         var matches = StatusCodeRegex.Matches(error.Message ?? string.Empty);
+#endif
+
         foreach (Match match in matches)
         {
             if (int.TryParse(match.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
@@ -1610,7 +1625,7 @@ public sealed class SigilClient : IAsyncDisposable
     }
 
     private static bool TryGetThinkingBudgetFromMetadata(
-        IReadOnlyDictionary<string, object?> metadata,
+        Dictionary<string, object?> metadata,
         out long thinkingBudget
     )
     {
@@ -1676,13 +1691,13 @@ public sealed class SigilClient : IAsyncDisposable
     }
 
     private static List<string> CaptureEmbeddingInputTexts(
-        IReadOnlyList<string> inputTexts,
+        List<string> inputTexts,
         EmbeddingCaptureConfig captureConfig
     )
     {
         if (inputTexts == null || inputTexts.Count == 0)
         {
-            return new List<string>();
+            return [];
         }
 
         var maxItems = Math.Max(1, captureConfig.MaxInputItems);
@@ -1769,7 +1784,11 @@ public sealed class SigilClient : IAsyncDisposable
             scalarCount++;
         }
 
+#if NET
+        return text[..charIndex];
+#else
         return text.Substring(0, charIndex);
+#endif
     }
 
     internal static void RecordException(Activity activity, Exception error)
@@ -1804,7 +1823,12 @@ public sealed class GenerationRecorder
     private readonly Activity? _activity;
     private readonly bool _noop;
 
+#if NET10_0_OR_GREATER
+    private readonly Lock _gate = new();
+#else
     private readonly object _gate = new();
+#endif
+
     private bool _ended;
     private Exception? _callError;
     private Exception? _mappingError;
@@ -2075,7 +2099,7 @@ public sealed class GenerationRecorder
         return string.Empty;
     }
 
-    private static string MetadataString(IReadOnlyDictionary<string, object?> metadata, string key)
+    private static string MetadataString(Dictionary<string, object?> metadata, string key)
     {
         if (!metadata.TryGetValue(key, out var value) || value == null)
         {
@@ -2120,7 +2144,12 @@ public sealed class EmbeddingRecorder
     private readonly Activity? _activity;
     private readonly bool _noop;
 
+#if NET10_0_OR_GREATER
+    private readonly Lock _gate = new();
+#else
     private readonly object _gate = new();
+#endif
+
     private bool _ended;
     private Exception? _callError;
     private EmbeddingResult _result = new();
@@ -2261,7 +2290,12 @@ public sealed class ToolExecutionRecorder
     private readonly Activity? _activity;
     private readonly bool _noop;
 
+#if NET10_0_OR_GREATER
+    private readonly Lock _gate = new();
+#else
     private readonly object _gate = new();
+#endif
+
     private bool _ended;
     private Exception? _executionError;
     private ToolExecutionEnd _result = new();

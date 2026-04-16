@@ -15,16 +15,13 @@ public static class GeminiRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
-
-        return await GenerateContentAsync(
+        return provider == null
+            ? throw new ArgumentNullException(nameof(provider))
+            : await GenerateContentAsync(
             client,
             model,
             contents,
-            (requestModel, requestContents, requestConfig, ct) => provider.Models.GenerateContentAsync(requestModel, requestContents, requestConfig, ct),
+            provider.Models.GenerateContentAsync,
             config,
             options,
             cancellationToken
@@ -41,20 +38,14 @@ public static class GeminiRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
+        ArgumentNullException.ThrowIfNull(client);
 
         if (string.IsNullOrWhiteSpace(model))
         {
             throw new ArgumentException("model is required", nameof(model));
         }
 
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new GeminiSigilOptions();
         var mappedContents = MapContents(contents);
@@ -113,16 +104,13 @@ public static class GeminiRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
-
-        return await GenerateContentStreamAsync(
+        return provider == null
+            ? throw new ArgumentNullException(nameof(provider))
+            : await GenerateContentStreamAsync(
             client,
             model,
             contents,
-            (requestModel, requestContents, requestConfig, ct) => provider.Models.GenerateContentStreamAsync(requestModel, requestContents, requestConfig, ct),
+            provider.Models.GenerateContentStreamAsync,
             config,
             options,
             cancellationToken
@@ -139,20 +127,14 @@ public static class GeminiRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
+        ArgumentNullException.ThrowIfNull(client);
 
         if (string.IsNullOrWhiteSpace(model))
         {
             throw new ArgumentException("model is required", nameof(model));
         }
 
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new GeminiSigilOptions();
         var mappedContents = MapContents(contents);
@@ -224,16 +206,13 @@ public static class GeminiRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (provider == null)
-        {
-            throw new ArgumentNullException(nameof(provider));
-        }
-
-        return await EmbedContentAsync(
+        return provider == null
+            ? throw new ArgumentNullException(nameof(provider))
+            : await EmbedContentAsync(
             client,
             model,
             contents,
-            (requestModel, requestContents, requestConfig, ct) => provider.Models.EmbedContentAsync(requestModel, requestContents, requestConfig, ct),
+            provider.Models.EmbedContentAsync,
             config,
             options,
             cancellationToken
@@ -250,20 +229,14 @@ public static class GeminiRecorder
         CancellationToken cancellationToken = default
     )
     {
-        if (client == null)
-        {
-            throw new ArgumentNullException(nameof(client));
-        }
+        ArgumentNullException.ThrowIfNull(client);
 
         if (string.IsNullOrWhiteSpace(model))
         {
             throw new ArgumentException("model is required", nameof(model));
         }
 
-        if (invoke == null)
-        {
-            throw new ArgumentNullException(nameof(invoke));
-        }
+        ArgumentNullException.ThrowIfNull(invoke);
 
         var effective = options ?? new GeminiSigilOptions();
         var mappedContents = MapContents(contents);

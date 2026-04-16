@@ -1,6 +1,5 @@
-using System.Text.Json;
 using Google.GenAI.Types;
-using Grafana.Sigil;
+using System.Text.Json;
 using SigilPart = Grafana.Sigil.Part;
 
 namespace Grafana.Sigil.Gemini;
@@ -24,10 +23,7 @@ public static class GeminiGenerationMapper
             throw new ArgumentException("model is required", nameof(model));
         }
 
-        if (response == null)
-        {
-            throw new ArgumentNullException(nameof(response));
-        }
+        ArgumentNullException.ThrowIfNull(response);
 
         var request = BuildRequest(model, contents, config);
         return FromRequestResponseInternal(request, response, options);
@@ -46,10 +42,7 @@ public static class GeminiGenerationMapper
             throw new ArgumentException("model is required", nameof(model));
         }
 
-        if (summary == null)
-        {
-            throw new ArgumentNullException(nameof(summary));
-        }
+        ArgumentNullException.ThrowIfNull(summary);
 
         if (summary.Responses.Count == 0)
         {
@@ -87,7 +80,7 @@ public static class GeminiGenerationMapper
         }
 
         long inputTokens = 0;
-        foreach (var embedding in response.Embeddings ?? new List<ContentEmbedding>())
+        foreach (var embedding in response.Embeddings ?? [])
         {
             if (embedding == null)
             {
@@ -124,7 +117,7 @@ public static class GeminiGenerationMapper
         var effective = options ?? new GeminiSigilOptions();
         var modelName = ResolveModelName(request, effective);
 
-        var output = MapCandidates(response.Candidates, preferLastStopReason: false);
+        var output = MapCandidates(response.Candidates);
         var stopReason = ResolveStopReason(response.Candidates, preferLast: false);
         var usage = MapUsage(response.UsageMetadata);
         var tools = MapTools(request.Config);
@@ -229,7 +222,7 @@ public static class GeminiGenerationMapper
                 stopReason = responseStopReason;
             }
 
-            output.AddRange(MapCandidates(response.Candidates, preferLastStopReason: true));
+            output.AddRange(MapCandidates(response.Candidates));
         }
 
         var metadata = ThinkingMetadata(effective.Metadata, thinkingBudget, thinkingLevel);
@@ -321,7 +314,7 @@ public static class GeminiGenerationMapper
     {
         if (contents == null || contents.Count == 0)
         {
-            return new List<string>();
+            return [];
         }
 
         var inputTexts = new List<string>(contents.Count);
@@ -356,11 +349,11 @@ public static class GeminiGenerationMapper
         return string.Join("\n", chunks);
     }
 
-    private static List<Message> MapContents(IReadOnlyList<Content>? contents)
+    private static List<Message> MapContents(List<Content>? contents)
     {
         if (contents == null || contents.Count == 0)
         {
-            return new List<Message>();
+            return [];
         }
 
         var mapped = new List<Message>(contents.Count + 2);
@@ -376,7 +369,7 @@ public static class GeminiGenerationMapper
             var assistantParts = new List<SigilPart>();
             var toolParts = new List<SigilPart>();
 
-            foreach (var part in content.Parts ?? new List<Google.GenAI.Types.Part>())
+            foreach (var part in content.Parts ?? [])
             {
                 if (part == null)
                 {
@@ -463,11 +456,11 @@ public static class GeminiGenerationMapper
         return mapped;
     }
 
-    private static List<Message> MapCandidates(IReadOnlyList<Candidate>? candidates, bool preferLastStopReason)
+    private static List<Message> MapCandidates(List<Candidate>? candidates)
     {
         if (candidates == null || candidates.Count == 0)
         {
-            return new List<Message>();
+            return [];
         }
 
         var output = new List<Message>(candidates.Count);
@@ -478,7 +471,7 @@ public static class GeminiGenerationMapper
                 continue;
             }
 
-            output.AddRange(MapContents(new List<Content> { candidate.Content }));
+            output.AddRange(MapContents([candidate.Content]));
         }
 
         return output;
@@ -568,7 +561,7 @@ public static class GeminiGenerationMapper
     {
         if (config?.Tools == null || config.Tools.Count == 0)
         {
-            return new List<ToolDefinition>();
+            return [];
         }
 
         var mapped = new List<ToolDefinition>();
@@ -586,7 +579,7 @@ public static class GeminiGenerationMapper
                     continue;
                 }
 
-                byte[] schema = Array.Empty<byte>();
+                byte[] schema = [];
                 if (declaration.ParametersJsonSchema != null)
                 {
                     schema = SerializeJsonBytes(declaration.ParametersJsonSchema);
@@ -609,14 +602,14 @@ public static class GeminiGenerationMapper
         return mapped;
     }
 
-    private static string ResolveStopReason(IReadOnlyList<Candidate>? candidates, bool preferLast)
+    private static string ResolveStopReason(List<Candidate>? candidates, bool preferLast)
     {
         if (candidates == null || candidates.Count == 0)
         {
             return string.Empty;
         }
 
-        IEnumerable<Candidate?> sequence = preferLast ? candidates.Reverse() : candidates;
+        IEnumerable<Candidate?> sequence = preferLast ? candidates.Reverse<Candidate?>() : candidates;
         foreach (var candidate in sequence)
         {
             var reason = candidate?.FinishReason?.ToString();
@@ -694,7 +687,7 @@ public static class GeminiGenerationMapper
         GeminiSigilOptions options,
         GenerateContentRequest request,
         GenerateContentResponse response,
-        IReadOnlyList<ToolDefinition> tools
+        List<ToolDefinition> tools
     )
     {
         var artifacts = new List<Artifact>(3);
@@ -721,7 +714,7 @@ public static class GeminiGenerationMapper
         GeminiSigilOptions options,
         GenerateContentRequest request,
         GeminiStreamSummary summary,
-        IReadOnlyList<ToolDefinition> tools
+        List<ToolDefinition> tools
     )
     {
         var artifacts = new List<Artifact>(4);
@@ -753,7 +746,7 @@ public static class GeminiGenerationMapper
     {
         if (value == null)
         {
-            return Array.Empty<byte>();
+            return [];
         }
 
         return JsonSerializer.SerializeToUtf8Bytes(value);

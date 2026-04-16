@@ -9,7 +9,7 @@ internal static class OpenAIJsonHelpers
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return Array.Empty<byte>();
+            return [];
         }
 
         try
@@ -27,7 +27,7 @@ internal static class OpenAIJsonHelpers
     {
         if (data == null)
         {
-            return Array.Empty<byte>();
+            return [];
         }
 
         return data.ToArray();

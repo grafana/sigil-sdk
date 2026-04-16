@@ -33,7 +33,7 @@ public sealed class EmbeddingTelemetryTests
         {
             InputCount = 2,
             InputTokens = 45,
-            InputTexts = new List<string> { "first", "second" },
+            InputTexts = ["first", "second"],
             ResponseModel = "text-embedding-3-small",
         });
         recorder.End();
@@ -87,12 +87,12 @@ public sealed class EmbeddingTelemetryTests
         {
             InputCount = 3,
             InputTokens = 12,
-            InputTexts = new List<string>
-            {
+            InputTexts =
+            [
                 "12345678",
                 "123456789",
                 "ignored",
-            },
+            ],
         });
         recorder.End();
 
@@ -100,8 +100,10 @@ public sealed class EmbeddingTelemetryTests
 
         Assert.Single(spans);
         var captured = ReadTagStringValues(spans[0].GetTagItem("gen_ai.embeddings.input_texts"));
-        Assert.Equal(new[] { "12345678", "12345..." }, captured);
+        Assert.Equal(["12345678", "12345..."], captured);
     }
+
+    private static readonly string[] expected = ["😀😀..."];
 
     [Fact]
     public async Task EmbeddingSpan_TruncationPreservesSurrogatePairs()
@@ -129,7 +131,7 @@ public sealed class EmbeddingTelemetryTests
         recorder.SetResult(new EmbeddingResult
         {
             InputCount = 1,
-            InputTexts = new List<string> { "😀😀😀😀😀😀" }, // 6 emoji = 6 code points
+            InputTexts = ["😀😀😀😀😀😀"], // 6 emoji = 6 code points
         });
         recorder.End();
 
@@ -137,7 +139,7 @@ public sealed class EmbeddingTelemetryTests
 
         Assert.Single(spans);
         var captured = ReadTagStringValues(spans[0].GetTagItem("gen_ai.embeddings.input_texts"));
-        Assert.Equal(new[] { "😀😀..." }, captured); // First 2 code points + "..."
+        Assert.Equal(expected, captured); // First 2 code points + "..."
     }
 
     [Fact]
@@ -303,7 +305,7 @@ public sealed class EmbeddingTelemetryTests
         var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
                 if (activity.GetTagItem("gen_ai.operation.name")?.ToString() == "embeddings")
@@ -320,10 +322,10 @@ public sealed class EmbeddingTelemetryTests
     {
         return value switch
         {
-            string text => new[] { text },
+            string text => [text],
             string[] values => values,
-            IEnumerable<string> values => values.ToArray(),
-            _ => Array.Empty<string>(),
+            IEnumerable<string> values => [.. values],
+            _ => [],
         };
     }
 }

@@ -1,29 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>net10.0;net8.0;netstandard2.0</TargetFrameworks>
     <AssemblyName>Grafana.Sigil</AssemblyName>
     <RootNamespace>Grafana.Sigil</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Grafana.Sigil</PackageId>
     <Description>Grafana Sigil .NET SDK core runtime for normalized generation export and OTel-aligned instrumentation.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+	<!-- TODO Fix trim warnings -->
+	<IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.34.1" />
-    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.78.0" PrivateAssets="All" />
-    <PackageReference Include="OpenTelemetry" Version="1.15.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
-    <PackageReference Include="System.Text.Json" Version="10.0.5" />
-    <PackageReference Include="System.Threading.Channels" Version="10.0.5" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+	<PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>
-    <Protobuf Include="../../../proto/sigil/v1/generation_ingest.proto"
-              ProtoRoot="../../../proto"
-              GrpcServices="Both"
-              Link="Proto/sigil/v1/generation_ingest.proto" />
+    <Protobuf Include="../../../proto/sigil/v1/generation_ingest.proto" ProtoRoot="../../../proto" GrpcServices="Both" Link="Proto/sigil/v1/generation_ingest.proto" />
   </ItemGroup>
 
   <ItemGroup>

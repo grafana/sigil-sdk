@@ -247,7 +247,7 @@ public sealed class RuntimeLifecycleTests
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
                 if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")
@@ -279,7 +279,7 @@ public sealed class RuntimeLifecycleTests
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
                 if (activity.GetTagItem("gen_ai.operation.name")?.ToString() == "execute_tool")

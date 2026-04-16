@@ -1,9 +1,9 @@
-using System.ClientModel.Primitives;
-using System.Diagnostics;
-using System.Reflection;
 using OpenAI.Chat;
 using OpenAI.Embeddings;
 using OpenAI.Responses;
+using System.ClientModel.Primitives;
+using System.Diagnostics;
+using System.Reflection;
 using Xunit;
 
 namespace Grafana.Sigil.OpenAI.Tests;
@@ -20,10 +20,12 @@ public sealed class OpenAIConformanceTests
             new ToolChatMessage("call_weather", "{\"temp_c\":18}"),
         };
 
-        var options = new ChatCompletionOptions();
-        options.MaxOutputTokenCount = 512;
-        options.ToolChoice = ChatToolChoice.CreateFunctionChoice("weather");
-        options.ReasoningEffortLevel = ChatReasoningEffortLevel.High;
+        var options = new ChatCompletionOptions
+        {
+            MaxOutputTokenCount = 512,
+            ToolChoice = ChatToolChoice.CreateFunctionChoice("weather"),
+            ReasoningEffortLevel = ChatReasoningEffortLevel.High
+        };
         options.Tools.Add(ChatTool.CreateFunctionTool(
             "weather",
             "Get weather",
@@ -34,14 +36,14 @@ public sealed class OpenAIConformanceTests
             id: "chatcmpl_1",
             finishReason: ChatFinishReason.ToolCalls,
             content: new ChatMessageContent("calling weather"),
-            toolCalls: new[]
-            {
+            toolCalls:
+            [
                 ChatToolCall.CreateFunctionToolCall(
                     "call_weather",
                     "weather",
                     BinaryData.FromString("{\"city\":\"Paris\"}")
                 ),
-            },
+            ],
             role: ChatMessageRole.Assistant,
             model: "gpt-5",
             usage: OpenAIChatModelFactory.ChatTokenUsage(
@@ -89,10 +91,12 @@ public sealed class OpenAIConformanceTests
             new UserChatMessage("hello"),
         };
 
-        var options = new ChatCompletionOptions();
-        options.MaxOutputTokenCount = 256;
-        options.ToolChoice = ChatToolChoice.CreateRequiredChoice();
-        options.ReasoningEffortLevel = ChatReasoningEffortLevel.Medium;
+        var options = new ChatCompletionOptions
+        {
+            MaxOutputTokenCount = 256,
+            ToolChoice = ChatToolChoice.CreateRequiredChoice(),
+            ReasoningEffortLevel = ChatReasoningEffortLevel.Medium
+        };
         options.Tools.Add(ChatTool.CreateFunctionTool("weather"));
 
         var response = OpenAIChatModelFactory.ChatCompletion(
@@ -471,7 +475,7 @@ public sealed class OpenAIConformanceTests
 
         var chatSummary = await OpenAIRecorder.CompleteChatStreamingAsync(
             client,
-            new List<ChatMessage> { new UserChatMessage("hello") },
+            [new UserChatMessage("hello")],
             (_, _, _) => EmptyChatUpdates(),
             requestOptions: null,
             options: new OpenAISigilOptions
@@ -482,7 +486,7 @@ public sealed class OpenAIConformanceTests
 
         var responsesSummary = await OpenAIRecorder.CreateResponseStreamingAsync(
             client,
-            new List<ResponseItem> { ResponseItem.CreateUserMessageItem("hello") },
+            [ResponseItem.CreateUserMessageItem("hello")],
             (_, _, _) => EmptyResponsesUpdates(),
             requestOptions: new CreateResponseOptions(),
             options: new OpenAISigilOptions
@@ -520,10 +524,9 @@ public sealed class OpenAIConformanceTests
             Dimensions = 256,
         };
         var response = OpenAIEmbeddingsModelFactory.OpenAIEmbeddingCollection(
-            new[]
-            {
-                OpenAIEmbeddingsModelFactory.OpenAIEmbedding(0, new[] { 0.1f, 0.2f, 0.3f }),
-            },
+            [
+                OpenAIEmbeddingsModelFactory.OpenAIEmbedding(0, [0.1f, 0.2f, 0.3f]),
+            ],
             "text-embedding-3-small",
             OpenAIEmbeddingsModelFactory.EmbeddingTokenUsage(inputTokenCount: 18, totalTokenCount: 18)
         );
@@ -575,10 +578,9 @@ public sealed class OpenAIConformanceTests
         ));
 
         var response = OpenAIEmbeddingsModelFactory.OpenAIEmbeddingCollection(
-            new[]
-            {
-                OpenAIEmbeddingsModelFactory.OpenAIEmbedding(0, new[] { 0.1f, 0.2f }),
-            },
+            [
+                OpenAIEmbeddingsModelFactory.OpenAIEmbedding(0, [0.1f, 0.2f]),
+            ],
             "text-embedding-3-small",
             OpenAIEmbeddingsModelFactory.EmbeddingTokenUsage(inputTokenCount: 6, totalTokenCount: 6)
         );
@@ -616,12 +618,12 @@ public sealed class OpenAIConformanceTests
 
     private static ResponseResult ReadResponse(string json)
     {
-        return ModelReaderWriter.Read<ResponseResult>(BinaryData.FromString(json));
+        return ModelReaderWriter.Read<ResponseResult>(BinaryData.FromString(json))!;
     }
 
     private static StreamingResponseUpdate ReadStreamingEvent(string json)
     {
-        return ModelReaderWriter.Read<StreamingResponseUpdate>(BinaryData.FromString(json));
+        return ModelReaderWriter.Read<StreamingResponseUpdate>(BinaryData.FromString(json))!;
     }
 
     private static async IAsyncEnumerable<StreamingChatCompletionUpdate> StreamChatUpdates()
@@ -684,7 +686,7 @@ public sealed class OpenAIConformanceTests
         return new ActivityListener
         {
             ShouldListenTo = source => source.Name == "github.com/grafana/sigil/sdks/dotnet",
-            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
             ActivityStopped = activity =>
             {
                 if (activity.GetTagItem("gen_ai.operation.name")?.ToString() != "execute_tool")
@@ -697,18 +699,18 @@ public sealed class OpenAIConformanceTests
 
     private sealed class CapturingExporter : IGenerationExporter
     {
-        public List<ExportGenerationsRequest> Requests { get; } = new();
+        public List<ExportGenerationsRequest> Requests { get; } = [];
 
         public Task<ExportGenerationsResponse> ExportGenerationsAsync(ExportGenerationsRequest request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
             return Task.FromResult(new ExportGenerationsResponse
             {
-                Results = request.Generations.Select(generation => new ExportGenerationResult
+                Results = [.. request.Generations.Select(generation => new ExportGenerationResult
                 {
                     GenerationId = generation.Id,
                     Accepted = true,
-                }).ToList(),
+                })],
             });
         }
 

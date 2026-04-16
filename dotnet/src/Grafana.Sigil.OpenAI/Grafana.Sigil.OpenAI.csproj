@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
     <AssemblyName>Grafana.Sigil.OpenAI</AssemblyName>
     <RootNamespace>Grafana.Sigil.OpenAI</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Grafana.Sigil/Grafana.Sigil.csproj" />
-    <PackageReference Include="OpenAI" Version="2.9.1" />
+    <PackageReference Include="OpenAI" />
   </ItemGroup>
 
   <ItemGroup>

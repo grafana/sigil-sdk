@@ -292,10 +292,10 @@ internal sealed class RatingCaptureServer : IDisposable
                     var path = context.Request.Url?.AbsolutePath ?? string.Empty;
                     Requests.Enqueue((path, headers, body));
 
-                    var response = responseFactory(path, headers, body);
-                    context.Response.StatusCode = response.StatusCode;
-                    context.Response.ContentType = response.ContentType;
-                    await context.Response.OutputStream.WriteAsync(response.Body).ConfigureAwait(false);
+                    var (statusCode, contentType, response) = responseFactory(path, headers, body);
+                    context.Response.StatusCode = statusCode;
+                    context.Response.ContentType = contentType;
+                    await context.Response.OutputStream.WriteAsync(response).ConfigureAwait(false);
                 }
                 finally
                 {

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
@@ -10,8 +9,13 @@ internal static class InternalUtils
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
+
+#if NET
+    private static readonly Random RandomSource = Random.Shared;
+#else
     private static readonly Random RandomSource = new();
     private static readonly object RandomLock = new();
+#endif
 
     public static T DeepClone<T>(T value)
     {
@@ -27,10 +31,14 @@ internal static class InternalUtils
     public static string NewRandomId(string prefix)
     {
         var bytes = new byte[8];
+
+#if !NET
         lock (RandomLock)
+#endif
         {
             RandomSource.NextBytes(bytes);
         }
+
         var buffer = new StringBuilder(prefix.Length + 1 + 16);
         buffer.Append(prefix);
         buffer.Append('_');
@@ -61,7 +69,7 @@ internal static class InternalUtils
     {
         if (value == null)
         {
-            return Array.Empty<byte>();
+            return [];
         }
 
         return JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);

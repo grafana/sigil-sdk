@@ -1,14 +1,12 @@
-using System.Collections.Concurrent;
-using System.Net;
-using System.Text;
-using System.Text.Json;
-using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.Collections.Concurrent;
+using System.Net;
+using System.Text;
 using IngestProto = global::Sigil.V1;
 
 namespace Grafana.Sigil.Tests;
@@ -198,8 +196,13 @@ internal static class TestHelpers
 
 internal sealed class CapturingGenerationExporter : IGenerationExporter
 {
+#if NET10_0_OR_GREATER
+    private readonly Lock _gate = new();
+#else
     private readonly object _gate = new();
-    private readonly List<ExportGenerationsRequest> _requests = new();
+#endif
+
+    private readonly List<ExportGenerationsRequest> _requests = [];
 
     public int Calls { get; private set; }
 
@@ -211,7 +214,7 @@ internal sealed class CapturingGenerationExporter : IGenerationExporter
         {
             lock (_gate)
             {
-                return _requests.ToList();
+                return [.. _requests];
             }
         }
     }
@@ -234,11 +237,11 @@ internal sealed class CapturingGenerationExporter : IGenerationExporter
 
         var response = new ExportGenerationsResponse
         {
-            Results = request.Generations.Select(g => new ExportGenerationResult
+            Results = [.. request.Generations.Select(g => new ExportGenerationResult
             {
                 GenerationId = g.Id,
                 Accepted = true,
-            }).ToList(),
+            })],
         };
 
         return Task.FromResult(response);
@@ -403,8 +406,13 @@ internal sealed class GrpcIngestServer : IDisposable
 
     private sealed class RequestStore
     {
+#if NET10_0_OR_GREATER
+        private readonly Lock _gate = new();
+#else
         private readonly object _gate = new();
-        private readonly List<(IngestProto.ExportGenerationsRequest Request, Metadata Headers)> _requests = new();
+#endif
+
+        private readonly List<(IngestProto.ExportGenerationsRequest Request, Metadata Headers)> _requests = [];
 
         public void Add(IngestProto.ExportGenerationsRequest request, Metadata headers)
         {
@@ -418,7 +426,7 @@ internal sealed class GrpcIngestServer : IDisposable
         {
             lock (_gate)
             {
-                return _requests.ToList();
+                return [.. _requests];
             }
         }
     }
@@ -427,10 +435,7 @@ internal sealed class GrpcIngestServer : IDisposable
     {
         private readonly RequestStore _store;
 
-        public IngestService(RequestStore store)
-        {
-            _store = store;
-        }
+        public IngestService(RequestStore store) => _store = store;
 
         public override Task<IngestProto.ExportGenerationsResponse> ExportGenerations(
             IngestProto.ExportGenerationsRequest request,

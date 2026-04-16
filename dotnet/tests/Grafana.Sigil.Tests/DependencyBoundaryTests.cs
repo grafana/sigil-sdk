@@ -1,3 +1,4 @@
+using System.Reflection;
 using Xunit;
 
 namespace Grafana.Sigil.Tests;
@@ -7,8 +8,13 @@ public sealed class DependencyBoundaryTests
     [Fact]
     public void CoreProject_DoesNotDependOnProviderSdkPackages()
     {
+        var solutionRoot = typeof(DependencyBoundaryTests).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .First((p) => p.Key is "SolutionRoot")
+            .Value;
+
         var projectPath = Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, "../../../../../src/Grafana.Sigil/Grafana.Sigil.csproj")
+            Path.Combine(solutionRoot!, "src", "Grafana.Sigil", "Grafana.Sigil.csproj")
         );
         var content = File.ReadAllText(projectPath);
 

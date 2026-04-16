@@ -48,7 +48,7 @@ public sealed class ToolDefinition
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
-    public byte[] InputSchemaJson { get; set; } = Array.Empty<byte>();
+    public byte[] InputSchemaJson { get; set; } = [];
 }
 
 public sealed class TokenUsage
@@ -97,7 +97,7 @@ public sealed class ToolCall
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
-    public byte[] InputJson { get; set; } = Array.Empty<byte>();
+    public byte[] InputJson { get; set; } = [];
 }
 
 public sealed class ToolResult
@@ -105,7 +105,7 @@ public sealed class ToolResult
     public string ToolCallId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
-    public byte[] ContentJson { get; set; } = Array.Empty<byte>();
+    public byte[] ContentJson { get; set; } = [];
     public bool IsError { get; set; }
 }
 
@@ -143,21 +143,21 @@ public sealed class Message
 {
     public MessageRole Role { get; set; }
     public string Name { get; set; } = string.Empty;
-    public List<Part> Parts { get; set; } = new();
+    public List<Part> Parts { get; set; } = [];
 
     public static Message UserTextMessage(string text)
     {
-        return new Message { Role = MessageRole.User, Parts = new List<Part> { Part.TextPart(text) } };
+        return new Message { Role = MessageRole.User, Parts = [Part.TextPart(text)] };
     }
 
     public static Message AssistantTextMessage(string text)
     {
-        return new Message { Role = MessageRole.Assistant, Parts = new List<Part> { Part.TextPart(text) } };
+        return new Message { Role = MessageRole.Assistant, Parts = [Part.TextPart(text)] };
     }
 
     public static Message ToolResultMessage(string toolCallId, object? content)
     {
-        byte[] payload = Array.Empty<byte>();
+        byte[] payload = [];
         if (content != null)
         {
             payload = JsonSerializer.SerializeToUtf8Bytes(content);
@@ -166,14 +166,14 @@ public sealed class Message
         return new Message
         {
             Role = MessageRole.Tool,
-            Parts = new List<Part>
-            {
+            Parts =
+            [
                 Part.ToolResultPart(new ToolResult
                 {
                     ToolCallId = toolCallId,
                     ContentJson = payload,
                 }),
-            },
+            ],
         };
     }
 }
@@ -183,7 +183,7 @@ public sealed class Artifact
     public ArtifactKind Kind { get; set; }
     public string Name { get; set; } = string.Empty;
     public string ContentType { get; set; } = string.Empty;
-    public byte[] Payload { get; set; } = Array.Empty<byte>();
+    public byte[] Payload { get; set; } = [];
     public string RecordId { get; set; } = string.Empty;
     public string Uri { get; set; } = string.Empty;
 
@@ -216,8 +216,8 @@ public sealed class GenerationStart
     public double? TopP { get; set; }
     public string? ToolChoice { get; set; }
     public bool? ThinkingEnabled { get; set; }
-    public List<string> ParentGenerationIds { get; set; } = new();
-    public List<ToolDefinition> Tools { get; set; } = new();
+    public List<string> ParentGenerationIds { get; set; } = [];
+    public List<ToolDefinition> Tools { get; set; } = [];
     public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
     public DateTimeOffset? StartedAt { get; set; }
@@ -239,7 +239,7 @@ public sealed class EmbeddingResult
 {
     public int InputCount { get; set; }
     public long InputTokens { get; set; }
-    public List<string> InputTexts { get; set; } = new();
+    public List<string> InputTexts { get; set; } = [];
     public string ResponseModel { get; set; } = string.Empty;
     public long? Dimensions { get; set; }
 }
@@ -265,17 +265,17 @@ public sealed class Generation
     public double? TopP { get; set; }
     public string? ToolChoice { get; set; }
     public bool? ThinkingEnabled { get; set; }
-    public List<string> ParentGenerationIds { get; set; } = new();
-    public List<Message> Input { get; set; } = new();
-    public List<Message> Output { get; set; } = new();
-    public List<ToolDefinition> Tools { get; set; } = new();
+    public List<string> ParentGenerationIds { get; set; } = [];
+    public List<Message> Input { get; set; } = [];
+    public List<Message> Output { get; set; } = [];
+    public List<ToolDefinition> Tools { get; set; } = [];
     public TokenUsage Usage { get; set; } = new();
     public string StopReason { get; set; } = string.Empty;
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
-    public List<Artifact> Artifacts { get; set; } = new();
+    public List<Artifact> Artifacts { get; set; } = [];
     public string CallError { get; set; } = string.Empty;
 }
 
@@ -313,12 +313,12 @@ public sealed class ExportGenerationResult
 
 public sealed class ExportGenerationsRequest
 {
-    public List<Generation> Generations { get; set; } = new();
+    public List<Generation> Generations { get; set; } = [];
 }
 
 public sealed class ExportGenerationsResponse
 {
-    public List<ExportGenerationResult> Results { get; set; } = new();
+    public List<ExportGenerationResult> Results { get; set; } = [];
 }
 
 public sealed class SubmitConversationRatingRequest

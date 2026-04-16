@@ -23,6 +23,7 @@ coverage.out
 plugins/claude-code/sigil-cc
 
 # dotnet artifacts
+dotnet/**/artifacts/
 dotnet/**/bin/
 dotnet/**/obj/
 
@@ -56,6 +57,7 @@ __pycache__/
 # editor/OS
 .DS_Store
 .idea/
+.vs/
 .vscode/
 .eslintcache
 .turbo/

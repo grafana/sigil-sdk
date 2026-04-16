@@ -1,6 +1,6 @@
-using System.Text.Json;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
+using System.Text.Json;
 using Proto = Sigil.V1;
 
 namespace Grafana.Sigil;
@@ -149,7 +149,7 @@ internal static class ProtoMapping
                     {
                         Id = part.ToolCall.Id,
                         Name = part.ToolCall.Name,
-                        InputJson = ByteString.CopyFrom(part.ToolCall.InputJson ?? Array.Empty<byte>()),
+                        InputJson = ByteString.CopyFrom(part.ToolCall.InputJson ?? []),
                     };
                 }
                 break;
@@ -161,7 +161,7 @@ internal static class ProtoMapping
                         ToolCallId = part.ToolResult.ToolCallId,
                         Name = part.ToolResult.Name,
                         Content = part.ToolResult.Content,
-                        ContentJson = ByteString.CopyFrom(part.ToolResult.ContentJson ?? Array.Empty<byte>()),
+                        ContentJson = ByteString.CopyFrom(part.ToolResult.ContentJson ?? []),
                         IsError = part.ToolResult.IsError,
                     };
                 }
@@ -178,7 +178,7 @@ internal static class ProtoMapping
             Name = definition.Name,
             Description = definition.Description,
             Type = definition.Type,
-            InputSchemaJson = ByteString.CopyFrom(definition.InputSchemaJson ?? Array.Empty<byte>()),
+            InputSchemaJson = ByteString.CopyFrom(definition.InputSchemaJson ?? []),
         };
     }
 
@@ -196,7 +196,7 @@ internal static class ProtoMapping
             },
             Name = artifact.Name,
             ContentType = artifact.ContentType,
-            Payload = ByteString.CopyFrom(artifact.Payload ?? Array.Empty<byte>()),
+            Payload = ByteString.CopyFrom(artifact.Payload ?? []),
             RecordId = artifact.RecordId,
             Uri = artifact.Uri,
         };
