@@ -1,6 +1,17 @@
 import type { Generation, GenerationSanitizer, Message, MessagePart } from './types.js';
 import { cloneGeneration } from './utils.js';
 
+/**
+ * Secret redaction engine for Sigil content capture.
+ *
+ * ~20 high-confidence patterns hand-curated from Gitleaks
+ * (https://github.com/gitleaks/gitleaks). Two tiers:
+ *   - Tier 1: definite secret formats — used by both redact() and redactLightweight()
+ *   - Tier 2: heuristic env patterns — used only by redact()
+ *
+ * Add more patterns when concrete unredacted secrets are observed.
+ */
+
 interface SecretPattern {
   id: string;
   regex: RegExp;
@@ -14,6 +25,7 @@ export interface SecretRedactionOptions {
   redactInputMessages?: boolean;
 }
 
+// --- Tier 1: High-confidence patterns (definite secret formats) ---
 const tier1Patterns: SecretPattern[] = [
   { id: 'grafana-cloud-token', regex: /\bglc_[A-Za-z0-9_-]{20,}/g },
   { id: 'grafana-service-account-token', regex: /\bglsa_[A-Za-z0-9_-]{20,}/g },
@@ -39,6 +51,7 @@ const tier1Patterns: SecretPattern[] = [
   { id: 'pypi-token', regex: /\bpypi-[A-Za-z0-9_-]{50,}/g },
 ];
 
+// --- Tier 2: Heuristic patterns (env file values) ---
 const tier2Patterns: SecretPattern[] = [
   {
     id: 'env-secret-value',
@@ -47,10 +60,12 @@ const tier2Patterns: SecretPattern[] = [
 ];
 
 class SecretRedactor {
+  /** Full redaction: tier 1 + tier 2. Use for tool call args and tool results. */
   redact(text: string): string {
     return applyPatterns(applyPatterns(text, tier1Patterns), tier2Patterns);
   }
 
+  /** Lightweight redaction: tier 1 only. Use for assistant text and reasoning. */
   redactLightweight(text: string): string {
     return applyPatterns(text, tier1Patterns);
   }
