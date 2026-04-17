@@ -63,8 +63,15 @@ func makeUserLine(content string) transcript.Line {
 }
 
 func makeToolResultLine(toolUseID, content string) transcript.Line {
-	contentJSON, _ := json.Marshal(content)
-	blocks := []transcript.UserContentBlock{{Type: "tool_result", ToolUseID: toolUseID, RawContent: contentJSON}}
+	return makeMultiToolResultLine(map[string]string{toolUseID: content})
+}
+
+func makeMultiToolResultLine(results map[string]string) transcript.Line {
+	var blocks []transcript.UserContentBlock
+	for id, content := range results {
+		contentJSON, _ := json.Marshal(content)
+		blocks = append(blocks, transcript.UserContentBlock{Type: "tool_result", ToolUseID: id, RawContent: contentJSON})
+	}
 	blocksJSON, _ := json.Marshal(blocks)
 	msg := transcript.UserMessage{Role: "user", Content: blocksJSON}
 	raw, _ := json.Marshal(msg)
@@ -669,6 +676,100 @@ func TestTruncateJSON(t *testing.T) {
 				var v any
 				if err := json.Unmarshal(result, &v); err != nil {
 					t.Errorf("result is not valid JSON: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestProcess_ParentGenerationIDs(t *testing.T) {
+	tests := []struct {
+		name         string
+		lines        []transcript.Line
+		wantGenCount int
+		// wantParents maps gen index → parent gen indices. Absent or nil means no parents.
+		wantParents map[int][]int
+		// wantAgentNames optionally checks AgentName per gen index.
+		wantAgentNames map[int]string
+	}{
+		{
+			name: "agent call synthesises subagent generation",
+			lines: []transcript.Line{
+				makeUserLine("research this"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_1", Name: "Agent", Input: json.RawMessage(`{"description":"test"}`)},
+				}, "tool_use"),
+				makeToolResultLine("agent_1", "agent result here"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "Based on the agent result..."},
+				}, "end_turn"),
+			},
+			// gen[0] = parent, gen[1] = synthetic subagent, gen[2] = continuation
+			wantGenCount:   3,
+			wantParents:    map[int][]int{1: {0}},
+			wantAgentNames: map[int]string{1: "claude-code/subagent"},
+		},
+		{
+			name: "parallel agent calls produce multiple subagent generations",
+			lines: []transcript.Line{
+				makeUserLine("run two agents"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_a", Name: "Agent", Input: json.RawMessage(`{"description":"A"}`)},
+					{Type: "tool_use", ID: "agent_b", Name: "Agent", Input: json.RawMessage(`{"description":"B"}`)},
+				}, "tool_use"),
+				makeMultiToolResultLine(map[string]string{"agent_a": "result A", "agent_b": "result B"}),
+				makeAssistantLine("claude-sonnet-4-20250514", 50, []transcript.ContentBlock{
+					{Type: "text", Text: "Both agents done."},
+				}, "end_turn"),
+			},
+			// gen[0] = parent, gen[1..2] = synthetic subagents, gen[3] = continuation
+			wantGenCount: 4,
+			wantParents:  map[int][]int{1: {0}, 2: {0}},
+		},
+		{
+			name: "non-agent tool calls do not synthesise",
+			lines: []transcript.Line{
+				makeUserLine("read a file"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "tu_read", Name: "Read", Input: json.RawMessage(`{"path":"f.go"}`)},
+				}, "tool_use"),
+				makeToolResultLine("tu_read", "file contents"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "The file says..."},
+				}, "end_turn"),
+			},
+			wantGenCount: 2,
+			wantParents:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &state.Session{}
+			gens := Process(tt.lines, st, Options{SessionID: "sess-1"}, nil)
+
+			if len(gens) != tt.wantGenCount {
+				t.Fatalf("got %d generations, want %d", len(gens), tt.wantGenCount)
+			}
+			for i, gen := range gens {
+				wantIdxs, hasEntry := tt.wantParents[i]
+				if !hasEntry {
+					if gen.ParentGenerationIDs != nil {
+						t.Errorf("gen[%d]: unexpected parent_generation_ids = %v", i, gen.ParentGenerationIDs)
+					}
+					continue
+				}
+				if len(gen.ParentGenerationIDs) != len(wantIdxs) {
+					t.Fatalf("gen[%d]: got %d parents, want %d", i, len(gen.ParentGenerationIDs), len(wantIdxs))
+				}
+				for j, idx := range wantIdxs {
+					if gen.ParentGenerationIDs[j] != gens[idx].ID {
+						t.Errorf("gen[%d].ParentGenerationIDs[%d] = %q, want gen[%d].ID = %q",
+							i, j, gen.ParentGenerationIDs[j], idx, gens[idx].ID)
+					}
+				}
+				if wantName, ok := tt.wantAgentNames[i]; ok && gen.AgentName != wantName {
+					t.Errorf("gen[%d].AgentName = %q, want %q", i, gen.AgentName, wantName)
 				}
 			}
 		})
