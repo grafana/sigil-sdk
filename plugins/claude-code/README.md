@@ -75,6 +75,8 @@ go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
 | `SIGIL_PASSWORD` | yes | Basic auth password |
 | `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`) |
 | `SIGIL_EXTRA_TAGS` | no | Comma-separated `key=value` tags added to every generation (e.g. `account=work,env=dev`). Built-in tags (`git.branch`, `cwd`, `entrypoint`, `subagent`) take precedence on collision. |
+| `SIGIL_USER_ID` | no | Explicit override for the per-generation user id. When set to a non-whitespace value it wins over `~/.claude.json` and ignores `SIGIL_USER_ID_SOURCE`. |
+| `SIGIL_USER_ID_SOURCE` | no | Field to read from `~/.claude.json` when `SIGIL_USER_ID` is unset: `email` (default, uses `oauthAccount.emailAddress`) or `accountUuid` (uses `oauthAccount.accountUuid`). Unknown values fall back to `email`. |
 | `SIGIL_OTEL_ENDPOINT` | no | OTLP HTTP endpoint for metrics + traces (e.g. `https://otlp-gateway.grafana.net/otlp` or `host:4318`) |
 | `SIGIL_OTEL_USER` | no | OTLP auth username (defaults to `SIGIL_USER`) |
 | `SIGIL_OTEL_PASSWORD` | no | OTLP auth password (defaults to `SIGIL_PASSWORD`) |
