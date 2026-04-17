@@ -22,13 +22,8 @@ Both LLM calls run under the same `conversation_id`, so they land grouped togeth
 ## Prerequisites
 
 - Python 3.11+
-- `[uv](https://docs.astral.sh/uv/)`
+- [uv](https://docs.astral.sh/uv/)
 - An `ANTHROPIC_API_KEY`
-- A local Sigil stack reachable at:
-  - `http://localhost:8080` — HTTP generation ingest + REST API
-  - `localhost:4317` — OTLP gRPC (traces, metrics)
-
-If you're running the Sigil dev compose from this repo, both ports are already exposed and auth is disabled.
 
 ## Setup
 
