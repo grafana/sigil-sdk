@@ -7,7 +7,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
   "sigil-sdk>=0.1.2",
-  "openai>=2.20.0,<3",
+  "openai>=1.66.0,<3",
 ]
 
 [project.optional-dependencies]
