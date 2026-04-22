@@ -1,0 +1,11 @@
+[env]
+PYTHONPATH = ""
+PYTHONHOME = ""
+
+[tasks.dev]
+description = "Run the FastAPI app with autoreload"
+run = "uv run uvicorn app.main:app --reload --port 8000"
+
+[tasks.sync]
+description = "Install deps into the local venv"
+run = "uv sync"

@@ -1,0 +1,98 @@
+# Sigil + LangChain weather example
+
+A deliberately small FastAPI service that demonstrates **two ways to instrument LLM calls with Sigil from the same app**:
+
+
+| Path                        | How it's instrumented                                        | Where to look                              |
+| --------------------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| LangChain weather agent     | `with_sigil_langchain_callbacks(...)` on the runnable config | `[app/agent.py](./app/agent.py)`           |
+| Direct Anthropic classifier | `sigil.start_generation(...)` + `rec.set_result(...)`        | `[app/classifier.py](./app/classifier.py)` |
+
+
+Both LLM calls run under the same `conversation_id`, so they land grouped together in the Sigil UI. That makes it easy to compare how each path shows up, and to see that framework callbacks and raw SDK recording produce the same canonical generation shape.
+
+## What the demo teaches
+
+1. **Setting up OpenTelemetry for a FastAPI app.** `[app/telemetry.py](./app/telemetry.py)` wires a `TracerProvider` and `MeterProvider` with OTLP gRPC exporters.
+2. **Creating a Sigil client.** `[app/sigil_client.py](./app/sigil_client.py)` builds a `sigil_sdk.Client` that reuses those OTel providers, so `gen_ai.`* spans and metrics flow through the same pipeline as the rest of the app.
+3. **Instrumenting a LangChain agent.** One line in `[app/agent.py](./app/agent.py)` — `with_sigil_langchain_callbacks(config, client=sigil, ...)` — attaches the Sigil callback handler to the agent's config.
+4. **Instrumenting arbitrary LLM code.** `[app/classifier.py](./app/classifier.py)` shows the raw SDK pattern for any provider call, regardless of framework.
+5. **Grouping related generations.** Passing a common `conversation_id` ties both calls together in the Sigil UI.
+
+## Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- An `ANTHROPIC_API_KEY`
+
+## Setup
+
+```bash
+cd examples/python-langchain
+cp .env.example .env
+uv sync
+```
+
+By default `pyproject.toml` pins `sigil-sdk` and `sigil-sdk-langchain` to the local packages in this monorepo via `[tool.uv.sources]`. Remove that block to consume the published PyPI releases instead.
+
+## Run
+
+```bash
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+## Try it
+
+```bash
+# On-topic: agent uses the tool, classifier returns ON_TOPIC
+curl -s localhost:8000/chat \
+  -H 'content-type: application/json' \
+  -d '{"message": "Whats the weather in Paris on 2026-04-18?"}' | jq
+
+# Off-topic: agent declines, classifier returns OFF_TOPIC
+curl -s localhost:8000/chat \
+  -H 'content-type: application/json' \
+  -d '{"message": "Write me a limerick about kubernetes."}' | jq
+```
+
+FastAPI also serves interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+## What to look for in Sigil
+
+Open the Sigil UI. For each request you should see:
+
+- A **conversation** identified by the `conv-…` id returned in the response.
+- Two generations under it:
+  - `weather-agent` — emitted by the LangChain callback handler, with a child `execute_tool` span for `get_weather` when invoked.
+  - `topic-classifier` — emitted by the manual SDK instrumentation.
+- In Tempo: a `chat.request` parent span containing `gen_ai.`* child spans from both paths, plus LangChain chain/tool spans.
+
+## Project layout
+
+```
+app/
+  telemetry.py      # OTel TracerProvider / MeterProvider bootstrap
+  sigil_client.py   # Sigil SDK client, wired to the OTel providers
+  agent.py          # LangChain agent + get_weather tool
+  classifier.py     # Direct Anthropic call, manually recorded to Sigil
+  weather.py        # Stubbed April 2026 weather data
+  main.py           # FastAPI app (POST /chat, GET /healthz)
+```
+
+## Environment variables
+
+See `[.env.example](./.env.example)`.
+
+
+| Variable                           | Purpose                                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                | Required. Used by both the agent and the classifier.                                    |
+| `SIGIL_GENERATION_EXPORT_ENDPOINT` | HTTP generation-ingest URL. Default `http://localhost:8080/api/v1/generations:export`.  |
+| `SIGIL_API_ENDPOINT`               | Sigil REST API base (ratings, etc.). Default `http://localhost:8080`.                   |
+| `SIGIL_TENANT_ID`                  | Sent as `X-Scope-OrgID`. Any value works when `SIGIL_AUTH_ENABLED=false` on the server. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`      | OTLP gRPC target for traces + metrics. Default `http://localhost:4317`.                 |
+| `OTEL_EXPORTER_OTLP_INSECURE`      | `true` for plaintext gRPC (local dev).                                                  |
+| `OTEL_SERVICE_NAME`                | Service name tag on spans / metrics.                                                    |
+| `AGENT_MODEL` / `CLASSIFIER_MODEL` | Anthropic model IDs.                                                                    |
+
+
