@@ -4,9 +4,9 @@
   <img src="./assets/readme/sigil-tri-shot.svg" alt="Sigil landing, analytics, and conversation explore views" width="100%" />
 </p>
 
-Sigil is an AI observability product from Grafana for teams running agents in production.
+[Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/) is a product from Grafana for teams running agents in production.
 
-Instrument once with a thin OpenTelemetry-native SDK, then use Sigil to see what your agents are doing, what they cost, how quality is changing, and which conversations need attention.
+Instrument once with a thin OpenTelemetry-native SDK, then use it to see what your agents are doing, what they cost, how quality is changing, and which conversations need attention.
 
 ## What You Get
 
