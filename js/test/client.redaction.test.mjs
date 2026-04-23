@@ -199,3 +199,72 @@ test('generation sanitizer failure falls back to metadata_only stripping', async
     await client.shutdown();
   }
 });
+
+test('secret redaction sanitizer redacts systemPrompt, conversationTitle, and callError', async () => {
+  const sanitizer = createSecretRedactionSanitizer();
+  const apiKey = 'sk-proj-' + 'a'.repeat(48);
+  const sanitized = sanitizer({
+    id: 'gen-4',
+    mode: 'SYNC',
+    operationName: 'generateText',
+    model: { provider: 'openai', name: 'gpt-5' },
+    systemPrompt: `Use API key ${apiKey} to call the service`,
+    conversationTitle: `Discussion about ${apiKey}`,
+    callError: `API error: invalid key ${apiKey}`,
+    startedAt: new Date('2026-01-01T00:00:00Z'),
+    completedAt: new Date('2026-01-01T00:00:01Z'),
+  });
+
+  assert.doesNotMatch(sanitized.systemPrompt, /sk-proj-/);
+  assert.match(sanitized.systemPrompt, /\[REDACTED:openai-project-key\]/);
+  assert.doesNotMatch(sanitized.conversationTitle, /sk-proj-/);
+  assert.match(sanitized.conversationTitle, /\[REDACTED:openai-project-key\]/);
+  assert.doesNotMatch(sanitized.callError, /sk-proj-/);
+  assert.match(sanitized.callError, /\[REDACTED:openai-project-key\]/);
+});
+
+test('secret redaction sanitizer respects none mode for non-text part types in input', async () => {
+  const sanitizer = createSecretRedactionSanitizer({ redactInputMessages: false });
+  const secretToken = 'glc_abcdefghijklmnopqrstuvwxyz1234';
+  const sanitized = sanitizer({
+    id: 'gen-5',
+    mode: 'SYNC',
+    operationName: 'generateText',
+    model: { provider: 'openai', name: 'gpt-5' },
+    startedAt: new Date('2026-01-01T00:00:00Z'),
+    completedAt: new Date('2026-01-01T00:00:01Z'),
+    input: [
+      {
+        role: 'assistant',
+        parts: [
+          { type: 'thinking', thinking: `thinking about ${secretToken}` },
+          {
+            type: 'tool_call',
+            toolCall: {
+              id: 'call-1',
+              name: 'bash',
+              inputJSON: JSON.stringify({ token: secretToken }),
+            },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        parts: [
+          {
+            type: 'tool_result',
+            toolResult: {
+              toolCallId: 'call-1',
+              name: 'bash',
+              content: `output ${secretToken}`,
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.match(sanitized.input[0].parts[0].thinking, /glc_/);
+  assert.match(sanitized.input[0].parts[1].toolCall.inputJSON, /glc_/);
+  assert.match(sanitized.input[1].parts[0].toolResult.content, /glc_/);
+});

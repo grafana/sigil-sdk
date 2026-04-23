@@ -103,6 +103,16 @@ export function createSecretRedactionSanitizer(options: SecretRedactionOptions =
   return (generation) => {
     const sanitized = cloneGeneration(generation);
 
+    if (sanitized.systemPrompt !== undefined) {
+      sanitized.systemPrompt = redactor.redactLightweight(sanitized.systemPrompt);
+    }
+    if (sanitized.conversationTitle !== undefined) {
+      sanitized.conversationTitle = redactor.redactLightweight(sanitized.conversationTitle);
+    }
+    if (sanitized.callError !== undefined) {
+      sanitized.callError = redactor.redactLightweight(sanitized.callError);
+    }
+
     for (const message of sanitized.input ?? []) {
       sanitizeMessage(message, redactor, message.role === 'user' && redactInputMessages ? 'full' : 'none');
     }
@@ -133,19 +143,23 @@ function sanitizePart(part: MessagePart, redactor: SecretRedactor, defaultTextMo
       part.text = redactString(part.text, redactor, defaultTextMode);
       break;
     case 'thinking':
-      part.thinking = redactor.redactLightweight(part.thinking);
+      if (defaultTextMode !== 'none') {
+        part.thinking = redactor.redactLightweight(part.thinking);
+      }
       break;
     case 'tool_call':
-      if (typeof part.toolCall.inputJSON === 'string') {
+      if (defaultTextMode !== 'none' && typeof part.toolCall.inputJSON === 'string') {
         part.toolCall.inputJSON = redactor.redact(part.toolCall.inputJSON);
       }
       break;
     case 'tool_result':
-      if (typeof part.toolResult.content === 'string') {
-        part.toolResult.content = redactor.redact(part.toolResult.content);
-      }
-      if (typeof part.toolResult.contentJSON === 'string') {
-        part.toolResult.contentJSON = redactor.redact(part.toolResult.contentJSON);
+      if (defaultTextMode !== 'none') {
+        if (typeof part.toolResult.content === 'string') {
+          part.toolResult.content = redactor.redact(part.toolResult.content);
+        }
+        if (typeof part.toolResult.contentJSON === 'string') {
+          part.toolResult.contentJSON = redactor.redact(part.toolResult.contentJSON);
+        }
       }
       break;
   }
