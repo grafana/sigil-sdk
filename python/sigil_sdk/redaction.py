@@ -13,7 +13,6 @@ Add more patterns when concrete unredacted secrets are observed.
 
 from __future__ import annotations
 
-import copy
 import re
 from dataclasses import dataclass
 
