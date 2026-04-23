@@ -116,13 +116,11 @@ def create_secret_redaction_sanitizer(
     redactor = _SecretRedactor(include_email_addresses=resolved.redact_email_addresses)
 
     def _sanitize(generation: Generation) -> Generation:
-        sanitized = copy.deepcopy(generation)
-
-        for message in sanitized.input:
+        for message in generation.input:
             mode = "full" if message.role == MessageRole.USER and resolved.redact_input_messages else "none"
             _sanitize_message(message, redactor, mode)
 
-        for message in sanitized.output:
+        for message in generation.output:
             if message.role == MessageRole.ASSISTANT:
                 mode = "light"
             elif message.role == MessageRole.TOOL:
@@ -131,7 +129,7 @@ def create_secret_redaction_sanitizer(
                 mode = "none"
             _sanitize_message(message, redactor, mode)
 
-        return sanitized
+        return generation
 
     return _sanitize
 
@@ -142,6 +140,8 @@ def _sanitize_message(message: Message, redactor: _SecretRedactor, default_text_
 
 
 def _sanitize_part(part: Part, redactor: _SecretRedactor, default_text_mode: str) -> None:
+    if default_text_mode == "none":
+        return
     if part.kind == PartKind.TEXT:
         part.text = _redact_string(part.text, redactor, default_text_mode)
         return
