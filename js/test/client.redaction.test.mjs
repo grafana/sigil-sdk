@@ -223,9 +223,10 @@ test('secret redaction sanitizer redacts systemPrompt, conversationTitle, and ca
   assert.match(sanitized.callError, /\[REDACTED:openai-project-key\]/);
 });
 
-test('secret redaction sanitizer respects none mode for non-text part types in input', async () => {
+test('secret redaction sanitizer redacts assistant and tool messages in input', async () => {
   const sanitizer = createSecretRedactionSanitizer({ redactInputMessages: false });
   const secretToken = 'glc_abcdefghijklmnopqrstuvwxyz1234';
+  const envSecret = 'DATABASE_PASSWORD=hunter2secret123';
   const sanitized = sanitizer({
     id: 'gen-5',
     mode: 'SYNC',
@@ -256,7 +257,7 @@ test('secret redaction sanitizer respects none mode for non-text part types in i
             toolResult: {
               toolCallId: 'call-1',
               name: 'bash',
-              content: `output ${secretToken}`,
+              content: `output ${secretToken} and ${envSecret}`,
             },
           },
         ],
@@ -264,7 +265,12 @@ test('secret redaction sanitizer respects none mode for non-text part types in i
     ],
   });
 
-  assert.match(sanitized.input[0].parts[0].thinking, /glc_/);
-  assert.match(sanitized.input[0].parts[1].toolCall.inputJSON, /glc_/);
-  assert.match(sanitized.input[1].parts[0].toolResult.content, /glc_/);
+  assert.doesNotMatch(sanitized.input[0].parts[0].thinking, /glc_/);
+  assert.match(sanitized.input[0].parts[0].thinking, /\[REDACTED:grafana-cloud-token\]/);
+  assert.doesNotMatch(sanitized.input[0].parts[1].toolCall.inputJSON, /glc_/);
+  assert.match(sanitized.input[0].parts[1].toolCall.inputJSON, /\[REDACTED:grafana-cloud-token\]/);
+  assert.doesNotMatch(sanitized.input[1].parts[0].toolResult.content, /glc_/);
+  assert.doesNotMatch(sanitized.input[1].parts[0].toolResult.content, /hunter2secret123/);
+  assert.match(sanitized.input[1].parts[0].toolResult.content, /\[REDACTED:grafana-cloud-token\]/);
+  assert.match(sanitized.input[1].parts[0].toolResult.content, /\[REDACTED:env-secret-value\]/);
 });

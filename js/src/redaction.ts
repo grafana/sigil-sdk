@@ -114,7 +114,19 @@ export function createSecretRedactionSanitizer(options: SecretRedactionOptions =
     }
 
     for (const message of sanitized.input ?? []) {
-      sanitizeMessage(message, redactor, message.role === 'user' && redactInputMessages ? 'full' : 'none');
+      sanitizeMessage(
+        message,
+        redactor,
+        message.role === 'user'
+          ? redactInputMessages
+            ? 'full'
+            : 'none'
+          : message.role === 'assistant'
+            ? 'light'
+            : message.role === 'tool'
+              ? 'full'
+              : 'none',
+      );
     }
     for (const message of sanitized.output ?? []) {
       sanitizeMessage(
