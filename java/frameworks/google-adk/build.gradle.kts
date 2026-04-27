@@ -7,11 +7,6 @@ mavenPublishing {
     coordinates(artifactId = "sigil-sdk-google-adk")
 }
 
-java {
-    withJavadocJar()
-    withSourcesJar()
-}
-
 dependencies {
     api(project(":core"))
 

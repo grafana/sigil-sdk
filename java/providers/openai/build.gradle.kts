@@ -7,11 +7,6 @@ mavenPublishing {
     coordinates(artifactId = "sigil-sdk-openai")
 }
 
-java {
-    withJavadocJar()
-    withSourcesJar()
-}
-
 dependencies {
     api(project(":core"))
     compileOnly(libs.openai.java)

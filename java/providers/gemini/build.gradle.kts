@@ -7,11 +7,6 @@ mavenPublishing {
     coordinates(artifactId = "sigil-sdk-gemini")
 }
 
-java {
-    withJavadocJar()
-    withSourcesJar()
-}
-
 dependencies {
     api(project(":core"))
     compileOnly(libs.google.genai)
