@@ -127,6 +127,32 @@ with client.start_generation(
 client.shutdown()
 ```
 
+## Instrument with AI Coding Agents
+
+Let your AI coding assistant add Sigil instrumentation for you. We provide ready-to-use prompts for Cursor, Claude Code, and GitHub Copilot that tell the agent how to find your LLM calls and wrap them with the SDK.
+
+**From the Sigil UI** — open the AI Observability plugin in your Grafana Cloud stack, go through the onboarding wizard, and pick your IDE. The prompt is generated for you with one click.
+
+**From this repo** — copy the prompt file for your IDE into your project:
+
+| IDE | Prompt file | Where to put it in your project |
+|-----|------------|-------------------------------|
+| Cursor | [`CLAUDE.md`](CLAUDE.md) | `.cursor/rules/sigil.mdc` (or paste into Cursor chat) |
+| Claude Code | [`CLAUDE.md`](CLAUDE.md) | `CLAUDE.md` at your project root |
+| GitHub Copilot | [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | `.github/copilot-instructions.md` in your project |
+
+Then ask your agent: *"Instrument this codebase with Grafana Sigil"*.
+
+## Getting Started Examples
+
+Minimal, self-contained examples that make a real LLM call and record the generation to Sigil with Grafana Cloud auth. See [`examples/getting-started/`](examples/getting-started/) for setup instructions and credentials guide.
+
+| Language | Example |
+|----------|---------|
+| Python | [`examples/getting-started/python/`](examples/getting-started/python/) |
+| TypeScript | [`examples/getting-started/typescript/`](examples/getting-started/typescript/) |
+| Go | [`examples/getting-started/go/`](examples/getting-started/go/) |
+
 ## Plugins
 
 - [OpenCode](plugins/opencode/) — Sigil integration for OpenCode
