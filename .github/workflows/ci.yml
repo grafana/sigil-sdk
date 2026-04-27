@@ -143,8 +143,11 @@ jobs:
         with:
           global-json-file: dotnet/global.json
 
+      - name: Restore
+        run: dotnet restore dotnet/Sigil.DotNet.slnx
+
       - name: Format check
-        run: dotnet format dotnet/Sigil.DotNet.slnx --verify-no-changes
+        run: dotnet format dotnet/Sigil.DotNet.slnx --verify-no-changes --no-restore
 
       - name: Test
         run: dotnet test dotnet/Sigil.DotNet.slnx -c Release
