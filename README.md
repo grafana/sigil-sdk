@@ -161,7 +161,7 @@ To connect to Sigil you need three values. All are visible in the **AI Observabi
 |------|-----------------|
 | **Instance ID** — numeric stack ID, used as tenant ID and basic-auth username | Shown under **Instance ID** in the Connection tab. Also in the Cloud Portal under your stack details. |
 | **API token** — starts with `glc_`, used as the basic-auth password | Create one via **Administration → Cloud Access Policies** ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)). Scope it to your stack with write permissions for AI Observability. |
-| **Endpoint URL** — the Sigil ingest URL for your region | Shown under **Sigil API URL** in the Connection tab. Append `/api/v1/generations:export` to get the full ingest URL (e.g. `https://sigil-prod-eu-west-3.grafana.net/api/v1/generations:export`). |
+| **Endpoint URL** — the Sigil ingest URL for your region | Shown under **Sigil API URL** in the Connection tab. Append `/api/v1/generations:export` to get the full ingest URL. |
 
 ## Plugins
 
