@@ -145,13 +145,23 @@ Then ask your agent: *"Instrument this codebase with Grafana Sigil"*.
 
 ## Getting Started Examples
 
-Minimal, self-contained examples that make a real LLM call and record the generation to Sigil with Grafana Cloud auth. See [`examples/getting-started/`](examples/getting-started/) for setup instructions and credentials guide.
+Minimal, self-contained examples that make a real LLM call and record the generation to Sigil with Grafana Cloud auth.
 
 | Language | Example |
 |----------|---------|
 | Python | [`examples/getting-started/python/`](examples/getting-started/python/) |
 | TypeScript | [`examples/getting-started/typescript/`](examples/getting-started/typescript/) |
 | Go | [`examples/getting-started/go/`](examples/getting-started/go/) |
+
+### Sigil / Grafana Cloud credentials
+
+To connect to Sigil you need three values. All are visible in the **AI Observability plugin → Connection tab** in your Grafana Cloud stack.
+
+| What | Where to find it |
+|------|-----------------|
+| **Instance ID** — numeric stack ID, used as tenant ID and basic-auth username | Shown under **Instance ID** in the Connection tab. Also in the Cloud Portal under your stack details. |
+| **API token** — starts with `glc_`, used as the basic-auth password | Create one via **Administration → Cloud Access Policies** ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)). Scope it to your stack with write permissions for AI Observability. |
+| **Endpoint URL** — the Sigil ingest URL for your region | Shown under **Sigil API URL** in the Connection tab. Append `/api/v1/generations:export` to get the full ingest URL (e.g. `https://sigil-prod-eu-west-3.grafana.net/api/v1/generations:export`). |
 
 ## Plugins
 
