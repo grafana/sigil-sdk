@@ -1,45 +1,27 @@
-# sigil-cc — Claude Code Stop Hook for Sigil
+# sigil-cc: Claude Code Stop Hook for Sigil
 
-A Claude Code [Stop hook](https://docs.anthropic.com/en/docs/claude-code/hooks) that reads JSONL session transcripts and sends Generation records to [Grafana Sigil](https://github.com/grafana/sigil).
+A Claude Code [Stop hook](https://docs.anthropic.com/en/docs/claude-code/hooks) that reads each session's JSONL transcript and forwards Generation records to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/). Ships as a Claude Code plugin.
 
-Replaces the sigil-cc OTLP proxy with a simpler, more reliable approach: read the transcript directly instead of intercepting OTLP telemetry.
-
-## Install
-
-### Plugin (recommended)
-
-Install the binary, then add the plugin:
+## Install via plugin
 
 ```bash
 go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
 ```
 
-From within Claude Code:
+Then, from inside Claude Code:
 
 ```
 /plugin marketplace add grafana/sigil-sdk
 /plugin install sigil-cc@grafana-sigil
 ```
 
-The Stop hook registers automatically. Set the required environment variables in `~/.claude/settings.json`:
+The plugin registers the Stop hook for you; future hook updates ship with the plugin so you don't re-edit `settings.json`.
 
-```json
-{
-  "env": {
-    "SIGIL_URL": "https://sigil.example.com",
-    "SIGIL_USER": "your-tenant-id",
-    "SIGIL_PASSWORD": "glc_..."
-  }
-}
-```
+> `go install` drops the binary in `$GOBIN` (usually `~/go/bin`). That directory must be on your `$PATH` or the hook silently does nothing. Verify with `which sigil-cc`.
 
-### Manual
+## Install manually
 
-Install the binary and configure everything in `~/.claude/settings.json`:
-
-```bash
-go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
-```
+If you'd rather not use the plugin marketplace, install the binary the same way and wire the hook yourself in `~/.claude/settings.json`:
 
 ```json
 {
@@ -56,31 +38,90 @@ go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
         ]
       }
     ]
-  },
-  "env": {
-    "SIGIL_URL": "https://sigil.example.com",
-    "SIGIL_USER": "your-tenant-id",
-    "SIGIL_PASSWORD": "glc_...",
-    "SIGIL_CONTENT_CAPTURE_MODE": "metadata_only"
   }
 }
 ```
 
-## Environment Variables
+## Configure
+
+`sigil-cc` reads its config from the environment:
+
+| Variable | What it is |
+|----------|-----------|
+| `SIGIL_URL` | Your Sigil endpoint (e.g. `https://sigil.example.com`). |
+| `SIGIL_USER` | Your Grafana Cloud stack/tenant ID. Sent as Basic auth user and `X-Scope-OrgID`. |
+| `SIGIL_PASSWORD` | A `glc_…` token minted at Grafana Cloud → Access Policies ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)). The token needs the appropriate Sigil scope. |
+| `SIGIL_OTEL_ENDPOINT` | OTLP HTTP endpoint for metrics and traces (e.g. `https://otlp-gateway.grafana.net/otlp`). Technically optional, but without it you only get generations, no spans or metrics. |
+| `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`) |
+
+These don't have to live in `settings.json`. `sigil-cc` reads from its process environment, so anything that's in Claude Code's environment when the hook fires works. Pick whichever fits your secret-management style.
+
+### Shell environment (recommended)
+
+Keeps tokens out of any global config file.
+
+```bash
+export SIGIL_URL=https://sigil.example.com
+export SIGIL_USER=123456
+export SIGIL_PASSWORD=glc_...
+export SIGIL_OTEL_ENDPOINT=https://otlp-gateway.grafana.net/otlp
+export SIGIL_CONTENT_CAPTURE_MODE=full
+claude
+```
+
+### `~/.claude/settings.json` `env` block
+
+Persistent across all Claude Code sessions.
+
+```json
+{
+  "env": {
+    "SIGIL_URL": "https://sigil.example.com",
+    "SIGIL_OTEL_ENDPOINT": "https://otel.example.com",
+    "SIGIL_USER": "your-tenant-id",
+    "SIGIL_PASSWORD": "glc_...",
+    "SIGIL_CONTENT_CAPTURE_MODE": "full"
+  }
+}
+```
+
+## Verify it worked
+
+Run any single turn:
+
+```bash
+claude  # ask it anything, then exit
+```
+
+Then either:
+
+- Check the Sigil UI. A new generation should appear.
+- Or enable debug logging and tail the log:
+
+  ```bash
+  export SIGIL_DEBUG=true
+  claude  # one turn
+  tail -f ~/.claude/state/sigil-cc.log
+  ```
+
+If nothing appears, the most common causes are: `sigil-cc` not on `$PATH`, missing `SIGIL_URL`/`SIGIL_USER`/`SIGIL_PASSWORD`, or a token without the right scope.
+
+## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SIGIL_URL` | yes | Sigil endpoint |
 | `SIGIL_USER` | yes | Basic auth username (also `X-Scope-OrgID`) |
 | `SIGIL_PASSWORD` | yes | Basic auth password |
+| `SIGIL_OTEL_ENDPOINT` | recommended | OTLP HTTP endpoint for metrics + traces (e.g. `https://otlp-gateway.grafana.net/otlp` or `host:4318`). Without it you only get generations (no spans or metrics). |
+| `SIGIL_OTEL_USER` | no | OTLP auth username (defaults to `SIGIL_USER`) |
+| `SIGIL_OTEL_PASSWORD` | no | OTLP auth password (defaults to `SIGIL_PASSWORD`) |
+| `SIGIL_OTEL_INSECURE` | no | `true` to disable TLS (default: TLS enabled) |
 | `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`) |
 | `SIGIL_EXTRA_TAGS` | no | Comma-separated `key=value` tags added to every generation (e.g. `account=work,env=dev`). Built-in tags (`git.branch`, `cwd`, `entrypoint`, `subagent`) take precedence on collision. |
 | `SIGIL_USER_ID` | no | Explicit override for the per-generation user id. When set to a non-whitespace value it wins over `~/.claude.json` and ignores `SIGIL_USER_ID_SOURCE`. |
 | `SIGIL_USER_ID_SOURCE` | no | Field to read from `~/.claude.json` when `SIGIL_USER_ID` is unset: `email` (default, uses `oauthAccount.emailAddress`) or `accountUuid` (uses `oauthAccount.accountUuid`). Unknown values fall back to `email`. |
-| `SIGIL_OTEL_ENDPOINT` | no | OTLP HTTP endpoint for metrics + traces (e.g. `https://otlp-gateway.grafana.net/otlp` or `host:4318`) |
-| `SIGIL_OTEL_USER` | no | OTLP auth username (defaults to `SIGIL_USER`) |
-| `SIGIL_OTEL_PASSWORD` | no | OTLP auth password (defaults to `SIGIL_PASSWORD`) |
-| `SIGIL_OTEL_INSECURE` | no | `true` to disable TLS (default: TLS enabled) |
+| `SIGIL_DEBUG` | no | Set to `true` to log to `~/.claude/state/sigil-cc.log` (otherwise silent). |
 
 ## How It Works
 
@@ -91,7 +132,7 @@ go install github.com/grafana/sigil-sdk/plugins/claude-code/cmd/sigil-cc@latest
 5. Sends via the sigil-sdk HTTP client
 6. On successful flush, saves the new offset for next invocation
 
-Each assistant API response becomes one Generation with model, tokens, tools, timestamps, tags, and conversation title. The hook always exits 0 — telemetry is best-effort.
+Each assistant API response becomes one Generation with model, tokens, tools, timestamps, tags, and conversation title. The hook always exits 0; telemetry is best-effort.
 
 ## Content Capture
 
