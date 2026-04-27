@@ -21,7 +21,7 @@ Each example needs an **OpenAI API key** ([platform.openai.com/api-keys](https:/
 
 See the [credentials section in the SDK README](../../README.md#sigil--grafana-cloud-credentials) for where to find each value in your Grafana Cloud stack.
 
-Copy the `.env.example` in each example directory and fill in the values, or export them in your shell.
+Set them as environment variables before running an example.
 
 ## What to look for in Sigil
 

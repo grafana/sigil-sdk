@@ -6,8 +6,8 @@ Makes an OpenAI chat completion and records the generation to Sigil.
 
 ```bash
 cd examples/getting-started/typescript
-cp .env.example .env
-# Fill in your credentials (see ../README.md for where to find each value)
+# Set OPENAI_API_KEY, GRAFANA_INSTANCE_ID, GRAFANA_CLOUD_TOKEN, SIGIL_ENDPOINT
+# See the SDK README for where to find each value.
 ```
 
 ```bash

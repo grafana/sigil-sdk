@@ -6,19 +6,15 @@ Makes an OpenAI chat completion and records the generation to Sigil.
 
 ```bash
 cd examples/getting-started/go
-cp .env.example .env
-# Fill in your credentials (see ../README.md for where to find each value)
-```
-
-```bash
-source .env
+# Set OPENAI_API_KEY, GRAFANA_INSTANCE_ID, GRAFANA_CLOUD_TOKEN, SIGIL_ENDPOINT
+# See the SDK README for where to find each value.
 go mod tidy
 ```
 
 ## Run
 
 ```bash
-source .env && go run .
+go run .
 ```
 
 You should see the LLM response printed, followed by `Done`. Open the AI Observability plugin in your Grafana Cloud stack to see the recorded generation.
