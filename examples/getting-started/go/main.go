@@ -1,4 +1,4 @@
-// Minimal Sigil getting-started example — Go + OpenAI.
+// Minimal AI Observability getting-started example — Go + OpenAI.
 package main
 
 import (

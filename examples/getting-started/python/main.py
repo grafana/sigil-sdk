@@ -1,4 +1,4 @@
-"""Minimal Sigil getting-started example — Python + OpenAI."""
+"""Minimal AI Observability getting-started example — Python + OpenAI."""
 
 import os
 
@@ -69,7 +69,7 @@ with sigil.start_generation(
         ),
     )
     if rec.err() is not None:
-        print("Sigil error:", rec.err())
+        print("SDK error:", rec.err())
 
 sigil.shutdown()
 print("Done — check the AI Observability plugin in your Grafana Cloud stack.")

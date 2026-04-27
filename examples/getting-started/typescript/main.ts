@@ -1,5 +1,5 @@
 /**
- * Minimal Sigil getting-started example — TypeScript + OpenAI.
+ * Minimal AI Observability getting-started example — TypeScript + OpenAI.
  */
 
 import "dotenv/config";

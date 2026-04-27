@@ -1,6 +1,6 @@
-# Getting Started with Sigil
+# Getting Started with AI Observability
 
-Minimal, self-contained examples that make a real LLM call and record the generation to Grafana Sigil. Pick your language and you should be up and running in under five minutes.
+Minimal, self-contained examples that make a real LLM call and record the generation to Grafana Cloud AI Observability. Pick your language and you should be up and running in under five minutes.
 
 | Language | Directory | LLM provider |
 |----------|-----------|--------------|
@@ -11,19 +11,19 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 Each example:
 
 1. Creates an OpenAI client and sends a chat completion request.
-2. Creates a Sigil client authenticated against Grafana Cloud.
+2. Creates an SDK client authenticated against Grafana Cloud.
 3. Records the generation (input, output, token usage, model metadata).
 4. Shuts down cleanly.
 
 ## Credentials
 
-Each example needs an **OpenAI API key** ([platform.openai.com/api-keys](https://platform.openai.com/api-keys)) and your **Sigil / Grafana Cloud credentials** (instance ID, API token, endpoint URL).
+Each example needs an **OpenAI API key** ([platform.openai.com/api-keys](https://platform.openai.com/api-keys)) and your **Grafana Cloud credentials** (instance ID, API token, endpoint URL).
 
-See the [credentials section in the SDK README](../../README.md#sigil--grafana-cloud-credentials) for where to find each value in your Grafana Cloud stack.
+See the [credentials section in the SDK README](../../README.md#grafana-cloud-credentials) for where to find each value in your Grafana Cloud stack.
 
 Set them as environment variables before running an example.
 
-## What to look for in Sigil
+## What to look for
 
 After running an example, open the AI Observability plugin in your Grafana Cloud stack. You should see:
 

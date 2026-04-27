@@ -129,9 +129,9 @@ client.shutdown()
 
 ## Instrument with AI Coding Agents
 
-Let your AI coding assistant add Sigil instrumentation for you. We provide ready-to-use prompts for Cursor, Claude Code, and GitHub Copilot that tell the agent how to find your LLM calls and wrap them with the SDK.
+Let your AI coding assistant add instrumentation for you. We provide ready-to-use prompts for Cursor, Claude Code, and GitHub Copilot that tell the agent how to find your LLM calls and wrap them with the SDK.
 
-**From the Sigil UI** — open the AI Observability plugin in your Grafana Cloud stack, go through the onboarding wizard, and pick your IDE. The prompt is generated for you with one click.
+**From the UI** — open the AI Observability plugin in your Grafana Cloud stack, go through the onboarding wizard, and pick your IDE. The prompt is generated for you with one click.
 
 **From this repo** — copy the prompt file for your IDE into your project:
 
@@ -141,11 +141,11 @@ Let your AI coding assistant add Sigil instrumentation for you. We provide ready
 | Claude Code | [`CLAUDE.md`](CLAUDE.md) | `CLAUDE.md` at your project root |
 | GitHub Copilot | [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | `.github/copilot-instructions.md` in your project |
 
-Then ask your agent: *"Instrument this codebase with Grafana Sigil"*.
+Then ask your agent: *"Instrument this codebase with Grafana AI Observability"*.
 
 ## Getting Started Examples
 
-Minimal, self-contained examples that make a real LLM call and record the generation to Sigil with Grafana Cloud auth.
+Minimal, self-contained examples that make a real LLM call and record the generation to Grafana Cloud AI Observability.
 
 | Language | Example |
 |----------|---------|
@@ -153,19 +153,19 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 | TypeScript | [`examples/getting-started/typescript/`](examples/getting-started/typescript/) |
 | Go | [`examples/getting-started/go/`](examples/getting-started/go/) |
 
-### Sigil / Grafana Cloud credentials
+### Grafana Cloud credentials
 
-To connect to Sigil you need three values. All are visible in the **AI Observability plugin → Connection tab** in your Grafana Cloud stack.
+You need three values to connect. All are visible in the **AI Observability plugin → Connection tab** in your Grafana Cloud stack.
 
 | What | Where to find it |
 |------|-----------------|
 | **Instance ID** — numeric stack ID, used as tenant ID and basic-auth username | Shown under **Instance ID** in the Connection tab. Also in the Cloud Portal under your stack details. |
 | **API token** — starts with `glc_`, used as the basic-auth password | Create one via **Administration → Cloud Access Policies** ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)). Scope it to your stack with write permissions for AI Observability. |
-| **Endpoint URL** — the Sigil ingest URL for your region | Shown under **Sigil API URL** in the Connection tab. Append `/api/v1/generations:export` to get the full ingest URL. |
+| **Endpoint URL** — the ingest URL for your region | Shown under **API URL** in the Connection tab. Append `/api/v1/generations:export` to get the full ingest URL. |
 
 ## Plugins
 
-- [OpenCode](plugins/opencode/) — Sigil integration for OpenCode
+- [OpenCode](plugins/opencode/) — AI Observability integration for OpenCode
 
 ## Proto
 

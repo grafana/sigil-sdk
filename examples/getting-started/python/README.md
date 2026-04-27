@@ -1,6 +1,6 @@
 # Getting Started — Python
 
-Makes an OpenAI chat completion and records the generation to Sigil.
+Makes an OpenAI chat completion and records the generation to Grafana Cloud AI Observability.
 
 ## Setup
 
