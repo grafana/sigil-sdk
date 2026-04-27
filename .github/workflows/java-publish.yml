@@ -46,6 +46,7 @@ jobs:
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ fromJSON(steps.get-secrets.outputs.secrets).CENTRAL_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}
+          PKG_VERSION: ${{ inputs.version }}
         run: |
           ./gradlew --no-daemon publishAllPublicationsToMavenCentralRepository \
-            -Pversion="${{ inputs.version }}"
+            -Pversion="${PKG_VERSION}"
