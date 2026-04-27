@@ -27,6 +27,11 @@ dotnet/**/artifacts/
 dotnet/**/bin/
 dotnet/**/obj/
 
+# java artifacts
+java/**/bin/
+java/**/build/
+*.class
+
 # docker and local env
 .env
 .env.*
