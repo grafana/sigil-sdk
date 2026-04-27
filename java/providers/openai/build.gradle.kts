@@ -1,5 +1,15 @@
 plugins {
     `java-library`
+    alias(libs.plugins.maven.publish)
+}
+
+mavenPublishing {
+    coordinates(artifactId = "sigil-sdk-openai")
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
 }
 
 dependencies {

@@ -48,3 +48,4 @@ google-genai = { module = "com.google.genai:google-genai", version = "1.44.0" }
 [plugins]
 protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }
 jmh = { id = "me.champeau.jmh", version.ref = "jmh" }
+maven-publish = { id = "com.vanniktech.maven.publish", version = "0.30.0" }

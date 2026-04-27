@@ -1,5 +1,15 @@
 plugins {
     `java-library`
+    alias(libs.plugins.maven.publish)
+}
+
+mavenPublishing {
+    coordinates(artifactId = "sigil-sdk-anthropic")
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
 }
 
 dependencies {

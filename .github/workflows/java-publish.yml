@@ -23,16 +23,12 @@ jobs:
       - name: Get secrets from Vault
         id: get-secrets
         uses: grafana/shared-workflows/actions/get-vault-secrets@f1614b210386ac420af6807a997ac7f6d96e477a # get-vault-secrets/v1.3.1
-        env:
-          VAULT_INSTANCE: ops
         with:
-          vault_instance: ${{ env.VAULT_INSTANCE }}
-          common_secrets: |
-            MAVEN_USERNAME=sigil-maven:username
-            MAVEN_PASSWORD=sigil-maven:password
-            GPG_PRIVATE_KEY=sigil-maven:gpg-private-key
-            GPG_PASSPHRASE=sigil-maven:gpg-passphrase
-          export_env: false
+          repo_secrets: |
+            CENTRAL_USERNAME=secrets:username
+            CENTRAL_PASSWORD=secrets:password
+            GPG_PRIVATE_KEY=gpg:private-key
+            GPG_PASSPHRASE=gpg:passphrase
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -43,18 +39,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Publish
+      - name: Publish to Maven Central
         working-directory: java
         env:
-          PKG_VERSION: ${{ inputs.version }}
-          OSSRH_USERNAME: ${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_USERNAME }}
-          OSSRH_PASSWORD: ${{ fromJSON(steps.get-secrets.outputs.secrets).MAVEN_PASSWORD }}
-          SIGNING_KEY: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}
-          SIGNING_PASSWORD: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ fromJSON(steps.get-secrets.outputs.secrets).CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ fromJSON(steps.get-secrets.outputs.secrets).CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}
         run: |
-          ./gradlew --no-daemon publish \
-            -Pversion="${PKG_VERSION}" \
-            -PossrhUsername="${OSSRH_USERNAME}" \
-            -PossrhPassword="${OSSRH_PASSWORD}" \
-            -Psigning.key="${SIGNING_KEY}" \
-            -Psigning.password="${SIGNING_PASSWORD}"
+          ./gradlew --no-daemon publishAllPublicationsToMavenCentralRepository \
+            -Pversion="${{ inputs.version }}"
