@@ -1,0 +1,16 @@
+{
+  "name": "sigil-getting-started-typescript",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "npx tsx main.ts"
+  },
+  "dependencies": {
+    "@grafana/sigil-sdk-js": "file:../../../js",
+    "dotenv": "^16.0.0",
+    "openai": "^4.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
