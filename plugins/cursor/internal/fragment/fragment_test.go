@@ -92,28 +92,38 @@ func TestUpdate_MutatorReturnsFalseSkipsSave(t *testing.T) {
 	}
 }
 
-func TestLoadTolerant_CorruptTreatedAsMissing(t *testing.T) {
-	withTempState(t)
-	logger := newTestLogger()
-
-	path := FragmentFilePath("conv", "gen1")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+func TestLoadTolerant(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(t *testing.T)
+		want  bool // true means non-nil result expected
+	}{
+		{
+			name: "corrupt fragment treated as missing",
+			setup: func(t *testing.T) {
+				path := FragmentFilePath("conv", "gen1")
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+				if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
+					t.Fatalf("write: %v", err)
+				}
+			},
+		},
+		{
+			name:  "missing fragment returns nil",
+			setup: func(t *testing.T) {},
+		},
 	}
-	if err := os.WriteFile(path, []byte("{not valid json"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	got := LoadTolerant("conv", "gen1", logger)
-	if got != nil {
-		t.Errorf("corrupt fragment should be treated as missing; got %+v", got)
-	}
-}
-
-func TestLoadTolerant_MissingReturnsNil(t *testing.T) {
-	withTempState(t)
-	if got := LoadTolerant("conv", "missing", newTestLogger()); got != nil {
-		t.Errorf("missing fragment should be nil; got %+v", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withTempState(t)
+			tc.setup(t)
+			got := LoadTolerant("conv", "gen1", newTestLogger())
+			if (got != nil) != tc.want {
+				t.Errorf("got %+v; want non-nil=%v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -149,31 +159,45 @@ func TestUpdate_ReassertsIDs(t *testing.T) {
 }
 
 func TestListFragmentIDs(t *testing.T) {
-	withTempState(t)
-	logger := newTestLogger()
-
-	for _, gid := range []string{"gen1", "gen2", "gen3"} {
-		if err := Update("conv", gid, logger, func(f *Fragment) bool { return true }); err != nil {
-			t.Fatalf("seed %s: %v", gid, err)
-		}
+	cases := []struct {
+		name  string
+		conv  string
+		setup func(t *testing.T, logger *log.Logger)
+		want  int
+	}{
+		{
+			name: "lists fragments and ignores non-fragment files",
+			conv: "conv",
+			setup: func(t *testing.T, logger *log.Logger) {
+				for _, gid := range []string{"gen1", "gen2", "gen3"} {
+					if err := Update("conv", gid, logger, func(f *Fragment) bool { return true }); err != nil {
+						t.Fatalf("seed %s: %v", gid, err)
+					}
+				}
+				// Drop a non-fragment file; must not show up.
+				noisePath := filepath.Join(ConversationDir("conv"), "session.json")
+				if err := os.WriteFile(noisePath, []byte("{}"), 0o600); err != nil {
+					t.Fatalf("write noise: %v", err)
+				}
+			},
+			want: 3,
+		},
+		{
+			name:  "missing dir returns empty",
+			conv:  "nonexistent",
+			setup: func(t *testing.T, _ *log.Logger) {},
+			want:  0,
+		},
 	}
-
-	// Drop a non-fragment file in there; it must not show up.
-	noisePath := filepath.Join(ConversationDir("conv"), "session.json")
-	if err := os.WriteFile(noisePath, []byte("{}"), 0o600); err != nil {
-		t.Fatalf("write noise: %v", err)
-	}
-
-	ids := ListFragmentIDs("conv", logger)
-	if len(ids) != 3 {
-		t.Errorf("got %d ids; want 3 (got=%v)", len(ids), ids)
-	}
-}
-
-func TestListFragmentIDs_MissingDirReturnsEmpty(t *testing.T) {
-	withTempState(t)
-	if ids := ListFragmentIDs("nonexistent", newTestLogger()); len(ids) != 0 {
-		t.Errorf("got %d ids; want 0", len(ids))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withTempState(t)
+			logger := newTestLogger()
+			tc.setup(t, logger)
+			if ids := ListFragmentIDs(tc.conv, logger); len(ids) != tc.want {
+				t.Errorf("got %d ids; want %d (got=%v)", len(ids), tc.want, ids)
+			}
+		})
 	}
 }
 
