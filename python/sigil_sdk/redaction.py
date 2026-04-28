@@ -115,6 +115,9 @@ def create_secret_redaction_sanitizer(
     redactor = _SecretRedactor(include_email_addresses=resolved.redact_email_addresses)
 
     def _sanitize(generation: Generation) -> Generation:
+        if generation.system_prompt:
+            generation.system_prompt = redactor.redact(generation.system_prompt)
+
         for message in generation.input:
             mode = "full" if message.role == MessageRole.USER and resolved.redact_input_messages else "none"
             _sanitize_message(message, redactor, mode)
