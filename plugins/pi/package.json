@@ -5,6 +5,9 @@
   "private": true,
   "type": "module",
   "main": "dist/index.js",
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
     "extensions": [
       "./dist/index.js"
@@ -20,6 +23,15 @@
     "pretest": "bash scripts/ensure-sdk.sh",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.1",
+    "@grpc/proto-loader": "^0.8.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
   },
   "devDependencies": {
     "@grafana/sigil-sdk-js": "workspace:*",

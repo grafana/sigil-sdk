@@ -136,6 +136,21 @@ describe("mapGenerationResult", () => {
     expect(result.metadata?.cost_usd).toBe(0.012);
   });
 
+  it("omits cost_usd when usage.cost is missing", () => {
+    const msg = makeMsg({
+      usage: {
+        input: 1,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 3,
+        // intentionally no `cost`
+      },
+    });
+    const result = mapGenerationResult(msg, [], "metadata_only");
+    expect(result.metadata).toEqual({});
+  });
+
   it("uses provider-reported totalTokens (includes cache)", () => {
     const msg = makeMsg({
       usage: {

@@ -22,7 +22,7 @@ export interface PiAssistantMessage {
     cacheRead: number;
     cacheWrite: number;
     totalTokens: number;
-    cost: {
+    cost?: {
       input: number;
       output: number;
       cacheRead: number;
@@ -104,9 +104,8 @@ export function mapGenerationResult(
     },
     stopReason: mapStopReason(msg.stopReason),
     completedAt: new Date(msg.timestamp),
-    metadata: {
-      cost_usd: msg.usage.cost.total,
-    },
+    metadata:
+      msg.usage.cost !== undefined ? { cost_usd: msg.usage.cost.total } : {},
   };
 
   // Always emit structural tool_call / tool_result parts so the SDK can count
