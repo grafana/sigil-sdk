@@ -46,16 +46,10 @@ export async function loadConfig(): Promise<SigilPiConfig | null> {
 export function resolveConfig(
   file: Record<string, unknown>,
 ): SigilPiConfig | null {
-  const EXPORT_PATH = "/api/v1/generations:export";
-  let endpoint = (
-    env("SIGIL_PI_ENDPOINT") ??
-    asString(file.endpoint) ??
-    ""
-  ).trim();
+  const endpoint = ensureExportPath(
+    (env("SIGIL_PI_ENDPOINT") ?? asString(file.endpoint) ?? "").trim(),
+  );
   if (!endpoint) return null;
-  if (!endpoint.includes(EXPORT_PATH)) {
-    endpoint = endpoint.replace(/\/+$/, "") + EXPORT_PATH;
-  }
 
   const auth = resolveAuth(file);
   if (!auth) return null;
@@ -293,6 +287,28 @@ function parseConfig(raw: string): Record<string, unknown> {
     throw new Error("config must be a JSON object");
   }
   return parsed as Record<string, unknown>;
+}
+
+const EXPORT_PATH = "/api/v1/generations:export";
+
+/**
+ * Normalize a Sigil endpoint by appending `/api/v1/generations:export` unless
+ * the path already ends with it. URL parsing handles trailing slashes and
+ * query strings; non-URL inputs fall through and let the SDK surface the
+ * failure later.
+ */
+function ensureExportPath(endpoint: string): string {
+  if (!endpoint) return "";
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return endpoint.replace(/\/+$/, "") + EXPORT_PATH;
+  }
+  const cleanPath = url.pathname.replace(/\/+$/, "");
+  if (cleanPath.endsWith(EXPORT_PATH)) return endpoint;
+  url.pathname = cleanPath + EXPORT_PATH;
+  return url.toString();
 }
 
 function isMissingFileError(err: unknown): boolean {

@@ -62,6 +62,24 @@ describe("resolveConfig", () => {
     );
   });
 
+  it("preserves an export path with a query string", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export?debug=1",
+    });
+    expect(cfg?.endpoint).toBe(
+      "http://localhost:8080/api/v1/generations:export?debug=1",
+    );
+  });
+
+  it("does not falsely match a similar-looking suffix", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export-debug",
+    });
+    expect(cfg?.endpoint).toBe(
+      "http://localhost:8080/api/v1/generations:export-debug/api/v1/generations:export",
+    );
+  });
+
   it("defaults contentCapture to metadata_only", () => {
     const cfg = resolveConfig({
       endpoint: "http://localhost:8080/api/v1/generations:export",
