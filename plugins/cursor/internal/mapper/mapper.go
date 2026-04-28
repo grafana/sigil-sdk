@@ -278,6 +278,14 @@ func buildToolDefinitions(tools []fragment.ToolRecord) []sigil.ToolDefinition {
 }
 
 func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (input, output []sigil.Message) {
+	// Normalize so the rest of this function only deals with the three real
+	// modes. config.resolveContentCapture also maps Default → MetadataOnly,
+	// but doing it again here keeps the three content-gating checks below
+	// internally consistent regardless of caller.
+	if mode == sigil.ContentCaptureModeDefault {
+		mode = sigil.ContentCaptureModeMetadataOnly
+	}
+
 	// User prompt → user input message. Dropped in metadata-only mode.
 	if mode != sigil.ContentCaptureModeMetadataOnly && strings.TrimSpace(frag.UserPrompt) != "" {
 		input = append(input, sigil.Message{
@@ -348,7 +356,7 @@ func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (inpu
 					},
 				},
 			})
-		case sigil.ContentCaptureModeMetadataOnly, sigil.ContentCaptureModeDefault:
+		case sigil.ContentCaptureModeMetadataOnly:
 			// Drop the tool_result entirely.
 		}
 	}
