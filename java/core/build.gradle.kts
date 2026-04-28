@@ -1,11 +1,11 @@
 plugins {
     `java-library`
     alias(libs.plugins.protobuf)
+    alias(libs.plugins.maven.publish)
 }
 
-java {
-    withJavadocJar()
-    withSourcesJar()
+mavenPublishing {
+    coordinates(artifactId = "sigil-sdk-core")
 }
 
 val protoRoot = rootProject.projectDir.resolve("../proto")
