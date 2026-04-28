@@ -3,7 +3,7 @@ module github.com/grafana/sigil-sdk/plugins/cursor
 go 1.25.6
 
 require (
-	github.com/grafana/sigil-sdk/go v0.2.1-0.20260410201504-d1b27e736555
+	github.com/grafana/sigil-sdk/go v0.3.1-0.20260501114228-6495250aef19
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
