@@ -74,6 +74,15 @@ jobs:
       - name: Test
         run: pnpm --filter @grafana/sigil-sdk-js run test:ci
 
+      - name: Lint pi plugin
+        run: mise run lint:ts:plugin-pi
+
+      - name: Typecheck pi plugin
+        run: pnpm --filter pi-sigil run typecheck
+
+      - name: Test pi plugin
+        run: pnpm --filter pi-sigil run test
+
   python-lint:
     name: Python Lint
     runs-on: ubuntu-latest
