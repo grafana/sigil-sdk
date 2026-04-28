@@ -122,6 +122,37 @@ func TestMapFragment_MetadataOnly_StripsContent(t *testing.T) {
 	}
 }
 
+// resolveContentCapture in config maps the Default zero-value enum to
+// MetadataOnly, but a caller that bypasses the config layer (or constructs
+// Inputs directly in tests) might pass Default through. buildMessages must
+// treat the two consistently across user prompt, tool results, and
+// assistant text — otherwise prompts could leak while tool results drop.
+func TestMapFragment_DefaultModeBehavesAsMetadataOnly(t *testing.T) {
+	got := MapFragment(Inputs{
+		Fragment:       basicFragment(t),
+		ContentCapture: sigil.ContentCaptureModeDefault,
+		Now:            fixedTime,
+	})
+
+	for _, msg := range got.Generation.Input {
+		for _, p := range msg.Parts {
+			if p.Text == "hello" {
+				t.Errorf("user prompt leaked under Default mode")
+			}
+		}
+		if msg.Role == sigil.RoleTool {
+			t.Errorf("tool result leaked under Default mode; got %+v", msg)
+		}
+	}
+	for _, msg := range got.Generation.Output {
+		for _, p := range msg.Parts {
+			if p.Text == "hi there" {
+				t.Errorf("assistant text leaked under Default mode")
+			}
+		}
+	}
+}
+
 func TestMapFragment_NoToolContent_KeepsStructureStripsBytes(t *testing.T) {
 	got := MapFragment(Inputs{
 		Fragment:       basicFragment(t),
