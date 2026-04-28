@@ -123,6 +123,11 @@ description = "Run Claude Code plugin tests as standalone module"
 dir = "plugins/claude-code"
 run = "GOWORK=off go test ./..."
 
+[tasks."test:go:plugin-cursor"]
+description = "Run Cursor plugin tests as standalone module"
+dir = "plugins/cursor"
+run = "GOWORK=off go test ./..."
+
 [tasks."test:go:sdk-conformance"]
 description = "Run the Go SDK core conformance harness"
 dir = "go"
@@ -376,6 +381,7 @@ mise run test:go:sdk-openai
 mise run test:go:sdk-gemini
 mise run test:go:sdk-google-adk
 mise run test:go:plugin-claude-code
+mise run test:go:plugin-cursor
 mise run test:ts:sdk-js
 mise run test:py:sdk-core
 mise run test:py:sdk-provider-conformance

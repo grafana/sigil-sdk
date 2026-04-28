@@ -67,3 +67,7 @@ __pycache__/
 .eslintcache
 .turbo/
 scripts/mysql-port-forward.sh
+
+# Override the global ctags ignore so the cursor plugin's tags package is tracked.
+!plugins/cursor/internal/tags/
+!plugins/cursor/internal/tags/**
