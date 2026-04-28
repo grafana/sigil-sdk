@@ -122,6 +122,37 @@ func TestMapFragment_MetadataOnly_StripsContent(t *testing.T) {
 	}
 }
 
+func TestMapFragment_Default_StripsContentLikeMetadataOnly(t *testing.T) {
+	got := MapFragment(Inputs{
+		Fragment:       basicFragment(t),
+		ContentCapture: sigil.ContentCaptureModeDefault,
+		Now:            fixedTime,
+	})
+
+	// User prompt must be absent.
+	for _, msg := range got.Generation.Input {
+		for _, p := range msg.Parts {
+			if p.Text == "hello" {
+				t.Errorf("user prompt leaked into default output")
+			}
+		}
+	}
+	// Assistant text must be absent.
+	for _, msg := range got.Generation.Output {
+		for _, p := range msg.Parts {
+			if p.Text == "hi there" {
+				t.Errorf("assistant text leaked into default output")
+			}
+		}
+	}
+	// Tool calls keep structure, but tool result messages should be dropped.
+	for _, msg := range got.Generation.Input {
+		if msg.Role == sigil.RoleTool {
+			t.Errorf("tool result message leaked in default mode; got %+v", msg)
+		}
+	}
+}
+
 func TestMapFragment_NoToolContent_KeepsStructureStripsBytes(t *testing.T) {
 	got := MapFragment(Inputs{
 		Fragment:       basicFragment(t),

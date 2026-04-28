@@ -279,7 +279,7 @@ func buildToolDefinitions(tools []fragment.ToolRecord) []sigil.ToolDefinition {
 
 func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (input, output []sigil.Message) {
 	// User prompt → user input message. Dropped in metadata-only mode.
-	if mode != sigil.ContentCaptureModeMetadataOnly && strings.TrimSpace(frag.UserPrompt) != "" {
+	if mode != sigil.ContentCaptureModeMetadataOnly && mode != sigil.ContentCaptureModeDefault && strings.TrimSpace(frag.UserPrompt) != "" {
 		input = append(input, sigil.Message{
 			Role: sigil.RoleUser,
 			Parts: []sigil.Part{
@@ -355,7 +355,7 @@ func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (inpu
 
 	// Assistant text. Concatenate segments in arrival order. Dropped in
 	// metadata-only mode.
-	if mode != sigil.ContentCaptureModeMetadataOnly && len(frag.Assistant) > 0 {
+	if mode != sigil.ContentCaptureModeMetadataOnly && mode != sigil.ContentCaptureModeDefault && len(frag.Assistant) > 0 {
 		var b strings.Builder
 		for _, seg := range frag.Assistant {
 			b.WriteString(seg.Text)
