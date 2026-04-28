@@ -157,16 +157,57 @@ describe("mapGenerationResult", () => {
     expect(result.usage?.totalTokens).toBe(380);
   });
 
-  it("metadata_only produces no output", () => {
-    const result = mapGenerationResult(
-      makeMsg(),
-      [makeToolResult()],
-      "metadata_only",
-    );
+  it("metadata_only with no tool calls/results produces no output", () => {
+    const result = mapGenerationResult(makeMsg(), [], "metadata_only");
     expect(result.output).toBeUndefined();
   });
 
-  it("no_tool_content emits assistant text/thinking but skips tool blocks", () => {
+  it("metadata_only emits structural tool parts with empty bodies (so SDK can count tool calls)", () => {
+    const msg = makeMsg({
+      content: [
+        { type: "text", text: "I'll run that command" },
+        {
+          type: "toolCall",
+          id: "c1",
+          name: "bash",
+          arguments: { command: "ls" },
+        },
+      ],
+    });
+    const toolResults = [
+      makeToolResult({
+        toolCallId: "c1",
+        content: [{ type: "text", text: "file.txt" }],
+      }),
+    ];
+    const result = mapGenerationResult(msg, toolResults, "metadata_only");
+
+    // text/thinking suppressed; structural tool_call + tool_result present.
+    expect(result.output).toHaveLength(2);
+    const partTypes = result.output?.flatMap(
+      (m) => m.parts?.map((p) => p.type) ?? [],
+    );
+    expect(partTypes).not.toContain("text");
+    expect(partTypes).toContain("tool_call");
+    expect(partTypes).toContain("tool_result");
+
+    const toolCallPart = result.output
+      ?.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "tool_call");
+    expect(
+      (toolCallPart as { toolCall: { inputJSON: string } }).toolCall.inputJSON,
+    ).toBe("");
+
+    const toolResultPart = result.output
+      ?.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "tool_result");
+    expect(
+      (toolResultPart as { toolResult: { content: string } }).toolResult
+        .content,
+    ).toBe("");
+  });
+
+  it("no_tool_content emits text/thinking + structural tool parts with empty bodies", () => {
     const msg = makeMsg({
       content: [
         { type: "text", text: "I'll run that command" },
@@ -187,15 +228,30 @@ describe("mapGenerationResult", () => {
     ];
     const result = mapGenerationResult(msg, toolResults, "no_tool_content");
 
-    // Only assistant text + thinking (2 messages), no tool_call or tool_result.
-    expect(result.output).toHaveLength(2);
-    const partTypes = result.output?.flatMap((m) =>
-      m.parts?.map((p) => p.type),
+    // text + thinking + tool_call + tool_result = 4 messages.
+    expect(result.output).toHaveLength(4);
+    const partTypes = result.output?.flatMap(
+      (m) => m.parts?.map((p) => p.type) ?? [],
     );
     expect(partTypes).toContain("text");
     expect(partTypes).toContain("thinking");
-    expect(partTypes).not.toContain("tool_call");
-    expect(result.output?.some((m) => m.role === "tool")).toBe(false);
+    expect(partTypes).toContain("tool_call");
+    expect(partTypes).toContain("tool_result");
+
+    const toolCallPart = result.output
+      ?.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "tool_call");
+    expect(
+      (toolCallPart as { toolCall: { inputJSON: string } }).toolCall.inputJSON,
+    ).toBe("");
+
+    const toolResultPart = result.output
+      ?.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "tool_result");
+    expect(
+      (toolResultPart as { toolResult: { content: string } }).toolResult
+        .content,
+    ).toBe("");
   });
 
   it("full mode emits assistant text, tool_call, and tool_result", () => {

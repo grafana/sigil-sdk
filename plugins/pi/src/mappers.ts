@@ -109,15 +109,16 @@ export function mapGenerationResult(
     },
   };
 
-  if (contentCapture !== "metadata_only") {
-    const includeTools = contentCapture === "full";
-    const output: Message[] = mapAssistantOutput(msg, includeTools);
-    if (includeTools) {
-      output.push(...mapToolResultsOutput(toolResults));
-    }
-    if (output.length > 0) {
-      result.output = output;
-    }
+  // Always emit structural tool_call / tool_result parts so the SDK can count
+  // them for the `gen_ai.client.tool_calls_per_operation` histogram. Body
+  // content (assistant text, tool args, tool results) is included per
+  // contentCapture; in `metadata_only` the SDK strips content before export.
+  const output: Message[] = [
+    ...mapAssistantOutput(msg, contentCapture),
+    ...mapToolResultsOutput(toolResults, contentCapture),
+  ];
+  if (output.length > 0) {
+    result.output = output;
   }
 
   return result;
@@ -138,18 +139,21 @@ export function mapToolNames(toolTimings: ToolTiming[]): ToolDefinition[] {
 
 /**
  * Map assistant message content blocks to Sigil output messages.
- * Tool-call blocks are only emitted when `includeTools` is true (i.e. `full` mode).
+ * - text/thinking parts: only when contentCapture allows body content.
+ * - tool_call parts: always emitted (structure needed for the SDK's
+ *   tool_calls_per_operation metric); inputJSON is only filled in `full` mode.
  */
 function mapAssistantOutput(
   msg: PiAssistantMessage,
-  includeTools: boolean,
+  contentCapture: ContentCaptureMode,
 ): Message[] {
   const messages: Message[] = [];
+  const includeBodies = contentCapture !== "metadata_only";
 
   for (const block of msg.content) {
     switch (block.type) {
       case "text": {
-        if (block.text.trim().length > 0) {
+        if (includeBodies && block.text.trim().length > 0) {
           messages.push({
             role: "assistant",
             parts: [{ type: "text", text: block.text }],
@@ -159,7 +163,7 @@ function mapAssistantOutput(
       }
       case "thinking": {
         if (block.redacted) break;
-        if (block.thinking.trim().length > 0) {
+        if (includeBodies && block.thinking.trim().length > 0) {
           messages.push({
             role: "assistant",
             parts: [{ type: "thinking", thinking: block.thinking }],
@@ -168,7 +172,6 @@ function mapAssistantOutput(
         break;
       }
       case "toolCall": {
-        if (!includeTools) break;
         messages.push({
           role: "assistant",
           parts: [
@@ -177,7 +180,10 @@ function mapAssistantOutput(
               toolCall: {
                 id: block.id,
                 name: block.name,
-                inputJSON: JSON.stringify(block.arguments),
+                inputJSON:
+                  contentCapture === "full"
+                    ? JSON.stringify(block.arguments)
+                    : "",
               },
             },
           ],
@@ -190,18 +196,28 @@ function mapAssistantOutput(
   return messages;
 }
 
-/** Map pi tool results to Sigil tool result messages. */
-function mapToolResultsOutput(toolResults: PiToolResult[]): Message[] {
+/**
+ * Map pi tool results to Sigil tool result messages. Always emits the
+ * structural part; body content is included only in `full` mode.
+ */
+function mapToolResultsOutput(
+  toolResults: PiToolResult[],
+  contentCapture: ContentCaptureMode,
+): Message[] {
   const messages: Message[] = [];
+  const includeBody = contentCapture === "full";
 
   for (const tr of toolResults) {
-    const textParts = tr.content
-      .filter(
-        (c): c is { type: "text"; text: string } =>
-          c.type === "text" && !!c.text,
-      )
-      .map((c) => c.text);
-    const content = textParts.join("\n");
+    let content = "";
+    if (includeBody) {
+      content = tr.content
+        .filter(
+          (c): c is { type: "text"; text: string } =>
+            c.type === "text" && !!c.text,
+        )
+        .map((c) => c.text)
+        .join("\n");
+    }
 
     messages.push({
       role: "tool",
