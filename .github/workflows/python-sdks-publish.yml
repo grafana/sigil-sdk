@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    if: github.repository == 'grafana/sigil-sdk' #&& github.ref == 'refs/heads/main'
+    if: github.repository == 'grafana/sigil-sdk' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
