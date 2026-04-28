@@ -51,6 +51,8 @@ func TestLoadDotenv_AllVariants(t *testing.T) {
 SIGIL_URL=https://sigil.example.com
 export SIGIL_USER=alice
 SIGIL_PASSWORD="secret with spaces"
+SIGIL_PASSWORD_WITH_COMMENT="quoted secret" # trailing comment
+SIGIL_SINGLE_QUOTE_WITH_COMMENT='single quoted secret' # trailing comment
 SIGIL_CONTENT_CAPTURE_MODE='full'
 SIGIL_EXTRA_TAGS=a=1,b=2  # inline comment
 SIGIL_DEBUG=true
@@ -63,12 +65,14 @@ EMPTY=
 	}
 	got := loadDotenv(path, log.New(&bytes.Buffer{}, "", 0))
 	want := map[string]string{
-		"SIGIL_URL":                  "https://sigil.example.com",
-		"SIGIL_USER":                 "alice",
-		"SIGIL_PASSWORD":             "secret with spaces",
-		"SIGIL_CONTENT_CAPTURE_MODE": "full",
-		"SIGIL_EXTRA_TAGS":           "a=1,b=2",
-		"SIGIL_DEBUG":                "true",
+		"SIGIL_URL":                       "https://sigil.example.com",
+		"SIGIL_USER":                      "alice",
+		"SIGIL_PASSWORD":                  "secret with spaces",
+		"SIGIL_PASSWORD_WITH_COMMENT":     "quoted secret",
+		"SIGIL_SINGLE_QUOTE_WITH_COMMENT": "single quoted secret",
+		"SIGIL_CONTENT_CAPTURE_MODE":      "full",
+		"SIGIL_EXTRA_TAGS":                "a=1,b=2",
+		"SIGIL_DEBUG":                     "true",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d entries, want %d (got=%v)", len(got), len(want), got)

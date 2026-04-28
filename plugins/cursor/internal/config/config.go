@@ -105,7 +105,7 @@ func resolveContentCapture(raw string, logger *log.Logger) sigil.ContentCaptureM
 // loadDotenv parses the file at path. Missing files return an empty map
 // silently; other errors are logged. Format:
 //   - `KEY=value` one pair per line
-//   - `# comment` lines and trailing ` # comment` on unquoted values
+//   - `# comment` lines and trailing ` # comment` comments after values
 //   - optional single- or double-quoted values
 //   - optional leading `export ` prefix
 func loadDotenv(path string, logger *log.Logger) map[string]string {
@@ -133,15 +133,7 @@ func loadDotenv(path string, logger *log.Logger) map[string]string {
 		if !ok || key == "" {
 			continue
 		}
-		value := strings.TrimSpace(rest)
-		if len(value) >= 2 {
-			first, last := value[0], value[len(value)-1]
-			if (first == '"' || first == '\'') && first == last {
-				value = value[1 : len(value)-1]
-			} else if hashIdx := strings.Index(value, " #"); hashIdx >= 0 {
-				value = strings.TrimRight(value[:hashIdx], " \t")
-			}
-		}
+		value := trimDotenvValue(strings.TrimSpace(rest))
 		if value != "" {
 			out[key] = value
 		}
@@ -150,4 +142,18 @@ func loadDotenv(path string, logger *log.Logger) map[string]string {
 		logger.Printf("config: scan %s: %v", path, err)
 	}
 	return out
+}
+
+func trimDotenvValue(value string) string {
+	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') {
+		if quoteEnd := strings.LastIndexByte(value, value[0]); quoteEnd > 0 {
+			if tail := strings.TrimSpace(value[quoteEnd+1:]); tail == "" || strings.HasPrefix(tail, "#") {
+				return value[1:quoteEnd]
+			}
+		}
+	}
+	if hashIdx := strings.Index(value, " #"); hashIdx >= 0 {
+		return strings.TrimRight(value[:hashIdx], " \t")
+	}
+	return value
 }
