@@ -125,7 +125,7 @@ function resolveOtlp(file: Record<string, unknown>): OtlpConfig | undefined {
       "",
   ).trim();
 
-  if (basicUser && basicPassword) {
+  if (basicUser && basicPassword && !headers.Authorization) {
     const encoded = Buffer.from(`${basicUser}:${basicPassword}`).toString(
       "base64",
     );

@@ -300,6 +300,20 @@ describe("resolveConfig otlp", () => {
     });
     expect(cfg?.otlp?.headers.Authorization).toMatch(/^Basic /);
   });
+
+  it("explicit headers.Authorization wins over basic and bearer shorthand", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      otlp: {
+        endpoint: "https://otlp.example.com",
+        headers: { Authorization: "Bearer custom-token" },
+        basicUser: "user",
+        basicPassword: "pass",
+        bearerToken: "token",
+      },
+    });
+    expect(cfg?.otlp?.headers.Authorization).toBe("Bearer custom-token");
+  });
 });
 
 describe("resolveEnvVars", () => {
