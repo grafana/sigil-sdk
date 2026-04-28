@@ -119,7 +119,17 @@ def create_secret_redaction_sanitizer(
             generation.system_prompt = redactor.redact(generation.system_prompt)
 
         for message in generation.input:
-            mode = "full" if message.role == MessageRole.USER and resolved.redact_input_messages else "none"
+            if resolved.redact_input_messages:
+                if message.role == MessageRole.USER:
+                    mode = "full"
+                elif message.role == MessageRole.ASSISTANT:
+                    mode = "light"
+                elif message.role == MessageRole.TOOL:
+                    mode = "full"
+                else:
+                    mode = "none"
+            else:
+                mode = "none"
             _sanitize_message(message, redactor, mode)
 
         for message in generation.output:

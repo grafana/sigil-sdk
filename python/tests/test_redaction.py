@@ -191,6 +191,67 @@ def test_secret_redaction_sanitizer_can_redact_user_input() -> None:
     assert "[REDACTED:openai-project-key]" in sanitized.input[0].parts[0].text
 
 
+def test_secret_redaction_sanitizer_redacts_tool_and_assistant_input_when_opted_in() -> None:
+    sanitizer = create_secret_redaction_sanitizer(SecretRedactionOptions(redact_input_messages=True))
+    secret_token = "glc_abcdefghijklmnopqrstuvwxyz1234"
+    env_secret = "DATABASE_PASSWORD=hunter2secret123"
+    bearer_token = "a" * 30
+
+    sanitized = sanitizer(
+        Generation(
+            id="gen-1",
+            mode=GenerationMode.SYNC,
+            operation_name="generateText",
+            model=ModelRef(provider="openai", name="gpt-5"),
+            input=[
+                Message(
+                    role=MessageRole.USER,
+                    parts=[Part(kind=PartKind.TEXT, text=f"user pasted {secret_token}")],
+                ),
+                Message(
+                    role=MessageRole.ASSISTANT,
+                    parts=[
+                        Part(kind=PartKind.TEXT, text=f"assistant response with {secret_token}"),
+                        Part(
+                            kind=PartKind.TOOL_CALL,
+                            tool_call=ToolCall(
+                                name="bash",
+                                id="call-1",
+                                input_json=f'{{"header":"Bearer {bearer_token}"}}'.encode(),
+                            ),
+                        ),
+                    ],
+                ),
+                Message(
+                    role=MessageRole.TOOL,
+                    parts=[
+                        Part(
+                            kind=PartKind.TOOL_RESULT,
+                            tool_result=ToolResult(
+                                tool_call_id="call-1",
+                                name="bash",
+                                content=f"output {env_secret}",
+                            ),
+                        )
+                    ],
+                ),
+            ],
+        )
+    )
+
+    assert "glc_" not in sanitized.input[0].parts[0].text
+    assert "[REDACTED:grafana-cloud-token]" in sanitized.input[0].parts[0].text
+
+    assert "glc_" not in sanitized.input[1].parts[0].text
+    assert "[REDACTED:grafana-cloud-token]" in sanitized.input[1].parts[0].text
+
+    assert "Bearer " not in sanitized.input[1].parts[1].tool_call.input_json.decode("utf-8")
+    assert "[REDACTED:bearer-token]" in sanitized.input[1].parts[1].tool_call.input_json.decode("utf-8")
+
+    assert "hunter2secret123" not in sanitized.input[2].parts[0].tool_result.content
+    assert "[REDACTED:env-secret-value]" in sanitized.input[2].parts[0].tool_result.content
+
+
 def test_generation_sanitizer_failure_falls_back_to_metadata_only(caplog) -> None:
     exporter = CapturingGenerationExporter()
     logger = logging.getLogger("sigil_sdk.test_redaction")
