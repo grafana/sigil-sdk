@@ -3,7 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +17,131 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+// buildSigilCC compiles the binary into a temp dir, optionally injecting a
+// build-time version via -ldflags. Returns the path to the resulting binary.
+func buildSigilCC(t *testing.T, injectedVersion string) string {
+	t.Helper()
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skipf("go toolchain not available: %v", err)
+	}
+	binPath := filepath.Join(t.TempDir(), "sigil-cc")
+	args := []string{"build"}
+	if injectedVersion != "" {
+		args = append(args, "-ldflags", "-X main.version="+injectedVersion)
+	}
+	args = append(args, "-o", binPath, ".")
+	cmd := exec.Command("go", args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go build: %v", err)
+	}
+	return binPath
+}
+
+func TestVersionFlag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping build-and-exec test in short mode")
+	}
+
+	const want = "v0.0.1-test"
+	bin := buildSigilCC(t, want)
+
+	tests := []struct {
+		name string
+		flag string
+	}{
+		{"double dash", "--version"},
+		{"single dash", "-version"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tt.flag)
+			// Empty env so the version branch cannot accidentally trigger
+			// any env-driven side effects (e.g., SIGIL_DEBUG opening a log).
+			cmd.Env = []string{}
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("%s: %v", tt.flag, err)
+			}
+			got := strings.TrimSpace(string(out))
+			if got != want {
+				t.Errorf("stdout = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// TestVersionFlagSkipsRuntimePath asserts the version branch returns before
+// touching stdin or opening the debug log. The check: SIGIL_DEBUG=true would
+// normally cause initLogger() to create ~/.claude/state/sigil-cc.log; here
+// we redirect HOME to a temp dir and confirm no log file is created. We also
+// re-assert stdout contains the injected version to close the gap where
+// initLogger silently fails on filesystem error and the test passes for the
+// wrong reason.
+func TestVersionFlagSkipsRuntimePath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping build-and-exec test in short mode")
+	}
+
+	const want = "v0.0.1-test"
+	bin := buildSigilCC(t, want)
+	homeDir := t.TempDir()
+
+	cmd := exec.Command(bin, "--version")
+	cmd.Env = []string{"HOME=" + homeDir, "SIGIL_DEBUG=true"}
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("--version exit: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+
+	logPath := filepath.Join(homeDir, ".claude", "state", "sigil-cc.log")
+	if _, err := os.Stat(logPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected no log file at %s, got err=%v", logPath, err)
+	}
+}
+
+// TestNoArgInvokesStopHookPath asserts the no-arg invocation falls through
+// to initLogger() and run(). Positive witness: SIGIL_DEBUG=true causes
+// initLogger() to create ~/.claude/state/sigil-cc.log, then run() writes
+// the parseStdin error to it. Asserting both file existence and the logged
+// error line guarantees the no-arg path actually executed (a regression
+// short-circuiting main() before initLogger/run would leave the file absent).
+func TestNoArgInvokesStopHookPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping build-and-exec test in short mode")
+	}
+
+	bin := buildSigilCC(t, "")
+	homeDir := t.TempDir()
+
+	cmd := exec.Command(bin)
+	cmd.Stdin = strings.NewReader("")
+	// Empty env (only HOME and SIGIL_DEBUG) keeps run() inert: parseStdin
+	// fails on empty stdin, and even if it didn't, missing
+	// SIGIL_URL/USER/PASSWORD short-circuits before any network call.
+	cmd.Env = []string{"HOME=" + homeDir, "SIGIL_DEBUG=true"}
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			t.Fatalf("no-arg exit code = %d, want 0", exitErr.ExitCode())
+		}
+		t.Fatalf("no-arg run: %v", err)
+	}
+
+	logPath := filepath.Join(homeDir, ".claude", "state", "sigil-cc.log")
+	contents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("expected debug log at %s (proves initLogger ran): %v", logPath, err)
+	}
+	if !strings.Contains(string(contents), "stdin:") {
+		t.Errorf("debug log missing parseStdin error (proves run() ran), got: %q", contents)
+	}
+}
 
 func TestParseExtraTags(t *testing.T) {
 	tests := []struct {
