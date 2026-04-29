@@ -202,7 +202,7 @@ test('generation sanitizer failure falls back to metadata_only stripping', async
 
 test('secret redaction sanitizer redacts systemPrompt, conversationTitle, and callError', async () => {
   const sanitizer = createSecretRedactionSanitizer();
-  const apiKey = 'sk-proj-' + 'a'.repeat(48);
+  const apiKey = `sk-proj-${'a'.repeat(48)}`;
   const sanitized = sanitizer({
     id: 'gen-4',
     mode: 'SYNC',

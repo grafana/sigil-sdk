@@ -561,6 +561,28 @@ def test_conformance_streaming_telemetry_semantics() -> None:
             assert tuple(data_points[0].explicit_bounds) == expected_buckets, (
                 f"{metric_name} bucket boundaries mismatch: {tuple(data_points[0].explicit_bounds)}"
             )
+
+        expected_token_usage_buckets = (
+            1,
+            4,
+            16,
+            64,
+            256,
+            1024,
+            4096,
+            16384,
+            65536,
+            262144,
+            1048576,
+            4194304,
+            16777216,
+            67108864,
+        )
+        token_usage_points = list(metrics["gen_ai.client.token.usage"].data_points)
+        assert token_usage_points, "expected gen_ai.client.token.usage data points"
+        assert tuple(token_usage_points[0].explicit_bounds) == expected_token_usage_buckets, (
+            f"gen_ai.client.token.usage bucket boundaries mismatch: {tuple(token_usage_points[0].explicit_bounds)}"
+        )
     finally:
         env.shutdown()
 

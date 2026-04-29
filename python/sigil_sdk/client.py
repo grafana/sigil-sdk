@@ -145,6 +145,23 @@ _DURATION_BUCKETS_SECONDS: tuple[float, ...] = (
     81.92,
 )
 
+_TOKEN_USAGE_BUCKETS: tuple[float, ...] = (
+    1,
+    4,
+    16,
+    64,
+    256,
+    1024,
+    4096,
+    16384,
+    65536,
+    262144,
+    1048576,
+    4194304,
+    16777216,
+    67108864,
+)
+
 _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 _instrumentation_name = "github.com/grafana/sigil/sdks/python"
 _sdk_name = "sdk-python"
@@ -296,7 +313,11 @@ class Client:
             unit="s",
             explicit_bucket_boundaries_advisory=_DURATION_BUCKETS_SECONDS,
         )
-        self._token_usage_histogram: Histogram = self._meter.create_histogram(_metric_token_usage, unit="token")
+        self._token_usage_histogram: Histogram = self._meter.create_histogram(
+            _metric_token_usage,
+            unit="token",
+            explicit_bucket_boundaries_advisory=_TOKEN_USAGE_BUCKETS,
+        )
         self._ttft_histogram: Histogram = self._meter.create_histogram(
             _metric_ttft,
             unit="s",

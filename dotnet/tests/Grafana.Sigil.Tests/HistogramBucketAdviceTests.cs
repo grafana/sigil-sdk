@@ -13,8 +13,14 @@ public sealed class HistogramBucketAdviceTests
         2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
     };
 
+    private static readonly double[] ExpectedTokenUsageBuckets =
+    {
+        1, 4, 16, 64, 256, 1024, 4096, 16384,
+        65536, 262144, 1048576, 4194304, 16777216, 67108864,
+    };
+
     [Fact]
-    public async Task DurationHistograms_UseSemconvBucketBoundaries()
+    public async Task Histograms_UseSemconvBucketBoundaries()
     {
         var captured = new ConcurrentDictionary<string, double[]>(StringComparer.Ordinal);
 
@@ -56,6 +62,11 @@ public sealed class HistogramBucketAdviceTests
             captured.TryGetValue("gen_ai.client.time_to_first_token", out var ttftBounds),
             "expected gen_ai.client.time_to_first_token data point");
         Assert.Equal(ExpectedDurationBuckets, ttftBounds);
+
+        Assert.True(
+            captured.TryGetValue("gen_ai.client.token.usage", out var tokenUsageBounds),
+            "expected gen_ai.client.token.usage data point");
+        Assert.Equal(ExpectedTokenUsageBuckets, tokenUsageBounds);
     }
 
     private sealed class CapturingMetricExporter : BaseExporter<Metric>
