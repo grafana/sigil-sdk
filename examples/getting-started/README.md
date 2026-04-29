@@ -5,7 +5,7 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 | Language | Directory | LLM provider |
 |----------|-----------|--------------|
 | Python | [`python/`](python/) | OpenAI |
-| Python + Strands | [`python-strands/`](python-strands/) | OpenAI by default, local Sigil |
+| Python + Strands | [`python-strands/`](python-strands/) | OpenAI by default, Sigil Cloud |
 | TypeScript | [`typescript/`](typescript/) | OpenAI |
 | Go | [`go/`](go/) | OpenAI |
 

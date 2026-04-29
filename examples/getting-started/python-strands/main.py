@@ -1,4 +1,4 @@
-"""Minimal local Sigil example using Strands Agents."""
+"""Minimal Sigil Cloud example using Strands Agents."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExp
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig
+from sigil_sdk import AuthConfig, Client, ClientConfig, GenerationExportConfig
 from sigil_sdk_strands import with_sigil_strands_hooks
 from strands import Agent, tool
 from strands.models.openai import OpenAIModel
@@ -29,6 +29,13 @@ def env(name: str, default: str) -> str:
     return value or default
 
 
+def required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"{name} must be set (see .env.example).")
+    return value
+
+
 def otlp_metrics_endpoint() -> str:
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "").strip()
     if endpoint:
@@ -36,7 +43,9 @@ def otlp_metrics_endpoint() -> str:
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
     if not endpoint:
-        return "http://localhost:4318/v1/metrics"
+        raise RuntimeError(
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT must be set (see .env.example)."
+        )
     if endpoint.endswith("/v1/metrics"):
         return endpoint
     return f"{endpoint.rstrip('/')}/v1/metrics"
@@ -72,12 +81,18 @@ def create_model():
 
 
 meter_provider = setup_metrics()
+grafana_instance_id = required_env("GRAFANA_INSTANCE_ID")
 sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
-            protocol=os.getenv("SIGIL_EXPORT_PROTOCOL", "grpc"),
-            endpoint=os.getenv("SIGIL_ENDPOINT", "localhost:4317"),
-            insecure=True,
+            protocol=os.getenv("SIGIL_EXPORT_PROTOCOL", "http"),
+            endpoint=required_env("SIGIL_ENDPOINT"),
+            auth=AuthConfig(
+                mode="basic",
+                tenant_id=grafana_instance_id,
+                basic_user=grafana_instance_id,
+                basic_password=required_env("GRAFANA_CLOUD_TOKEN"),
+            ),
         ),
         meter=meter_provider.get_meter("sigil-strands-example"),
     )
@@ -86,7 +101,7 @@ sigil = Client(
 try:
     agent_config = with_sigil_strands_hooks(
         {
-            "name": "local-strands-demo",
+            "name": "strands-demo",
             "model": create_model(),
             "tools": [add_numbers],
             "system_prompt": "You are concise and show the final answer.",
@@ -98,7 +113,7 @@ try:
 
     result = agent(
         "Use the add_numbers tool to add 19 and 23, then answer in one sentence.",
-        invocation_state={"conversation_id": env("SIGIL_CONVERSATION_ID", "local-sigil-strands-demo")},
+        invocation_state={"conversation_id": env("SIGIL_CONVERSATION_ID", "sigil-strands-demo")},
     )
 
     print(result.message)

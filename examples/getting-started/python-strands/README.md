@@ -1,6 +1,6 @@
-# Getting Started — Python + Strands Agents
+# Getting Started - Python + Strands Agents
 
-Runs a Strands agent and records model/tool activity to local Sigil.
+Runs a Strands agent and records model/tool activity to Sigil Cloud.
 
 ## Setup
 
@@ -12,13 +12,18 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-By default this points at local Sigil over gRPC and uses Strands' OpenAI model provider:
+Configure Sigil and OTel endpoints from your Grafana Cloud stack:
 
 ```bash
-SIGIL_EXPORT_PROTOCOL=grpc
-SIGIL_ENDPOINT=localhost:4317
-SIGIL_CONVERSATION_ID=local-sigil-strands-demo
-OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4318/v1/metrics
+SIGIL_EXPORT_PROTOCOL=http
+SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
+GRAFANA_INSTANCE_ID=...
+GRAFANA_CLOUD_TOKEN=...
+SIGIL_CONVERSATION_ID=sigil-strands-demo
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64 of GRAFANA_INSTANCE_ID:GRAFANA_CLOUD_TOKEN>"
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_METRIC_EXPORT_INTERVAL_MILLIS=1000
 OTEL_SERVICE_NAME=sigil-strands-example
 STRANDS_MODEL_PROVIDER=openai
@@ -27,10 +32,9 @@ OPENAI_API_KEY=...
 ```
 
 The example also configures an OpenTelemetry `MeterProvider` and passes its meter
-to the Sigil client. Generations go to local Sigil on `localhost:4317`; SDK
-metrics go through the local Sigil dev stack's Alloy OTLP/HTTP endpoint on
-`localhost:4318/v1/metrics`. If `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` is unset,
-`main.py` defaults to that local Alloy endpoint.
+to the Sigil client. Generations go to `SIGIL_ENDPOINT`; SDK metrics go to
+`OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, or to `OTEL_EXPORTER_OTLP_ENDPOINT` with
+`/v1/metrics` appended when the metrics-specific endpoint is unset.
 
 Strands itself defaults to Amazon Bedrock when no model is provided. This example provides an explicit OpenAI model so you do not need AWS credentials. To try Bedrock instead, set `STRANDS_MODEL_PROVIDER=bedrock` and configure your AWS credentials.
 
@@ -40,4 +44,4 @@ Strands itself defaults to Amazon Bedrock when no model is provided. This exampl
 python main.py
 ```
 
-You should see the agent response printed, followed by `Done`. Open local Sigil to inspect the recorded generation.
+You should see the agent response printed, followed by `Done`. Open Sigil in your Grafana Cloud stack to inspect the recorded generation.
