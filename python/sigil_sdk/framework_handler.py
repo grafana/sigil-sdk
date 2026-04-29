@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,10 +22,8 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
-    ToolCall,
     ToolDefinition,
     ToolExecutionStart,
-    ToolResult,
     user_text_message,
 )
 from sigil_sdk.usage import map_usage
@@ -998,48 +995,40 @@ def _map_chat_inputs(messages: list[list[Any]]) -> list[Message]:
     output: list[Message] = []
     for batch in messages:
         for message in batch:
-            mapped = _map_framework_message(message)
-            if mapped is None:
+            text = _extract_message_text(message)
+            if text == "":
                 continue
-            output.append(mapped)
+            output.append(
+                Message(
+                    role=_normalize_role(_extract_message_role(message)),
+                    parts=[Part(kind=PartKind.TEXT, text=text)],
+                )
+            )
     return output
 
 
 def _map_output_messages(response: Any) -> list[Message]:
-    output: list[Message] = []
-    text_chunks: list[str] = []
+    texts: list[str] = []
     for candidates in _as_list(_read(response, "generations")):
         for candidate in _as_list(candidates):
-            text = _as_str(_read(candidate, "text"))
+            text = _extract_generation_text(candidate)
             if text != "":
-                text_chunks.append(text)
-                continue
+                texts.append(text)
 
-            mapped = _map_generation_candidate_message(candidate)
-            if mapped is not None:
-                output.append(mapped)
-
-    if text_chunks:
-        output.insert(
-            0,
-            Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="\n".join(text_chunks))]),
-        )
-
-    if not output:
+    if not texts:
         fallback_text = _as_str(_read(response, "text"))
         if fallback_text != "":
-            output.append(Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=fallback_text)]))
+            texts.append(fallback_text)
 
-    return output
+    if not texts:
+        return []
 
-
-def _map_generation_candidate_message(candidate: Any) -> Message | None:
-    message = _read(candidate, "message")
-    mapped = _map_framework_message(message)
-    if mapped is not None:
-        return mapped
-
-    return None
+    return [
+        Message(
+            role=MessageRole.ASSISTANT,
+            parts=[Part(kind=PartKind.TEXT, text="\n".join(texts))],
+        )
+    ]
 
 
 def _extract_generation_text(candidate: Any) -> str:
@@ -1053,100 +1042,6 @@ def _extract_generation_text(candidate: Any) -> str:
         return text
 
     return ""
-
-
-def _map_framework_message(message: Any) -> Message | None:
-    role = _normalize_role(_extract_message_role(message))
-    content = _read(message, "content")
-    parts: list[Part] = []
-    contains_tool_result = False
-
-    if isinstance(content, str):
-        text = content.strip()
-        if text != "":
-            parts.append(Part(kind=PartKind.TEXT, text=text))
-    elif isinstance(content, list):
-        for item in content:
-            if isinstance(item, str):
-                trimmed = item.strip()
-                if trimmed != "":
-                    parts.append(Part(kind=PartKind.TEXT, text=trimmed))
-                continue
-
-            text = _as_str(_read(item, "text"))
-            if text != "":
-                parts.append(Part(kind=PartKind.TEXT, text=text))
-                continue
-
-            tool_use_part = _map_tool_use_part(_read(item, "toolUse"))
-            if tool_use_part is not None:
-                parts.append(tool_use_part)
-                continue
-
-            tool_result_part = _map_tool_result_part(_read(item, "toolResult"))
-            if tool_result_part is not None:
-                contains_tool_result = True
-                parts.append(tool_result_part)
-    elif isinstance(content, dict):
-        text = _as_str(_read(content, "text"))
-        if text != "":
-            parts.append(Part(kind=PartKind.TEXT, text=text))
-
-    if not parts:
-        return None
-
-    if contains_tool_result:
-        role = MessageRole.TOOL
-        parts = [part for part in parts if part.kind == PartKind.TOOL_RESULT]
-
-    return Message(role=role, parts=parts)
-
-
-def _map_tool_use_part(tool_use: Any) -> Part | None:
-    if tool_use is None:
-        return None
-    name = _as_str(_read(tool_use, "name"))
-    if name == "":
-        return None
-    return Part(
-        kind=PartKind.TOOL_CALL,
-        tool_call=ToolCall(
-            id=_as_str(_read(tool_use, "toolUseId")),
-            name=name,
-            input_json=_json_bytes(_read(tool_use, "input")),
-        ),
-    )
-
-
-def _map_tool_result_part(tool_result: Any) -> Part | None:
-    if tool_result is None:
-        return None
-    tool_call_id = _as_str(_read(tool_result, "toolUseId"))
-    content = _tool_result_text(_read(tool_result, "content"))
-    content_json = _json_bytes(_read(tool_result, "content"))
-    is_error = _as_str(_read(tool_result, "status")).lower() == "error"
-    return Part(
-        kind=PartKind.TOOL_RESULT,
-        tool_result=ToolResult(
-            tool_call_id=tool_call_id,
-            content=content,
-            content_json=content_json,
-            is_error=is_error,
-        ),
-    )
-
-
-def _tool_result_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content.strip()
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for item in content:
-        text = _as_str(_read(item, "text"))
-        if text != "":
-            parts.append(text)
-    return " ".join(parts).strip()
 
 
 def _extract_message_text(message: Any) -> str:
@@ -1214,15 +1109,6 @@ def _as_str(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
-
-
-def _json_bytes(value: Any) -> bytes:
-    if value is None:
-        return b""
-    try:
-        return json.dumps(value, default=str, sort_keys=True).encode("utf-8")
-    except Exception:
-        return b""
 
 
 def _id_path(value: Any) -> str:
