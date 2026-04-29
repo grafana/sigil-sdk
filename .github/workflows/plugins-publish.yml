@@ -153,4 +153,4 @@ jobs:
           path: tarballs/
 
       - name: Publish ${{ matrix.plugin }} to npm
-        run: npm publish "tarballs/${{ matrix.plugin }}.tgz" --access public
+        run: npm publish "./tarballs/${{ matrix.plugin }}.tgz" --access public
