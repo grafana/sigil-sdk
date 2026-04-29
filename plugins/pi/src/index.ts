@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ContentCaptureMode, SigilClient } from "@grafana/sigil-sdk-js";
+import type {
+  ContentCaptureMode,
+  Message,
+  SigilClient,
+} from "@grafana/sigil-sdk-js";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createSigilClient } from "./client.js";
 import type { SigilPiConfig } from "./config.js";
@@ -10,8 +14,10 @@ import {
   mapGenerationResult,
   mapGenerationStart,
   mapToolNames,
+  mapUserMessage,
   type PiAssistantMessage,
   type PiToolResult,
+  type PiUserMessage,
   type ToolTiming,
 } from "./mappers.js";
 import {
@@ -63,6 +69,14 @@ export default function (pi: ExtensionAPI) {
   const toolStarts = new Map<string, { toolName: string; startedAt: number }>();
   const turnToolTimings: ToolTiming[] = [];
 
+  // User messages observed since the previous turn_end. Consumed at the next
+  // turn_end and attached to GenerationResult.input. Filled by the
+  // `message_end` handler (user role only). Per pi's agent loop, `turn_start`
+  // fires BEFORE the user `message_end` for fresh prompts, so this buffer
+  // must NOT be cleared at turn_start — only after consume and on session
+  // boundaries.
+  const pendingInputMessages: Message[] = [];
+
   function resetTurnState() {
     turnStartTime = 0;
     toolStarts.clear();
@@ -81,6 +95,7 @@ export default function (pi: ExtensionAPI) {
       telemetry = null;
     }
     resetTurnState();
+    pendingInputMessages.length = 0;
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -135,6 +150,18 @@ export default function (pi: ExtensionAPI) {
     resetTurnState();
     if (!sigil) return;
     turnStartTime = Date.now();
+  });
+
+  pi.on("message_end", async (event, _ctx) => {
+    if (!sigil || !config) return;
+    try {
+      const message = (event as { message?: unknown }).message;
+      if (!isUserMessage(message)) return;
+      const mapped = mapUserMessage(message, config.contentCapture);
+      if (mapped) pendingInputMessages.push(mapped);
+    } catch (err) {
+      console.warn("[sigil-pi] message_end failed:", err);
+    }
   });
 
   pi.on("tool_execution_start", async (event, _ctx) => {
@@ -204,7 +231,14 @@ export default function (pi: ExtensionAPI) {
       );
 
       const toolResults = (event.toolResults ?? []) as PiToolResult[];
-      const result = mapGenerationResult(msg, toolResults, contentCapture);
+      // Snapshot the buffer; the finally below clears it in place and
+      // GenerationResult.input would otherwise alias the cleared array.
+      const result = mapGenerationResult(
+        msg,
+        toolResults,
+        contentCapture,
+        pendingInputMessages.slice(),
+      );
 
       await sigil.startGeneration(seed, async (recorder) => {
         recorder.setResult(result);
@@ -228,6 +262,7 @@ export default function (pi: ExtensionAPI) {
     } finally {
       toolStarts.clear();
       turnToolTimings.length = 0;
+      pendingInputMessages.length = 0;
     }
   });
 
@@ -343,5 +378,16 @@ function isAssistantMessage(message: unknown): message is PiAssistantMessage {
     !!candidate.usage &&
     Array.isArray(candidate.content) &&
     typeof candidate.stopReason === "string"
+  );
+}
+
+function isUserMessage(message: unknown): message is PiUserMessage {
+  if (!message || typeof message !== "object") return false;
+  const candidate = message as Partial<PiUserMessage>;
+  return (
+    candidate.role === "user" &&
+    (typeof candidate.content === "string" ||
+      Array.isArray(candidate.content)) &&
+    typeof candidate.timestamp === "number"
   );
 }
