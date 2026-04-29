@@ -258,7 +258,10 @@ export class SigilStrandsHookProvider {
       toolName,
       toolCallId: toolUseId || undefined,
       toolType: 'strands',
-      toolDescription: firstNonEmpty(asString(read(tool, 'description')), asString(read(read(tool, 'toolSpec'), 'description'))),
+      toolDescription: firstNonEmpty(
+        asString(read(tool, 'description')),
+        asString(read(read(tool, 'toolSpec'), 'description')),
+      ),
       conversationId: context.conversationId,
       conversationTitle: this.conversationTitle,
       agentName: this.agentName ?? agentName(agent),
@@ -276,7 +279,9 @@ export class SigilStrandsHookProvider {
     const toolUse = asRecord(read(event, 'toolUse')) ?? {};
     const toolUseId = asString(read(toolUse, 'toolUseId'));
     const runId =
-      toolUseId.length > 0 ? this.toolRunIds.get(this.toolKey(event, toolUseId)) : this.popStack(this.fallbackToolRunIds, event);
+      toolUseId.length > 0
+        ? this.toolRunIds.get(this.toolKey(event, toolUseId))
+        : this.popStack(this.fallbackToolRunIds, event);
     if (runId === undefined) {
       return;
     }
@@ -515,7 +520,8 @@ function mapContentBlock(block: unknown): MessagePart[] {
   if (text.length > 0) {
     return [{ type: 'text', text }];
   }
-  const reasoning = read(block, 'reasoning') ?? (asString(read(block, 'type')) === 'reasoningBlock' ? block : undefined);
+  const reasoning =
+    read(block, 'reasoning') ?? (asString(read(block, 'type')) === 'reasoningBlock' ? block : undefined);
   const thinking = firstNonEmpty(asString(read(reasoning, 'text')), asString(read(block, 'thinking')));
   if (thinking.length > 0) {
     return [{ type: 'thinking', thinking }];
@@ -785,7 +791,12 @@ function toolChoiceString(value: unknown): string | undefined {
 
 function inferProviderFromModelName(modelName: string): string {
   const normalized = modelName.toLowerCase();
-  if (normalized.startsWith('gpt-') || normalized.startsWith('o1') || normalized.startsWith('o3') || normalized.startsWith('o4')) {
+  if (
+    normalized.startsWith('gpt-') ||
+    normalized.startsWith('o1') ||
+    normalized.startsWith('o3') ||
+    normalized.startsWith('o4')
+  ) {
     return 'openai';
   }
   if (normalized.includes('claude')) {
