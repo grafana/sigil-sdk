@@ -428,6 +428,7 @@ def _resolve_provider_name(
         resolved = provider_resolver(model_name, None, invocation_params)
         if resolved.strip() != "":
             return resolved.strip()
+        return "custom"
 
     if provider_resolver == "none":
         return ""

@@ -296,8 +296,9 @@ def _model_invocation_params(agent: Any, *, model_name: str) -> dict[str, Any]:
     if system_prompt != "":
         params["system_prompt"] = system_prompt
 
+    config = _model_config(agent)
     for key in ("temperature", "max_tokens", "top_p", "tool_choice"):
-        value = _read(_model_config(agent), key)
+        value = _read(config, key)
         if value is not None:
             params[key] = value
 
