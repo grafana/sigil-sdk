@@ -26,7 +26,6 @@ from sigil_sdk import (
     ToolCall,
     ToolDefinition,
     ToolExecutionStart,
-    ToolResult,
     user_text_message,
 )
 from sigil_sdk.usage import map_usage
@@ -1009,10 +1008,15 @@ def _map_chat_inputs(messages: list[list[Any]]) -> list[Message]:
     output: list[Message] = []
     for batch in messages:
         for message in batch:
-            mapped = _map_framework_message(message)
-            if mapped is None:
+            text = _extract_message_text(message)
+            if text == "":
                 continue
-            output.append(mapped)
+            output.append(
+                Message(
+                    role=_normalize_role(_extract_message_role(message)),
+                    parts=[Part(kind=PartKind.TEXT, text=text)],
+                )
+            )
     return output
 
 
@@ -1047,118 +1051,23 @@ def _map_output_messages(response: Any) -> list[Message]:
     return output
 
 
-def _extract_generation_text(candidate: Any) -> str:
-    text = _as_str(_read(candidate, "text"))
-    if text != "":
-        return text
-
-    message = _read(candidate, "message")
-    text = _extract_message_text(message)
-    if text != "":
-        return text
-
-    return ""
-
-
 def _map_generation_candidate_message(candidate: Any) -> Message | None:
     message = _read(candidate, "message")
-    mapped = _map_framework_message(message)
-    if mapped is not None:
-        return mapped
-
-    return None
-
-
-def _map_framework_message(message: Any) -> Message | None:
-    role = _normalize_role(_extract_message_role(message))
-    content = _read(message, "content")
     parts: list[Part] = []
-    contains_tool_result = False
 
-    if isinstance(content, str):
-        text = content.strip()
-        if text != "":
-            parts.append(Part(kind=PartKind.TEXT, text=text))
-    elif isinstance(content, list):
-        for item in content:
-            if isinstance(item, str):
-                trimmed = item.strip()
-                if trimmed != "":
-                    parts.append(Part(kind=PartKind.TEXT, text=trimmed))
-                continue
-
-            text = _as_str(_read(item, "text"))
-            if text != "":
-                parts.append(Part(kind=PartKind.TEXT, text=text))
-                continue
-
-            tool_use_part = _map_tool_use_part(_read(item, "toolUse"))
-            if tool_use_part is not None:
-                parts.append(tool_use_part)
-                continue
-
-            tool_result_part = _map_tool_result_part(_read(item, "toolResult"))
-            if tool_result_part is not None:
-                contains_tool_result = True
-                parts.append(tool_result_part)
-    elif isinstance(content, dict):
-        text = _as_str(_read(content, "text"))
-        if text != "":
-            parts.append(Part(kind=PartKind.TEXT, text=text))
+    text = _extract_message_text(message)
+    if text != "":
+        parts.append(Part(kind=PartKind.TEXT, text=text))
 
     for tool_call in _as_list(_read(message, "tool_calls")):
         tool_call_part = _map_langchain_tool_call_part(tool_call)
         if tool_call_part is not None:
             parts.append(tool_call_part)
 
-    if role == MessageRole.TOOL:
-        tool_result_part = _map_langchain_tool_message_part(message)
-        if tool_result_part is not None:
-            contains_tool_result = True
-            parts.append(tool_result_part)
-
     if not parts:
         return None
 
-    if contains_tool_result:
-        role = MessageRole.TOOL
-        parts = [part for part in parts if part.kind == PartKind.TOOL_RESULT]
-
-    return Message(role=role, parts=parts)
-
-
-def _map_tool_use_part(tool_use: Any) -> Part | None:
-    if tool_use is None:
-        return None
-    name = _as_str(_read(tool_use, "name"))
-    if name == "":
-        return None
-    return Part(
-        kind=PartKind.TOOL_CALL,
-        tool_call=ToolCall(
-            id=_as_str(_read(tool_use, "toolUseId")),
-            name=name,
-            input_json=_json_bytes(_read(tool_use, "input")),
-        ),
-    )
-
-
-def _map_tool_result_part(tool_result: Any) -> Part | None:
-    if tool_result is None:
-        return None
-    tool_call_id = _as_str(_read(tool_result, "toolUseId"))
-    content = _tool_result_text(_read(tool_result, "content"))
-    content_json = _json_bytes(_read(tool_result, "content"))
-    is_error = _as_str(_read(tool_result, "status")).lower() == "error"
-    return Part(
-        kind=PartKind.TOOL_RESULT,
-        tool_result=ToolResult(
-            tool_call_id=tool_call_id,
-            content=content,
-            content_json=content_json,
-            is_error=is_error,
-        ),
-    )
+    return Message(role=_normalize_role(_extract_message_role(message)), parts=parts)
 
 
 def _map_langchain_tool_call_part(tool_call: Any) -> Part | None:
@@ -1178,42 +1087,6 @@ def _map_langchain_tool_call_part(tool_call: Any) -> Part | None:
             input_json=_json_bytes(args),
         ),
     )
-
-
-def _map_langchain_tool_message_part(message: Any) -> Part | None:
-    tool_call_id = _as_str(_read(message, "tool_call_id"))
-    name = _as_str(_read(message, "name"))
-    content = _read(message, "content")
-    content_text = _tool_result_text(content)
-    if content_text == "" and isinstance(content, str):
-        content_text = content.strip()
-
-    if tool_call_id == "" and name == "" and content_text == "":
-        return None
-
-    return Part(
-        kind=PartKind.TOOL_RESULT,
-        tool_result=ToolResult(
-            tool_call_id=tool_call_id,
-            name=name,
-            content=content_text,
-            content_json=_json_bytes(content),
-            is_error=_as_str(_read(message, "status")).lower() == "error",
-        ),
-    )
-
-
-def _tool_result_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content.strip()
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for item in content:
-        text = _as_str(_read(item, "text"))
-        if text != "":
-            parts.append(text)
-    return " ".join(parts).strip()
 
 
 def _extract_message_text(message: Any) -> str:

@@ -182,29 +182,7 @@ def test_langchain_gemini_tool_calls_map_from_message_fields() -> None:
 
         handler.on_chat_model_start(
             {"name": "ChatGoogleGenerativeAI"},
-            [
-                [
-                    {"type": "human", "content": "Use the weather tool."},
-                    {
-                        "type": "ai",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "name": "get_weather",
-                                "args": {"city": "Paris"},
-                                "id": "call-weather",
-                                "type": "tool_call",
-                            }
-                        ],
-                    },
-                    {
-                        "type": "tool",
-                        "content": "Paris: 72F and sunny",
-                        "tool_call_id": "call-weather",
-                        "name": "get_weather",
-                    },
-                ]
-            ],
+            [[{"type": "human", "content": "Use the weather tool."}]],
             run_id=run_id,
             invocation_params={
                 "model": "gemini-2.5-flash",
@@ -271,20 +249,6 @@ def test_langchain_gemini_tool_calls_map_from_message_fields() -> None:
         assert generation.tool_choice == "get_weather"
         assert [(tool.name, tool.type) for tool in generation.tools] == [("get_weather", "function")]
         assert b'"city"' in generation.tools[0].input_schema_json
-
-        assert generation.input[1].role.value == "assistant"
-        input_tool_call = generation.input[1].parts[0].tool_call
-        assert input_tool_call is not None
-        assert input_tool_call.id == "call-weather"
-        assert input_tool_call.name == "get_weather"
-        assert b'"Paris"' in input_tool_call.input_json
-
-        assert generation.input[2].role.value == "tool"
-        input_tool_result = generation.input[2].parts[0].tool_result
-        assert input_tool_result is not None
-        assert input_tool_result.tool_call_id == "call-weather"
-        assert input_tool_result.name == "get_weather"
-        assert input_tool_result.content == "Paris: 72F and sunny"
 
         assert generation.output[0].role.value == "assistant"
         output_tool_call = generation.output[0].parts[0].tool_call
