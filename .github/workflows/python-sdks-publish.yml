@@ -95,6 +95,7 @@ jobs:
             python-frameworks/google-adk
             python-frameworks/litellm
             python-frameworks/pydantic-ai
+            python-frameworks/strands
           )
 
           for dir in "${PACKAGE_DIRS[@]}"; do
@@ -121,6 +122,7 @@ jobs:
             python-frameworks/google-adk
             python-frameworks/litellm
             python-frameworks/pydantic-ai
+            python-frameworks/strands
           )
 
           for dir in "${PACKAGE_DIRS[@]}"; do
@@ -202,6 +204,7 @@ jobs:
           - sigil-sdk-google-adk
           - sigil-sdk-litellm
           - sigil-sdk-pydantic-ai
+          - sigil-sdk-strands
 
     steps:
       - name: Download distributions
