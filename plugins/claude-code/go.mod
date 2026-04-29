@@ -4,7 +4,7 @@ go 1.25.6
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/grafana/sigil-sdk/go v0.2.1-0.20260414160052-f7de6c000c29
+	github.com/grafana/sigil-sdk/go v0.2.1-0.20260429175210-6e911c537776
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
