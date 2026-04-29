@@ -52,9 +52,34 @@ The Sigil SDK internally emits OTel spans and metrics (`gen_ai.client.operation.
 
 The SDK does NOT create OTel providers — that is the application's responsibility. Always ensure the app configures providers BEFORE creating the Sigil client, and shuts them down AFTER `sigil.shutdown()`.
 
-The endpoint, protocol (HTTP vs gRPC), and port depend on the user's collector/Alloy configuration. Use an env var like `OTEL_EXPORTER_OTLP_ENDPOINT` so the app doesn't hardcode assumptions. Common collector ports: 4318 (OTLP/HTTP), 4317 (OTLP/gRPC). The snippets below use HTTP — switch to gRPC equivalents if the target collector only accepts gRPC.
+Traces and metrics can be sent to Grafana Cloud in two ways. Always use env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`) so the app doesn't hardcode assumptions.
 
-### Python (HTTP)
+### Option A — Direct to Grafana Cloud (no collector needed)
+
+Send OTLP straight to the Grafana Cloud OTLP gateway. The exact URL is stack-specific — get it from the **Grafana Cloud portal → stack Details page** ([docs](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp)). Authentication uses Basic auth with instance ID and a Cloud API token.
+
+Env vars:
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-otlp-gateway-url>   # from Cloud portal
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(instance_id:cloud_api_token)>
+```
+
+The OTel SDK exporters read these env vars automatically — no extra code needed beyond the provider setup below.
+
+### Option B — Via Alloy / OTel Collector (optional)
+
+Run a local Alloy or OTel Collector that receives unauthenticated OTLP and forwards to Cloud with credentials. Useful for centralized token management, retries, relabeling, and metadata enrichment. Common local ports: 4318 (OTLP/HTTP), 4317 (OTLP/gRPC).
+
+Env vars:
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+### Provider setup (required for both options)
+
+The snippets below configure TracerProvider and MeterProvider using OTLP/HTTP exporters that honour the env vars above.
+
+#### Python
 ```python
 from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
@@ -66,20 +91,19 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 
 resource = Resource.create({"service.name": "my-app"})
-endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
 
 tp = TracerProvider(resource=resource)
-tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")))
+tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 trace.set_tracer_provider(tp)
 
 mp = MeterProvider(resource=resource, metric_readers=[
-    PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{endpoint}/v1/metrics"))
+    PeriodicExportingMetricReader(OTLPMetricExporter())
 ])
 metrics.set_meter_provider(mp)
 # Deps: opentelemetry-sdk, opentelemetry-exporter-otlp-proto-http
 ```
 
-### Go
+#### Go
 ```go
 traceExp, _ := otlptracehttp.New(ctx)
 tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExp), sdktrace.WithResource(res))
@@ -92,7 +116,7 @@ otel.SetMeterProvider(mp)
 defer mp.Shutdown(ctx)
 ```
 
-### JS/TS
+#### JS/TS
 ```typescript
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';

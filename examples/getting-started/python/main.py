@@ -4,6 +4,14 @@ import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from sigil_sdk import (
     AuthConfig,
     Client,
@@ -17,6 +25,18 @@ from sigil_sdk import (
 )
 
 load_dotenv()
+
+resource = Resource.create({"service.name": "getting-started-python"})
+
+tp = TracerProvider(resource=resource)
+tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(tp)
+
+mp = MeterProvider(
+    resource=resource,
+    metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
+)
+metrics.set_meter_provider(mp)
 
 openai_client = OpenAI()
 model = "gpt-4.1-mini"
@@ -72,4 +92,6 @@ with sigil.start_generation(
         print("SDK error:", rec.err())
 
 sigil.shutdown()
+tp.shutdown()
+mp.shutdown()
 print("Done — check the AI Observability plugin in your Grafana Cloud stack.")

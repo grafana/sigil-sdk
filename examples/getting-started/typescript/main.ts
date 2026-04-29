@@ -4,8 +4,30 @@
 
 import "dotenv/config";
 import OpenAI from "openai";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import {
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from "@opentelemetry/sdk-metrics";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { Resource } from "@opentelemetry/resources";
 import { createSigilClient } from "@grafana/sigil-sdk-js";
 import type { GenerationRecorder } from "@grafana/sigil-sdk-js";
+
+const resource = new Resource({ "service.name": "getting-started-typescript" });
+
+const tp = new NodeTracerProvider({ resource });
+tp.addSpanProcessor(new BatchSpanProcessor(new OTLPTraceExporter()));
+tp.register();
+
+const mp = new MeterProvider({
+  resource,
+  readers: [
+    new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() }),
+  ],
+});
 
 const openai = new OpenAI();
 const model = "gpt-4.1-mini";
@@ -59,6 +81,8 @@ await sigil.startGeneration(
 );
 
 await sigil.shutdown();
+await tp.shutdown();
+await mp.shutdown();
 console.log(
   "Done — check the AI Observability plugin in your Grafana Cloud stack.",
 );
