@@ -93,6 +93,7 @@
     "@opentelemetry/context-async-hooks": "^2.6.0",
     "@strands-agents/sdk": "^1.0.0-rc.5",
     "@types/node": "^24.11.0",
+    "express": "^5.1.0",
     "typescript": "^6.0.0"
   }
 }
