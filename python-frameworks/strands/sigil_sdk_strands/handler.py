@@ -435,7 +435,7 @@ def _resolve_provider_name(
         return str(provider_resolver)
 
     lower = model_name.lower()
-    if "gpt-" in lower or lower.startswith("o"):
+    if lower.startswith("gpt-") or lower.startswith("o1") or lower.startswith("o3") or lower.startswith("o4"):
         return "openai"
     if "claude" in lower:
         return "anthropic"

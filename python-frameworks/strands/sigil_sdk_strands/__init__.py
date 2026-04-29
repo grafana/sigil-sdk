@@ -262,7 +262,9 @@ def with_sigil_strands_hooks(
     agent = config_or_agent
     hooks_registry = getattr(agent, "hooks", None)
     if hooks_registry is not None and hasattr(hooks_registry, "add_hook"):
-        hooks_registry.add_hook(provider)
+        if not getattr(hooks_registry, "_sigil_instrumented", False):
+            hooks_registry.add_hook(provider)
+            hooks_registry._sigil_instrumented = True
         return agent
 
     hooks = _as_list(getattr(agent, "hooks", None))
