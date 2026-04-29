@@ -65,6 +65,9 @@ importers:
       '@opentelemetry/context-async-hooks':
         specifier: ^2.6.0
         version: 2.6.1(@opentelemetry/api@1.9.1)
+      '@strands-agents/sdk':
+        specifier: ^1.0.0-rc.5
+        version: 1.0.0-rc.5(@a2a-js/sdk@0.3.13(@grpc/grpc-js@1.14.3)(express@5.2.1))(@anthropic-ai/sdk@0.81.0(zod@4.3.6))(@google/genai@1.47.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)))(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-metrics-otlp-http@0.213.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.213.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.6.1(@opentelemetry/api@1.9.1))(express@5.2.1)(openai@6.33.0(ws@8.20.0)(zod@4.3.6))(zod@4.3.6)
       '@types/node':
         specifier: ^24.11.0
         version: 24.12.0
@@ -963,30 +966,35 @@ packages:
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@mariozechner/clipboard-linux-arm64-musl@0.3.3':
     resolution: {integrity: sha512-o1paj2+zmAQ/LaPS85XJCxhNowNQpxYM2cGY6pWvB5Kqmz6hZjl6CzDg5tbf1hZkn/Em6jpOaE2UtMxKdELBDA==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@mariozechner/clipboard-linux-riscv64-gnu@0.3.3':
     resolution: {integrity: sha512-dkEhE4ekePJwMbBq9HP1//CFMNmDzA/iV9AXqBfvL5CWmmDIRXqh4A3YZt3tWO/HdMerX+xNCEiR7WiOsIG+UA==}
     engines: {node: '>= 10'}
     cpu: [riscv64]
     os: [linux]
+    libc: [glibc]
 
   '@mariozechner/clipboard-linux-x64-gnu@0.3.3':
     resolution: {integrity: sha512-lT2yANtTLlEtFBIH3uGoRa/CQas/eBoLNi3qr9axQFoRgF4RGPSJ66yHOSnMECBneTIb1Iqv3UxokTfX27CdoQ==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@mariozechner/clipboard-linux-x64-musl@0.3.3':
     resolution: {integrity: sha512-saq/MCB0QHK/7ZZLjAZ0QkbY944dyjOsur8gneGCfMitt+GOiE1CU4OUipHC4b6x8UDY9bRLsR4aBaxu22OFPA==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@mariozechner/clipboard-win32-arm64-msvc@0.3.3':
     resolution: {integrity: sha512-cGuvSj0/2X2w983yEcKw+i+r1EBej6ZZIN+fXG3eY2G/HaIQpbXpLvMxKyZ9LKtbZx+Z6q/gELEoSBMLML6BaQ==}
@@ -1441,36 +1449,42 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-arm64-musl@1.0.0-rc.12':
     resolution: {integrity: sha512-V6/wZztnBqlx5hJQqNWwFdxIKN0m38p8Jas+VoSfgH54HSj9tKTt1dZvG6JRHcjh6D7TvrJPWFGaY9UBVOaWPw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rolldown/binding-linux-ppc64-gnu@1.0.0-rc.12':
     resolution: {integrity: sha512-AP3E9BpcUYliZCxa3w5Kwj9OtEVDYK6sVoUzy4vTOJsjPOgdaJZKFmN4oOlX0Wp0RPV2ETfmIra9x1xuayFB7g==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-s390x-gnu@1.0.0-rc.12':
     resolution: {integrity: sha512-nWwpvUSPkoFmZo0kQazZYOrT7J5DGOJ/+QHHzjvNlooDZED8oH82Yg67HvehPPLAg5fUff7TfWFHQS8IV1n3og==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-x64-gnu@1.0.0-rc.12':
     resolution: {integrity: sha512-RNrafz5bcwRy+O9e6P8Z/OCAJW/A+qtBczIqVYwTs14pf4iV1/+eKEjdOUta93q2TsT/FI0XYDP3TCky38LMAg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-x64-musl@1.0.0-rc.12':
     resolution: {integrity: sha512-Jpw/0iwoKWx3LJ2rc1yjFrj+T7iHZn2JDg1Yny1ma0luviFS4mhAIcd1LFNxK3EYu3DHWCps0ydXQ5i/rrJ2ig==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rolldown/binding-openharmony-arm64@1.0.0-rc.12':
     resolution: {integrity: sha512-vRugONE4yMfVn0+7lUKdKvN4D5YusEiPilaoO2sgUWpCvrncvWgPMzK00ZFFJuiPgLwgFNP5eSiUlv2tfc+lpA==}
@@ -1704,6 +1718,54 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@strands-agents/sdk@1.0.0-rc.5':
+    resolution: {integrity: sha512-m9ADzfI+G71z8bBp+xkjgtzdE9IJJ+AaEcqO8mTlI0E3xqPzwRLO276CLn9wq5kal7AHZI7O2710TXMsqMxP/g==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      '@a2a-js/sdk': ^0.3.10
+      '@ai-sdk/provider': ^3.0.0
+      '@anthropic-ai/sdk': ^0.89.0
+      '@aws-sdk/client-s3': ^3.943.0
+      '@google/genai': ^1.40.0
+      '@modelcontextprotocol/sdk': ^1.25.2
+      '@opentelemetry/api': ^1.9.0
+      '@opentelemetry/exporter-metrics-otlp-http': ^0.214.0
+      '@opentelemetry/exporter-trace-otlp-http': ^0.214.0
+      '@opentelemetry/resources': ^2.6.1
+      '@opentelemetry/sdk-metrics': ^2.6.1
+      '@opentelemetry/sdk-trace-base': ^2.6.1
+      '@opentelemetry/sdk-trace-node': ^2.6.1
+      express: ^5.1.0
+      openai: ^6.7.0
+      zod: ^4.1.12
+    peerDependenciesMeta:
+      '@a2a-js/sdk':
+        optional: true
+      '@ai-sdk/provider':
+        optional: true
+      '@anthropic-ai/sdk':
+        optional: true
+      '@aws-sdk/client-s3':
+        optional: true
+      '@google/genai':
+        optional: true
+      '@opentelemetry/exporter-metrics-otlp-http':
+        optional: true
+      '@opentelemetry/exporter-trace-otlp-http':
+        optional: true
+      '@opentelemetry/resources':
+        optional: true
+      '@opentelemetry/sdk-metrics':
+        optional: true
+      '@opentelemetry/sdk-trace-base':
+        optional: true
+      '@opentelemetry/sdk-trace-node':
+        optional: true
+      express:
+        optional: true
+      openai:
+        optional: true
 
   '@tokenizer/inflate@0.4.1':
     resolution: {integrity: sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA==}
@@ -2899,24 +2961,28 @@ packages:
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-arm64-musl@1.32.0:
     resolution: {integrity: sha512-UpQkoenr4UJEzgVIYpI80lDFvRmPVg6oqboNHfoH4CQIfNA+HOrZ7Mo7KZP02dC6LjghPQJeBsvXhJod/wnIBg==}
     engines: {node: '>= 12.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-linux-x64-gnu@1.32.0:
     resolution: {integrity: sha512-V7Qr52IhZmdKPVr+Vtw8o+WLsQJYCTd8loIfpDaMRWGUZfBOYEJeyJIkqGIDMZPwPx24pUMfwSxxI8phr/MbOA==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   lightningcss-linux-x64-musl@1.32.0:
     resolution: {integrity: sha512-bYcLp+Vb0awsiXg/80uCRezCYHNg1/l3mt0gzHnWV9XP1W5sKa5/TCdGWaR/zBM2PeF/HbsQv/j2URNOiVuxWg==}
     engines: {node: '>= 12.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   lightningcss-win32-arm64-msvc@1.32.0:
     resolution: {integrity: sha512-8SbC8BR40pS6baCM8sbtYDSwEVQd4JlFTOlaD3gWGHfThTcABnNDBda6eTZeqbofalIJhFx0qKzgHJmcPTnGdw==}
@@ -6262,6 +6328,30 @@ snapshots:
       text-hex: 1.0.0
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@strands-agents/sdk@1.0.0-rc.5(@a2a-js/sdk@0.3.13(@grpc/grpc-js@1.14.3)(express@5.2.1))(@anthropic-ai/sdk@0.81.0(zod@4.3.6))(@google/genai@1.47.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)))(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-metrics-otlp-http@0.213.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.213.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.6.1(@opentelemetry/api@1.9.1))(express@5.2.1)(openai@6.33.0(ws@8.20.0)(zod@4.3.6))(zod@4.3.6)':
+    dependencies:
+      '@aws-sdk/client-bedrock-runtime': 3.1038.0
+      '@modelcontextprotocol/sdk': 1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+      '@opentelemetry/api': 1.9.1
+      '@types/json-schema': 7.0.15
+      uuid: 13.0.0
+      yaml: 2.8.3
+      zod: 4.3.6
+    optionalDependencies:
+      '@a2a-js/sdk': 0.3.13(@grpc/grpc-js@1.14.3)(express@5.2.1)
+      '@anthropic-ai/sdk': 0.81.0(zod@4.3.6)
+      '@google/genai': 1.47.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))
+      '@opentelemetry/exporter-metrics-otlp-http': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/exporter-trace-otlp-http': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-metrics': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-node': 2.6.1(@opentelemetry/api@1.9.1)
+      express: 5.2.1
+      openai: 6.33.0(ws@8.20.0)(zod@4.3.6)
+    transitivePeerDependencies:
+      - aws-crt
 
   '@tokenizer/inflate@0.4.1':
     dependencies:
