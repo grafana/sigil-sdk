@@ -1,7 +1,15 @@
 """Public exports for the Sigil Python SDK."""
 
 from .client import Client
-from .config import ApiConfig, AuthConfig, ClientConfig, EmbeddingCaptureConfig, GenerationExportConfig, default_config
+from .config import (
+    ApiConfig,
+    AuthConfig,
+    ClientConfig,
+    EmbeddingCaptureConfig,
+    GenerationExportConfig,
+    GenerationSanitizer,
+    default_config,
+)
 from .context import (
     agent_name_from_context,
     agent_version_from_context,
@@ -60,6 +68,7 @@ from .models import (
     tool_result_part,
     user_text_message,
 )
+from .redaction import SecretRedactionOptions, create_secret_redaction_sanitizer
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation
 
 __all__ = [
@@ -81,6 +90,7 @@ __all__ = [
     "EnqueueError",
     "Generation",
     "GenerationExportConfig",
+    "GenerationSanitizer",
     "GenerationMode",
     "GenerationStart",
     "MappingError",
@@ -94,6 +104,7 @@ __all__ = [
     "RatingConflictError",
     "RatingTransportError",
     "SigilError",
+    "SecretRedactionOptions",
     "SubmitConversationRatingResponse",
     "TokenUsage",
     "ToolCall",
@@ -106,6 +117,7 @@ __all__ = [
     "agent_version_from_context",
     "assistant_text_message",
     "content_capture_mode_from_context",
+    "create_secret_redaction_sanitizer",
     "conversation_id_from_context",
     "conversation_title_from_context",
     "text_part",

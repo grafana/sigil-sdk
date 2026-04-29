@@ -623,6 +623,18 @@ class Client:
         except Exception as exc:  # noqa: BLE001
             self._log_warn("sigil generation export failed", exc)
 
+    def _has_generation_sanitizer(self) -> bool:
+        return self._config.generation_sanitizer is not None
+
+    def _sanitize_generation(self, generation: Generation) -> Generation:
+        sanitizer = self._config.generation_sanitizer
+        if sanitizer is None:
+            return generation
+        sanitized = sanitizer(copy.deepcopy(generation))
+        if sanitized is None:
+            raise ValueError("generation sanitizer must return a generation")
+        return copy.deepcopy(sanitized)
+
     def _flush_internal(self) -> None:
         with self._flush_lock:
             while True:
@@ -885,17 +897,38 @@ class GenerationRecorder:
             generation = self._normalize_generation(result, completed_at, call_error)
             _apply_trace_context_from_span(self.span, generation)
 
+            effective_content_capture_mode = self._content_capture_mode
             _stamp_content_capture_metadata(generation, self._content_capture_mode)
+            validation_target = copy.deepcopy(generation)
             if self._content_capture_mode == ContentCaptureMode.METADATA_ONLY:
                 error_cat = _error_category_from_exception(call_error, fallback_sdk=True) if call_error else ""
                 _strip_content(generation, error_cat)
+            elif self.client._has_generation_sanitizer():
+                try:
+                    generation = self.client._sanitize_generation(generation)
+                    validation_target = copy.deepcopy(generation)
+                except Exception:  # noqa: BLE001
+                    effective_content_capture_mode = ContentCaptureMode.METADATA_ONLY
+                    error_cat = _error_category_from_exception(call_error, fallback_sdk=True) if call_error else ""
+                    _strip_content(generation, error_cat)
+                    _stamp_content_capture_metadata(generation, effective_content_capture_mode)
+                    if self.client._config.logger is not None:
+                        self.client._config.logger.warning(
+                            "sigil: generation sanitization failed, falling back to metadata_only",
+                            exc_info=True,
+                        )
 
             self.span.update_name(_generation_span_name(generation.operation_name, generation.model.name))
             _set_generation_span_attributes(self.span, generation)
+            if (
+                effective_content_capture_mode == ContentCaptureMode.METADATA_ONLY
+                and self._content_capture_mode != ContentCaptureMode.METADATA_ONLY
+            ):
+                self.span.set_attribute(_span_attr_conversation_title, "")
 
             local_error: Exception | None = None
             try:
-                validate_generation(generation)
+                validate_generation(validation_target)
             except Exception as exc:  # noqa: BLE001
                 local_error = ValidationError(f"sigil: generation validation failed: {exc}")
 
@@ -909,7 +942,7 @@ class GenerationRecorder:
                 except Exception as exc:  # noqa: BLE001
                     local_error = EnqueueError(f"sigil: generation enqueue failed: {exc}")
 
-            is_metadata_only = self._content_capture_mode == ContentCaptureMode.METADATA_ONLY
+            is_metadata_only = effective_content_capture_mode == ContentCaptureMode.METADATA_ONLY
 
             if not is_metadata_only:
                 if call_error is not None:

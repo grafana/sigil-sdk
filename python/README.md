@@ -64,6 +64,10 @@ llamaindex_config = with_sigil_llamaindex_callbacks(None, client=client, provide
 google_adk_agent_config = with_sigil_google_adk_callbacks(None, client=client, provider_resolver="auto")
 ```
 
+Framework handlers use the `Client` instance you pass in. If that client is configured with
+`generation_sanitizer`, the same redaction policy applies automatically to generations recorded
+through LangChain, LangGraph, OpenAI Agents, LlamaIndex, and Google ADK integrations.
+
 Framework handlers inject framework tags/metadata on recorded generations:
 
 - `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, or `google-adk`)
@@ -143,6 +147,50 @@ with client.start_generation(
         raise rec.err()
 
 client.shutdown()
+```
+
+## Pre-Ingest Redaction
+
+Use `generation_sanitizer` when you want to redact substrings from normalized generations before
+validation, span sync, and export.
+
+```python
+from sigil_sdk import (
+    Client,
+    ClientConfig,
+    SecretRedactionOptions,
+    create_secret_redaction_sanitizer,
+)
+
+client = Client(
+    ClientConfig(
+        generation_sanitizer=create_secret_redaction_sanitizer(
+            SecretRedactionOptions(
+                redact_input_messages=False,
+                redact_email_addresses=True,
+            )
+        )
+    )
+)
+```
+
+The built-in sanitizer:
+
+- redacts high-confidence secret formats in assistant text and thinking
+- redacts secret formats plus env-style secret values in tool call inputs and tool results
+- redacts email addresses by default
+- leaves user input unchanged unless `redact_input_messages=True` is set
+
+To preserve email addresses, opt out explicitly:
+
+```python
+client = Client(
+    ClientConfig(
+        generation_sanitizer=create_secret_redaction_sanitizer(
+            SecretRedactionOptions(redact_email_addresses=False)
+        )
+    )
+)
 ```
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` via `ClientConfig`.
