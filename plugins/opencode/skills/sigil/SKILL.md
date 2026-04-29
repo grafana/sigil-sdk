@@ -118,6 +118,7 @@ defer mp.Shutdown(ctx)
 
 #### JS/TS
 ```typescript
+import { metrics } from '@opentelemetry/api';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
@@ -132,6 +133,7 @@ const mp = new MeterProvider({
   resource,
   readers: [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() })],
 });
+metrics.setGlobalMeterProvider(mp);
 ```
 
 ## Telemetry fields to prioritize
