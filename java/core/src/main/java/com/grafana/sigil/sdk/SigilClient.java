@@ -99,6 +99,7 @@ public final class SigilClient implements AutoCloseable {
     private static final Pattern STATUS_CODE_PATTERN = Pattern.compile("\\b([1-5][0-9][0-9])\\b");
     private static final String INSTRUMENTATION_NAME = "github.com/grafana/sigil/sdks/java";
     static final String DEFAULT_EMBEDDING_OPERATION_NAME = "embeddings";
+    static final String TOOL_EXECUTION_OPERATION_NAME = "execute_tool";
     static final String SDK_NAME = "sdk-java";
     static final String METADATA_USER_ID_KEY = "sigil.user.id";
     static final String METADATA_LEGACY_USER_ID_KEY = "user.id";
@@ -1033,6 +1034,7 @@ public final class SigilClient implements AutoCloseable {
 
     static void setToolSpanAttributes(Span span, ToolExecutionStart seed) {
         span.setAttribute(SPAN_ATTR_SDK_NAME, SDK_NAME);
+        span.setAttribute(SPAN_ATTR_OPERATION_NAME, TOOL_EXECUTION_OPERATION_NAME);
         if (!seed.getConversationId().isBlank()) {
             span.setAttribute(SPAN_ATTR_CONVERSATION_ID, seed.getConversationId());
         }
@@ -1190,7 +1192,7 @@ public final class SigilClient implements AutoCloseable {
         operationDurationHistogram.record(
                 durationSeconds,
                 Attributes.builder()
-                        .put(SPAN_ATTR_OPERATION_NAME, "execute_tool")
+                        .put(SPAN_ATTR_OPERATION_NAME, TOOL_EXECUTION_OPERATION_NAME)
                         .put(SPAN_ATTR_PROVIDER_NAME, seed.getRequestProvider().trim())
                         .put(SPAN_ATTR_REQUEST_MODEL, seed.getRequestModel().trim())
                         .put(SPAN_ATTR_TOOL_NAME, seed.getToolName().trim())
