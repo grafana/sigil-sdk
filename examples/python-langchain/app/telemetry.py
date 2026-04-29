@@ -1,6 +1,6 @@
 """OpenTelemetry bootstrap.
 
-Sets up a TracerProvider + MeterProvider using OTLP/HTTP exporters and
+Sets up a TracerProvider + MeterProvider using OTLP/gRPC exporters and
 registers them globally. The exporters read standard OTel env vars
 (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS, etc.)
 automatically, so no endpoint/auth is hardcoded here.
@@ -9,7 +9,7 @@ Send traces and metrics to Grafana Cloud either:
   A) Direct — set OTEL_EXPORTER_OTLP_ENDPOINT to your Cloud OTLP gateway
      URL (from Cloud portal → stack Details) and OTEL_EXPORTER_OTLP_HEADERS
      with Basic auth.
-  B) Via Alloy — set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+  B) Via Alloy — set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
      and let Alloy handle Cloud auth.
 """
 
@@ -19,8 +19,8 @@ import os
 from dataclasses import dataclass
 
 from opentelemetry import metrics, trace
-from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
