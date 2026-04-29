@@ -46,7 +46,7 @@ Instrument once with a thin OpenTelemetry-native SDK, then use it to see what yo
 | Language | Frameworks | Path |
 |----------|------------|------|
 | Go | Google ADK | [`go-frameworks/`](go-frameworks/) |
-| Python | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK | [`python-frameworks/`](python-frameworks/) |
+| Python | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands Agents | [`python-frameworks/`](python-frameworks/) |
 
 ## Quick Examples
 
