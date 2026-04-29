@@ -45,6 +45,7 @@ jobs:
           app-id: ${{ fromJSON(steps.get-secrets.outputs.secrets).GITHUB_APP_ID }}
           private-key: ${{ fromJSON(steps.get-secrets.outputs.secrets).GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -131,15 +132,29 @@ jobs:
       - name: Commit and push
         shell: bash
         run: |
+          # Configure git to use the GitHub App token
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          
           git add \
             python/pyproject.toml \
             python-providers/*/pyproject.toml \
             python-frameworks/*/pyproject.toml
-          git commit -m "chore(sdk-python): bump version to ${NEW_VERSION}"
-          git tag -a "sdk-python/v${NEW_VERSION}" -m "Python SDK ${NEW_VERSION}"
+          
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
+            echo "No changes to commit, version may already be bumped"
+          else
+            git commit -m "chore(sdk-python): bump version to ${NEW_VERSION}"
+          fi
+          
+          # Delete existing tag if present (handles re-runs)
+          git push origin :refs/tags/sdk-python/v${NEW_VERSION} 2>/dev/null || true
+          git tag -f -a "sdk-python/v${NEW_VERSION}" -m "Python SDK ${NEW_VERSION}"
+          
           git push origin HEAD --tags
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new-version }}
+          GITHUB_TOKEN: ${{ steps.generate-github-token.outputs.token }}
 
       - name: Upload built distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
