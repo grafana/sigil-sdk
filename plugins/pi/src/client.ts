@@ -1,5 +1,8 @@
 import type { GenerationExportConfig } from "@grafana/sigil-sdk-js";
-import { SigilClient } from "@grafana/sigil-sdk-js";
+import {
+  createSecretRedactionSanitizer,
+  SigilClient,
+} from "@grafana/sigil-sdk-js";
 import type { Meter, Tracer } from "@opentelemetry/api";
 import type { SigilAuthConfig, SigilPiConfig } from "./config.js";
 
@@ -22,6 +25,12 @@ export function createSigilClient(
       contentCapture: config.contentCapture,
       ...(options?.tracer ? { tracer: options.tracer } : {}),
       ...(options?.meter ? { meter: options.meter } : {}),
+      generationSanitizer: config.redaction.enabled
+        ? createSecretRedactionSanitizer({
+            redactInputMessages: config.redaction.redactInputMessages,
+            redactEmailAddresses: config.redaction.redactEmailAddresses,
+          })
+        : undefined,
     });
   } catch (err) {
     console.warn("[sigil-pi] failed to create SigilClient:", err);

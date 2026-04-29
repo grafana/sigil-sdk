@@ -1,12 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SigilPiConfig } from "./config.js";
 
-const { SigilClientMock } = vi.hoisted(() => ({
-  SigilClientMock: vi.fn(),
-}));
+const { SigilClientMock, createSecretRedactionSanitizerMock, SANITIZER } =
+  vi.hoisted(() => {
+    const sanitizer = Object.assign(() => ({}) as never, {
+      __sentinel: "sanitizer",
+    });
+    return {
+      SigilClientMock: vi.fn(),
+      createSecretRedactionSanitizerMock: vi.fn(() => sanitizer),
+      SANITIZER: sanitizer,
+    };
+  });
 
 vi.mock("@grafana/sigil-sdk-js", () => ({
   SigilClient: SigilClientMock,
+  createSecretRedactionSanitizer: createSecretRedactionSanitizerMock,
 }));
 
 import { createSigilClient } from "./client.js";
@@ -18,6 +27,11 @@ function makeConfig(overrides?: Partial<SigilPiConfig>): SigilPiConfig {
     agentName: "pi",
     contentCapture: "metadata_only",
     debug: false,
+    redaction: {
+      enabled: true,
+      redactInputMessages: true,
+      redactEmailAddresses: true,
+    },
     ...overrides,
   };
 }
@@ -25,6 +39,7 @@ function makeConfig(overrides?: Partial<SigilPiConfig>): SigilPiConfig {
 describe("createSigilClient", () => {
   beforeEach(() => {
     SigilClientMock.mockReset();
+    createSecretRedactionSanitizerMock.mockClear();
     // biome-ignore lint/complexity/useArrowFunction: must be a regular function for `new` to work
     SigilClientMock.mockImplementation(function () {
       return {};
@@ -45,6 +60,7 @@ describe("createSigilClient", () => {
         auth: { mode: "tenant", tenantId: "t-1" },
       },
       contentCapture: "metadata_only",
+      generationSanitizer: SANITIZER,
     });
   });
 
@@ -72,6 +88,7 @@ describe("createSigilClient", () => {
         },
       },
       contentCapture: "metadata_only",
+      generationSanitizer: SANITIZER,
     });
   });
 
@@ -89,5 +106,52 @@ describe("createSigilClient", () => {
 
     const client = createSigilClient(makeConfig());
     expect(client).toBeNull();
+  });
+
+  it("wires generationSanitizer when redaction is enabled", () => {
+    createSigilClient(makeConfig());
+
+    expect(createSecretRedactionSanitizerMock).toHaveBeenCalledTimes(1);
+    expect(createSecretRedactionSanitizerMock).toHaveBeenCalledWith({
+      redactInputMessages: true,
+      redactEmailAddresses: true,
+    });
+    expect(SigilClientMock).toHaveBeenCalledWith(
+      expect.objectContaining({ generationSanitizer: SANITIZER }),
+    );
+  });
+
+  it("forwards redaction sub-flags to the sanitizer factory", () => {
+    createSigilClient(
+      makeConfig({
+        redaction: {
+          enabled: true,
+          redactInputMessages: false,
+          redactEmailAddresses: false,
+        },
+      }),
+    );
+
+    expect(createSecretRedactionSanitizerMock).toHaveBeenCalledWith({
+      redactInputMessages: false,
+      redactEmailAddresses: false,
+    });
+  });
+
+  it("omits generationSanitizer when redaction is disabled", () => {
+    createSigilClient(
+      makeConfig({
+        redaction: {
+          enabled: false,
+          redactInputMessages: true,
+          redactEmailAddresses: true,
+        },
+      }),
+    );
+
+    expect(createSecretRedactionSanitizerMock).not.toHaveBeenCalled();
+    expect(SigilClientMock).toHaveBeenCalledWith(
+      expect.objectContaining({ generationSanitizer: undefined }),
+    );
   });
 });

@@ -14,6 +14,12 @@ export interface OtlpConfig {
   headers: Record<string, string>;
 }
 
+export interface RedactionConfig {
+  enabled: boolean;
+  redactInputMessages: boolean;
+  redactEmailAddresses: boolean;
+}
+
 export interface SigilPiConfig {
   endpoint: string;
   auth: SigilAuthConfig;
@@ -22,6 +28,7 @@ export interface SigilPiConfig {
   contentCapture: ContentCaptureMode;
   debug: boolean;
   otlp?: OtlpConfig;
+  redaction: RedactionConfig;
 }
 
 const CONFIG_PATH = join(homedir(), ".config", "sigil-pi", "config.json");
@@ -74,6 +81,7 @@ export function resolveConfig(
   const debug = envBool("SIGIL_PI_DEBUG") ?? toBool(file.debug) ?? false;
 
   const otlp = resolveOtlp(file);
+  const redaction = resolveRedaction(file);
 
   return {
     endpoint,
@@ -83,7 +91,29 @@ export function resolveConfig(
     contentCapture,
     debug,
     otlp,
+    redaction,
   };
+}
+
+function resolveRedaction(file: Record<string, unknown>): RedactionConfig {
+  const redactionObj = (file.redaction ?? {}) as Record<string, unknown>;
+
+  const enabled =
+    envBool("SIGIL_PI_REDACTION_ENABLED") ??
+    toBool(redactionObj.enabled) ??
+    true;
+
+  const redactInputMessages =
+    envBool("SIGIL_PI_REDACT_INPUT_MESSAGES") ??
+    toBool(redactionObj.redactInputMessages) ??
+    true;
+
+  const redactEmailAddresses =
+    envBool("SIGIL_PI_REDACT_EMAIL_ADDRESSES") ??
+    toBool(redactionObj.redactEmailAddresses) ??
+    true;
+
+  return { enabled, redactInputMessages, redactEmailAddresses };
 }
 
 function resolveOtlp(file: Record<string, unknown>): OtlpConfig | undefined {

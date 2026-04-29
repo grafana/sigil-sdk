@@ -81,6 +81,32 @@ The `otlp` block exports OTel histograms and trace spans:
 }
 ```
 
+### Redaction (pre-ingest secret scrubbing)
+
+The plugin runs every generation through the SDK's secret redaction sanitizer before it leaves the process. Matched values are replaced with `[REDACTED:<id>]`. The sanitizer covers high-confidence formats including:
+
+- Grafana Cloud tokens (`glc_…`) and service account tokens (`glsa_…`)
+- Cloud provider keys (AWS, GCP), GitHub PATs, OpenAI / Anthropic / Stripe / SendGrid / Twilio / Slack / npm / PyPI tokens
+- PEM-encoded private key blocks
+- Database connection strings (`postgres://user:pass@host`, `mysql://…`, `mongodb://…`, `redis://…`, `amqp://…`)
+- Environment-style `PASSWORD=…` / `SECRET=…` / `TOKEN=…` / `KEY=…` / `CREDENTIAL=…` / `API_KEY=…` / `PRIVATE_KEY=…` / `ACCESS_KEY=…` pairs
+- Bearer tokens
+- Email addresses (optional, on by default)
+
+User input messages are scrubbed by default, flip `redactInputMessages` if you want to leave the user side untouched.
+
+Opt out entirely:
+
+```json
+"redaction": { "enabled": false }
+```
+
+Tweak individual knobs:
+
+```json
+"redaction": { "redactEmailAddresses": false }
+```
+
 ### All options
 
 | Field | Default | Description |
@@ -99,6 +125,9 @@ The `otlp` block exports OTel histograms and trace spans:
 | `otlp.basicUser` / `otlp.basicPassword` | — | OTLP Basic auth |
 | `otlp.bearerToken` | — | OTLP Bearer token |
 | `otlp.headers` | — | Custom OTLP headers |
+| `redaction.enabled` | `true` | Master switch for pre-ingest secret redaction |
+| `redaction.redactInputMessages` | `true` | Also scrub user-role message content (not just assistant/tool output) |
+| `redaction.redactEmailAddresses` | `true` | Scrub generic email addresses |
 
 ### Environment variable overrides
 
@@ -120,6 +149,9 @@ Every config field can be overridden via environment variable:
 | `SIGIL_PI_OTLP_BASIC_USER` | `otlp.basicUser` |
 | `SIGIL_PI_OTLP_BASIC_PASSWORD` | `otlp.basicPassword` |
 | `SIGIL_PI_OTLP_BEARER_TOKEN` | `otlp.bearerToken` |
+| `SIGIL_PI_REDACTION_ENABLED` | `redaction.enabled` (`1`/`true`/`yes`/`on` to enable, `0`/`false`/`no`/`off` to disable) |
+| `SIGIL_PI_REDACT_INPUT_MESSAGES` | `redaction.redactInputMessages` |
+| `SIGIL_PI_REDACT_EMAIL_ADDRESSES` | `redaction.redactEmailAddresses` |
 
 ## What gets sent
 
