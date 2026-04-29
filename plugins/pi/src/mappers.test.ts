@@ -399,7 +399,9 @@ describe("mapUserMessage", () => {
   });
 
   it("returns null for whitespace-only string content", () => {
-    expect(mapUserMessage(makeUserMsg({ content: "   \n\t" }), "full")).toBeNull();
+    expect(
+      mapUserMessage(makeUserMsg({ content: "   \n\t" }), "full"),
+    ).toBeNull();
   });
 
   it("returns null for empty content array", () => {
@@ -408,15 +410,15 @@ describe("mapUserMessage", () => {
 
   it("returns null for an image-only array (no text parts)", () => {
     const msg = makeUserMsg({
-      content: [
-        { type: "image", data: "ZmFrZQ==", mimeType: "image/png" },
-      ],
+      content: [{ type: "image", data: "ZmFrZQ==", mimeType: "image/png" }],
     });
     expect(mapUserMessage(msg, "full")).toBeNull();
   });
 
   it("returns null in metadata_only mode regardless of content", () => {
-    expect(mapUserMessage(makeUserMsg({ content: "hey" }), "metadata_only")).toBeNull();
+    expect(
+      mapUserMessage(makeUserMsg({ content: "hey" }), "metadata_only"),
+    ).toBeNull();
     expect(
       mapUserMessage(
         makeUserMsg({
@@ -428,7 +430,10 @@ describe("mapUserMessage", () => {
   });
 
   it("emits text in no_tool_content mode", () => {
-    const out = mapUserMessage(makeUserMsg({ content: "hey" }), "no_tool_content");
+    const out = mapUserMessage(
+      makeUserMsg({ content: "hey" }),
+      "no_tool_content",
+    );
     expect(out).toEqual({
       role: "user",
       parts: [{ type: "text", text: "hey" }],
