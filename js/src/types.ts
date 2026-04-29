@@ -165,6 +165,15 @@ export interface GenerationExporter {
   shutdown?(): Promise<void> | void;
 }
 
+/**
+ * Callback invoked after a generation has been normalized and content-capture
+ * policy has been applied, but before span synchronization, validation, debug
+ * snapshots, and export. Implementations should return the sanitized
+ * generation. Thrown errors are caught and treated as `'metadata_only'`
+ * stripping (fail-closed).
+ */
+export type GenerationSanitizer = (generation: Generation) => Generation;
+
 /** Fully resolved SDK configuration. */
 export interface SigilSdkConfig {
   generationExport: GenerationExportConfig;
@@ -187,6 +196,7 @@ export interface SigilSdkConfig {
    * Thrown errors are caught and treated as `'metadata_only'` (fail-closed).
    */
   contentCaptureResolver?: ContentCaptureResolver;
+  generationSanitizer?: GenerationSanitizer;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;
@@ -202,6 +212,7 @@ export interface SigilSdkConfigInput {
   embeddingCapture?: Partial<EmbeddingCaptureConfig>;
   contentCapture?: ContentCaptureMode;
   contentCaptureResolver?: ContentCaptureResolver;
+  generationSanitizer?: GenerationSanitizer;
   generationExporter?: GenerationExporter;
   tracer?: Tracer;
   meter?: Meter;

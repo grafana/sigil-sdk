@@ -70,6 +70,7 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
     embeddingCapture: mergeEmbeddingCaptureConfig(config.embeddingCapture),
     contentCapture: config.contentCapture ?? defaultContentCaptureMode,
     contentCaptureResolver: config.contentCaptureResolver,
+    generationSanitizer: config.generationSanitizer,
     generationExporter: config.generationExporter,
     tracer: config.tracer,
     meter: config.meter,
