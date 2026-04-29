@@ -38,6 +38,10 @@
     "./vercel-ai-sdk": {
       "types": "./dist/frameworks/vercel-ai-sdk/index.d.ts",
       "import": "./dist/frameworks/vercel-ai-sdk/index.js"
+    },
+    "./strands": {
+      "types": "./dist/frameworks/strands/index.d.ts",
+      "import": "./dist/frameworks/strands/index.js"
     }
   },
   "files": [
@@ -77,8 +81,17 @@
     "llamaindex": "^0.12.1",
     "openai": "^6.27.0"
   },
+  "peerDependencies": {
+    "@strands-agents/sdk": "^1.0.0-rc.5"
+  },
+  "peerDependenciesMeta": {
+    "@strands-agents/sdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@opentelemetry/context-async-hooks": "^2.6.0",
+    "@strands-agents/sdk": "^1.0.0-rc.5",
     "@types/node": "^24.11.0",
     "typescript": "^6.0.0"
   }
