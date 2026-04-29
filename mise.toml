@@ -37,9 +37,14 @@ description = "Format TypeScript/JavaScript SDK code"
 depends = ["deps"]
 run = "pnpm --filter @grafana/sigil-sdk-js run lint:fix"
 
+[tasks."format:ts:plugin-pi"]
+description = "Format Pi plugin code"
+depends = ["deps"]
+run = "pnpm --filter pi-sigil run lint:fix"
+
 [tasks.format]
 description = "Format all code"
-depends = ["format:go", "format:py", "format:cs", "format:ts:sdk-js"]
+depends = ["format:go", "format:py", "format:cs", "format:ts:sdk-js", "format:ts:plugin-pi"]
 
 # --- Linting ---
 
@@ -76,9 +81,14 @@ description = "Lint TypeScript/JavaScript SDK code"
 depends = ["deps"]
 run = "pnpm --filter @grafana/sigil-sdk-js run lint"
 
+[tasks."lint:ts:plugin-pi"]
+description = "Lint Pi plugin code"
+depends = ["deps"]
+run = "pnpm --filter pi-sigil run lint"
+
 [tasks.lint]
 description = "Run all linting"
-depends = ["lint:go", "lint:py", "lint:cs", "lint:ts:sdk-js"]
+depends = ["lint:go", "lint:py", "lint:cs", "lint:ts:sdk-js", "lint:ts:plugin-pi"]
 
 # --- Type checking ---
 
@@ -87,9 +97,21 @@ description = "Type-check TypeScript/JavaScript SDK code"
 depends = ["deps"]
 run = "pnpm --filter @grafana/sigil-sdk-js run typecheck"
 
+[tasks."typecheck:ts:plugin-pi"]
+description = "Type-check Pi plugin code"
+depends = ["deps"]
+run = "pnpm --filter pi-sigil run typecheck"
+
 [tasks.typecheck]
 description = "Run all type checks"
-depends = ["typecheck:ts:sdk-js"]
+depends = ["typecheck:ts:sdk-js", "typecheck:ts:plugin-pi"]
+
+# --- Build ---
+
+[tasks."build:ts:plugin-pi"]
+description = "Build Pi plugin bundle"
+depends = ["deps"]
+run = "pnpm --filter pi-sigil run build"
 
 # --- Go SDK tests ---
 
@@ -122,6 +144,11 @@ run = "GOWORK=off go test ./..."
 description = "Run Claude Code plugin tests as standalone module"
 dir = "plugins/claude-code"
 run = "GOWORK=off go test ./..."
+
+[tasks."test:ts:plugin-pi"]
+description = "Run Pi plugin tests"
+depends = ["deps"]
+run = "pnpm --filter pi-sigil run test"
 
 [tasks."test:go:sdk-conformance"]
 description = "Run the Go SDK core conformance harness"
@@ -377,6 +404,7 @@ mise run test:go:sdk-gemini
 mise run test:go:sdk-google-adk
 mise run test:go:plugin-claude-code
 mise run test:ts:sdk-js
+mise run test:ts:plugin-pi
 mise run test:py:sdk-core
 mise run test:py:sdk-provider-conformance
 mise run test:py:sdk-framework-conformance
