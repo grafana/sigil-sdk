@@ -142,6 +142,10 @@ const metricTokenTypeCacheRead = 'cache_read';
 const metricTokenTypeCacheWrite = 'cache_write';
 const metricTokenTypeCacheCreation = 'cache_creation';
 const metricTokenTypeReasoning = 'reasoning';
+
+const durationBucketsSeconds: number[] = [
+  0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+];
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
@@ -185,9 +189,15 @@ export class SigilClient {
       this.config.generationExporter ?? createDefaultGenerationExporter(this.config.generationExport);
     this.tracer = this.config.tracer ?? trace.getTracer(instrumentationName);
     this.meter = this.config.meter ?? metrics.getMeter(instrumentationName);
-    this.operationDurationHistogram = this.meter.createHistogram(metricOperationDuration, { unit: 's' });
+    this.operationDurationHistogram = this.meter.createHistogram(metricOperationDuration, {
+      unit: 's',
+      advice: { explicitBucketBoundaries: durationBucketsSeconds },
+    });
     this.tokenUsageHistogram = this.meter.createHistogram(metricTokenUsage, { unit: 'token' });
-    this.ttftHistogram = this.meter.createHistogram(metricTimeToFirstToken, { unit: 's' });
+    this.ttftHistogram = this.meter.createHistogram(metricTimeToFirstToken, {
+      unit: 's',
+      advice: { explicitBucketBoundaries: durationBucketsSeconds },
+    });
     this.toolCallsHistogram = this.meter.createHistogram(metricToolCallsPerOperation, { unit: 'count' });
 
     if (this.config.generationExport.flushIntervalMs > 0) {

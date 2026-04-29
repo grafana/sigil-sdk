@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -762,6 +763,21 @@ func TestConformance_StreamingMode(t *testing.T) {
 		spanAttrRequestModel: conformanceModel.Name,
 		spanAttrAgentName:    "agent-stream",
 	})
+
+	expectedDurationBuckets := []float64{
+		0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
+		2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+	}
+	duration := findHistogram[float64](t, metrics, metricOperationDuration)
+	if len(duration.DataPoints) == 0 {
+		t.Fatalf("expected %s datapoints", metricOperationDuration)
+	}
+	if got := duration.DataPoints[0].Bounds; !slices.Equal(got, expectedDurationBuckets) {
+		t.Fatalf("%s bucket boundaries mismatch:\nexpected %v\n     got %v", metricOperationDuration, expectedDurationBuckets, got)
+	}
+	if got := ttft.DataPoints[0].Bounds; !slices.Equal(got, expectedDurationBuckets) {
+		t.Fatalf("%s bucket boundaries mismatch:\nexpected %v\n     got %v", metricTimeToFirstToken, expectedDurationBuckets, got)
+	}
 
 	env.Shutdown(t)
 
