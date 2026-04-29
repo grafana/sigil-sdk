@@ -97,6 +97,8 @@ class SigilClientSpansTest {
         SpanData span = spans.get(0);
         assertThat(span.getName()).isEqualTo("execute_tool weather");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_SDK_NAME))).isEqualTo("sdk-java");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_OPERATION_NAME)))
+                .isEqualTo(SigilClient.TOOL_EXECUTION_OPERATION_NAME);
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_NAME))).isEqualTo("weather");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_TOOL_CALL_ID))).isEqualTo("call-1");
         assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_PROVIDER_NAME))).isEqualTo("openai");
