@@ -44,6 +44,7 @@ pip install sigil-sdk-langgraph
 pip install sigil-sdk-openai-agents
 pip install sigil-sdk-llamaindex
 pip install sigil-sdk-google-adk
+pip install sigil-sdk-strands
 ```
 
 Framework handler usage:
@@ -55,6 +56,7 @@ from sigil_sdk_langgraph import with_sigil_langgraph_callbacks
 from sigil_sdk_openai_agents import with_sigil_openai_agents_hooks
 from sigil_sdk_llamaindex import with_sigil_llamaindex_callbacks
 from sigil_sdk_google_adk import with_sigil_google_adk_callbacks
+from sigil_sdk_strands import with_sigil_strands_hooks
 
 client = Client()
 chain_config = with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto")
@@ -62,12 +64,13 @@ graph_config = with_sigil_langgraph_callbacks(None, client=client, provider_reso
 openai_agents_run_options = with_sigil_openai_agents_hooks(None, client=client, provider_resolver="auto")
 llamaindex_config = with_sigil_llamaindex_callbacks(None, client=client, provider_resolver="auto")
 google_adk_agent_config = with_sigil_google_adk_callbacks(None, client=client, provider_resolver="auto")
+strands_agent_config = with_sigil_strands_hooks(None, client=client, provider_resolver="auto")
 ```
 
 Framework handlers inject framework tags/metadata on recorded generations:
 
-- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, or `google-adk`)
-- `sigil.framework.source=handler`
+- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, or `strands`)
+- `sigil.framework.source=handler` (or `hooks` for Strands Agents)
 - `sigil.framework.language=python`
 - `metadata["sigil.framework.run_id"]`
 - `metadata["sigil.framework.thread_id"]` (when present)
@@ -105,6 +108,7 @@ Full framework examples:
 - OpenAI Agents: `../python-frameworks/openai-agents/README.md`
 - LlamaIndex: `../python-frameworks/llamaindex/README.md`
 - Google ADK: `../python-frameworks/google-adk/README.md`
+- Strands Agents: `../python-frameworks/strands/README.md`
 
 ## Quick Start (Sync Generation)
 

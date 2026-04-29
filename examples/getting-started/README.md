@@ -5,6 +5,7 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 | Language | Directory | LLM provider |
 |----------|-----------|--------------|
 | Python | [`python/`](python/) | OpenAI |
+| Python + Strands | [`python-strands/`](python-strands/) | OpenAI by default, local Sigil |
 | TypeScript | [`typescript/`](typescript/) | OpenAI |
 | Go | [`go/`](go/) | OpenAI |
 
@@ -34,5 +35,5 @@ After running an example, open the AI Observability plugin in your Grafana Cloud
 ## Next steps
 
 - **Provider wrappers** — reduce boilerplate by using pre-built wrappers for [OpenAI](../../go-providers/openai/), [Anthropic](../../python-providers/anthropic/), and [Gemini](../../go-providers/gemini/).
-- **Framework adapters** — instrument [LangChain](../../python-frameworks/langchain/), [Vercel AI SDK](../../js/docs/frameworks/vercel-ai-sdk.md), [Google ADK](../../go-frameworks/google-adk/), and more with a single line.
+- **Framework adapters** — instrument [LangChain](../../python-frameworks/langchain/), [Strands Agents](../../python-frameworks/strands/), [Vercel AI SDK](../../js/docs/frameworks/vercel-ai-sdk.md), [Google ADK](../../go-frameworks/google-adk/), and more with a single line.
 - **Full example app** — see [`examples/python-langchain/`](../python-langchain/) for a FastAPI service with LangChain agent + manual instrumentation side by side.
