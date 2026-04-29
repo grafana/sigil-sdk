@@ -3,8 +3,10 @@ import {
   mapGenerationResult,
   mapGenerationStart,
   mapToolNames,
+  mapUserMessage,
   type PiAssistantMessage,
   type PiToolResult,
+  type PiUserMessage,
   type ToolTiming,
 } from "./mappers.js";
 
@@ -43,6 +45,15 @@ function makeToolResult(overrides?: Partial<PiToolResult>): PiToolResult {
     content: [{ type: "text", text: "output" }],
     isError: false,
     timestamp: 1700000002000,
+    ...overrides,
+  };
+}
+
+function makeUserMsg(overrides?: Partial<PiUserMessage>): PiUserMessage {
+  return {
+    role: "user",
+    content: "hey",
+    timestamp: 1700000000000,
     ...overrides,
   };
 }
@@ -342,6 +353,107 @@ describe("mapGenerationResult", () => {
       mapGenerationResult(makeMsg({ stopReason: "error" }), [], "metadata_only")
         .stopReason,
     ).toBe("error");
+  });
+});
+
+describe("mapUserMessage", () => {
+  it("maps string content to a single text part in full mode", () => {
+    const msg = makeUserMsg({ content: "hello world" });
+    const out = mapUserMessage(msg, "full");
+    expect(out).toEqual({
+      role: "user",
+      parts: [{ type: "text", text: "hello world" }],
+    });
+  });
+
+  it("maps a TextContent array to a joined text part", () => {
+    const msg = makeUserMsg({
+      content: [
+        { type: "text", text: "first" },
+        { type: "text", text: "second" },
+      ],
+    });
+    const out = mapUserMessage(msg, "full");
+    expect(out?.role).toBe("user");
+    const text = (out?.parts?.[0] as { type: "text"; text: string }).text;
+    expect(text).toContain("first");
+    expect(text).toContain("second");
+  });
+
+  it("filters out image content and keeps text only", () => {
+    const msg = makeUserMsg({
+      content: [
+        { type: "text", text: "look at this" },
+        { type: "image", data: "ZmFrZQ==", mimeType: "image/png" },
+        { type: "text", text: "thanks" },
+      ],
+    });
+    const out = mapUserMessage(msg, "full");
+    expect(out?.parts).toHaveLength(1);
+    const part = out?.parts?.[0] as { type: "text"; text: string };
+    expect(part.type).toBe("text");
+    expect(part.text).toContain("look at this");
+    expect(part.text).toContain("thanks");
+    const partTypes = out?.parts?.map((p) => p.type);
+    expect(partTypes).not.toContain("image");
+  });
+
+  it("returns null for whitespace-only string content", () => {
+    expect(mapUserMessage(makeUserMsg({ content: "   \n\t" }), "full")).toBeNull();
+  });
+
+  it("returns null for empty content array", () => {
+    expect(mapUserMessage(makeUserMsg({ content: [] }), "full")).toBeNull();
+  });
+
+  it("returns null for an image-only array (no text parts)", () => {
+    const msg = makeUserMsg({
+      content: [
+        { type: "image", data: "ZmFrZQ==", mimeType: "image/png" },
+      ],
+    });
+    expect(mapUserMessage(msg, "full")).toBeNull();
+  });
+
+  it("returns null in metadata_only mode regardless of content", () => {
+    expect(mapUserMessage(makeUserMsg({ content: "hey" }), "metadata_only")).toBeNull();
+    expect(
+      mapUserMessage(
+        makeUserMsg({
+          content: [{ type: "text", text: "hey" }],
+        }),
+        "metadata_only",
+      ),
+    ).toBeNull();
+  });
+
+  it("emits text in no_tool_content mode", () => {
+    const out = mapUserMessage(makeUserMsg({ content: "hey" }), "no_tool_content");
+    expect(out).toEqual({
+      role: "user",
+      parts: [{ type: "text", text: "hey" }],
+    });
+  });
+});
+
+describe("mapGenerationResult input wiring", () => {
+  it("sets input when a non-empty list is passed", () => {
+    const msg = makeMsg();
+    const input = [
+      { role: "user", parts: [{ type: "text" as const, text: "hey" }] },
+    ];
+    const result = mapGenerationResult(msg, [], "full", input);
+    expect(result.input).toEqual(input);
+  });
+
+  it("omits input when not passed", () => {
+    const result = mapGenerationResult(makeMsg(), [], "full");
+    expect(result.input).toBeUndefined();
+  });
+
+  it("omits input when an empty array is passed", () => {
+    const result = mapGenerationResult(makeMsg(), [], "full", []);
+    expect(result.input).toBeUndefined();
   });
 });
 

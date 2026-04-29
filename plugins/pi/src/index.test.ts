@@ -91,7 +91,7 @@ describe("extension lifecycle", () => {
     createSigilClientMock.mockReset();
   });
 
-  it("handles the happy path and exports one generation", async () => {
+  it("handles the happy path and exports one generation with user input", async () => {
     const recorder = {
       setResult: vi.fn(),
       setCallError: vi.fn(),
@@ -114,7 +114,7 @@ describe("extension lifecycle", () => {
       endpoint: "http://localhost:8080/api/v1/generations:export",
       auth: { mode: "none" },
       agentName: "pi",
-      contentCapture: "metadata_only",
+      contentCapture: "full",
     });
     createSigilClientMock.mockReturnValue(sigil);
 
@@ -123,6 +123,9 @@ describe("extension lifecycle", () => {
 
     await pi.emit("session_start");
     await pi.emit("turn_start");
+    await pi.emit("message_end", {
+      message: { role: "user", content: "hey", timestamp: Date.now() },
+    });
     await pi.emit("tool_execution_start", {
       toolCallId: "c1",
       toolName: "read",
@@ -133,6 +136,73 @@ describe("extension lifecycle", () => {
     expect(sigil.startGeneration).toHaveBeenCalledTimes(1);
     expect(recorder.setResult).toHaveBeenCalledTimes(1);
     expect(recorder.setCallError).not.toHaveBeenCalled();
+
+    const result = recorder.setResult.mock.calls[0]![0] as {
+      input?: Array<{
+        role: string;
+        parts?: Array<{ type: string; text?: string }>;
+      }>;
+    };
+    expect(result.input).toBeDefined();
+    expect(result.input).toHaveLength(1);
+    expect(result.input?.[0]?.role).toBe("user");
+    expect(result.input?.[0]?.parts?.[0]).toEqual({
+      type: "text",
+      text: "hey",
+    });
+  });
+
+  it("leaves input empty on a tool-loop continuation with no user message_end", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "full",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+
+    // Turn 1: user types, assistant calls a tool.
+    await pi.emit("turn_start");
+    await pi.emit("message_end", {
+      message: { role: "user", content: "hey", timestamp: Date.now() },
+    });
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    // Turn 2: agent loop continues with no new user input.
+    await pi.emit("turn_start");
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    expect(sigil.startGeneration).toHaveBeenCalledTimes(2);
+    expect(recorder.setResult).toHaveBeenCalledTimes(2);
+
+    const turn1 = recorder.setResult.mock.calls[0]![0] as { input?: unknown[] };
+    const turn2 = recorder.setResult.mock.calls[1]![0] as { input?: unknown[] };
+    expect(turn1.input).toBeDefined();
+    expect(turn1.input).toHaveLength(1);
+    expect(turn2.input).toBeUndefined();
   });
 
   it("clamps startedAt when msg.timestamp precedes turnStartTime", async () => {

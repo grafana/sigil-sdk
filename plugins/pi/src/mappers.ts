@@ -45,6 +45,24 @@ export type PiContentBlock =
       arguments: Record<string, unknown>;
     };
 
+/** Pi's TextContent / ImageContent / UserMessage shapes from @mariozechner/pi-ai. */
+export interface PiTextContent {
+  type: "text";
+  text: string;
+}
+
+export interface PiImageContent {
+  type: "image";
+  data: string;
+  mimeType: string;
+}
+
+export interface PiUserMessage {
+  role: "user";
+  content: string | (PiTextContent | PiImageContent)[];
+  timestamp: number;
+}
+
 export interface PiToolResult {
   role: "toolResult";
   toolCallId: string;
@@ -91,6 +109,7 @@ export function mapGenerationResult(
   msg: PiAssistantMessage,
   toolResults: PiToolResult[],
   contentCapture: ContentCaptureMode,
+  input?: Message[],
 ): GenerationResult {
   const result: GenerationResult = {
     responseId: msg.responseId,
@@ -108,6 +127,10 @@ export function mapGenerationResult(
       msg.usage.cost !== undefined ? { cost_usd: msg.usage.cost.total } : {},
   };
 
+  if (input && input.length > 0) {
+    result.input = input;
+  }
+
   // Always emit structural tool_call / tool_result parts so the SDK can count
   // them for the `gen_ai.client.tool_calls_per_operation` histogram. Body
   // content (assistant text, tool args, tool results) is included per
@@ -121,6 +144,37 @@ export function mapGenerationResult(
   }
 
   return result;
+}
+
+/**
+ * Map a pi user message to a Sigil input Message. Returns null in
+ * `metadata_only` (mirrors how assistant text/thinking is dropped) and for
+ * empty/whitespace-only content. Image parts are skipped because Sigil's
+ * `MessagePart` union has no image type; multiple text parts are joined with
+ * a newline.
+ */
+export function mapUserMessage(
+  msg: PiUserMessage,
+  contentCapture: ContentCaptureMode,
+): Message | null {
+  if (contentCapture === "metadata_only") return null;
+
+  let text: string;
+  if (typeof msg.content === "string") {
+    text = msg.content;
+  } else {
+    text = msg.content
+      .filter((c): c is PiTextContent => c.type === "text")
+      .map((c) => c.text)
+      .join("\n");
+  }
+
+  if (text.trim().length === 0) return null;
+
+  return {
+    role: "user",
+    parts: [{ type: "text", text }],
+  };
 }
 
 /** Map tool names used in this turn to ToolDefinition[]. */
