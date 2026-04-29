@@ -24,7 +24,10 @@ type hookInput struct {
 	TranscriptPath string `json:"transcript_path"`
 }
 
-var logger *log.Logger
+var (
+	logger  *log.Logger
+	version = "dev"
+)
 
 func initLogger() {
 	logger = log.New(io.Discard, "sigil-cc: ", log.Ltime)
@@ -45,6 +48,13 @@ func initLogger() {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-version":
+			fmt.Println(version)
+			return
+		}
+	}
 	initLogger()
 	run()
 }
