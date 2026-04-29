@@ -1,6 +1,6 @@
 [tools]
 biome = "2.4.11"
-ruff = "0.15.10"
+ruff = "0.15.12"
 
 [env]
 PYTHON_BIN = "python3"
