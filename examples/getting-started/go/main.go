@@ -8,18 +8,21 @@ import (
 	"os"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/joho/godotenv"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
+	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
-	"go.opentelemetry.io/contrib/exporters/autoexport"
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	ctx := context.Background()
 	model := "gpt-4.1-mini"
 
