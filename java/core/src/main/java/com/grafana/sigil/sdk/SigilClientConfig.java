@@ -10,6 +10,8 @@ public final class SigilClientConfig {
     private GenerationExportConfig generationExport = new GenerationExportConfig();
     private ApiConfig api = new ApiConfig();
     private EmbeddingCaptureConfig embeddingCapture = new EmbeddingCaptureConfig();
+    private ContentCaptureMode contentCapture = ContentCaptureMode.DEFAULT;
+    private ContentCaptureResolver contentCaptureResolver;
     private GenerationExporter generationExporter;
     private Tracer tracer;
     private Meter meter;
@@ -40,6 +42,45 @@ public final class SigilClientConfig {
 
     public SigilClientConfig setEmbeddingCapture(EmbeddingCaptureConfig embeddingCapture) {
         this.embeddingCapture = embeddingCapture == null ? new EmbeddingCaptureConfig() : embeddingCapture;
+        return this;
+    }
+
+    public ContentCaptureMode getContentCapture() {
+        return contentCapture;
+    }
+
+    /**
+     * Sets the client-level {@link ContentCaptureMode}.
+     *
+     * <p>Resolution order for each recording: per-recording override on the
+     * {@code Start} object &gt; {@link ContentCaptureResolver} result &gt; OTel
+     * context inherited from the parent generation (tool executions only) &gt;
+     * this client-level mode. {@link ContentCaptureMode#DEFAULT} resolves to
+     * {@link ContentCaptureMode#NO_TOOL_CONTENT} for backward compatibility.</p>
+     *
+     * <p>{@code null} is treated as {@link ContentCaptureMode#DEFAULT}.</p>
+     */
+    public SigilClientConfig setContentCapture(ContentCaptureMode contentCapture) {
+        this.contentCapture = contentCapture == null ? ContentCaptureMode.DEFAULT : contentCapture;
+        return this;
+    }
+
+    public ContentCaptureResolver getContentCaptureResolver() {
+        return contentCaptureResolver;
+    }
+
+    /**
+     * Sets a callback invoked for each generation, tool execution, and conversation
+     * rating to dynamically choose a {@link ContentCaptureMode} based on request
+     * metadata (e.g. tenant id, feature flag).
+     *
+     * <p>The resolver fails closed: any thrown exception is logged at WARNING and
+     * the request is recorded as {@link ContentCaptureMode#METADATA_ONLY}.</p>
+     *
+     * <p>Pass {@code null} to clear the resolver.</p>
+     */
+    public SigilClientConfig setContentCaptureResolver(ContentCaptureResolver contentCaptureResolver) {
+        this.contentCaptureResolver = contentCaptureResolver;
         return this;
     }
 
@@ -93,6 +134,8 @@ public final class SigilClientConfig {
                 .setGenerationExport(generationExport.copy())
                 .setApi(api.copy())
                 .setEmbeddingCapture(embeddingCapture.copy())
+                .setContentCapture(contentCapture)
+                .setContentCaptureResolver(contentCaptureResolver)
                 .setGenerationExporter(generationExporter)
                 .setTracer(tracer)
                 .setMeter(meter)

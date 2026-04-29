@@ -7,6 +7,8 @@ final class GenerationValidator {
     }
 
     static void validate(Generation generation) {
+        boolean contentStripped = SigilClient.isContentStripped(generation);
+
         if (generation.getMode() != GenerationMode.SYNC && generation.getMode() != GenerationMode.STREAM) {
             throw new ValidationException("generation.mode must be one of SYNC|STREAM");
         }
@@ -17,8 +19,8 @@ final class GenerationValidator {
             throw new ValidationException("generation.model.name is required");
         }
 
-        validateMessages("generation.input", generation.getInput());
-        validateMessages("generation.output", generation.getOutput());
+        validateMessages("generation.input", generation.getInput(), contentStripped);
+        validateMessages("generation.output", generation.getOutput(), contentStripped);
 
         for (int i = 0; i < generation.getTools().size(); i++) {
             ToolDefinition tool = generation.getTools().get(i);
@@ -41,7 +43,7 @@ final class GenerationValidator {
         }
     }
 
-    private static void validateMessages(String path, List<Message> messages) {
+    private static void validateMessages(String path, List<Message> messages, boolean contentStripped) {
         for (int i = 0; i < messages.size(); i++) {
             Message message = messages.get(i);
             if (message == null || message.getRole() == null) {
@@ -51,15 +53,18 @@ final class GenerationValidator {
                 throw new ValidationException(path + "[" + i + "].parts must not be empty");
             }
             for (int j = 0; j < message.getParts().size(); j++) {
-                validatePart(path, i, j, message.getRole(), message.getParts().get(j));
+                validatePart(path, i, j, message.getRole(), message.getParts().get(j), contentStripped);
             }
         }
     }
 
-    private static void validatePart(String path, int messageIndex, int partIndex, MessageRole role, MessagePart part) {
+    private static void validatePart(String path, int messageIndex, int partIndex, MessageRole role, MessagePart part, boolean contentStripped) {
         if (part == null || part.getKind() == null) {
             throw new ValidationException(path + "[" + messageIndex + "].parts[" + partIndex + "].kind is invalid");
         }
+
+        boolean strippedTextOrThinking = contentStripped
+                && (part.getKind() == MessagePartKind.TEXT || part.getKind() == MessagePartKind.THINKING);
 
         int payloadFieldCount = 0;
         if (!part.getText().isBlank()) {
@@ -74,13 +79,13 @@ final class GenerationValidator {
         if (part.getToolResult() != null) {
             payloadFieldCount++;
         }
-        if (payloadFieldCount != 1) {
+        if (payloadFieldCount != 1 && !strippedTextOrThinking) {
             throw new ValidationException(path + "[" + messageIndex + "].parts[" + partIndex + "] must set exactly one payload field");
         }
 
         switch (part.getKind()) {
             case TEXT -> {
-                if (part.getText().isBlank()) {
+                if (part.getText().isBlank() && !contentStripped) {
                     throw new ValidationException(path + "[" + messageIndex + "].parts[" + partIndex + "].text is required");
                 }
             }
@@ -88,7 +93,7 @@ final class GenerationValidator {
                 if (role != MessageRole.ASSISTANT) {
                     throw new ValidationException(path + "[" + messageIndex + "].parts[" + partIndex + "].thinking only allowed for assistant role");
                 }
-                if (part.getThinking().isBlank()) {
+                if (part.getThinking().isBlank() && !contentStripped) {
                     throw new ValidationException(path + "[" + messageIndex + "].parts[" + partIndex + "].thinking is required");
                 }
             }
