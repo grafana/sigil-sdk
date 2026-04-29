@@ -93,6 +93,7 @@ jobs:
             python-frameworks/llamaindex
             python-frameworks/google-adk
             python-frameworks/litellm
+            python-frameworks/pydantic-ai
           )
 
           for dir in "${PACKAGE_DIRS[@]}"; do
@@ -118,6 +119,7 @@ jobs:
             python-frameworks/llamaindex
             python-frameworks/google-adk
             python-frameworks/litellm
+            python-frameworks/pydantic-ai
           )
 
           for dir in "${PACKAGE_DIRS[@]}"; do
@@ -184,6 +186,7 @@ jobs:
           - sigil-sdk-llamaindex
           - sigil-sdk-google-adk
           - sigil-sdk-litellm
+          - sigil-sdk-pydantic-ai
 
     steps:
       - name: Download distributions
