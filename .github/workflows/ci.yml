@@ -109,6 +109,7 @@ jobs:
           - { name: llamaindex, cmd: "uv run --with './python[dev]' --with './python-frameworks/llamaindex[dev]' pytest python-frameworks/llamaindex/tests" }
           - { name: google-adk, cmd: "uv run --with './python[dev]' --with './python-frameworks/google-adk[dev]' pytest python-frameworks/google-adk/tests" }
           - { name: litellm, cmd: "uv run --with './python[dev]' --with './python-frameworks/litellm[dev]' pytest python-frameworks/litellm/tests" }
+          - { name: pydantic-ai, cmd: "uv run --with './python[dev]' --with './python-frameworks/pydantic-ai[dev]' pytest python-frameworks/pydantic-ai/tests" }
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
