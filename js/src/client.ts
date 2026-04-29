@@ -25,6 +25,7 @@ import {
   userIdFromContext,
 } from './context.js';
 import { createDefaultGenerationExporter } from './exporters/default.js';
+import { evaluateHook as evaluateHookImpl } from './hooks.js';
 import type {
   ContentCaptureMode,
   ConversationRating,
@@ -40,6 +41,9 @@ import type {
   GenerationRecorder,
   GenerationResult,
   GenerationStart,
+  HookEvaluateRequest,
+  HookEvaluateResponse,
+  HooksConfig,
   Message,
   RecorderCallback,
   RecorderWithError,
@@ -355,6 +359,37 @@ export class SigilClient {
     }
 
     return parseSubmitConversationRatingResponse(payload);
+  }
+
+  /**
+   * Returns the resolved hook configuration. Framework adapters use this to
+   * decide whether to invoke `evaluateHook` and which phases are configured.
+   */
+  get hooksConfig(): HooksConfig {
+    return this.config.hooks;
+  }
+
+  /**
+   * Evaluates synchronous hook rules for the given request.
+   *
+   * Use this to enforce preflight or postflight guardrails (PII, content
+   * policy, etc.) on the LLM call's critical path. The server returns
+   * `{ action: 'deny' }` to block; framework adapters typically translate that
+   * into a `HookDeniedError`.
+   *
+   * When `hooks.enabled` is false, this short-circuits to `allow`. When
+   * `hooks.failOpen` is true (default), network/timeout failures also resolve
+   * to `allow` so the LLM call can proceed.
+   */
+  async evaluateHook(request: HookEvaluateRequest): Promise<HookEvaluateResponse> {
+    this.assertOpen();
+    return evaluateHookImpl({
+      apiEndpoint: this.config.api.endpoint,
+      insecure: this.config.generationExport.insecure,
+      extraHeaders: this.config.generationExport.headers,
+      hooks: this.config.hooks,
+      request,
+    });
   }
 
   /** Forces immediate drain of queued generation exports. */

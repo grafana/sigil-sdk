@@ -26,6 +26,10 @@ type Config struct {
 	GenerationExport GenerationExportConfig
 	API              APIConfig
 	EmbeddingCapture EmbeddingCaptureConfig
+	// Hooks controls synchronous hook evaluation against the Sigil API
+	// (preflight/postflight guardrails). Disabled by default; callers must
+	// explicitly opt in by setting Hooks.Enabled = true.
+	Hooks HooksConfig
 	// ContentCapture controls the default content capture mode for all
 	// generations and tool executions. Per-recording overrides take precedence.
 	ContentCapture ContentCaptureMode
@@ -205,6 +209,7 @@ func DefaultConfig() Config {
 			MaxInputItems: 20,
 			MaxTextLength: 1024,
 		},
+		Hooks:  defaultHooksConfig(),
 		Tracer: nil,
 		Logger: log.Default(),
 		Now:    time.Now,
@@ -314,6 +319,7 @@ func NewClient(config Config) *Client {
 	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
 	cfg.API = mergeAPIConfig(defaults.API, cfg.API)
 	cfg.EmbeddingCapture = mergeEmbeddingCaptureConfig(defaults.EmbeddingCapture, cfg.EmbeddingCapture)
+	cfg.Hooks = mergeHooksConfig(defaults.Hooks, cfg.Hooks)
 
 	generationHeaders, err := resolveHeadersWithAuth(cfg.GenerationExport.Headers, cfg.GenerationExport.Auth)
 	if err != nil {

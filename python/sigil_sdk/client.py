@@ -40,6 +40,7 @@ from .errors import (
     ValidationError,
 )
 from .exporters import GRPCGenerationExporter, HTTPGenerationExporter, NoopGenerationExporter
+from .hooks import HookEvaluateRequest, HookEvaluateResponse, evaluate_hook as _evaluate_hook
 from .models import (
     ContentCaptureMode,
     ConversationRating,
@@ -386,6 +387,30 @@ class Client:
             span=span,
             started_at=started_at,
             include_content=include_content,
+        )
+
+    def evaluate_hook(self, request: HookEvaluateRequest) -> HookEvaluateResponse:
+        """Evaluates synchronous hook rules for the given request.
+
+        Use this to enforce preflight (or postflight, when supported) guardrails
+        on the LLM call's critical path. The server returns
+        ``HookAction.DENY`` to block; callers typically translate that into a
+        :class:`sigil_sdk.errors.HookDeniedError`.
+
+        When ``hooks.enabled`` is ``False`` (the default) this short-circuits
+        to ``allow``. When ``hooks.fail_open`` is ``True`` (the default),
+        transport/decode failures also resolve to ``allow`` so the LLM call
+        proceeds; set ``hooks.fail_open=False`` to surface
+        :class:`sigil_sdk.errors.HookTransportError` instead.
+        """
+
+        self._assert_open()
+        return _evaluate_hook(
+            api_endpoint=self._config.api.endpoint,
+            insecure=self._config.generation_export.insecure,
+            extra_headers=self._config.generation_export.headers,
+            hooks=self._config.hooks,
+            request=request,
         )
 
     def submit_conversation_rating(

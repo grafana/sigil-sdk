@@ -12,6 +12,7 @@ export {
   withConversationTitle,
   withUserId,
 } from './context.js';
+export { HookDeniedError } from './hooks.js';
 export * as anthropic from './providers/anthropic.js';
 export * as gemini from './providers/gemini.js';
 export * as openai from './providers/openai.js';
@@ -39,6 +40,15 @@ export type {
   GenerationRecorder,
   GenerationResult,
   GenerationStart,
+  HookAction,
+  HookContext,
+  HookEvaluateRequest,
+  HookEvaluateResponse,
+  HookEvaluation,
+  HookInput,
+  HookModel,
+  HookPhase,
+  HooksConfig,
   Message,
   MessagePart,
   ModelRef,

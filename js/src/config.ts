@@ -4,6 +4,7 @@ import type {
   EmbeddingCaptureConfig,
   ExportAuthConfig,
   GenerationExportConfig,
+  HooksConfig,
   SigilLogger,
   SigilSdkConfig,
   SigilSdkConfigInput,
@@ -40,6 +41,13 @@ export const defaultEmbeddingCaptureConfig: EmbeddingCaptureConfig = {
   maxTextLength: 1024,
 };
 
+export const defaultHooksConfig: HooksConfig = {
+  enabled: false,
+  phases: ['preflight'],
+  timeoutMs: 15_000,
+  failOpen: true,
+};
+
 export const defaultLogger: SigilLogger = {
   debug(message: string, ...args: unknown[]) {
     console.debug(message, ...args);
@@ -59,6 +67,7 @@ export function defaultConfig(): SigilSdkConfig {
     generationExport: cloneGenerationExportConfig(defaultGenerationExportConfig),
     api: cloneAPIConfig(defaultAPIConfig),
     embeddingCapture: cloneEmbeddingCaptureConfig(defaultEmbeddingCaptureConfig),
+    hooks: cloneHooksConfig(defaultHooksConfig),
     contentCapture: defaultContentCaptureMode,
   };
 }
@@ -68,6 +77,7 @@ export function mergeConfig(config: SigilSdkConfigInput): SigilSdkConfig {
     generationExport: mergeGenerationExportConfig(config.generationExport),
     api: mergeAPIConfig(config.api),
     embeddingCapture: mergeEmbeddingCaptureConfig(config.embeddingCapture),
+    hooks: mergeHooksConfig(config.hooks),
     contentCapture: config.contentCapture ?? defaultContentCaptureMode,
     contentCaptureResolver: config.contentCaptureResolver,
     generationExporter: config.generationExporter,
@@ -103,6 +113,15 @@ function mergeEmbeddingCaptureConfig(config: Partial<EmbeddingCaptureConfig> | u
   return {
     ...defaultEmbeddingCaptureConfig,
     ...config,
+  };
+}
+
+function mergeHooksConfig(config: Partial<HooksConfig> | undefined): HooksConfig {
+  return {
+    enabled: config?.enabled ?? defaultHooksConfig.enabled,
+    phases: config?.phases ? [...config.phases] : [...defaultHooksConfig.phases],
+    timeoutMs: config?.timeoutMs ?? defaultHooksConfig.timeoutMs,
+    failOpen: config?.failOpen ?? defaultHooksConfig.failOpen,
   };
 }
 
@@ -223,5 +242,12 @@ function cloneAPIConfig(config: ApiConfig): ApiConfig {
 function cloneEmbeddingCaptureConfig(config: EmbeddingCaptureConfig): EmbeddingCaptureConfig {
   return {
     ...config,
+  };
+}
+
+function cloneHooksConfig(config: HooksConfig): HooksConfig {
+  return {
+    ...config,
+    phases: [...config.phases],
   };
 }

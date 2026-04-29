@@ -66,12 +66,28 @@ class EmbeddingCaptureConfig:
 
 
 @dataclass(slots=True)
+class HooksConfig:
+    """Synchronous hook evaluation configuration.
+
+    Hooks are disabled by default; callers must opt in by setting
+    ``enabled=True``. ``fail_open`` defaults to ``True`` so transport failures
+    never block the LLM call unless the caller explicitly chooses fail-closed.
+    """
+
+    enabled: bool = False
+    phases: list[str] = field(default_factory=lambda: ["preflight"])
+    timeout_seconds: float = 15.0
+    fail_open: bool = True
+
+
+@dataclass(slots=True)
 class ClientConfig:
     """Top-level SDK runtime configuration."""
 
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     embedding_capture: EmbeddingCaptureConfig = field(default_factory=EmbeddingCaptureConfig)
+    hooks: HooksConfig = field(default_factory=HooksConfig)
     content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
     content_capture_resolver: Callable[[dict[str, Any]], ContentCaptureMode] | None = None
     tracer: Tracer | None = None
@@ -134,6 +150,11 @@ def resolve_config(config: ClientConfig | None) -> ClientConfig:
         out.embedding_capture.max_input_items = 20
     if out.embedding_capture.max_text_length <= 0:
         out.embedding_capture.max_text_length = 1024
+
+    if out.hooks.timeout_seconds <= 0:
+        out.hooks.timeout_seconds = 15.0
+    if not out.hooks.phases:
+        out.hooks.phases = ["preflight"]
 
     return out
 

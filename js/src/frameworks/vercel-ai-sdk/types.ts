@@ -98,6 +98,15 @@ export interface SigilVercelAiSdkOptions {
   extraTags?: Record<string, string>;
   extraMetadata?: Record<string, unknown>;
   resolveConversationId?: (event: StepStartEvent) => string | undefined;
+  /**
+   * Override client-level hook enablement for this instrumentation.
+   *
+   * When `true`, preflight hooks run on each LLM step even if
+   * `client.config.hooks.enabled` is false. When `false`, hooks never run for
+   * calls made through this instrumentation. When `undefined` (default), the
+   * client's `hooks.enabled` value decides.
+   */
+  enableHooks?: boolean;
 }
 
 export interface CallOptions {
