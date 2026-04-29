@@ -22,6 +22,7 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
+    ToolDefinition,
     ToolExecutionStart,
     user_text_message,
 )
@@ -300,6 +301,12 @@ class SigilFrameworkHandlerBase:
             model=ModelRef(provider=provider_name, name=model_name),
             tags=tags,
             metadata=metadata,
+            system_prompt=_as_str(_read(invocation_params, "system_prompt")),
+            tools=_resolve_tool_definitions(invocation_params),
+            temperature=_as_optional_float(_read(invocation_params, "temperature")),
+            max_tokens=_as_optional_int(_read(invocation_params, "max_tokens")),
+            top_p=_as_optional_float(_read(invocation_params, "top_p")),
+            tool_choice=_as_str(_read(invocation_params, "tool_choice")) or None,
         )
 
         recorder = (
@@ -1154,6 +1161,33 @@ def _as_optional_int(value: Any) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _as_optional_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "":
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _resolve_tool_definitions(invocation_params: dict[str, Any] | None) -> list[ToolDefinition]:
+    raw = _read(invocation_params, "tools")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    result: list[ToolDefinition] = []
+    for item in raw:
+        if isinstance(item, ToolDefinition):
+            result.append(item)
+    return result
 
 
 def _as_bool(value: Any) -> bool:
