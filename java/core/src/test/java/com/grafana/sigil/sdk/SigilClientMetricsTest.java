@@ -3,10 +3,12 @@ package com.grafana.sigil.sdk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -47,7 +49,8 @@ class SigilClientMetricsTest {
             recorder.end();
         }
 
-        List<String> metricNames = metricReader.collectAllMetrics().stream()
+        Collection<MetricData> metrics = metricReader.collectAllMetrics();
+        List<String> metricNames = metrics.stream()
                 .map(MetricData::getName)
                 .toList();
 
@@ -58,8 +61,28 @@ class SigilClientMetricsTest {
                 SigilClient.METRIC_TOOL_CALLS_PER_OPERATION
         );
 
+        List<Double> expectedBuckets = List.of(
+                0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
+                2.56, 5.12, 10.24, 20.48, 40.96, 81.92);
+
+        assertThat(durationBucketBoundaries(metrics, SigilClient.METRIC_OPERATION_DURATION))
+                .as("operation duration buckets")
+                .isEqualTo(expectedBuckets);
+        assertThat(durationBucketBoundaries(metrics, SigilClient.METRIC_TTFT))
+                .as("time-to-first-token buckets")
+                .isEqualTo(expectedBuckets);
+
         tracerProvider.shutdown();
         meterProvider.shutdown();
+    }
+
+    private static List<Double> durationBucketBoundaries(Collection<MetricData> metrics, String name) {
+        MetricData metric = metrics.stream()
+                .filter(m -> name.equals(m.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("missing metric " + name));
+        HistogramPointData point = metric.getHistogramData().getPoints().iterator().next();
+        return point.getBoundaries();
     }
 
     @Test

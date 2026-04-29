@@ -73,6 +73,12 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal const string MetricTokenTypeCacheCreation = "cache_creation";
     internal const string MetricTokenTypeReasoning = "reasoning";
 
+    internal static readonly double[] DurationBucketsSeconds =
+    {
+        0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
+        2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+    };
+
 #if NET
     [GeneratedRegex(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled)]
     private static partial Regex StatusCodeRegex();
@@ -150,9 +156,15 @@ public sealed partial class SigilClient : IAsyncDisposable
 
         _activitySource = new ActivitySource(InstrumentationName);
         _meter = new Meter(InstrumentationName);
-        _operationDurationHistogram = _meter.CreateHistogram<double>(MetricOperationDuration, "s");
+        _operationDurationHistogram = _meter.CreateHistogram<double>(
+            MetricOperationDuration,
+            unit: "s",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBucketsSeconds });
         _tokenUsageHistogram = _meter.CreateHistogram<double>(MetricTokenUsage, "token");
-        _ttftHistogram = _meter.CreateHistogram<double>(MetricTimeToFirstToken, "s");
+        _ttftHistogram = _meter.CreateHistogram<double>(
+            MetricTimeToFirstToken,
+            unit: "s",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBucketsSeconds });
         _toolCallsHistogram = _meter.CreateHistogram<double>(MetricToolCallsPerOperation, "count");
 
         _timerTask = Task.Run(RunFlushTimerAsync);

@@ -128,6 +128,23 @@ _metric_token_type_cache_write = "cache_write"
 _metric_token_type_cache_creation = "cache_creation"
 _metric_token_type_reasoning = "reasoning"
 
+_DURATION_BUCKETS_SECONDS: tuple[float, ...] = (
+    0.01,
+    0.02,
+    0.04,
+    0.08,
+    0.16,
+    0.32,
+    0.64,
+    1.28,
+    2.56,
+    5.12,
+    10.24,
+    20.48,
+    40.96,
+    81.92,
+)
+
 _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 _instrumentation_name = "github.com/grafana/sigil/sdks/python"
 _sdk_name = "sdk-python"
@@ -275,10 +292,16 @@ class Client:
         self._meter = self._config.meter if self._config.meter is not None else metrics.get_meter(_instrumentation_name)
 
         self._operation_duration_histogram: Histogram = self._meter.create_histogram(
-            _metric_operation_duration, unit="s"
+            _metric_operation_duration,
+            unit="s",
+            explicit_bucket_boundaries_advisory=_DURATION_BUCKETS_SECONDS,
         )
         self._token_usage_histogram: Histogram = self._meter.create_histogram(_metric_token_usage, unit="token")
-        self._ttft_histogram: Histogram = self._meter.create_histogram(_metric_ttft, unit="s")
+        self._ttft_histogram: Histogram = self._meter.create_histogram(
+            _metric_ttft,
+            unit="s",
+            explicit_bucket_boundaries_advisory=_DURATION_BUCKETS_SECONDS,
+        )
         self._tool_calls_histogram: Histogram = self._meter.create_histogram(
             _metric_tool_calls_per_operation, unit="count"
         )
