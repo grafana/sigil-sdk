@@ -1,6 +1,12 @@
 import type { SigilClient } from '../../client.js';
 import { HookDeniedError } from '../../hooks.js';
-import type { GenerationMode, GenerationRecorder, HookEvaluateResponse, Message, ToolExecutionRecorder } from '../../types.js';
+import type {
+  GenerationMode,
+  GenerationRecorder,
+  HookEvaluateResponse,
+  Message,
+  ToolExecutionRecorder,
+} from '../../types.js';
 import {
   buildFrameworkMetadata,
   buildFrameworkTags,

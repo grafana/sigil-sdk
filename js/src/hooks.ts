@@ -1,9 +1,4 @@
-import type {
-  HookEvaluateRequest,
-  HookEvaluateResponse,
-  HookEvaluation,
-  HooksConfig,
-} from './types.js';
+import type { HookEvaluateRequest, HookEvaluateResponse, HookEvaluation, HooksConfig } from './types.js';
 import { asError } from './utils.js';
 
 const hooksEvaluatePath = '/api/v1/hooks:evaluate';
@@ -87,10 +82,7 @@ export async function evaluateHook(params: {
       );
     }
     if (responseText.length === 0) {
-      return failOpenOrThrow(
-        params.hooks.failOpen,
-        new Error('sigil hook evaluation failed: empty response payload'),
-      );
+      return failOpenOrThrow(params.hooks.failOpen, new Error('sigil hook evaluation failed: empty response payload'));
     }
 
     let payload: unknown;

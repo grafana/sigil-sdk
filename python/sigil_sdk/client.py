@@ -40,7 +40,8 @@ from .errors import (
     ValidationError,
 )
 from .exporters import GRPCGenerationExporter, HTTPGenerationExporter, NoopGenerationExporter
-from .hooks import HookEvaluateRequest, HookEvaluateResponse, evaluate_hook as _evaluate_hook
+from .hooks import HookEvaluateRequest, HookEvaluateResponse
+from .hooks import evaluate_hook as _evaluate_hook
 from .models import (
     ContentCaptureMode,
     ConversationRating,
