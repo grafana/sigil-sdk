@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,6 +23,7 @@ from sigil_sdk import (
     ModelRef,
     Part,
     PartKind,
+    ToolCall,
     ToolDefinition,
     ToolExecutionStart,
     user_text_message,
@@ -342,10 +344,21 @@ class SigilFrameworkHandlerBase:
 
         try:
             llm_output = _read(response, "llm_output")
-            raw_usage = _read(llm_output, "token_usage") or _read(llm_output, "usage")
-            usage = map_usage(raw_usage)
-            response_model = _as_str(_read(llm_output, "model_name"))
-            stop_reason = _as_str(_read(llm_output, "finish_reason") or _read(llm_output, "stop_reason"))
+            response_message = _first_generation_message(response)
+            response_metadata = _read(response_message, "response_metadata")
+            raw_usage = (
+                _read(llm_output, "token_usage")
+                or _read(llm_output, "usage")
+                or _read(response_message, "usage_metadata")
+            )
+            usage = _map_framework_usage(raw_usage)
+            response_model = _as_str(_read(llm_output, "model_name")) or _as_str(_read(response_metadata, "model_name"))
+            stop_reason = _as_str(
+                _read(llm_output, "finish_reason")
+                or _read(llm_output, "stop_reason")
+                or _read(response_metadata, "finish_reason")
+                or _read(response_metadata, "stop_reason")
+            )
 
             output_messages: list[Message] = []
             if run_state.capture_outputs:
@@ -1008,40 +1021,72 @@ def _map_chat_inputs(messages: list[list[Any]]) -> list[Message]:
 
 
 def _map_output_messages(response: Any) -> list[Message]:
-    texts: list[str] = []
+    output: list[Message] = []
+    text_chunks: list[str] = []
     for candidates in _as_list(_read(response, "generations")):
         for candidate in _as_list(candidates):
-            text = _extract_generation_text(candidate)
+            mapped = _map_generation_candidate_message(candidate)
+            text = _as_str(_read(candidate, "text"))
             if text != "":
-                texts.append(text)
+                if mapped is None:
+                    text_chunks.append(text)
+                else:
+                    output.append(mapped)
+                continue
 
-    if not texts:
+            if mapped is not None:
+                output.append(mapped)
+
+    if text_chunks:
+        output.insert(
+            0,
+            Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="\n".join(text_chunks))]),
+        )
+
+    if not output:
         fallback_text = _as_str(_read(response, "text"))
         if fallback_text != "":
-            texts.append(fallback_text)
+            output.append(Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text=fallback_text)]))
 
-    if not texts:
-        return []
-
-    return [
-        Message(
-            role=MessageRole.ASSISTANT,
-            parts=[Part(kind=PartKind.TEXT, text="\n".join(texts))],
-        )
-    ]
+    return output
 
 
-def _extract_generation_text(candidate: Any) -> str:
-    text = _as_str(_read(candidate, "text"))
-    if text != "":
-        return text
-
+def _map_generation_candidate_message(candidate: Any) -> Message | None:
     message = _read(candidate, "message")
+    parts: list[Part] = []
+
     text = _extract_message_text(message)
     if text != "":
-        return text
+        parts.append(Part(kind=PartKind.TEXT, text=text))
 
-    return ""
+    for tool_call in _as_list(_read(message, "tool_calls")):
+        tool_call_part = _map_langchain_tool_call_part(tool_call)
+        if tool_call_part is not None:
+            parts.append(tool_call_part)
+
+    if not parts:
+        return None
+
+    return Message(role=_normalize_role(_extract_message_role(message)), parts=parts)
+
+
+def _map_langchain_tool_call_part(tool_call: Any) -> Part | None:
+    name = _as_str(_read(tool_call, "name"))
+    if name == "":
+        return None
+
+    args = _read(tool_call, "args")
+    if args is None:
+        args = _read(tool_call, "arguments")
+
+    return Part(
+        kind=PartKind.TOOL_CALL,
+        tool_call=ToolCall(
+            id=_as_str(_read(tool_call, "id")),
+            name=name,
+            input_json=_json_bytes(args),
+        ),
+    )
 
 
 def _extract_message_text(message: Any) -> str:
@@ -1082,6 +1127,31 @@ def _extract_message_role(message: Any) -> str:
     return "user"
 
 
+def _first_generation_message(response: Any) -> Any:
+    for candidates in _as_list(_read(response, "generations")):
+        for candidate in _as_list(candidates):
+            message = _read(candidate, "message")
+            if message is not None:
+                return message
+    return None
+
+
+def _map_framework_usage(raw_usage: Any):
+    usage = map_usage(raw_usage)
+    input_token_details = _read(raw_usage, "input_token_details")
+    output_token_details = _read(raw_usage, "output_token_details")
+
+    cache_read = _as_int(_read(input_token_details, "cache_read"))
+    if cache_read > 0 and usage.cache_read_input_tokens == 0:
+        usage.cache_read_input_tokens = cache_read
+
+    reasoning = _as_int(_read(output_token_details, "reasoning"))
+    if reasoning > 0 and usage.reasoning_tokens == 0:
+        usage.reasoning_tokens = reasoning
+
+    return usage
+
+
 def _normalize_role(role: str) -> MessageRole:
     normalized = role.strip().lower()
     if normalized in {"assistant", "ai"}:
@@ -1109,6 +1179,15 @@ def _as_str(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
+
+
+def _json_bytes(value: Any) -> bytes:
+    if value is None:
+        return b""
+    try:
+        return json.dumps(value, default=str, sort_keys=True).encode("utf-8")
+    except Exception:
+        return b""
 
 
 def _id_path(value: Any) -> str:
@@ -1187,6 +1266,26 @@ def _resolve_tool_definitions(invocation_params: dict[str, Any] | None) -> list[
     for item in raw:
         if isinstance(item, ToolDefinition):
             result.append(item)
+            continue
+
+        tool_type = _as_str(_read(item, "type"))
+        function = _read(item, "function") if tool_type == "function" else item
+        name = _as_str(_read(function, "name"))
+        if name == "":
+            continue
+
+        schema = _read(function, "parameters")
+        if schema is None:
+            schema = _read(function, "parameters_json_schema")
+
+        result.append(
+            ToolDefinition(
+                name=name,
+                description=_as_str(_read(function, "description")),
+                type=tool_type or "function",
+                input_schema_json=_json_bytes(schema),
+            )
+        )
     return result
 
 
