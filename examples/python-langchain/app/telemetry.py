@@ -1,8 +1,16 @@
 """OpenTelemetry bootstrap.
 
-Sets up a TracerProvider + MeterProvider that export to an OTLP gRPC
-target (Sigil's OTLP ingest on :4317 by default) and registers them
-globally. Standard OTel — nothing Sigil-specific lives here.
+Sets up a TracerProvider + MeterProvider using OTLP/gRPC exporters and
+registers them globally. The exporters read standard OTel env vars
+(OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS, etc.)
+automatically, so no endpoint/auth is hardcoded here.
+
+Send traces and metrics to Grafana Cloud either:
+  A) Direct — set OTEL_EXPORTER_OTLP_ENDPOINT to your Cloud OTLP gateway
+     URL (from Cloud portal → stack Details) and OTEL_EXPORTER_OTLP_HEADERS
+     with Basic auth.
+  B) Via Alloy — set OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+     and let Alloy handle Cloud auth.
 """
 
 from __future__ import annotations
@@ -30,33 +38,18 @@ class OpenTelemetry:
         self.meter_provider.shutdown()
 
 
-def _env(name: str, default: str) -> str:
-    value = os.getenv(name, default).strip()
-    return value or default
-
-
 def setup_opentelemetry() -> OpenTelemetry:
-    service_name = _env("OTEL_SERVICE_NAME", "sigil-langchain-weather-example")
-    otlp_endpoint = _env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
-    otlp_insecure = _env("OTEL_EXPORTER_OTLP_INSECURE", "true").lower() == "true"
+    service_name = os.getenv("OTEL_SERVICE_NAME", "sigil-langchain-weather-example")
 
     resource = Resource.create({"service.name": service_name})
 
     tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(
-        BatchSpanProcessor(
-            OTLPSpanExporter(endpoint=otlp_endpoint, insecure=otlp_insecure)
-        )
-    )
+    tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(tracer_provider)
 
     meter_provider = MeterProvider(
         resource=resource,
-        metric_readers=[
-            PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=otlp_endpoint, insecure=otlp_insecure)
-            )
-        ],
+        metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter())],
     )
     metrics.set_meter_provider(meter_provider)
 

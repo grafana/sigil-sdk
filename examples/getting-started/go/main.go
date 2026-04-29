@@ -8,14 +8,46 @@ import (
 	"os"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/joho/godotenv"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/shared"
+	"go.opentelemetry.io/contrib/exporters/autoexport"
+	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	ctx := context.Background()
 	model := "gpt-4.1-mini"
+
+	res, err := resource.New(ctx, resource.WithAttributes(
+		semconv.ServiceName("getting-started-go"),
+	))
+	if err != nil {
+		log.Fatalf("resource: %v", err)
+	}
+
+	traceExp, err := autoexport.NewSpanExporter(ctx)
+	if err != nil {
+		log.Fatalf("trace exporter: %v", err)
+	}
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExp), sdktrace.WithResource(res))
+	otel.SetTracerProvider(tp)
+	defer func() { _ = tp.Shutdown(ctx) }()
+
+	metricExp, err := autoexport.NewMetricReader(ctx)
+	if err != nil {
+		log.Fatalf("metric reader: %v", err)
+	}
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(metricExp), sdkmetric.WithResource(res))
+	otel.SetMeterProvider(mp)
+	defer func() { _ = mp.Shutdown(ctx) }()
 
 	cfg := sigil.DefaultConfig()
 	cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP

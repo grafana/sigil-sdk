@@ -10,10 +10,11 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 
 Each example:
 
-1. Creates an OpenAI client and sends a chat completion request.
-2. Creates an SDK client authenticated against Grafana Cloud.
-3. Records the generation (input, output, token usage, model metadata).
-4. Shuts down cleanly.
+1. Configures OpenTelemetry (TracerProvider + MeterProvider) so SDK-emitted spans and metrics are exported.
+2. Creates an OpenAI client and sends a chat completion request.
+3. Creates an SDK client authenticated against Grafana Cloud.
+4. Records the generation (input, output, token usage, model metadata).
+5. Shuts down cleanly (Sigil client first, then OTel providers).
 
 ## Credentials
 
@@ -21,7 +22,14 @@ Each example needs an **OpenAI API key** ([platform.openai.com/api-keys](https:/
 
 See the [credentials section in the SDK README](../../README.md#grafana-cloud-credentials) for where to find each value in your Grafana Cloud stack.
 
-Set them as environment variables before running an example.
+### OTel endpoint for traces and metrics
+
+The SDK emits OpenTelemetry spans and metrics (`gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, etc.). These need an OTLP endpoint:
+
+- **Direct to Cloud** — set `OTEL_EXPORTER_OTLP_ENDPOINT` to your Cloud OTLP gateway URL (find it in the Grafana Cloud portal → stack Details page, [docs](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp)) and `OTEL_EXPORTER_OTLP_HEADERS` with Basic auth credentials.
+- **Via Alloy** — set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` if you have a local Alloy/collector forwarding to Cloud.
+
+Set all values as environment variables before running an example.
 
 ## What to look for
 
@@ -30,6 +38,7 @@ After running an example, open the AI Observability plugin in your Grafana Cloud
 - A new generation under the conversation ID used in the example.
 - Model name, provider, token usage, and latency filled in.
 - The input prompt and assistant response visible in the conversation drilldown.
+- Traces in your Grafana Cloud Traces datasource and metrics in Grafana Cloud Metrics.
 
 ## Next steps
 
