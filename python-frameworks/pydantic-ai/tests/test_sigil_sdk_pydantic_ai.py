@@ -261,8 +261,8 @@ def test_sigil_sdk_pydantic_ai_capability_wrap_model_request() -> None:
     class _Usage:
         input_tokens = 10
         output_tokens = 5
-        cache_read_tokens = 0
-        cache_write_tokens = 0
+        cache_read_tokens = 3
+        cache_write_tokens = 2
 
     class _TextPart:
         part_kind = "text"
@@ -306,6 +306,11 @@ def test_sigil_sdk_pydantic_ai_capability_wrap_model_request() -> None:
         assert generation.model.provider == "openai"
         assert generation.conversation_id == "sigil:framework:pydantic-ai:pydantic-run-42"
         assert generation.output[0].parts[0].text == "world"
+        assert generation.usage.input_tokens == 10
+        assert generation.usage.output_tokens == 5
+        assert generation.usage.cache_read_input_tokens == 3
+        assert generation.usage.cache_creation_input_tokens == 2
+        assert generation.usage.total_tokens == 15
     finally:
         client.shutdown()
 

@@ -15,7 +15,7 @@ from pydantic_ai.exceptions import (
     SkipToolValidation,
     ToolRetryError,
 )
-from sigil_sdk import Client, ToolDefinition
+from sigil_sdk import Client, TokenUsage, ToolDefinition
 
 from .handler import SigilPydanticAIHandler
 
@@ -401,9 +401,8 @@ def _map_pydantic_response(response: Any, fallback_model_name: str) -> dict[str,
     if finish_reason != "":
         llm_output["finish_reason"] = finish_reason
 
-    usage = _read(response, "usage")
-    token_usage = _map_pydantic_usage(usage)
-    if token_usage:
+    token_usage = _map_pydantic_usage(_read(response, "usage"))
+    if token_usage is not None:
         llm_output["token_usage"] = token_usage
 
     text = _extract_response_text(response)
@@ -417,27 +416,21 @@ def _map_pydantic_response(response: Any, fallback_model_name: str) -> dict[str,
     return payload
 
 
-_USAGE_FIELD_MAP: dict[str, str] = {
-    "input_tokens": "prompt_tokens",
-    "output_tokens": "completion_tokens",
-    "cache_read_tokens": "cache_read_input_tokens",
-    "cache_write_tokens": "cache_creation_input_tokens",
-}
-
-
-def _map_pydantic_usage(usage: Any) -> dict[str, int]:
+def _map_pydantic_usage(usage: Any) -> TokenUsage | None:
     if usage is None:
-        return {}
-    token_usage: dict[str, int] = {}
-    for src, dst in _USAGE_FIELD_MAP.items():
-        val = _int_or_none(_read(usage, src))
-        if val is not None:
-            token_usage[dst] = val
-    prompt = token_usage.get("prompt_tokens", 0)
-    completion = token_usage.get("completion_tokens", 0)
-    if prompt or completion:
-        token_usage["total_tokens"] = prompt + completion
-    return token_usage
+        return None
+    input_tokens = _int_or_none(_read(usage, "input_tokens"))
+    output_tokens = _int_or_none(_read(usage, "output_tokens"))
+    cache_read = _int_or_none(_read(usage, "cache_read_tokens"))
+    cache_write = _int_or_none(_read(usage, "cache_write_tokens"))
+    if input_tokens is None and output_tokens is None and cache_read is None and cache_write is None:
+        return None
+    return TokenUsage(
+        input_tokens=input_tokens or 0,
+        output_tokens=output_tokens or 0,
+        cache_read_input_tokens=cache_read or 0,
+        cache_creation_input_tokens=cache_write or 0,
+    ).normalize()
 
 
 def _extract_response_text(response: Any) -> str:
