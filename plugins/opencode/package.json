@@ -2,6 +2,11 @@
   "name": "@grafana/sigil-opencode",
   "version": "0.2.0",
   "description": "OpenCode plugin for Grafana Sigil AI telemetry",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grafana/sigil-sdk.git",
+    "directory": "plugins/opencode"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

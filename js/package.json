@@ -1,8 +1,12 @@
 {
   "name": "@grafana/sigil-sdk-js",
   "version": "0.1.0",
-  "private": true,
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grafana/sigil-sdk.git",
+    "directory": "js"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

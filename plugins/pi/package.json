@@ -2,6 +2,11 @@
   "name": "@grafana/sigil-pi",
   "version": "0.2.0",
   "description": "Pi agent extension for Grafana Sigil AI telemetry",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grafana/sigil-sdk.git",
+    "directory": "plugins/pi"
+  },
   "type": "module",
   "main": "dist/index.js",
   "files": [
