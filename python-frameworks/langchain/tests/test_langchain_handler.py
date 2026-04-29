@@ -168,6 +168,140 @@ def test_langchain_sync_lifecycle_extracts_anthropic_style_usage_and_stop_reason
         client.shutdown()
 
 
+def test_langchain_gemini_tool_calls_map_from_message_fields() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    try:
+        run_id = uuid4()
+        handler = SigilLangChainHandler(
+            client=client,
+            agent_name="agent-langchain",
+            provider_resolver="auto",
+        )
+
+        handler.on_chat_model_start(
+            {"name": "ChatGoogleGenerativeAI"},
+            [
+                [
+                    {"type": "human", "content": "Use the weather tool."},
+                    {
+                        "type": "ai",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "name": "get_weather",
+                                "args": {"city": "Paris"},
+                                "id": "call-weather",
+                                "type": "tool_call",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "tool",
+                        "content": "Paris: 72F and sunny",
+                        "tool_call_id": "call-weather",
+                        "name": "get_weather",
+                    },
+                ]
+            ],
+            run_id=run_id,
+            invocation_params={
+                "model": "gemini-2.5-flash",
+                "tool_choice": "get_weather",
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "description": "Get current weather for a city.",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"city": {"type": "string"}},
+                                "required": ["city"],
+                            },
+                        },
+                    }
+                ],
+            },
+        )
+        handler.on_llm_end(
+            {
+                "generations": [
+                    [
+                        {
+                            "message": {
+                                "type": "ai",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "name": "get_weather",
+                                        "args": {"city": "Paris"},
+                                        "id": "call-weather",
+                                        "type": "tool_call",
+                                    }
+                                ],
+                                "usage_metadata": {
+                                    "input_tokens": 49,
+                                    "output_tokens": 51,
+                                    "total_tokens": 100,
+                                    "input_token_details": {"cache_read": 7},
+                                    "output_token_details": {"reasoning": 36},
+                                },
+                                "response_metadata": {
+                                    "finish_reason": "STOP",
+                                    "model_name": "gemini-2.5-flash",
+                                    "model_provider": "google_genai",
+                                },
+                            }
+                        }
+                    ]
+                ],
+                "llm_output": {},
+            },
+            run_id=run_id,
+        )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.model.provider == "gemini"
+        assert generation.model.name == "gemini-2.5-flash"
+        assert generation.response_model == "gemini-2.5-flash"
+        assert generation.stop_reason == "STOP"
+        assert generation.tool_choice == "get_weather"
+        assert [(tool.name, tool.type) for tool in generation.tools] == [("get_weather", "function")]
+        assert b'"city"' in generation.tools[0].input_schema_json
+
+        assert generation.input[1].role.value == "assistant"
+        input_tool_call = generation.input[1].parts[0].tool_call
+        assert input_tool_call is not None
+        assert input_tool_call.id == "call-weather"
+        assert input_tool_call.name == "get_weather"
+        assert b'"Paris"' in input_tool_call.input_json
+
+        assert generation.input[2].role.value == "tool"
+        input_tool_result = generation.input[2].parts[0].tool_result
+        assert input_tool_result is not None
+        assert input_tool_result.tool_call_id == "call-weather"
+        assert input_tool_result.name == "get_weather"
+        assert input_tool_result.content == "Paris: 72F and sunny"
+
+        assert generation.output[0].role.value == "assistant"
+        output_tool_call = generation.output[0].parts[0].tool_call
+        assert output_tool_call is not None
+        assert output_tool_call.id == "call-weather"
+        assert output_tool_call.name == "get_weather"
+        assert b'"Paris"' in output_tool_call.input_json
+
+        assert generation.usage.input_tokens == 49
+        assert generation.usage.output_tokens == 51
+        assert generation.usage.total_tokens == 100
+        assert generation.usage.cache_read_input_tokens == 7
+        assert generation.usage.reasoning_tokens == 36
+    finally:
+        client.shutdown()
+
+
 def test_langchain_stream_lifecycle_uses_stream_mode_and_chunk_fallback() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
