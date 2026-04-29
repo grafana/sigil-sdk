@@ -63,13 +63,13 @@ importers:
         version: 6.33.0(ws@8.20.0)(zod@4.3.6)
     devDependencies:
       '@opentelemetry/context-async-hooks':
-        specifier: ^2.6.0
+        specifier: 2.6.1
         version: 2.6.1(@opentelemetry/api@1.9.1)
       '@types/node':
-        specifier: ^24.11.0
+        specifier: 24.12.0
         version: 24.12.0
       typescript:
-        specifier: ^6.0.0
+        specifier: 6.0.2
         version: 6.0.2
 
   plugins/opencode:
@@ -78,22 +78,22 @@ importers:
         specifier: workspace:*
         version: link:../../js
       '@opencode-ai/plugin':
-        specifier: ^1.3.0
+        specifier: 1.3.13
         version: 1.3.13
       '@opencode-ai/sdk':
-        specifier: ^1.3.2
+        specifier: 1.3.13
         version: 1.3.13
       '@types/node':
-        specifier: ^24.0.0
+        specifier: 24.12.0
         version: 24.12.0
       esbuild:
-        specifier: ^0.27.3
+        specifier: 0.27.4
         version: 0.27.4
       typescript:
-        specifier: ^6.0.0
+        specifier: 6.0.2
         version: 6.0.2
       vitest:
-        specifier: ^4.1.0
+        specifier: 4.1.2
         version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@24.12.0)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@24.12.0)(esbuild@0.27.4))
 
 packages:
