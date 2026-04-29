@@ -331,12 +331,12 @@ def _usage_payload(usage: Any) -> dict[str, int] | None:
         return None
     payload: dict[str, int] = {}
     for source_key, dest_key in (
-        ("inputTokens", "prompt_tokens"),
-        ("input_tokens", "prompt_tokens"),
-        ("prompt_tokens", "prompt_tokens"),
-        ("outputTokens", "completion_tokens"),
-        ("output_tokens", "completion_tokens"),
-        ("completion_tokens", "completion_tokens"),
+        ("inputTokens", "input_tokens"),
+        ("input_tokens", "input_tokens"),
+        ("prompt_tokens", "input_tokens"),
+        ("outputTokens", "output_tokens"),
+        ("output_tokens", "output_tokens"),
+        ("completion_tokens", "output_tokens"),
         ("totalTokens", "total_tokens"),
         ("total_tokens", "total_tokens"),
         ("cacheReadInputTokens", "cache_read_input_tokens"),

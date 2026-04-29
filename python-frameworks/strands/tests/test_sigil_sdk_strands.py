@@ -287,3 +287,48 @@ def test_with_sigil_strands_hooks_adds_provider_to_config_once() -> None:
         assert isinstance(hooks[0], SigilStrandsHookProvider)
     finally:
         client.shutdown()
+
+
+def test_strands_cache_token_usage_preserved() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    try:
+        hooks = create_sigil_strands_hook_provider(client=client, provider_resolver="auto")
+        invocation_state = {"conversation_id": "conv-cache"}
+        agent = _agent()
+
+        hooks.before_model_call(SimpleNamespace(agent=agent, invocation_state=invocation_state))
+        hooks.after_model_call(
+            SimpleNamespace(
+                agent=agent,
+                invocation_state=invocation_state,
+                stop_response=SimpleNamespace(
+                    message={
+                        "role": "assistant",
+                        "content": [{"text": "cached response"}],
+                        "metadata": {
+                            "usage": {
+                                "inputTokens": 100,
+                                "outputTokens": 20,
+                                "totalTokens": 120,
+                                "cacheReadInputTokens": 80,
+                                "cacheWriteInputTokens": 10,
+                            }
+                        },
+                    },
+                    stop_reason="end_turn",
+                ),
+                exception=None,
+            )
+        )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.usage.input_tokens == 100
+        assert generation.usage.output_tokens == 20
+        assert generation.usage.total_tokens == 120
+        assert generation.usage.cache_read_input_tokens == 80
+        assert generation.usage.cache_write_input_tokens == 10
+    finally:
+        client.shutdown()
