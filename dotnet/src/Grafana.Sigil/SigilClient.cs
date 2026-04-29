@@ -79,6 +79,12 @@ public sealed partial class SigilClient : IAsyncDisposable
         2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
     };
 
+    internal static readonly double[] TokenUsageBuckets =
+    {
+        1, 4, 16, 64, 256, 1024, 4096, 16384,
+        65536, 262144, 1048576, 4194304, 16777216, 67108864,
+    };
+
 #if NET
     [GeneratedRegex(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled)]
     private static partial Regex StatusCodeRegex();
@@ -160,7 +166,10 @@ public sealed partial class SigilClient : IAsyncDisposable
             MetricOperationDuration,
             unit: "s",
             advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBucketsSeconds });
-        _tokenUsageHistogram = _meter.CreateHistogram<double>(MetricTokenUsage, "token");
+        _tokenUsageHistogram = _meter.CreateHistogram<double>(
+            MetricTokenUsage,
+            unit: "token",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = TokenUsageBuckets });
         _ttftHistogram = _meter.CreateHistogram<double>(
             MetricTimeToFirstToken,
             unit: "s",

@@ -100,6 +100,10 @@ public final class SigilClient implements AutoCloseable {
             0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
             2.56, 5.12, 10.24, 20.48, 40.96, 81.92);
 
+    static final List<Double> TOKEN_USAGE_BUCKETS = List.of(
+            1.0, 4.0, 16.0, 64.0, 256.0, 1024.0, 4096.0, 16384.0,
+            65536.0, 262144.0, 1048576.0, 4194304.0, 16777216.0, 67108864.0);
+
     private static final Pattern STATUS_CODE_PATTERN = Pattern.compile("\\b([1-5][0-9][0-9])\\b");
     private static final String INSTRUMENTATION_NAME = "github.com/grafana/sigil/sdks/java";
     static final String DEFAULT_EMBEDDING_OPERATION_NAME = "embeddings";
@@ -187,6 +191,7 @@ public final class SigilClient implements AutoCloseable {
                 .build();
         this.tokenUsageHistogram = meter.histogramBuilder(METRIC_TOKEN_USAGE)
                 .setUnit("token")
+                .setExplicitBucketBoundariesAdvice(TOKEN_USAGE_BUCKETS)
                 .build();
         this.ttftHistogram = meter.histogramBuilder(METRIC_TTFT)
                 .setUnit("s")

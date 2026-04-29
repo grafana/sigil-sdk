@@ -395,6 +395,11 @@ test('conformance streaming telemetry semantics', async () => {
     const expectedBuckets = [0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92];
     assert.deepEqual(await env.metricBucketBoundaries('gen_ai.client.operation.duration'), expectedBuckets);
     assert.deepEqual(await env.metricBucketBoundaries('gen_ai.client.time_to_first_token'), expectedBuckets);
+
+    const expectedTokenUsageBuckets = [
+      1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864,
+    ];
+    assert.deepEqual(await env.metricBucketBoundaries('gen_ai.client.token.usage'), expectedTokenUsageBuckets);
   } finally {
     await env.close();
   }
