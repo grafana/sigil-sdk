@@ -1,5 +1,5 @@
 {
-  "name": "opencode-sigil",
+  "name": "@grafana/sigil-opencode",
   "version": "0.1.0",
   "description": "OpenCode plugin for Grafana Sigil AI telemetry",
   "type": "module",
@@ -12,6 +12,9 @@
     }
   },
   "files": ["dist", "skills"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bash scripts/build.sh",
     "typecheck": "tsc --noEmit",

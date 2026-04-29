@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SDK_DIR="$(cd "${SCRIPT_DIR}/../../../sdks/js" && pwd)"
+SDK_DIR="$(cd "${SCRIPT_DIR}/../../../js" && pwd)"
 
 # Build the SDK so workspace-linked types are available
 if [ ! -f "${SDK_DIR}/dist/index.d.ts" ]; then
@@ -21,4 +21,4 @@ npx esbuild src/index.ts \
   --external:@opencode-ai/plugin \
   --external:@opencode-ai/sdk
 
-tsc --emitDeclarationOnly --declaration --declarationMap --outDir dist
+tsc --project tsconfig.build.json --emitDeclarationOnly --declaration --declarationMap --outDir dist

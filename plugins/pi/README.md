@@ -1,4 +1,4 @@
-# pi-sigil
+# @grafana/sigil-pi
 
 [Pi](https://github.com/badlogic/pi) agent extension that records LLM generations to Grafana AI observability.
 
@@ -7,7 +7,19 @@ By default only metadata is sent (token counts, cost, model, tool names, duratio
 ## Install
 
 ```bash
-pnpm --filter pi-sigil run build
+pi install npm:@grafana/sigil-pi
+```
+
+Pin a specific version:
+
+```bash
+pi install npm:@grafana/sigil-pi@0.1.1
+```
+
+### From source (contributors)
+
+```bash
+pnpm --filter @grafana/sigil-pi run build
 pi install /absolute/path/to/sigil-sdk/plugins/pi
 ```
 

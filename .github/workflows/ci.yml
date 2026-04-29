@@ -78,10 +78,10 @@ jobs:
         run: mise run lint:ts:plugin-pi
 
       - name: Typecheck pi plugin
-        run: pnpm --filter pi-sigil run typecheck
+        run: pnpm --filter @grafana/sigil-pi run typecheck
 
       - name: Test pi plugin
-        run: pnpm --filter pi-sigil run test
+        run: pnpm --filter @grafana/sigil-pi run test
 
   python-lint:
     name: Python Lint

@@ -40,7 +40,7 @@ run = "pnpm --filter @grafana/sigil-sdk-js run lint:fix"
 [tasks."format:ts:plugin-pi"]
 description = "Format Pi plugin code"
 depends = ["deps"]
-run = "pnpm --filter pi-sigil run lint:fix"
+run = "pnpm --filter @grafana/sigil-pi run lint:fix"
 
 [tasks.format]
 description = "Format all code"
@@ -84,7 +84,7 @@ run = "pnpm --filter @grafana/sigil-sdk-js run lint"
 [tasks."lint:ts:plugin-pi"]
 description = "Lint Pi plugin code"
 depends = ["deps"]
-run = "pnpm --filter pi-sigil run lint"
+run = "pnpm --filter @grafana/sigil-pi run lint"
 
 [tasks.lint]
 description = "Run all linting"
@@ -100,7 +100,7 @@ run = "pnpm --filter @grafana/sigil-sdk-js run typecheck"
 [tasks."typecheck:ts:plugin-pi"]
 description = "Type-check Pi plugin code"
 depends = ["deps"]
-run = "pnpm --filter pi-sigil run typecheck"
+run = "pnpm --filter @grafana/sigil-pi run typecheck"
 
 [tasks.typecheck]
 description = "Run all type checks"
@@ -111,7 +111,7 @@ depends = ["typecheck:ts:sdk-js", "typecheck:ts:plugin-pi"]
 [tasks."build:ts:plugin-pi"]
 description = "Build Pi plugin bundle"
 depends = ["deps"]
-run = "pnpm --filter pi-sigil run build"
+run = "pnpm --filter @grafana/sigil-pi run build"
 
 # --- Go SDK tests ---
 
@@ -148,7 +148,7 @@ run = "GOWORK=off go test ./..."
 [tasks."test:ts:plugin-pi"]
 description = "Run Pi plugin tests"
 depends = ["deps"]
-run = "pnpm --filter pi-sigil run test"
+run = "pnpm --filter @grafana/sigil-pi run test"
 
 [tasks."test:go:sdk-conformance"]
 description = "Run the Go SDK core conformance harness"
