@@ -319,7 +319,7 @@ public sealed class ConformanceTests
             ToolType = "function",
             RequestProvider = "openai",
             RequestModel = "gpt-5",
-            IncludeContent = true,
+            ContentCapture = ContentCaptureMode.Full,
         });
         recorder.SetResult(new ToolExecutionEnd
         {

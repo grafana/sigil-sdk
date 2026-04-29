@@ -4,6 +4,8 @@ public static class GenerationValidator
 {
     public static void Validate(Generation generation)
     {
+        var contentStripped = SigilClient.IsContentStripped(generation);
+
         if (generation.Mode is not null && generation.Mode is not (GenerationMode.Sync or GenerationMode.Stream))
         {
             throw new ArgumentException("generation.mode must be one of SYNC|STREAM");
@@ -21,12 +23,12 @@ public static class GenerationValidator
 
         for (var i = 0; i < generation.Input.Count; i++)
         {
-            ValidateMessage("generation.input", i, generation.Input[i]);
+            ValidateMessage("generation.input", i, generation.Input[i], contentStripped);
         }
 
         for (var i = 0; i < generation.Output.Count; i++)
         {
-            ValidateMessage("generation.output", i, generation.Output[i]);
+            ValidateMessage("generation.output", i, generation.Output[i], contentStripped);
         }
 
         for (var i = 0; i < generation.Tools.Count; i++)
@@ -43,7 +45,7 @@ public static class GenerationValidator
         }
     }
 
-    private static void ValidateMessage(string path, int messageIndex, Message message)
+    private static void ValidateMessage(string path, int messageIndex, Message message, bool contentStripped)
     {
         if (message.Role is not (MessageRole.User or MessageRole.Assistant or MessageRole.Tool))
         {
@@ -57,11 +59,11 @@ public static class GenerationValidator
 
         for (var i = 0; i < message.Parts.Count; i++)
         {
-            ValidatePart(path, messageIndex, i, message.Role, message.Parts[i]);
+            ValidatePart(path, messageIndex, i, message.Role, message.Parts[i], contentStripped);
         }
     }
 
-    private static void ValidatePart(string path, int messageIndex, int partIndex, MessageRole role, Part part)
+    private static void ValidatePart(string path, int messageIndex, int partIndex, MessageRole role, Part part, bool contentStripped)
     {
         if (part.Kind is not (PartKind.Text or PartKind.Thinking or PartKind.ToolCall or PartKind.ToolResult))
         {
@@ -89,14 +91,16 @@ public static class GenerationValidator
             fieldCount++;
         }
 
-        if (fieldCount != 1)
+        // Stripped text/thinking parts have empty payloads — that's expected.
+        var strippedTextOrThinking = contentStripped && part.Kind is PartKind.Text or PartKind.Thinking;
+        if (fieldCount != 1 && !strippedTextOrThinking)
         {
             throw new ArgumentException($"{path}[{messageIndex}].parts[{partIndex}] must set exactly one payload field");
         }
 
         switch (part.Kind)
         {
-            case PartKind.Text when string.IsNullOrWhiteSpace(part.Text):
+            case PartKind.Text when !contentStripped && string.IsNullOrWhiteSpace(part.Text):
                 throw new ArgumentException($"{path}[{messageIndex}].parts[{partIndex}].text is required");
             case PartKind.Thinking:
                 if (role != MessageRole.Assistant)
@@ -106,7 +110,7 @@ public static class GenerationValidator
                     );
                 }
 
-                if (string.IsNullOrWhiteSpace(part.Thinking))
+                if (!contentStripped && string.IsNullOrWhiteSpace(part.Thinking))
                 {
                     throw new ArgumentException($"{path}[{messageIndex}].parts[{partIndex}].thinking is required");
                 }

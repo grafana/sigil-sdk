@@ -37,6 +37,32 @@ public enum ConversationRatingValue
     Bad
 }
 
+public enum ContentCaptureMode
+{
+    Default = 0,
+    Full = 1,
+    NoToolContent = 2,
+    MetadataOnly = 3,
+}
+
+public static class ContentCaptureModeExtensions
+{
+    private const string ValueFull = "full";
+    private const string ValueNoToolContent = "no_tool_content";
+    private const string ValueMetadataOnly = "metadata_only";
+
+    public static string ToMetadataValue(this ContentCaptureMode mode)
+    {
+        return mode switch
+        {
+            ContentCaptureMode.Full => ValueFull,
+            ContentCaptureMode.NoToolContent => ValueNoToolContent,
+            ContentCaptureMode.MetadataOnly => ValueMetadataOnly,
+            _ => string.Empty,
+        };
+    }
+}
+
 public sealed class ModelRef
 {
     public string Provider { get; set; } = string.Empty;
@@ -221,6 +247,7 @@ public sealed class GenerationStart
     public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
     public DateTimeOffset? StartedAt { get; set; }
+    public ContentCaptureMode ContentCapture { get; set; } = ContentCaptureMode.Default;
 }
 
 public sealed class EmbeddingStart
@@ -293,7 +320,10 @@ public sealed class ToolExecutionStart
     public string RequestModel { get; set; } = string.Empty;
     /// <summary>The provider that served the model (e.g. "openai").</summary>
     public string RequestProvider { get; set; } = string.Empty;
+    /// <summary>Deprecated: Use ContentCapture instead.</summary>
+    [Obsolete("Use ContentCapture instead. ContentCapture takes precedence when set to Full or MetadataOnly; with NoToolContent (or when unset) IncludeContent still controls whether tool content is captured.")]
     public bool IncludeContent { get; set; }
+    public ContentCaptureMode ContentCapture { get; set; } = ContentCaptureMode.Default;
     public DateTimeOffset? StartedAt { get; set; }
 }
 

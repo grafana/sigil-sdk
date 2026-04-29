@@ -1,0 +1,1277 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
+using Xunit;
+using SigilProto = Sigil.V1;
+
+namespace Grafana.Sigil.Tests;
+
+public sealed class ContentCaptureModeTests
+{
+    [Fact]
+    public void ToMetadataValue_ReturnsCorrectStrings()
+    {
+        Assert.Equal("full", ContentCaptureMode.Full.ToMetadataValue());
+        Assert.Equal("no_tool_content", ContentCaptureMode.NoToolContent.ToMetadataValue());
+        Assert.Equal("metadata_only", ContentCaptureMode.MetadataOnly.ToMetadataValue());
+        Assert.Equal(string.Empty, ContentCaptureMode.Default.ToMetadataValue());
+    }
+
+    [Theory]
+    [InlineData(ContentCaptureMode.Full, ContentCaptureMode.Default, ContentCaptureMode.Full)]
+    [InlineData(ContentCaptureMode.Full, ContentCaptureMode.MetadataOnly, ContentCaptureMode.MetadataOnly)]
+    [InlineData(ContentCaptureMode.MetadataOnly, ContentCaptureMode.Default, ContentCaptureMode.MetadataOnly)]
+    [InlineData(ContentCaptureMode.MetadataOnly, ContentCaptureMode.Full, ContentCaptureMode.Full)]
+    public void ResolveContentCaptureMode_Semantics(
+        ContentCaptureMode fallback,
+        ContentCaptureMode @override,
+        ContentCaptureMode expected)
+    {
+        var got = SigilClient.ResolveContentCaptureMode(@override, fallback);
+        Assert.Equal(expected, got);
+    }
+
+    [Fact]
+    public void ResolveContentCaptureMode_InvalidEnumFailsClosed()
+    {
+        Assert.Equal(
+            ContentCaptureMode.MetadataOnly,
+            SigilClient.ResolveContentCaptureMode((ContentCaptureMode)99, ContentCaptureMode.Full));
+        Assert.Equal(
+            ContentCaptureMode.MetadataOnly,
+            SigilClient.ResolveContentCaptureMode(ContentCaptureMode.Default, (ContentCaptureMode)99));
+    }
+
+    [Fact]
+    public void ResolveClientContentCaptureMode_DefaultBecomesNoToolContent()
+    {
+        Assert.Equal(ContentCaptureMode.NoToolContent, SigilClient.ResolveClientContentCaptureMode(ContentCaptureMode.Default));
+        Assert.Equal(ContentCaptureMode.Full, SigilClient.ResolveClientContentCaptureMode(ContentCaptureMode.Full));
+        Assert.Equal(ContentCaptureMode.MetadataOnly, SigilClient.ResolveClientContentCaptureMode(ContentCaptureMode.MetadataOnly));
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_NilReturnsDefault()
+    {
+        var got = SigilClient.CallContentCaptureResolver(null, null);
+        Assert.Equal(ContentCaptureMode.Default, got);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_ReturnsResolverResult()
+    {
+        var got = SigilClient.CallContentCaptureResolver(
+            _ => ContentCaptureMode.MetadataOnly,
+            new Dictionary<string, object?>());
+        Assert.Equal(ContentCaptureMode.MetadataOnly, got);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_ReadsMetadata()
+    {
+        var got = SigilClient.CallContentCaptureResolver(
+            metadata =>
+            {
+                if (metadata != null && metadata.TryGetValue("tenant_id", out var val) && val is string s && s == "opted-out")
+                    return ContentCaptureMode.MetadataOnly;
+                return ContentCaptureMode.Full;
+            },
+            new Dictionary<string, object?> { ["tenant_id"] = "opted-out" });
+        Assert.Equal(ContentCaptureMode.MetadataOnly, got);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_PassesReadOnlyMetadata()
+    {
+        var metadata = new Dictionary<string, object?> { ["tenant_id"] = "original" };
+        var got = SigilClient.CallContentCaptureResolver(
+            received =>
+            {
+                Assert.NotNull(received);
+                Assert.Throws<NotSupportedException>(() =>
+                    ((IDictionary<string, object?>)received!)["tenant_id"] = "changed");
+                return ContentCaptureMode.Full;
+            },
+            metadata);
+
+        Assert.Equal(ContentCaptureMode.Full, got);
+        Assert.Equal("original", metadata["tenant_id"]);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_ExceptionFailsClosed()
+    {
+        var got = SigilClient.CallContentCaptureResolver(
+            _ => throw new InvalidOperationException("resolver bug"),
+            null);
+        Assert.Equal(ContentCaptureMode.MetadataOnly, got);
+    }
+
+    [Fact]
+    public void StripContent_StripsAllSensitiveContent()
+    {
+        var gen = MakeTestGeneration();
+        SigilClient.StripContent(gen, "rate_limit");
+
+        Assert.Equal(string.Empty, gen.SystemPrompt);
+        Assert.Equal(string.Empty, gen.Input[0].Parts[0].Text);
+        Assert.Equal(string.Empty, gen.Output[0].Parts[0].Thinking);
+        Assert.Empty(gen.Output[0].Parts[1].ToolCall!.InputJson);
+        Assert.Equal(string.Empty, gen.Output[0].Parts[2].Text);
+        Assert.Equal(string.Empty, gen.Input[1].Parts[0].ToolResult!.Content);
+        Assert.Empty(gen.Input[1].Parts[0].ToolResult!.ContentJson);
+        Assert.Empty(gen.Tools[0].Description);
+        Assert.Empty(gen.Tools[0].InputSchemaJson);
+        Assert.Empty(gen.Artifacts);
+    }
+
+    [Fact]
+    public void StripContent_StripsConversationTitle()
+    {
+        var gen = MakeTestGeneration();
+        gen.ConversationTitle = "Secret project discussion";
+        gen.Metadata[SigilClient.SpanAttrConversationTitle] = "Secret project discussion";
+        SigilClient.StripContent(gen, "rate_limit");
+
+        Assert.Equal(string.Empty, gen.ConversationTitle);
+        Assert.False(gen.Metadata.ContainsKey(SigilClient.SpanAttrConversationTitle));
+    }
+
+    [Fact]
+    public void StripContent_PreservesMessageStructure()
+    {
+        var gen = MakeTestGeneration();
+        SigilClient.StripContent(gen, "rate_limit");
+
+        Assert.Equal(2, gen.Input.Count);
+        Assert.Single(gen.Output);
+        Assert.Equal(3, gen.Output[0].Parts.Count);
+        Assert.Equal(MessageRole.User, gen.Input[0].Role);
+        Assert.Equal(PartKind.Thinking, gen.Output[0].Parts[0].Kind);
+        Assert.Equal("weather", gen.Output[0].Parts[1].ToolCall!.Name);
+        Assert.Equal("call_1", gen.Output[0].Parts[1].ToolCall!.Id);
+        Assert.Equal("call_1", gen.Input[1].Parts[0].ToolResult!.ToolCallId);
+        Assert.Equal("weather", gen.Input[1].Parts[0].ToolResult!.Name);
+    }
+
+    [Fact]
+    public void StripContent_PreservesOperationalMetadata()
+    {
+        var gen = MakeTestGeneration();
+        SigilClient.StripContent(gen, "rate_limit");
+
+        Assert.Equal("weather", gen.Tools[0].Name);
+        Assert.Equal(120L, gen.Usage.InputTokens);
+        Assert.Equal(42L, gen.Usage.OutputTokens);
+        Assert.Equal("end_turn", gen.StopReason);
+        Assert.Equal("claude-sonnet-4-5", gen.Model.Name);
+        Assert.Equal("sdk-dotnet", gen.Metadata["sigil.sdk.name"]);
+    }
+
+    [Fact]
+    public void StripContent_ReplacesCallErrorWithCategory()
+    {
+        var gen = MakeTestGeneration();
+        SigilClient.StripContent(gen, "rate_limit");
+
+        Assert.Equal("rate_limit", gen.CallError);
+        Assert.False(gen.Metadata.ContainsKey("call_error"));
+    }
+
+    [Fact]
+    public void StripContent_FallsBackToSdkError()
+    {
+        var gen = MakeTestGeneration();
+        SigilClient.StripContent(gen, "");
+
+        Assert.Equal("sdk_error", gen.CallError);
+    }
+
+    [Fact]
+    public async Task DefaultResolution_NoToolContent()
+    {
+        await using var env = new ContentCaptureEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("no_tool_content", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal("hello", gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task ClientMetadataOnly_StripsContent()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("metadata_only", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal(string.Empty, gen.Input[0].Parts[0].Text);
+        Assert.Equal(10L, gen.Usage.InputTokens);
+    }
+
+    [Fact]
+    public async Task ClientMetadataOnly_DoesNotAttachConversationTitleToGenerationSpan()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ConversationTitle = "Secret project discussion",
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.Spans.Single(a => a.GetTagItem("gen_ai.operation.name")?.ToString() == "generateText");
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrConversationTitle));
+    }
+
+    [Fact]
+    public async Task ClientMetadataOnly_RedactsExceptionMessageAndStacktraceOnGenerationSpan()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetCallError(new InvalidOperationException("provider rejected: <secret prompt>"));
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.Spans.Single(a => a.GetTagItem("gen_ai.operation.name")?.ToString() == "generateText");
+        Assert.NotNull(span.GetTagItem("exception.type"));
+        Assert.Null(span.GetTagItem("exception.message"));
+        Assert.Null(span.GetTagItem("exception.stacktrace"));
+        Assert.Equal(ActivityStatusCode.Error, span.Status);
+        Assert.DoesNotContain("secret prompt", span.StatusDescription ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task ClientFull_KeepsExceptionMessageOnGenerationSpan()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.Full);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetCallError(new InvalidOperationException("provider rejected: <secret prompt>"));
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.Spans.Single(a => a.GetTagItem("gen_ai.operation.name")?.ToString() == "generateText");
+        Assert.Equal("provider rejected: <secret prompt>", span.GetTagItem("exception.message"));
+        Assert.NotNull(span.GetTagItem("exception.stacktrace"));
+    }
+
+    [Fact]
+    public async Task ToolMetadataOnly_RedactsExceptionMessageOnToolSpan()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+        });
+        recorder.SetExecutionError(new InvalidOperationException("tool failed: <secret arg>"));
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.NotNull(span.GetTagItem("exception.type"));
+        Assert.Null(span.GetTagItem("exception.message"));
+        Assert.Null(span.GetTagItem("exception.stacktrace"));
+        Assert.DoesNotContain("secret arg", span.StatusDescription ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task ClientFull_PreservesContent()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.Full);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("full", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal("hello", gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task PerGenerationOverride_MetadataOnlyOverridesClientFull()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.Full);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.MetadataOnly,
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("metadata_only", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal(string.Empty, gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task PerGenerationOverride_FullOverridesClientMetadataOnly()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.Full,
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("full", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal("hello", gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task Resolver_OverridesClientDefault()
+    {
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Full,
+            _ => ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("metadata_only", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal(string.Empty, gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task Resolver_PerGenOverrideTakesPrecedence()
+    {
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Default,
+            _ => ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.Full,
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("full", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal("hello", gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task Resolver_PerGenOverrideDoesNotInvokeResolver()
+    {
+        var calls = 0;
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Default,
+            _ =>
+            {
+                calls++;
+                return ContentCaptureMode.MetadataOnly;
+            });
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.Full,
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal(0, calls);
+        Assert.Equal("full", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+    }
+
+    [Fact]
+    public async Task Resolver_ExceptionFailsClosed()
+    {
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Full,
+            _ => throw new InvalidOperationException("oops"));
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("metadata_only", gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+        Assert.Equal(string.Empty, gen.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
+    public async Task ValidationAcceptsStrippedGeneration()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output =
+            {
+                new Message
+                {
+                    Role = MessageRole.Assistant,
+                    Parts =
+                    {
+                        Part.ThinkingPart("deep thoughts"),
+                        Part.TextPart("answer"),
+                    },
+                },
+            },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        Assert.Null(recorder.Error);
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal(string.Empty, gen.Input[0].Parts[0].Text);
+        Assert.Equal(string.Empty, gen.Output[0].Parts[0].Thinking);
+        Assert.Equal(string.Empty, gen.Output[0].Parts[1].Text);
+    }
+
+    [Fact]
+    public void ShouldIncludeToolContent_InvalidEnumFailsClosed()
+    {
+        Assert.False(SigilClient.ShouldIncludeToolContent(
+            (ContentCaptureMode)99,
+            ContentCaptureMode.Full,
+            true,
+            ContentCaptureMode.Full,
+            true));
+        Assert.False(SigilClient.ShouldIncludeToolContent(
+            ContentCaptureMode.Default,
+            (ContentCaptureMode)99,
+            true,
+            ContentCaptureMode.Full,
+            true));
+    }
+
+    [Theory]
+    [InlineData(ContentCaptureMode.Default, false, false, false)]
+    [InlineData(ContentCaptureMode.Default, false, true, true)]
+    [InlineData(ContentCaptureMode.Full, false, false, true)]
+    [InlineData(ContentCaptureMode.Full, false, true, true)]
+    [InlineData(ContentCaptureMode.MetadataOnly, false, true, false)]
+    public void ShouldIncludeToolContent_NoContext(
+        ContentCaptureMode clientDefault,
+        bool ctxSet,
+        bool legacyInclude,
+        bool wantContent)
+    {
+        var got = SigilClient.ShouldIncludeToolContent(
+            ContentCaptureMode.Default,
+            ContentCaptureMode.Default,
+            ctxSet,
+            clientDefault,
+            legacyInclude);
+        Assert.Equal(wantContent, got);
+    }
+
+    [Theory]
+    [InlineData(ContentCaptureMode.MetadataOnly, true, true, false)]
+    [InlineData(ContentCaptureMode.Full, true, true, true)]
+    [InlineData(ContentCaptureMode.NoToolContent, true, false, false)]
+    [InlineData(ContentCaptureMode.NoToolContent, true, true, true)]
+    public void ShouldIncludeToolContent_WithContext(
+        ContentCaptureMode ctxMode,
+        bool ctxSet,
+        bool legacyInclude,
+        bool wantContent)
+    {
+        var got = SigilClient.ShouldIncludeToolContent(
+            ContentCaptureMode.Default,
+            ctxMode,
+            ctxSet,
+            ContentCaptureMode.Full,
+            legacyInclude);
+        Assert.Equal(wantContent, got);
+    }
+
+    [Theory]
+    [InlineData(ContentCaptureMode.Full, ContentCaptureMode.MetadataOnly, true, true)]
+    [InlineData(ContentCaptureMode.MetadataOnly, ContentCaptureMode.Full, true, false)]
+    public void ShouldIncludeToolContent_PerToolOverride(
+        ContentCaptureMode toolMode,
+        ContentCaptureMode ctxMode,
+        bool legacyInclude,
+        bool wantContent)
+    {
+        var got = SigilClient.ShouldIncludeToolContent(
+            toolMode,
+            ctxMode,
+            true,
+            ContentCaptureMode.Full,
+            legacyInclude);
+        Assert.Equal(wantContent, got);
+    }
+
+    [Fact]
+    public async Task ToolExecution_ClientDefault_LegacyFalse_Suppressed()
+    {
+        await using var env = new ContentCaptureEnv();
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+        });
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ToolExecution_ClientFull_ContentIncluded()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.Full);
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+        });
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ToolExecution_ClientMetadataOnly_LegacyTrue_Suppressed()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+#pragma warning disable CS0618
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            IncludeContent = true,
+        });
+#pragma warning restore CS0618
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ToolExecution_ClientMetadataOnly_DoesNotAttachConversationTitleToSpan()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+#pragma warning disable CS0618
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            ToolDescription = "Sensitive internal tool prompt",
+            ConversationTitle = "Secret project discussion",
+            IncludeContent = true,
+        });
+#pragma warning restore CS0618
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrToolDescription));
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrConversationTitle));
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ToolExecution_BackwardCompat_LegacyTrue_Included()
+    {
+        await using var env = new ContentCaptureEnv();
+#pragma warning disable CS0618
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            IncludeContent = true,
+        });
+#pragma warning restore CS0618
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ContextPropagation_GenerationSetsContextForToolExecution()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+
+        var genRecorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+
+        // Tool starts while generation is active — should inherit MetadataOnly from context.
+#pragma warning disable CS0618
+        var toolRecorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            IncludeContent = true,
+        });
+#pragma warning restore CS0618
+        toolRecorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        toolRecorder.End();
+
+        genRecorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        genRecorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.Null(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ContextPropagation_FullOverridesParentMetadataOnly()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+
+        var genRecorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.Full,
+        });
+
+        // Tool starts under Full generation context.
+#pragma warning disable CS0618
+        var toolRecorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            IncludeContent = true,
+        });
+#pragma warning restore CS0618
+        toolRecorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        toolRecorder.End();
+
+        genRecorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        genRecorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public void IsContentStripped_DetectsMarker()
+    {
+        var gen = new Generation
+        {
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [SigilClient.MetadataKeyContentCaptureMode] = "metadata_only",
+            },
+        };
+        Assert.True(SigilClient.IsContentStripped(gen));
+    }
+
+    [Fact]
+    public void IsContentStripped_FalseWithoutMarker()
+    {
+        Assert.False(SigilClient.IsContentStripped(new Generation()));
+    }
+
+    [Fact]
+    public void IsContentStripped_FalseForOtherModes()
+    {
+        var gen = new Generation
+        {
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [SigilClient.MetadataKeyContentCaptureMode] = "full",
+            },
+        };
+        Assert.False(SigilClient.IsContentStripped(gen));
+    }
+
+    [Fact]
+    public async Task ToolExecution_PerToolOverride_Full()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            ContentCapture = ContentCaptureMode.Full,
+        });
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ToolExecution_PerToolOverrideDoesNotInvokeResolver()
+    {
+        var calls = 0;
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Default,
+            _ =>
+            {
+                calls++;
+                return ContentCaptureMode.MetadataOnly;
+            });
+        var recorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            ContentCapture = ContentCaptureMode.Full,
+        });
+        recorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.Equal(0, calls);
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task ToolExecution_ContextDoesNotInvokeResolver()
+    {
+        var calls = 0;
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Default,
+            _ =>
+            {
+                calls++;
+                return ContentCaptureMode.MetadataOnly;
+            });
+        var genRecorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.Full,
+        });
+
+        var toolRecorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+        });
+        toolRecorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        toolRecorder.End();
+
+        genRecorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        genRecorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var span = env.ToolSpan();
+        Assert.Equal(0, calls);
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public void IsContentStripped_DetectsJsonElementMarker()
+    {
+        // After DeepClone (JSON round-trip), string values in metadata become JsonElement.
+        var gen = new Generation
+        {
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [SigilClient.MetadataKeyContentCaptureMode] = JsonDocument.Parse("\"metadata_only\"").RootElement,
+            },
+        };
+        Assert.True(SigilClient.IsContentStripped(gen));
+    }
+
+    [Fact]
+    public void IsContentStripped_FalseForNonMetadataOnlyJsonElement()
+    {
+        var gen = new Generation
+        {
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [SigilClient.MetadataKeyContentCaptureMode] = JsonDocument.Parse("\"full\"").RootElement,
+            },
+        };
+        Assert.False(SigilClient.IsContentStripped(gen));
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_PassesNullMetadataThrough()
+    {
+        IReadOnlyDictionary<string, object?>? received = new Dictionary<string, object?>();
+        SigilClient.CallContentCaptureResolver(
+            metadata =>
+            {
+                received = metadata;
+                return ContentCaptureMode.Full;
+            },
+            null);
+        Assert.Null(received);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_InvalidEnumFailsClosed()
+    {
+        var got = SigilClient.CallContentCaptureResolver(
+            _ => (ContentCaptureMode)99,
+            null);
+        Assert.Equal(ContentCaptureMode.MetadataOnly, got);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_LogsOnException()
+    {
+        List<string> logged = [];
+        SigilClient.CallContentCaptureResolver(
+            _ => throw new InvalidOperationException("resolver bug"),
+            null,
+            msg => logged.Add(msg));
+        Assert.Single(logged);
+        Assert.Contains("resolver bug", logged[0]);
+    }
+
+    [Fact]
+    public void CallContentCaptureResolver_LogsOnInvalidEnum()
+    {
+        List<string> logged = [];
+        SigilClient.CallContentCaptureResolver(
+            _ => (ContentCaptureMode)99,
+            null,
+            msg => logged.Add(msg));
+        Assert.Single(logged);
+        Assert.Contains("undefined mode", logged[0]);
+    }
+
+    [Fact]
+    public async Task OverlappingGenerations_NonLifoCompletion()
+    {
+        // When two generations overlap on the same async flow and the older one
+        // ends first, the newer generation's mode should still be active in context.
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.Full);
+
+        var genA = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.MetadataOnly,
+        });
+
+        var genB = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            ContentCapture = ContentCaptureMode.Full,
+        });
+
+        // genA ends first (non-LIFO order).
+        genA.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        genA.End();
+
+        // Tool starts after genA ended but while genB is still active.
+        // Should see genB's Full mode, not be wiped by genA's disposal.
+        var toolRecorder = env.Client.StartToolExecution(new ToolExecutionStart
+        {
+            ToolName = "test_tool",
+            ContentCapture = ContentCaptureMode.Default,
+        });
+        toolRecorder.SetResult(new ToolExecutionEnd
+        {
+            Arguments = "args",
+            Result = "result",
+        });
+        toolRecorder.End();
+
+        genB.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        genB.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        // genB was Full, so tool content should have been included.
+        var span = env.ToolSpan();
+        Assert.NotNull(span.GetTagItem(SigilClient.SpanAttrToolCallArguments));
+    }
+
+    [Fact]
+    public async Task Resolver_ReceivesOriginalMetadataTypes()
+    {
+        // The resolver should receive original metadata types (string, bool, long),
+        // not JsonElement values from DeepClone's JSON round-trip.
+        Type? receivedType = null;
+        await using var env = new ContentCaptureEnv(
+            ContentCaptureMode.Default,
+            metadata =>
+            {
+                if (metadata != null && metadata.TryGetValue("tenant_id", out var val))
+                {
+                    receivedType = val?.GetType();
+                }
+                return ContentCaptureMode.Full;
+            });
+
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["tenant_id"] = "my-tenant",
+            },
+        });
+        recorder.SetResult(new Generation
+        {
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("world") },
+            Usage = new TokenUsage { InputTokens = 10, OutputTokens = 5 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(receivedType);
+        Assert.Equal(typeof(string), receivedType);
+    }
+
+    [Fact]
+    public async Task SubmitConversationRating_DoesNotMutateCallerRequest()
+    {
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.MetadataOnly);
+
+        var request = new SubmitConversationRatingRequest
+        {
+            RatingId = "r1",
+            Rating = ConversationRatingValue.Good,
+            Comment = "great answer",
+        };
+
+        try
+        {
+            await env.Client.SubmitConversationRatingAsync("conv-1", request, TestContext.Current.CancellationToken);
+        }
+        catch (RatingTransportException)
+        {
+            // Rating submission may fail (no API endpoint) but the mutation
+            // test is about the request object, not the HTTP call.
+        }
+
+        Assert.Equal("great answer", request.Comment);
+    }
+
+    private static Generation MakeTestGeneration()
+    {
+        return new Generation
+        {
+            Id = "gen-1",
+            ConversationId = "conv-1",
+            AgentName = "test-agent",
+            AgentVersion = "1.0",
+            Mode = GenerationMode.Sync,
+            Model = new ModelRef { Provider = "anthropic", Name = "claude-sonnet-4-5" },
+            SystemPrompt = "You are helpful.",
+            Input =
+            {
+                new Message
+                {
+                    Role = MessageRole.User,
+                    Parts = { Part.TextPart("What is the weather?") },
+                },
+                new Message
+                {
+                    Role = MessageRole.Tool,
+                    Parts =
+                    {
+                        Part.ToolResultPart(new ToolResult
+                        {
+                            ToolCallId = "call_1",
+                            Name = "weather",
+                            Content = "sunny 18C",
+                            ContentJson = Encoding.UTF8.GetBytes("{\"temp\":18}"),
+                        }),
+                    },
+                },
+            },
+            Output =
+            {
+                new Message
+                {
+                    Role = MessageRole.Assistant,
+                    Parts =
+                    {
+                        Part.ThinkingPart("let me think about weather"),
+                        Part.ToolCallPart(new ToolCall
+                        {
+                            Id = "call_1",
+                            Name = "weather",
+                            InputJson = Encoding.UTF8.GetBytes("{\"city\":\"Paris\"}"),
+                        }),
+                        Part.TextPart("It's 18C and sunny in Paris."),
+                    },
+                },
+            },
+            Tools =
+            {
+                new ToolDefinition
+                {
+                    Name = "weather",
+                    Description = "Get weather info",
+                    Type = "function",
+                    InputSchemaJson = Encoding.UTF8.GetBytes("{\"type\":\"object\"}"),
+                },
+            },
+            Usage = new TokenUsage { InputTokens = 120, OutputTokens = 42 },
+            StopReason = "end_turn",
+            CallError = "rate limit exceeded: prompt too long for model",
+            Artifacts =
+            {
+                Artifact.JsonArtifact(ArtifactKind.Request, "request", new { ok = true }),
+            },
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["sigil.sdk.name"] = "sdk-dotnet",
+                ["call_error"] = "rate limit exceeded: prompt too long for model",
+            },
+        };
+    }
+
+    private sealed class ContentCaptureEnv : IAsyncDisposable
+    {
+        private bool _shutdown;
+        private readonly ActivityListener _activityListener;
+
+        public GrpcIngestServer Ingest { get; }
+        public SigilClient Client { get; }
+        public ConcurrentQueue<Activity> Spans { get; } = new();
+
+        public ContentCaptureEnv(
+            ContentCaptureMode clientMode = ContentCaptureMode.Default,
+            Func<IReadOnlyDictionary<string, object?>?, ContentCaptureMode>? resolver = null)
+        {
+            _activityListener = new ActivityListener
+            {
+                ShouldListenTo = source => source.Name == SigilClient.InstrumentationName,
+                Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                ActivityStopped = activity => Spans.Enqueue(activity),
+            };
+            ActivitySource.AddActivityListener(_activityListener);
+
+            Ingest = new GrpcIngestServer();
+            Client = new SigilClient(new SigilClientConfig
+            {
+                ContentCapture = clientMode,
+                ContentCaptureResolver = resolver,
+                GenerationExport = new GenerationExportConfig
+                {
+                    Protocol = GenerationExportProtocol.Grpc,
+                    Endpoint = $"127.0.0.1:{Ingest.Port}",
+                    Insecure = true,
+                    BatchSize = 1,
+                    QueueSize = 10,
+                    FlushInterval = TimeSpan.FromHours(1),
+                    MaxRetries = 1,
+                    InitialBackoff = TimeSpan.FromMilliseconds(1),
+                    MaxBackoff = TimeSpan.FromMilliseconds(2),
+                },
+            });
+        }
+
+        public async Task ShutdownAsync(CancellationToken cancellationToken = default)
+        {
+            if (_shutdown) return;
+            _shutdown = true;
+            await Client.ShutdownAsync(cancellationToken);
+            _activityListener.Dispose();
+            Ingest.Dispose();
+        }
+
+        public SigilProto.Generation SingleGeneration()
+        {
+            Assert.Single(Ingest.Requests);
+            Assert.Single(Ingest.Requests[0].Request.Generations);
+            return Ingest.Requests[0].Request.Generations[0];
+        }
+
+        public Activity ToolSpan()
+        {
+            var span = Spans
+                .Where(a => a.GetTagItem("gen_ai.operation.name")?.ToString() == "execute_tool")
+                .LastOrDefault();
+            Assert.NotNull(span);
+            return span!;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await ShutdownAsync();
+        }
+    }
+}
