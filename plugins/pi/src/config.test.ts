@@ -334,6 +334,104 @@ describe("resolveConfig otlp", () => {
   });
 });
 
+describe("resolveConfig redaction", () => {
+  beforeEach(clearEnv);
+  afterEach(clearEnv);
+
+  it("defaults all redaction knobs to true when file omits the block", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.redaction).toEqual({
+      enabled: true,
+      redactInputMessages: true,
+      redactEmailAddresses: true,
+    });
+  });
+
+  it("file-level redaction.enabled = false disables it", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      redaction: { enabled: false },
+    });
+    expect(cfg?.redaction.enabled).toBe(false);
+    // partial override preserves the rest as defaults
+    expect(cfg?.redaction.redactInputMessages).toBe(true);
+    expect(cfg?.redaction.redactEmailAddresses).toBe(true);
+  });
+
+  it("partial file override preserves other defaults", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      redaction: { redactEmailAddresses: false },
+    });
+    expect(cfg?.redaction).toEqual({
+      enabled: true,
+      redactInputMessages: true,
+      redactEmailAddresses: false,
+    });
+  });
+
+  it("env vars override file values (truthy aliases)", () => {
+    process.env.SIGIL_PI_REDACTION_ENABLED = "1";
+    process.env.SIGIL_PI_REDACT_INPUT_MESSAGES = "true";
+    process.env.SIGIL_PI_REDACT_EMAIL_ADDRESSES = "yes";
+
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      redaction: {
+        enabled: false,
+        redactInputMessages: false,
+        redactEmailAddresses: false,
+      },
+    });
+
+    expect(cfg?.redaction).toEqual({
+      enabled: true,
+      redactInputMessages: true,
+      redactEmailAddresses: true,
+    });
+  });
+
+  it("env vars override file values (falsy aliases)", () => {
+    process.env.SIGIL_PI_REDACTION_ENABLED = "0";
+    process.env.SIGIL_PI_REDACT_INPUT_MESSAGES = "false";
+    process.env.SIGIL_PI_REDACT_EMAIL_ADDRESSES = "off";
+
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      redaction: {
+        enabled: true,
+        redactInputMessages: true,
+        redactEmailAddresses: true,
+      },
+    });
+
+    expect(cfg?.redaction).toEqual({
+      enabled: false,
+      redactInputMessages: false,
+      redactEmailAddresses: false,
+    });
+  });
+
+  it("accepts 'on' as truthy alias", () => {
+    process.env.SIGIL_PI_REDACTION_ENABLED = "on";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      redaction: { enabled: false },
+    });
+    expect(cfg?.redaction.enabled).toBe(true);
+  });
+
+  it("accepts 'no' as falsy alias", () => {
+    process.env.SIGIL_PI_REDACT_INPUT_MESSAGES = "no";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.redaction.redactInputMessages).toBe(false);
+  });
+});
+
 describe("resolveEnvVars", () => {
   beforeEach(clearEnv);
   afterEach(clearEnv);
