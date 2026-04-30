@@ -52,6 +52,8 @@ public sealed class SigilClientConfig
     public GenerationExportConfig GenerationExport { get; set; } = new();
     public ApiConfig Api { get; set; } = new();
     public EmbeddingCaptureConfig EmbeddingCapture { get; set; } = new();
+    public ContentCaptureMode ContentCapture { get; set; } = ContentCaptureMode.Default;
+    public Func<IReadOnlyDictionary<string, object?>?, ContentCaptureMode>? ContentCaptureResolver { get; set; }
     public Action<string>? Logger { get; set; }
     public Func<DateTimeOffset>? UtcNow { get; set; }
     public Func<TimeSpan, CancellationToken, Task>? SleepAsync { get; set; }

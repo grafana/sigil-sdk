@@ -54,6 +54,42 @@ await client.startGeneration(
 await client.shutdown();
 ```
 
+## Pre-Ingest Redaction
+
+Use `generationSanitizer` when you want to redact substrings from normalized generations before
+validation, span sync, debug snapshots, and export.
+
+```ts
+import {
+  SigilClient,
+  createSecretRedactionSanitizer,
+} from "@grafana/sigil-sdk-js";
+
+const client = new SigilClient({
+  generationSanitizer: createSecretRedactionSanitizer({
+    redactInputMessages: false,
+    redactEmailAddresses: true,
+  }),
+});
+```
+
+The built-in sanitizer:
+
+- redacts high-confidence secret formats in assistant text and thinking
+- redacts secret formats plus env-style secret values in tool call inputs and tool results
+- redacts email addresses by default
+- leaves user input unchanged unless `redactInputMessages: true` is set
+
+To preserve email addresses, opt out explicitly:
+
+```ts
+const client = new SigilClient({
+  generationSanitizer: createSecretRedactionSanitizer({
+    redactEmailAddresses: false,
+  }),
+});
+```
+
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` directly to `SigilClient`.
 
 Quick OTEL setup pattern before creating the Sigil client:
@@ -167,12 +203,14 @@ Use module subpath exports for framework callback integrations:
 - LlamaIndex: `@grafana/sigil-sdk-js/llamaindex`
 - Google ADK: `@grafana/sigil-sdk-js/google-adk`
 - Vercel AI SDK: `@grafana/sigil-sdk-js/vercel-ai-sdk`
+- Strands Agents: `@grafana/sigil-sdk-js/strands`
 - LangChain guide: `docs/frameworks/langchain.md`
 - LangGraph guide: `docs/frameworks/langgraph.md`
 - OpenAI Agents guide: `docs/frameworks/openai-agents.md`
 - LlamaIndex guide: `docs/frameworks/llamaindex.md`
 - Google ADK guide: `docs/frameworks/google-adk.md`
 - Vercel AI SDK guide: `docs/frameworks/vercel-ai-sdk.md`
+- Strands Agents guide: `docs/frameworks/strands.md`
 
 ```ts
 import { SigilClient } from "@grafana/sigil-sdk-js";
@@ -182,6 +220,7 @@ import { withSigilOpenAIAgentsHooks } from "@grafana/sigil-sdk-js/openai-agents"
 import { withSigilLlamaIndexCallbacks } from "@grafana/sigil-sdk-js/llamaindex";
 import { withSigilGoogleAdkPlugins } from "@grafana/sigil-sdk-js/google-adk";
 import { createSigilVercelAiSdk } from "@grafana/sigil-sdk-js/vercel-ai-sdk";
+import { withSigilStrandsHooks } from "@grafana/sigil-sdk-js/strands";
 import { Runner } from "@openai/agents";
 import { CallbackManager } from "llamaindex";
 
@@ -194,13 +233,19 @@ const callbackManager = new CallbackManager();
 const llamaIndexConfig = withSigilLlamaIndexCallbacks({ callbackManager }, client, { providerResolver: "auto" });
 const googleAdkRunnerConfig = withSigilGoogleAdkPlugins(undefined, client, { providerResolver: "auto" });
 const vercelAiSdk = createSigilVercelAiSdk(client, { agentName: "vercel-agent" });
+const strandsConfig = withSigilStrandsHooks(undefined, client, { conversationId: "chat-123" });
 ```
+
+Framework handlers use the `SigilClient` instance you pass in. If that client is configured with
+`generationSanitizer`, the same redaction policy applies automatically to generations recorded
+through LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, and Vercel AI SDK integrations.
+The same redaction policy also applies to Strands Agents generations.
 
 Each framework handler injects:
 
-- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, or `vercel-ai-sdk`)
-- `sigil.framework.source` (`handler` for existing callback handlers, `framework` for Vercel AI SDK hooks)
-- `sigil.framework.language` (`javascript` for existing callback handlers, `typescript` for Vercel AI SDK hooks)
+- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `vercel-ai-sdk`, or `strands`)
+- `sigil.framework.source` (`handler` for existing callback handlers, `framework` for Vercel AI SDK hooks, `hooks` for Strands)
+- `sigil.framework.language` (`javascript` for existing callback handlers, `typescript` for Vercel AI SDK and Strands hooks)
 - `metadata["sigil.framework.run_id"]`
 - `metadata["sigil.framework.thread_id"]` (when present)
 - `metadata["sigil.framework.parent_run_id"]` (when available)

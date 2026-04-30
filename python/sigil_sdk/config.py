@@ -14,10 +14,11 @@ from opentelemetry.metrics import Meter
 from opentelemetry.trace import Tracer
 
 from .exporters.base import GenerationExporter
-from .models import ContentCaptureMode, utc_now
+from .models import ContentCaptureMode, Generation, utc_now
 
 TENANT_HEADER = "X-Scope-OrgID"
 AUTHORIZATION_HEADER = "Authorization"
+GenerationSanitizer = Callable[[Generation], Generation]
 
 
 @dataclass(slots=True)
@@ -90,6 +91,7 @@ class ClientConfig:
     hooks: HooksConfig = field(default_factory=HooksConfig)
     content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
     content_capture_resolver: Callable[[dict[str, Any]], ContentCaptureMode] | None = None
+    generation_sanitizer: GenerationSanitizer | None = None
     tracer: Tracer | None = None
     meter: Meter | None = None
     logger: logging.Logger | None = None

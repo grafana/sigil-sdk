@@ -7,6 +7,7 @@ from .config import (
     ClientConfig,
     EmbeddingCaptureConfig,
     GenerationExportConfig,
+    GenerationSanitizer,
     HooksConfig,
     default_config,
 )
@@ -81,6 +82,7 @@ from .models import (
     tool_result_part,
     user_text_message,
 )
+from .redaction import SecretRedactionOptions, create_secret_redaction_sanitizer
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation
 
 __all__ = [
@@ -102,6 +104,7 @@ __all__ = [
     "EnqueueError",
     "Generation",
     "GenerationExportConfig",
+    "GenerationSanitizer",
     "GenerationMode",
     "GenerationStart",
     "HookAction",
@@ -127,6 +130,7 @@ __all__ = [
     "RatingConflictError",
     "RatingTransportError",
     "SigilError",
+    "SecretRedactionOptions",
     "SubmitConversationRatingResponse",
     "TokenUsage",
     "ToolCall",
@@ -139,6 +143,7 @@ __all__ = [
     "agent_version_from_context",
     "assistant_text_message",
     "content_capture_mode_from_context",
+    "create_secret_redaction_sanitizer",
     "conversation_id_from_context",
     "conversation_title_from_context",
     "text_part",

@@ -14,6 +14,7 @@ public final class ToolExecutionStart {
     private String agentVersion = "";
     private String requestModel = "";
     private String requestProvider = "";
+    private ContentCaptureMode contentCapture = ContentCaptureMode.DEFAULT;
     private boolean includeContent;
     private Instant startedAt;
 
@@ -111,10 +112,23 @@ public final class ToolExecutionStart {
         return this;
     }
 
+    public ContentCaptureMode getContentCapture() {
+        return contentCapture;
+    }
+
+    public ToolExecutionStart setContentCapture(ContentCaptureMode contentCapture) {
+        this.contentCapture = contentCapture == null ? ContentCaptureMode.DEFAULT : contentCapture;
+        return this;
+    }
+
+    /** @deprecated Use {@link #setContentCapture(ContentCaptureMode)} instead. */
+    @Deprecated
     public boolean isIncludeContent() {
         return includeContent;
     }
 
+    /** @deprecated Use {@link #setContentCapture(ContentCaptureMode)} instead. */
+    @Deprecated
     public ToolExecutionStart setIncludeContent(boolean includeContent) {
         this.includeContent = includeContent;
         return this;
@@ -141,6 +155,7 @@ public final class ToolExecutionStart {
                 .setAgentVersion(agentVersion)
                 .setRequestModel(requestModel)
                 .setRequestProvider(requestProvider)
+                .setContentCapture(contentCapture)
                 .setIncludeContent(includeContent)
                 .setStartedAt(startedAt);
     }

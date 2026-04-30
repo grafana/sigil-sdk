@@ -1,0 +1,60 @@
+{
+  "name": "@grafana/sigil-pi",
+  "version": "0.3.1",
+  "description": "Pi agent extension for Grafana Sigil AI telemetry",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/grafana/sigil-sdk.git",
+    "directory": "plugins/pi"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "prebuild": "bash scripts/ensure-sdk.sh",
+    "build": "tsc --noEmit && esbuild src/index.ts --bundle --format=esm --platform=node --target=es2022 --outfile=dist/index.js --external:@mariozechner/pi-coding-agent --external:@mariozechner/pi-ai --external:@sinclair/typebox --external:@grpc/grpc-js --external:@grpc/proto-loader",
+    "lint": "biome check .",
+    "lint:fix": "biome check --fix .",
+    "pretypecheck": "bash scripts/ensure-sdk.sh",
+    "typecheck": "tsc --noEmit",
+    "pretest": "bash scripts/ensure-sdk.sh",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.1",
+    "@grpc/proto-loader": "^0.8.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@grafana/sigil-sdk-js": "workspace:*",
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.214.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
+    "@opentelemetry/sdk-metrics": "^2.1.0",
+    "@opentelemetry/sdk-trace-base": "^2.5.0",
+    "@types/node": "^25.6.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4"
+  }
+}

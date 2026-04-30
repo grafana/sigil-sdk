@@ -175,6 +175,20 @@ const (
 	metricTokenTypeReasoning     = "reasoning"
 )
 
+// durationBucketsSeconds is the OTel GenAI semantic-convention bucket advice
+// applied to gen_ai.client.operation.duration and gen_ai.client.time_to_first_token.
+var durationBucketsSeconds = []float64{
+	0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
+	2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+}
+
+// tokenUsageBuckets is the OTel GenAI semantic-convention bucket advice
+// applied to gen_ai.client.token.usage (powers of 4 from 1 to ~67M tokens).
+var tokenUsageBuckets = []float64{
+	1, 4, 16, 64, 256, 1024, 4096, 16384,
+	65536, 262144, 1048576, 4194304, 16777216, 67108864,
+}
+
 var statusCodePattern = regexp.MustCompile(`\b([1-5][0-9][0-9])\b`)
 
 // Keep unexported aliases for backward-compatible fmt.Errorf wrapping.
@@ -1537,15 +1551,27 @@ func reflectIntField(err error, field string) int {
 func newTelemetryInstruments(meter metric.Meter) (telemetryInstruments, error) {
 	out := telemetryInstruments{}
 	var err error
-	out.operationDuration, err = meter.Float64Histogram(metricOperationDuration, metric.WithUnit("s"))
+	out.operationDuration, err = meter.Float64Histogram(
+		metricOperationDuration,
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(durationBucketsSeconds...),
+	)
 	if err != nil {
 		return telemetryInstruments{}, err
 	}
-	out.tokenUsage, err = meter.Int64Histogram(metricTokenUsage, metric.WithUnit("token"))
+	out.tokenUsage, err = meter.Int64Histogram(
+		metricTokenUsage,
+		metric.WithUnit("token"),
+		metric.WithExplicitBucketBoundaries(tokenUsageBuckets...),
+	)
 	if err != nil {
 		return telemetryInstruments{}, err
 	}
-	out.timeToFirstToken, err = meter.Float64Histogram(metricTimeToFirstToken, metric.WithUnit("s"))
+	out.timeToFirstToken, err = meter.Float64Histogram(
+		metricTimeToFirstToken,
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(durationBucketsSeconds...),
+	)
 	if err != nil {
 		return telemetryInstruments{}, err
 	}

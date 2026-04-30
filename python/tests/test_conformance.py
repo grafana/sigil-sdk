@@ -250,7 +250,11 @@ def test_conformance_sync_roundtrip_semantics() -> None:
                             Part(kind=PartKind.THINKING, thinking="reasoning"),
                             Part(
                                 kind=PartKind.TOOL_CALL,
-                                tool_call=ToolCall(id="call-1", name="weather", input_json=b'{"city":"Paris"}'),
+                                tool_call=ToolCall(
+                                    id="call-1",
+                                    name="weather",
+                                    input_json=b'{"city":"Paris"}',
+                                ),
                             ),
                         ],
                     ),
@@ -346,7 +350,7 @@ def test_conformance_conversation_title_semantics() -> None:
                 start = GenerationStart(
                     model=ModelRef(provider="openai", name="gpt-5"),
                     conversation_title=start_title,
-                    metadata={_metadata_conversation_title: metadata_title} if metadata_title else {},
+                    metadata=({_metadata_conversation_title: metadata_title} if metadata_title else {}),
                 )
                 recorder = env.client.start_generation(start)
                 recorder.set_result(Generation())
@@ -377,7 +381,14 @@ def test_conformance_user_id_semantics() -> None:
         ("whitespace trimmed", "  padded  ", "", "", "", "padded"),
     ]
 
-    for _, start_user_id, context_user_id, canonical_user_id, legacy_user_id, want_user_id in cases:
+    for (
+        _,
+        start_user_id,
+        context_user_id,
+        canonical_user_id,
+        legacy_user_id,
+        want_user_id,
+    ) in cases:
         env = _ConformanceEnv()
         try:
             metadata = {}
@@ -409,8 +420,28 @@ def test_conformance_user_id_semantics() -> None:
 
 def test_conformance_agent_identity_semantics() -> None:
     cases = [
-        ("explicit fields", "agent-explicit", "v1.2.3", "", "", "", "", "agent-explicit", "v1.2.3"),
-        ("context fallback", "", "", "agent-context", "v-context", "", "", "agent-context", "v-context"),
+        (
+            "explicit fields",
+            "agent-explicit",
+            "v1.2.3",
+            "",
+            "",
+            "",
+            "",
+            "agent-explicit",
+            "v1.2.3",
+        ),
+        (
+            "context fallback",
+            "",
+            "",
+            "agent-context",
+            "v-context",
+            "",
+            "",
+            "agent-context",
+            "v-context",
+        ),
         (
             "result-time override",
             "agent-seed",
@@ -504,6 +535,54 @@ def test_conformance_streaming_telemetry_semantics() -> None:
         assert span.name == "streamText gpt-5"
         assert "gen_ai.client.operation.duration" in metrics
         assert "gen_ai.client.time_to_first_token" in metrics
+
+        expected_buckets = (
+            0.01,
+            0.02,
+            0.04,
+            0.08,
+            0.16,
+            0.32,
+            0.64,
+            1.28,
+            2.56,
+            5.12,
+            10.24,
+            20.48,
+            40.96,
+            81.92,
+        )
+        for metric_name in (
+            "gen_ai.client.operation.duration",
+            "gen_ai.client.time_to_first_token",
+        ):
+            data_points = list(metrics[metric_name].data_points)
+            assert data_points, f"expected {metric_name} data points"
+            assert tuple(data_points[0].explicit_bounds) == expected_buckets, (
+                f"{metric_name} bucket boundaries mismatch: {tuple(data_points[0].explicit_bounds)}"
+            )
+
+        expected_token_usage_buckets = (
+            1,
+            4,
+            16,
+            64,
+            256,
+            1024,
+            4096,
+            16384,
+            65536,
+            262144,
+            1048576,
+            4194304,
+            16777216,
+            67108864,
+        )
+        token_usage_points = list(metrics["gen_ai.client.token.usage"].data_points)
+        assert token_usage_points, "expected gen_ai.client.token.usage data points"
+        assert tuple(token_usage_points[0].explicit_bounds) == expected_token_usage_buckets, (
+            f"gen_ai.client.token.usage bucket boundaries mismatch: {tuple(token_usage_points[0].explicit_bounds)}"
+        )
     finally:
         env.shutdown()
 
@@ -604,7 +683,12 @@ def test_conformance_validation_and_error_semantics() -> None:
                 input=[
                     Message(
                         role=MessageRole.USER,
-                        parts=[Part(kind=PartKind.TOOL_CALL, tool_call=ToolCall(name="weather"))],
+                        parts=[
+                            Part(
+                                kind=PartKind.TOOL_CALL,
+                                tool_call=ToolCall(name="weather"),
+                            )
+                        ],
                     )
                 ]
             )

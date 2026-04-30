@@ -1,0 +1,30 @@
+[project]
+name = "sigil-sdk-strands"
+version = "0.1.5"
+description = "Strands Agents hooks for Sigil Python SDK"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+  "sigil-sdk>=0.1.5",
+  "strands-agents>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0.3",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sigil_sdk_strands*"]
+
+[tool.setuptools.package-data]
+sigil_sdk_strands = ["py.typed"]

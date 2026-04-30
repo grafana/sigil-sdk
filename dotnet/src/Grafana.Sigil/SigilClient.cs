@@ -73,6 +73,18 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal const string MetricTokenTypeCacheCreation = "cache_creation";
     internal const string MetricTokenTypeReasoning = "reasoning";
 
+    internal static readonly double[] DurationBucketsSeconds =
+    {
+        0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28,
+        2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+    };
+
+    internal static readonly double[] TokenUsageBuckets =
+    {
+        1, 4, 16, 64, 256, 1024, 4096, 16384,
+        65536, 262144, 1048576, 4194304, 16777216, 67108864,
+    };
+
 #if NET
     [GeneratedRegex(@"\b([1-5][0-9][0-9])\b", RegexOptions.Compiled)]
     private static partial Regex StatusCodeRegex();
@@ -83,6 +95,7 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal const string SdkName = "sdk-dotnet";
     internal const string MetadataUserIdKey = "sigil.user.id";
     internal const string MetadataLegacyUserIdKey = "user.id";
+    internal const string MetadataKeyContentCaptureMode = "sigil.sdk.content_capture_mode";
 
     internal readonly SigilClientConfig _config;
     private readonly IGenerationExporter _generationExporter;
@@ -149,9 +162,18 @@ public sealed partial class SigilClient : IAsyncDisposable
 
         _activitySource = new ActivitySource(InstrumentationName);
         _meter = new Meter(InstrumentationName);
-        _operationDurationHistogram = _meter.CreateHistogram<double>(MetricOperationDuration, "s");
-        _tokenUsageHistogram = _meter.CreateHistogram<double>(MetricTokenUsage, "token");
-        _ttftHistogram = _meter.CreateHistogram<double>(MetricTimeToFirstToken, "s");
+        _operationDurationHistogram = _meter.CreateHistogram<double>(
+            MetricOperationDuration,
+            unit: "s",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBucketsSeconds });
+        _tokenUsageHistogram = _meter.CreateHistogram<double>(
+            MetricTokenUsage,
+            unit: "token",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = TokenUsageBuckets });
+        _ttftHistogram = _meter.CreateHistogram<double>(
+            MetricTimeToFirstToken,
+            unit: "s",
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBucketsSeconds });
         _toolCallsHistogram = _meter.CreateHistogram<double>(MetricToolCallsPerOperation, "count");
 
         _timerTask = Task.Run(RunFlushTimerAsync);
@@ -239,6 +261,32 @@ public sealed partial class SigilClient : IAsyncDisposable
             ? InternalUtils.Utc(seed.StartedAt.Value)
             : _config.UtcNow!();
 
+        // Resolve content capture before the span starts so MetadataOnly never
+        // attaches sensitive content to live span attributes.
+        var ctxMode = SigilContext.ContentCaptureModeFromContext();
+        var ctxSet = SigilContext.HasContentCaptureModeInContext();
+        var effectiveClientDefault = _config.ContentCapture;
+        if (seed.ContentCapture == ContentCaptureMode.Default && !ctxSet)
+        {
+            var resolverMode = CallContentCaptureResolver(_config.ContentCaptureResolver, null, _log);
+            effectiveClientDefault = ResolveContentCaptureMode(resolverMode, _config.ContentCapture);
+        }
+        var toolMode = ResolveToolContentCaptureMode(seed.ContentCapture, ctxMode, ctxSet, effectiveClientDefault);
+#pragma warning disable CS0618 // IncludeContent is obsolete
+        var includeContent = toolMode switch
+        {
+            ContentCaptureMode.MetadataOnly => false,
+            ContentCaptureMode.Full => true,
+            _ => seed.IncludeContent,
+        };
+#pragma warning restore CS0618
+
+        if (toolMode == ContentCaptureMode.MetadataOnly)
+        {
+            seed.ToolDescription = string.Empty;
+            seed.ConversationTitle = string.Empty;
+        }
+
         var activity = _activitySource.StartActivity(
             ToolSpanName(seed.ToolName),
             ActivityKind.Internal,
@@ -253,7 +301,7 @@ public sealed partial class SigilClient : IAsyncDisposable
             ApplyToolSpanAttributes(activity, seed);
         }
 
-        return new ToolExecutionRecorder(this, seed, seed.StartedAt!.Value, seed.IncludeContent, activity);
+        return new ToolExecutionRecorder(this, seed, seed.StartedAt!.Value, includeContent, toolMode == ContentCaptureMode.MetadataOnly, activity);
     }
 
     public async Task<SubmitConversationRatingResponse> SubmitConversationRatingAsync(
@@ -275,7 +323,18 @@ public sealed partial class SigilClient : IAsyncDisposable
             throw new ValidationException("sigil conversation rating validation failed: conversationId is too long");
         }
 
+        var resolverMode = CallContentCaptureResolver(_config.ContentCaptureResolver, request?.Metadata, _log);
+        var effectiveMode = ResolveContentCaptureMode(resolverMode, ResolveClientContentCaptureMode(_config.ContentCapture));
+
         var normalizedRequest = NormalizeConversationRatingRequest(request);
+
+        // Strip comment when MetadataOnly. Done after clone to avoid mutating
+        // the caller's request object (reference type, unlike Go's value type).
+        if (effectiveMode == ContentCaptureMode.MetadataOnly)
+        {
+            normalizedRequest.Comment = string.Empty;
+        }
+
         var endpoint = BuildConversationRatingEndpoint(
             _config.Api.Endpoint,
             _config.GenerationExport.Insecure,
@@ -418,6 +477,10 @@ public sealed partial class SigilClient : IAsyncDisposable
     {
         EnsureNotShutdown();
 
+        // Capture original metadata before DeepClone, which converts values to
+        // JsonElement via JSON round-trip. The resolver should see the caller's
+        // original types (string, bool, long, etc.).
+        var originalMetadata = start.Metadata;
         var seed = InternalUtils.DeepClone(start);
 
         seed.Mode ??= defaultMode;
@@ -456,6 +519,38 @@ public sealed partial class SigilClient : IAsyncDisposable
             ? InternalUtils.Utc(seed.StartedAt.Value)
             : _config.UtcNow!();
 
+        // Resolve content capture mode before the span starts so MetadataOnly never
+        // attaches sensitive content to live span attributes.
+        var ccMode = seed.ContentCapture;
+        if (ccMode == ContentCaptureMode.Default)
+        {
+            var resolverMode = CallContentCaptureResolver(_config.ContentCaptureResolver, originalMetadata, _log);
+            ccMode = ResolveClientContentCaptureMode(ResolveContentCaptureMode(resolverMode, _config.ContentCapture));
+        }
+        else
+        {
+            ccMode = NormalizeContentCaptureMode(ccMode);
+        }
+
+        var spanGeneration = new Generation
+        {
+            Id = seed.Id,
+            ConversationId = seed.ConversationId,
+            ConversationTitle = ccMode == ContentCaptureMode.MetadataOnly ? string.Empty : seed.ConversationTitle,
+            UserId = seed.UserId,
+            AgentName = seed.AgentName,
+            AgentVersion = seed.AgentVersion,
+            Mode = seed.Mode,
+            OperationName = seed.OperationName,
+            Model = InternalUtils.DeepClone(seed.Model),
+            MaxTokens = seed.MaxTokens,
+            Temperature = seed.Temperature,
+            TopP = seed.TopP,
+            ToolChoice = seed.ToolChoice,
+            ThinkingEnabled = seed.ThinkingEnabled,
+            ParentGenerationIds = [.. seed.ParentGenerationIds],
+        };
+
         var activity = _activitySource.StartActivity(
             GenerationSpanName(seed.OperationName, seed.Model.Name),
             ActivityKind.Client,
@@ -467,27 +562,12 @@ public sealed partial class SigilClient : IAsyncDisposable
 
         if (activity != null)
         {
-            ApplyGenerationSpanAttributes(activity, new Generation
-            {
-                Id = seed.Id,
-                ConversationId = seed.ConversationId,
-                ConversationTitle = seed.ConversationTitle,
-                UserId = seed.UserId,
-                AgentName = seed.AgentName,
-                AgentVersion = seed.AgentVersion,
-                Mode = seed.Mode,
-                OperationName = seed.OperationName,
-                Model = InternalUtils.DeepClone(seed.Model),
-                MaxTokens = seed.MaxTokens,
-                Temperature = seed.Temperature,
-                TopP = seed.TopP,
-                ToolChoice = seed.ToolChoice,
-                ThinkingEnabled = seed.ThinkingEnabled,
-                ParentGenerationIds = [.. seed.ParentGenerationIds],
-            });
+            ApplyGenerationSpanAttributes(activity, spanGeneration);
         }
 
-        return new GenerationRecorder(this, seed, seed.StartedAt!.Value, activity);
+        var recorder = new GenerationRecorder(this, seed, seed.StartedAt!.Value, ccMode, activity);
+        recorder.SetContextScope(SigilContext.PushContentCaptureMode(ccMode));
+        return recorder;
     }
 
     internal void PersistGeneration(Generation generation)
@@ -665,7 +745,7 @@ public sealed partial class SigilClient : IAsyncDisposable
         }
     }
 
-    private static SubmitConversationRatingRequest NormalizeConversationRatingRequest(SubmitConversationRatingRequest request)
+    private static SubmitConversationRatingRequest NormalizeConversationRatingRequest(SubmitConversationRatingRequest? request)
     {
         var input = request ?? new SubmitConversationRatingRequest();
         var normalized = new SubmitConversationRatingRequest
@@ -1791,7 +1871,7 @@ public sealed partial class SigilClient : IAsyncDisposable
 #endif
     }
 
-    internal static void RecordException(Activity activity, Exception error)
+    internal static void RecordException(Activity activity, Exception error, bool redact = false)
     {
         if (activity == null || error == null)
         {
@@ -1799,6 +1879,10 @@ public sealed partial class SigilClient : IAsyncDisposable
         }
 
         activity.SetTag("exception.type", error.GetType().FullName);
+        if (redact)
+        {
+            return;
+        }
         activity.SetTag("exception.message", error.Message);
         activity.SetTag("exception.stacktrace", error.ToString());
     }
@@ -1811,17 +1895,176 @@ public sealed partial class SigilClient : IAsyncDisposable
         return content.ReadAsStringAsync(cancellationToken);
 #endif
     }
+
+    internal static ContentCaptureMode ResolveClientContentCaptureMode(ContentCaptureMode mode)
+    {
+        var normalized = NormalizeContentCaptureMode(mode);
+        return normalized == ContentCaptureMode.Default ? ContentCaptureMode.NoToolContent : normalized;
+    }
+
+    internal static ContentCaptureMode ResolveContentCaptureMode(ContentCaptureMode @override, ContentCaptureMode fallback)
+    {
+        var normalizedOverride = NormalizeContentCaptureMode(@override);
+        return normalizedOverride != ContentCaptureMode.Default ? normalizedOverride : NormalizeContentCaptureMode(fallback);
+    }
+
+    internal static ContentCaptureMode CallContentCaptureResolver(
+        Func<IReadOnlyDictionary<string, object?>?, ContentCaptureMode>? resolver,
+        IDictionary<string, object?>? metadata,
+        Action<string>? logger = null)
+    {
+        if (resolver == null)
+        {
+            return ContentCaptureMode.Default;
+        }
+
+        ContentCaptureMode mode;
+        try
+        {
+            mode = resolver(ToResolverMetadata(metadata));
+        }
+        catch (Exception ex)
+        {
+            logger?.Invoke($"sigil: content capture resolver threw, falling back to MetadataOnly: {ex.Message}");
+            return ContentCaptureMode.MetadataOnly;
+        }
+
+        if (!Enum.IsDefined(typeof(ContentCaptureMode), mode))
+        {
+            logger?.Invoke($"sigil: content capture resolver returned undefined mode {(int)mode}, falling back to MetadataOnly");
+            return ContentCaptureMode.MetadataOnly;
+        }
+
+        return mode;
+    }
+
+    private static ContentCaptureMode NormalizeContentCaptureMode(ContentCaptureMode mode)
+    {
+        return Enum.IsDefined(typeof(ContentCaptureMode), mode) ? mode : ContentCaptureMode.MetadataOnly;
+    }
+
+    private static IReadOnlyDictionary<string, object?>? ToResolverMetadata(IDictionary<string, object?>? metadata)
+    {
+        return metadata == null
+            ? null
+            : new System.Collections.ObjectModel.ReadOnlyDictionary<string, object?>(
+                new Dictionary<string, object?>(metadata, StringComparer.Ordinal));
+    }
+
+    internal static ContentCaptureMode ResolveToolContentCaptureMode(
+        ContentCaptureMode toolMode,
+        ContentCaptureMode ctxMode,
+        bool ctxSet,
+        ContentCaptureMode clientDefault)
+    {
+        var resolved = ResolveClientContentCaptureMode(clientDefault);
+        if (ctxSet)
+        {
+            resolved = NormalizeContentCaptureMode(ctxMode);
+        }
+        if (toolMode != ContentCaptureMode.Default)
+        {
+            resolved = NormalizeContentCaptureMode(toolMode);
+        }
+
+        return resolved;
+    }
+
+    internal static bool ShouldIncludeToolContent(
+        ContentCaptureMode toolMode,
+        ContentCaptureMode ctxMode,
+        bool ctxSet,
+        ContentCaptureMode clientDefault,
+        bool legacyInclude)
+    {
+        return ResolveToolContentCaptureMode(toolMode, ctxMode, ctxSet, clientDefault) switch
+        {
+            ContentCaptureMode.MetadataOnly => false,
+            ContentCaptureMode.Full => true,
+            _ => legacyInclude,
+        };
+    }
+
+    internal static bool IsContentStripped(Generation generation)
+    {
+        if (generation.Metadata == null || !generation.Metadata.TryGetValue(MetadataKeyContentCaptureMode, out var value))
+        {
+            return false;
+        }
+
+        // After DeepClone (JSON round-trip), string values become JsonElement.
+        if (value is string s)
+        {
+            return s == "metadata_only";
+        }
+
+        if (value is JsonElement je && je.ValueKind == JsonValueKind.String)
+        {
+            return je.GetString() == "metadata_only";
+        }
+
+        return false;
+    }
+
+    internal static void StripContent(Generation generation, string errorCategory)
+    {
+        generation.SystemPrompt = string.Empty;
+        generation.Artifacts = [];
+
+        if (!string.IsNullOrEmpty(generation.CallError))
+        {
+            generation.CallError = !string.IsNullOrEmpty(errorCategory) ? errorCategory : "sdk_error";
+        }
+        generation.Metadata.Remove("call_error");
+
+        generation.ConversationTitle = string.Empty;
+        generation.Metadata.Remove(SpanAttrConversationTitle);
+
+        foreach (var message in generation.Input)
+        {
+            StripMessageContent(message);
+        }
+        foreach (var message in generation.Output)
+        {
+            StripMessageContent(message);
+        }
+        foreach (var tool in generation.Tools)
+        {
+            tool.Description = string.Empty;
+            tool.InputSchemaJson = [];
+        }
+    }
+
+    private static void StripMessageContent(Message message)
+    {
+        foreach (var part in message.Parts)
+        {
+            part.Text = string.Empty;
+            part.Thinking = string.Empty;
+            if (part.ToolCall != null)
+            {
+                part.ToolCall.InputJson = [];
+            }
+            if (part.ToolResult != null)
+            {
+                part.ToolResult.Content = string.Empty;
+                part.ToolResult.ContentJson = [];
+            }
+        }
+    }
 }
 
 public sealed class GenerationRecorder
 {
-    internal static readonly GenerationRecorder Noop = new(null, new GenerationStart(), DateTimeOffset.UtcNow, null, true);
+    internal static readonly GenerationRecorder Noop = new(null, new GenerationStart(), DateTimeOffset.UtcNow, ContentCaptureMode.Default, null, true);
 
     private readonly SigilClient? _client;
     private readonly GenerationStart _seed;
     private readonly DateTimeOffset _startedAt;
+    private readonly ContentCaptureMode _contentCaptureMode;
     private readonly Activity? _activity;
     private readonly bool _noop;
+    private IDisposable? _contextScope;
 
 #if NET10_0_OR_GREATER
     private readonly Lock _gate = new();
@@ -1843,6 +2086,7 @@ public sealed class GenerationRecorder
         SigilClient? client,
         GenerationStart seed,
         DateTimeOffset startedAt,
+        ContentCaptureMode contentCaptureMode,
         Activity? activity,
         bool noop = false
     )
@@ -1850,8 +2094,14 @@ public sealed class GenerationRecorder
         _client = client;
         _seed = seed;
         _startedAt = startedAt;
+        _contentCaptureMode = contentCaptureMode;
         _activity = activity;
         _noop = noop;
+    }
+
+    internal void SetContextScope(IDisposable scope)
+    {
+        _contextScope = scope;
     }
 
     public void SetCallError(Exception error)
@@ -1920,8 +2170,31 @@ public sealed class GenerationRecorder
             firstTokenAt = _firstTokenAt;
         }
 
-        var completedAt = _client!._config.UtcNow!();
-        var generation = NormalizeGeneration(result, completedAt, callError);
+        Generation generation;
+        try
+        {
+            var completedAt = _client!._config.UtcNow!();
+            generation = NormalizeGeneration(result, completedAt, callError);
+
+            var modeValue = _contentCaptureMode.ToMetadataValue();
+            if (modeValue.Length > 0)
+            {
+                generation.Metadata[SigilClient.MetadataKeyContentCaptureMode] = modeValue;
+            }
+
+            if (_contentCaptureMode == ContentCaptureMode.MetadataOnly)
+            {
+                var stripErrorCategory = SigilClient.ErrorCategoryFromException(callError, false);
+                SigilClient.StripContent(generation, stripErrorCategory);
+            }
+        }
+        finally
+        {
+            _contextScope?.Dispose();
+            _contextScope = null;
+        }
+
+        var redactErrors = _contentCaptureMode == ContentCaptureMode.MetadataOnly;
 
         if (_activity != null)
         {
@@ -1933,12 +2206,12 @@ public sealed class GenerationRecorder
 
             if (callError != null)
             {
-                SigilClient.RecordException(_activity, callError);
+                SigilClient.RecordException(_activity, callError, redactErrors);
             }
 
             if (mappingError != null)
             {
-                SigilClient.RecordException(_activity, mappingError);
+                SigilClient.RecordException(_activity, mappingError, redactErrors);
             }
         }
 
@@ -1982,14 +2255,17 @@ public sealed class GenerationRecorder
         {
             if (localError != null)
             {
-                SigilClient.RecordException(_activity, localError);
+                SigilClient.RecordException(_activity, localError, redactErrors);
             }
 
             if (errorType.Length > 0)
             {
                 _activity.SetTag(SigilClient.SpanAttrErrorType, errorType);
                 _activity.SetTag(SigilClient.SpanAttrErrorCategory, errorCategory);
-                _activity.SetStatus(ActivityStatusCode.Error, (callError ?? mappingError ?? localError)?.Message);
+                var statusDescription = redactErrors
+                    ? errorCategory
+                    : (callError ?? mappingError ?? localError)?.Message;
+                _activity.SetStatus(ActivityStatusCode.Error, statusDescription);
             }
             else
             {
@@ -2281,12 +2557,13 @@ public sealed class EmbeddingRecorder
 
 public sealed class ToolExecutionRecorder
 {
-    internal static readonly ToolExecutionRecorder Noop = new(null, new ToolExecutionStart(), DateTimeOffset.UtcNow, false, null, true);
+    internal static readonly ToolExecutionRecorder Noop = new(null, new ToolExecutionStart(), DateTimeOffset.UtcNow, false, false, null, true);
 
     private readonly SigilClient? _client;
     private readonly ToolExecutionStart _seed;
     private readonly DateTimeOffset _startedAt;
     private readonly bool _includeContent;
+    private readonly bool _redactErrors;
     private readonly Activity? _activity;
     private readonly bool _noop;
 
@@ -2307,6 +2584,7 @@ public sealed class ToolExecutionRecorder
         ToolExecutionStart seed,
         DateTimeOffset startedAt,
         bool includeContent,
+        bool redactErrors,
         Activity? activity,
         bool noop = false
     )
@@ -2315,6 +2593,7 @@ public sealed class ToolExecutionRecorder
         _seed = seed;
         _startedAt = startedAt;
         _includeContent = includeContent;
+        _redactErrors = redactErrors;
         _activity = activity;
         _noop = noop;
     }
@@ -2401,10 +2680,11 @@ public sealed class ToolExecutionRecorder
 
             if (finalError != null)
             {
-                SigilClient.RecordException(_activity, finalError);
+                SigilClient.RecordException(_activity, finalError, _redactErrors);
+                var errorCategory = SigilClient.ErrorCategoryFromException(finalError, true);
                 _activity.SetTag(SigilClient.SpanAttrErrorType, "tool_execution_error");
-                _activity.SetTag(SigilClient.SpanAttrErrorCategory, SigilClient.ErrorCategoryFromException(finalError, true));
-                _activity.SetStatus(ActivityStatusCode.Error, finalError.Message);
+                _activity.SetTag(SigilClient.SpanAttrErrorCategory, errorCategory);
+                _activity.SetStatus(ActivityStatusCode.Error, _redactErrors ? errorCategory : finalError.Message);
             }
             else
             {

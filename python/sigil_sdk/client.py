@@ -130,6 +130,40 @@ _metric_token_type_cache_write = "cache_write"
 _metric_token_type_cache_creation = "cache_creation"
 _metric_token_type_reasoning = "reasoning"
 
+_DURATION_BUCKETS_SECONDS: tuple[float, ...] = (
+    0.01,
+    0.02,
+    0.04,
+    0.08,
+    0.16,
+    0.32,
+    0.64,
+    1.28,
+    2.56,
+    5.12,
+    10.24,
+    20.48,
+    40.96,
+    81.92,
+)
+
+_TOKEN_USAGE_BUCKETS: tuple[float, ...] = (
+    1,
+    4,
+    16,
+    64,
+    256,
+    1024,
+    4096,
+    16384,
+    65536,
+    262144,
+    1048576,
+    4194304,
+    16777216,
+    67108864,
+)
+
 _status_code_pattern = re.compile(r"\b([1-5][0-9][0-9])\b")
 _instrumentation_name = "github.com/grafana/sigil/sdks/python"
 _sdk_name = "sdk-python"
@@ -277,10 +311,20 @@ class Client:
         self._meter = self._config.meter if self._config.meter is not None else metrics.get_meter(_instrumentation_name)
 
         self._operation_duration_histogram: Histogram = self._meter.create_histogram(
-            _metric_operation_duration, unit="s"
+            _metric_operation_duration,
+            unit="s",
+            explicit_bucket_boundaries_advisory=_DURATION_BUCKETS_SECONDS,
         )
-        self._token_usage_histogram: Histogram = self._meter.create_histogram(_metric_token_usage, unit="token")
-        self._ttft_histogram: Histogram = self._meter.create_histogram(_metric_ttft, unit="s")
+        self._token_usage_histogram: Histogram = self._meter.create_histogram(
+            _metric_token_usage,
+            unit="token",
+            explicit_bucket_boundaries_advisory=_TOKEN_USAGE_BUCKETS,
+        )
+        self._ttft_histogram: Histogram = self._meter.create_histogram(
+            _metric_ttft,
+            unit="s",
+            explicit_bucket_boundaries_advisory=_DURATION_BUCKETS_SECONDS,
+        )
         self._tool_calls_histogram: Histogram = self._meter.create_histogram(
             _metric_tool_calls_per_operation, unit="count"
         )
@@ -649,6 +693,18 @@ class Client:
         except Exception as exc:  # noqa: BLE001
             self._log_warn("sigil generation export failed", exc)
 
+    def _has_generation_sanitizer(self) -> bool:
+        return self._config.generation_sanitizer is not None
+
+    def _sanitize_generation(self, generation: Generation) -> Generation:
+        sanitizer = self._config.generation_sanitizer
+        if sanitizer is None:
+            return generation
+        sanitized = sanitizer(copy.deepcopy(generation))
+        if sanitized is None:
+            raise ValueError("generation sanitizer must return a generation")
+        return copy.deepcopy(sanitized)
+
     def _flush_internal(self) -> None:
         with self._flush_lock:
             while True:
@@ -911,17 +967,38 @@ class GenerationRecorder:
             generation = self._normalize_generation(result, completed_at, call_error)
             _apply_trace_context_from_span(self.span, generation)
 
+            effective_content_capture_mode = self._content_capture_mode
             _stamp_content_capture_metadata(generation, self._content_capture_mode)
+            validation_target = copy.deepcopy(generation)
             if self._content_capture_mode == ContentCaptureMode.METADATA_ONLY:
                 error_cat = _error_category_from_exception(call_error, fallback_sdk=True) if call_error else ""
                 _strip_content(generation, error_cat)
+            elif self.client._has_generation_sanitizer():
+                try:
+                    generation = self.client._sanitize_generation(generation)
+                    validation_target = copy.deepcopy(generation)
+                except Exception:  # noqa: BLE001
+                    effective_content_capture_mode = ContentCaptureMode.METADATA_ONLY
+                    error_cat = _error_category_from_exception(call_error, fallback_sdk=True) if call_error else ""
+                    _strip_content(generation, error_cat)
+                    _stamp_content_capture_metadata(generation, effective_content_capture_mode)
+                    if self.client._config.logger is not None:
+                        self.client._config.logger.warning(
+                            "sigil: generation sanitization failed, falling back to metadata_only",
+                            exc_info=True,
+                        )
 
             self.span.update_name(_generation_span_name(generation.operation_name, generation.model.name))
             _set_generation_span_attributes(self.span, generation)
+            if (
+                effective_content_capture_mode == ContentCaptureMode.METADATA_ONLY
+                and self._content_capture_mode != ContentCaptureMode.METADATA_ONLY
+            ):
+                self.span.set_attribute(_span_attr_conversation_title, "")
 
             local_error: Exception | None = None
             try:
-                validate_generation(generation)
+                validate_generation(validation_target)
             except Exception as exc:  # noqa: BLE001
                 local_error = ValidationError(f"sigil: generation validation failed: {exc}")
 
@@ -935,7 +1012,7 @@ class GenerationRecorder:
                 except Exception as exc:  # noqa: BLE001
                     local_error = EnqueueError(f"sigil: generation enqueue failed: {exc}")
 
-            is_metadata_only = self._content_capture_mode == ContentCaptureMode.METADATA_ONLY
+            is_metadata_only = effective_content_capture_mode == ContentCaptureMode.METADATA_ONLY
 
             if not is_metadata_only:
                 if call_error is not None:

@@ -1,4 +1,4 @@
-# opencode-sigil
+# @grafana/sigil-opencode
 
 OpenCode plugin that records LLM generations to Grafana Sigil for AI observability.
 
@@ -34,8 +34,8 @@ Hooks into OpenCode's chat lifecycle to capture assistant messages and send them
 ```bash
 # From the repo root
 pnpm install
-pnpm --filter opencode-sigil build
-pnpm --filter opencode-sigil test
+pnpm --filter @grafana/sigil-opencode build
+pnpm --filter @grafana/sigil-opencode test
 ```
 
 The `@grafana/sigil-sdk-js` dependency resolves via pnpm workspace linking to `sdks/js`.

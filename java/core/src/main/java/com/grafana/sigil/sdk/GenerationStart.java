@@ -27,6 +27,7 @@ public final class GenerationStart {
     private final List<ToolDefinition> tools = new ArrayList<>();
     private final Map<String, String> tags = new LinkedHashMap<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
+    private ContentCaptureMode contentCapture = ContentCaptureMode.DEFAULT;
     private Instant startedAt;
 
     public String getId() {
@@ -212,6 +213,15 @@ public final class GenerationStart {
         return this;
     }
 
+    public ContentCaptureMode getContentCapture() {
+        return contentCapture;
+    }
+
+    public GenerationStart setContentCapture(ContentCaptureMode contentCapture) {
+        this.contentCapture = contentCapture == null ? ContentCaptureMode.DEFAULT : contentCapture;
+        return this;
+    }
+
     public Instant getStartedAt() {
         return startedAt;
     }
@@ -239,6 +249,7 @@ public final class GenerationStart {
                 .setToolChoice(toolChoice)
                 .setThinkingEnabled(thinkingEnabled)
                 .setParentGenerationIds(parentGenerationIds)
+                .setContentCapture(contentCapture)
                 .setStartedAt(startedAt);
         for (ToolDefinition tool : tools) {
             out.getTools().add(tool == null ? new ToolDefinition() : tool.copy());

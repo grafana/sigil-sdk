@@ -39,6 +39,96 @@ Return:
   - stream: `STREAM`
 - Raw provider artifacts are default OFF and only enabled for explicit debug opt-in.
 
+## OTel setup (required)
+
+The Sigil SDK internally emits OTel spans and metrics (`gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, `gen_ai.client.time_to_first_token`, `gen_ai.client.tool_calls_per_operation`). **Without a configured TracerProvider and MeterProvider these go to the default no-op and are silently lost.**
+
+The SDK does NOT create OTel providers — that is the application's responsibility. Always ensure the app configures providers BEFORE creating the Sigil client, and shuts them down AFTER `sigil.shutdown()`.
+
+Traces and metrics can be sent to Grafana Cloud in two ways. Always use env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`) so the app doesn't hardcode assumptions.
+
+### Option A — Direct to Grafana Cloud (no collector needed)
+
+Send OTLP straight to the Grafana Cloud OTLP gateway. The exact URL is stack-specific — get it from the **Grafana Cloud portal → stack Details page** ([docs](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp)). Authentication uses Basic auth with instance ID and a Cloud API token.
+
+Env vars:
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-otlp-gateway-url>   # from Cloud portal
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(instance_id:cloud_api_token)>
+```
+
+The OTel SDK exporters read these env vars automatically — no extra code needed beyond the provider setup below.
+
+### Option B — Via Alloy / OTel Collector (optional)
+
+Run a local Alloy or OTel Collector that receives unauthenticated OTLP and forwards to Cloud with credentials. Useful for centralized token management, retries, relabeling, and metadata enrichment. Common local ports: 4318 (OTLP/HTTP), 4317 (OTLP/gRPC).
+
+Env vars:
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+### Provider setup (required for both options)
+
+The snippets below configure TracerProvider and MeterProvider using OTLP/HTTP exporters that honour the env vars above.
+
+#### Python
+```python
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
+resource = Resource.create({"service.name": "my-app"})
+
+tp = TracerProvider(resource=resource)
+tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(tp)
+
+mp = MeterProvider(resource=resource, metric_readers=[
+    PeriodicExportingMetricReader(OTLPMetricExporter())
+])
+metrics.set_meter_provider(mp)
+# Deps: opentelemetry-sdk, opentelemetry-exporter-otlp-proto-http
+```
+
+#### Go
+```go
+traceExp, _ := otlptracehttp.New(ctx)
+tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(traceExp), sdktrace.WithResource(res))
+otel.SetTracerProvider(tp)
+defer tp.Shutdown(ctx)
+
+metricExp, _ := otlpmetrichttp.New(ctx)
+mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp)), sdkmetric.WithResource(res))
+otel.SetMeterProvider(mp)
+defer mp.Shutdown(ctx)
+```
+
+#### JS/TS
+```typescript
+import { metrics } from '@opentelemetry/api';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+
+const tp = new NodeTracerProvider({ resource });
+tp.addSpanProcessor(new BatchSpanProcessor(new OTLPTraceExporter()));
+tp.register();
+
+const mp = new MeterProvider({
+  resource,
+  readers: [new PeriodicExportingMetricReader({ exporter: new OTLPMetricExporter() })],
+});
+metrics.setGlobalMeterProvider(mp);
+```
+
 ## Telemetry fields to prioritize
 
 On generation and tool spans, capture or preserve these when available:
@@ -127,6 +217,13 @@ In the sigil-sdk repo:
 - Keep raw artifacts disabled unless explicitly asked.
 - Ensure non-stream wrappers set `SYNC`, stream wrappers set `STREAM`.
 - Ensure lifecycle flush/shutdown semantics are preserved.
+- When calling `set_result` / `SetResult`, always include all available fields:
+  - `response_id` (provider correlation, maps to `gen_ai.response.id`)
+  - `response_model` (actual model used)
+  - `stop_reason` / `finish_reason`
+  - Full token usage including `cache_read_input_tokens`, `cache_creation_input_tokens`, and `reasoning_tokens` when the provider returns them
+- Always check `rec.err()` / `Err()` after the generation recorder closes — SDK validation or enqueue errors are otherwise silent.
+- Use `tags` on `GenerationStart` for filtering in the Sigil UI (e.g. pipeline name, layer, agent role).
 
 ## Validation checklist
 

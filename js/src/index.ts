@@ -16,6 +16,8 @@ export { HookDeniedError } from './hooks.js';
 export * as anthropic from './providers/anthropic.js';
 export * as gemini from './providers/gemini.js';
 export * as openai from './providers/openai.js';
+export type { SecretRedactionOptions } from './redaction.js';
+export { createSecretRedactionSanitizer } from './redaction.js';
 export type {
   ApiConfig,
   Artifact,
@@ -39,6 +41,7 @@ export type {
   GenerationMode,
   GenerationRecorder,
   GenerationResult,
+  GenerationSanitizer,
   GenerationStart,
   HookAction,
   HookContext,

@@ -146,6 +146,13 @@ const metricTokenTypeCacheRead = 'cache_read';
 const metricTokenTypeCacheWrite = 'cache_write';
 const metricTokenTypeCacheCreation = 'cache_creation';
 const metricTokenTypeReasoning = 'reasoning';
+
+const durationBucketsSeconds: number[] = [
+  0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92,
+];
+const tokenUsageBuckets: number[] = [
+  1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864,
+];
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
@@ -189,9 +196,18 @@ export class SigilClient {
       this.config.generationExporter ?? createDefaultGenerationExporter(this.config.generationExport);
     this.tracer = this.config.tracer ?? trace.getTracer(instrumentationName);
     this.meter = this.config.meter ?? metrics.getMeter(instrumentationName);
-    this.operationDurationHistogram = this.meter.createHistogram(metricOperationDuration, { unit: 's' });
-    this.tokenUsageHistogram = this.meter.createHistogram(metricTokenUsage, { unit: 'token' });
-    this.ttftHistogram = this.meter.createHistogram(metricTimeToFirstToken, { unit: 's' });
+    this.operationDurationHistogram = this.meter.createHistogram(metricOperationDuration, {
+      unit: 's',
+      advice: { explicitBucketBoundaries: durationBucketsSeconds },
+    });
+    this.tokenUsageHistogram = this.meter.createHistogram(metricTokenUsage, {
+      unit: 'token',
+      advice: { explicitBucketBoundaries: tokenUsageBuckets },
+    });
+    this.ttftHistogram = this.meter.createHistogram(metricTimeToFirstToken, {
+      unit: 's',
+      advice: { explicitBucketBoundaries: durationBucketsSeconds },
+    });
     this.toolCallsHistogram = this.meter.createHistogram(metricToolCallsPerOperation, { unit: 'count' });
 
     if (this.config.generationExport.flushIntervalMs > 0) {
@@ -493,6 +509,22 @@ export class SigilClient {
       resolverMode,
       seed.includeContent ?? false,
     );
+  }
+
+  internalHasGenerationSanitizer(): boolean {
+    return this.config.generationSanitizer !== undefined;
+  }
+
+  internalSanitizeGeneration(generation: Generation): Generation {
+    const sanitizer = this.config.generationSanitizer;
+    if (sanitizer === undefined) {
+      return generation;
+    }
+    const sanitized = sanitizer(cloneGeneration(generation));
+    if (sanitized === undefined) {
+      throw new Error('generation sanitizer must return a generation');
+    }
+    return cloneGeneration(sanitized);
   }
 
   internalStartGenerationSpan(seed: GenerationStart, mode: GenerationMode, startedAt: Date): Span {
@@ -982,7 +1014,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     this.ended = true;
 
-    const generation: Generation = {
+    let generation: Generation = {
       id: this.seed.id ?? newLocalID('gen'),
       conversationId: firstNonEmptyString(this.result?.conversationId, this.seed.conversationId),
       conversationTitle: firstNonEmptyString(this.result?.conversationTitle, this.seed.conversationTitle),
@@ -1052,17 +1084,29 @@ class GenerationRecorderImpl implements GenerationRecorder {
     }
     generation.metadata[spanAttrSDKName] = sdkName;
 
-    const validationError = validateGeneration(generation);
-
     const callErrorCategory = errorCategoryFromError(this.callError, false);
 
+    let effectiveContentCaptureMode = this.contentCaptureMode;
+    let validationTarget = cloneGeneration(generation);
     stampContentCaptureMetadata(generation, this.contentCaptureMode);
     if (this.contentCaptureMode === 'metadata_only') {
       stripContent(generation, callErrorCategory);
+    } else if (this.client.internalHasGenerationSanitizer()) {
+      try {
+        generation = this.client.internalSanitizeGeneration(generation);
+        validationTarget = cloneGeneration(generation);
+      } catch (error) {
+        effectiveContentCaptureMode = 'metadata_only';
+        stripContent(generation, callErrorCategory);
+        stampContentCaptureMetadata(generation, effectiveContentCaptureMode);
+        this.client.internalLogWarn('sigil generation sanitization failed; falling back to metadata_only', error);
+      }
     }
 
+    const validationError = validateGeneration(validationTarget);
+
     this.client.internalSyncGenerationSpan(this.span, generation);
-    if (this.contentCaptureMode === 'metadata_only') {
+    if (effectiveContentCaptureMode === 'metadata_only') {
       this.client.internalClearSpanConversationTitle(this.span);
     }
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
@@ -1082,7 +1126,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
       }
     }
 
-    const finalCallError = this.contentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
+    const finalCallError = effectiveContentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
 
     this.client.internalFinalizeGenerationSpan(
       this.span,
