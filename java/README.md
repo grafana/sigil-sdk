@@ -35,7 +35,7 @@ The Java SDK records normalized generation payloads, correlates them with traces
 - `startStreamingGeneration(start)`
 - `withGeneration(start, fn)`
 - `withStreamingGeneration(start, fn)`
-- `startToolExecution(start)`
+- `startToolExecution(start)` — see [Tool Calls vs Tool Executions](../docs/concepts/tool-call-vs-tool-execution.md)
 - `withToolExecution(start, fn)`
 - `flush()` and `shutdown()`
 
@@ -88,6 +88,40 @@ AutoConfiguredOpenTelemetrySdk.initialize();
 ## Streaming Pattern
 
 Use `startStreamingGeneration(...)` or `withStreamingGeneration(...)`. The SDK sets mode to `STREAM` and keeps operation naming consistent.
+
+## Tool Execution Observability
+
+Use `startToolExecution(...)` / `withToolExecution(...)` to instrument your tool handler code. This is distinct from **tool calls** (what the LLM requests) which are captured automatically by provider wrappers as part of generation output.
+
+```java
+// Instrument your tool handler
+try (ToolExecutionRecorder rec = client.startToolExecution(
+        new ToolExecutionStart()
+            .setToolName("weather")
+            .setToolCallId("call_abc123"))) {  // Optional: links to LLM's tool_call
+    
+    String result = weatherService.getWeather("Paris");
+    rec.setResult(result);
+}
+```
+
+Tool executions create OTel spans (`execute_tool <name>`) and appear in the Sigil Tools tab with timing metrics.
+
+For RAG retrieval or other preprocessing steps, use tool execution even though there's no corresponding LLM tool call:
+
+```java
+try (ToolExecutionRecorder rec = client.startToolExecution(
+        new ToolExecutionStart()
+            .setToolName("document_retriever")
+            .setContentCapture(ContentCaptureMode.FULL_CONTENT))) {
+    
+    rec.setArguments(Map.of("query", searchQuery, "limit", 5));
+    List<Document> docs = vectorStore.similaritySearch(searchQuery, 5);
+    rec.setResult(Map.of("count", docs.size()));
+}
+```
+
+See [Tool Calls vs Tool Executions](../docs/concepts/tool-call-vs-tool-execution.md) for the full conceptual guide.
 
 ## Embedding Observability
 
