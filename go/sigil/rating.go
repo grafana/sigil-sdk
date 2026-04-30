@@ -91,7 +91,7 @@ func (c *Client) SubmitConversationRating(ctx context.Context, conversationID st
 		return nil, fmt.Errorf("%w: %v", ErrRatingValidationFailed, err)
 	}
 
-	baseURL, err := baseURLFromAPIEndpoint(c.config.API.Endpoint, c.config.GenerationExport.Insecure)
+	baseURL, err := baseURLFromAPIEndpoint(c.config.API.Endpoint, insecureValue(c.config.GenerationExport.Insecure))
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRatingTransportFailed, err)
 	}

@@ -277,8 +277,20 @@ export class SigilClient {
     if (!notEmpty(seed.agentName)) {
       seed.agentName = agentNameFromContext();
     }
+    if (!notEmpty(seed.agentName)) {
+      const fromConfig = this.internalAgentName();
+      if (fromConfig !== undefined && fromConfig.length > 0) {
+        seed.agentName = fromConfig;
+      }
+    }
     if (!notEmpty(seed.agentVersion)) {
       seed.agentVersion = agentVersionFromContext();
+    }
+    if (!notEmpty(seed.agentVersion)) {
+      const fromConfig = this.internalAgentVersion();
+      if (fromConfig !== undefined && fromConfig.length > 0) {
+        seed.agentVersion = fromConfig;
+      }
     }
     const recorder = new EmbeddingRecorderImpl(this, seed);
     if (callback === undefined) {
@@ -462,6 +474,22 @@ export class SigilClient {
 
   internalNow(): Date {
     return this.nowFn();
+  }
+
+  internalAgentName(): string | undefined {
+    return this.config.agentName;
+  }
+
+  internalAgentVersion(): string | undefined {
+    return this.config.agentVersion;
+  }
+
+  internalUserId(): string | undefined {
+    return this.config.userId;
+  }
+
+  internalTags(): Record<string, string> | undefined {
+    return this.config.tags;
   }
 
   internalRecordGeneration(generation: Generation): void {
@@ -978,11 +1006,33 @@ class GenerationRecorderImpl implements GenerationRecorder {
     if (!notEmpty(this.seed.userId)) {
       this.seed.userId = userIdFromContext();
     }
+    if (!notEmpty(this.seed.userId)) {
+      const fromConfig = this.client.internalUserId();
+      if (fromConfig !== undefined && fromConfig.length > 0) {
+        this.seed.userId = fromConfig;
+      }
+    }
     if (!notEmpty(this.seed.agentName)) {
       this.seed.agentName = agentNameFromContext();
     }
+    if (!notEmpty(this.seed.agentName)) {
+      const fromConfig = this.client.internalAgentName();
+      if (fromConfig !== undefined && fromConfig.length > 0) {
+        this.seed.agentName = fromConfig;
+      }
+    }
     if (!notEmpty(this.seed.agentVersion)) {
       this.seed.agentVersion = agentVersionFromContext();
+    }
+    if (!notEmpty(this.seed.agentVersion)) {
+      const fromConfig = this.client.internalAgentVersion();
+      if (fromConfig !== undefined && fromConfig.length > 0) {
+        this.seed.agentVersion = fromConfig;
+      }
+    }
+    const tags = this.client.internalTags();
+    if (tags !== undefined && Object.keys(tags).length > 0) {
+      this.seed.tags = { ...tags, ...(this.seed.tags ?? {}) };
     }
     if (!notEmpty(this.seed.operationName)) {
       this.seed.operationName = defaultOperationNameForMode(this.seed.mode ?? defaultMode);
@@ -1242,8 +1292,20 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     if (!notEmpty(this.seed.agentName)) {
       this.seed.agentName = agentNameFromContext();
     }
+    if (!notEmpty(this.seed.agentName)) {
+      const fromConfig = this.client.internalAgentName();
+      if (notEmpty(fromConfig)) {
+        this.seed.agentName = fromConfig;
+      }
+    }
     if (!notEmpty(this.seed.agentVersion)) {
       this.seed.agentVersion = agentVersionFromContext();
+    }
+    if (!notEmpty(this.seed.agentVersion)) {
+      const fromConfig = this.client.internalAgentVersion();
+      if (notEmpty(fromConfig)) {
+        this.seed.agentVersion = fromConfig;
+      }
     }
     this.resolvedIncludeContent = this.client.internalResolveToolIncludeContent(this.seed);
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();

@@ -135,7 +135,7 @@ func newConformanceEnv(t *testing.T, opts ...conformanceEnvOption) *conformanceE
 			GenerationExport: sigil.GenerationExportConfig{
 				Protocol:        sigil.GenerationExportProtocolGRPC,
 				Endpoint:        listener.Addr().String(),
-				Insecure:        true,
+				Insecure:        sigil.BoolPtr(true),
 				BatchSize:       1,
 				FlushInterval:   time.Hour,
 				QueueSize:       8,

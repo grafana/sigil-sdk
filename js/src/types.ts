@@ -204,6 +204,25 @@ export interface SigilSdkConfig {
   logger?: SigilLogger;
   now?: () => Date;
   sleep?: (durationMs: number) => Promise<void>;
+  /**
+   * Default agent name applied to GenerationStart / EmbeddingStart /
+   * ToolExecutionStart when the per-call value is empty. Read from
+   * `SIGIL_AGENT_NAME` automatically by `new SigilClient()`.
+   */
+  agentName?: string;
+  /** Default agent version. Read from `SIGIL_AGENT_VERSION`. */
+  agentVersion?: string;
+  /** Default user identifier. Read from `SIGIL_USER_ID`. */
+  userId?: string;
+  /** Default tags merged into every generation; per-call tags win. Read from `SIGIL_TAGS` (CSV). */
+  tags?: Record<string, string>;
+  /**
+   * When true, signals to downstream consumers (plugins, telemetry) that the
+   * SDK is running in verbose mode. Read from `SIGIL_DEBUG`. The SDK does not
+   * currently change its own logger based on this flag — plugins layer their
+   * own log-file plumbing on top of it.
+   */
+  debug?: boolean;
 }
 
 /** Partial SDK configuration passed by callers. */
@@ -221,6 +240,11 @@ export interface SigilSdkConfigInput {
   logger?: SigilLogger;
   now?: () => Date;
   sleep?: (durationMs: number) => Promise<void>;
+  agentName?: string;
+  agentVersion?: string;
+  userId?: string;
+  tags?: Record<string, string>;
+  debug?: boolean;
 }
 
 /** Provider/model identity. */

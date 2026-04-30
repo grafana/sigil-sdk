@@ -57,7 +57,7 @@
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test:build": "rm -rf .test-dist && tsc --project tsconfig.test.json",
-    "test": "pnpm run test:build && node --test test/**/*.test.mjs",
+    "test": "pnpm run test:build && node --import ./test/_setup.mjs --test test/**/*.test.mjs",
     "test:ci": "pnpm run test",
     "lint": "biome check .",
     "lint:fix": "biome check --fix ."

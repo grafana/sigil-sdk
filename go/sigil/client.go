@@ -57,6 +57,28 @@ type Config struct {
 	// Now controls clock behavior (useful for tests).
 	Now func() time.Time
 
+	// AgentName is applied to GenerationStart.AgentName / EmbeddingStart.AgentName
+	// / ToolExecutionStart.AgentName when the per-call value is empty. Read from
+	// SIGIL_AGENT_NAME by ConfigFromEnv. Per-call args always win.
+	AgentName string
+	// AgentVersion is applied to *Start.AgentVersion when the per-call value is
+	// empty. Read from SIGIL_AGENT_VERSION by ConfigFromEnv.
+	AgentVersion string
+	// UserID is applied to GenerationStart.UserID when the per-call value is
+	// empty and no user_id has been threaded through the request context.
+	// Read from SIGIL_USER_ID by ConfigFromEnv.
+	UserID string
+	// Tags are merged into every GenerationStart.Tags. Per-call tags win on
+	// key conflict. Read from SIGIL_TAGS (CSV) by ConfigFromEnv.
+	Tags map[string]string
+	// Debug, when set, signals downstream consumers (plugins, telemetry) that
+	// the SDK is running in verbose mode. Read from SIGIL_DEBUG by ConfigFromEnv.
+	// Pointer semantics distinguish "not set" (use SIGIL_DEBUG env or default)
+	// from explicit false (force off even if env says otherwise). Use BoolPtr.
+	// The SDK does not currently change its own logger based on this flag —
+	// plugins layer their own log-file plumbing on top of it.
+	Debug *bool
+
 	// testGenerationExporter overrides transport for in-package tests.
 	testGenerationExporter generationExporter
 	// testDisableWorker keeps queue synchronous for in-package tests.
@@ -95,7 +117,10 @@ type GenerationExportConfig struct {
 	Endpoint string
 	Headers  map[string]string
 	Auth     AuthConfig
-	Insecure bool
+	// Insecure controls whether the exporter accepts cleartext (HTTP / non-TLS gRPC).
+	// Pointer semantics distinguish "not set" (use SIGIL_INSECURE env or default)
+	// from explicit false (force TLS even if env says otherwise). Use BoolPtr.
+	Insecure *bool
 	// GRPCMaxSendMessageBytes controls the gRPC per-message send cap used by
 	// the SDK generation exporter.
 	GRPCMaxSendMessageBytes int
@@ -197,6 +222,10 @@ var (
 	errGenerationEnqueue    = ErrEnqueueFailed
 )
 
+// BoolPtr returns a pointer to the supplied bool value. Used to distinguish
+// "explicitly set to false" from "not set" on GenerationExportConfig.Insecure.
+func BoolPtr(b bool) *bool { return &b }
+
 // DefaultConfig returns a production-ready baseline configuration.
 func DefaultConfig() Config {
 	return Config{
@@ -204,7 +233,7 @@ func DefaultConfig() Config {
 			Protocol:                   GenerationExportProtocolGRPC,
 			Endpoint:                   "localhost:4317",
 			Auth:                       AuthConfig{Mode: ExportAuthModeNone},
-			Insecure:                   true,
+			Insecure:                   BoolPtr(false),
 			GRPCMaxSendMessageBytes:    defaultGRPCMaxSendMessageBytes,
 			GRPCMaxReceiveMessageBytes: defaultGRPCMaxReceiveMessageBytes,
 			BatchSize:                  100,
@@ -326,17 +355,54 @@ type telemetryInstruments struct {
 }
 
 // NewClient creates a Client, applying defaults for empty config values.
+//
+// Resolution order: explicit fields on the supplied Config win, then canonical
+// SIGIL_* env vars, then DefaultConfig values. Env reading is automatic.
+//
+// Malformed env values are logged and skipped; other valid env values still
+// apply. Use ConfigFromEnv() if strict validation is required.
 func NewClient(config Config) *Client {
 	cfg := config
-	defaults := DefaultConfig()
+	defaults, err := resolveFromEnv(defaultLookup, DefaultConfig())
+	if err != nil {
+		log.Default().Printf("sigil: skipping invalid env values: %v", err)
+	}
 
 	cfg.GenerationExport = mergeGenerationExportConfig(defaults.GenerationExport, cfg.GenerationExport)
 	cfg.API = mergeAPIConfig(defaults.API, cfg.API)
 	cfg.EmbeddingCapture = mergeEmbeddingCaptureConfig(defaults.EmbeddingCapture, cfg.EmbeddingCapture)
 	cfg.Hooks = mergeHooksConfig(defaults.Hooks, cfg.Hooks)
 
+	if cfg.AgentName == "" {
+		cfg.AgentName = defaults.AgentName
+	}
+	if cfg.AgentVersion == "" {
+		cfg.AgentVersion = defaults.AgentVersion
+	}
+	if cfg.UserID == "" {
+		cfg.UserID = defaults.UserID
+	}
+	// Merge env-derived tags as a base layer; caller tags win on key collision.
+	// mergeTags returns a fresh map, so later caller mutations don't reach the client.
+	cfg.Tags = mergeTags(defaults.Tags, cfg.Tags)
+	if cfg.ContentCapture == ContentCaptureModeDefault {
+		cfg.ContentCapture = defaults.ContentCapture
+	}
+	if cfg.Debug == nil {
+		cfg.Debug = defaults.Debug
+	}
+	if cfg.GenerationExport.Headers != nil {
+		// Defensive copy to insulate the client from later mutations of the
+		// caller's headers map.
+		cfg.GenerationExport.Headers = cloneTags(cfg.GenerationExport.Headers)
+	}
+
 	generationHeaders, err := resolveHeadersWithAuth(cfg.GenerationExport.Headers, cfg.GenerationExport.Auth)
 	if err != nil {
+		// Mode-clearing in mergeAuthConfig drops cross-mode credentials before
+		// reaching here, so this only fires on caller programming errors
+		// (mode set without its required credential). Panic so the caller
+		// notices their bug; env-induced panics no longer reach this path.
 		panic(fmt.Sprintf("invalid generation auth config: %v", err))
 	}
 	cfg.GenerationExport.Headers = generationHeaders
@@ -442,15 +508,31 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 			seed.UserID = userID
 		}
 	}
+	if seed.UserID == "" && c.config.UserID != "" {
+		seed.UserID = c.config.UserID
+	}
 	if seed.AgentName == "" {
 		if name, ok := AgentNameFromContext(ctx); ok {
 			seed.AgentName = name
 		}
 	}
+	if seed.AgentName == "" && c.config.AgentName != "" {
+		seed.AgentName = c.config.AgentName
+	}
 	if seed.AgentVersion == "" {
 		if version, ok := AgentVersionFromContext(ctx); ok {
 			seed.AgentVersion = version
 		}
+	}
+	if seed.AgentVersion == "" && c.config.AgentVersion != "" {
+		seed.AgentVersion = c.config.AgentVersion
+	}
+	if len(c.config.Tags) > 0 {
+		merged := cloneTags(c.config.Tags)
+		for k, v := range seed.Tags {
+			merged[k] = v
+		}
+		seed.Tags = merged
 	}
 
 	startedAt := seed.StartedAt
@@ -519,10 +601,16 @@ func (c *Client) StartEmbedding(ctx context.Context, start EmbeddingStart) (cont
 			seed.AgentName = name
 		}
 	}
+	if seed.AgentName == "" && c.config.AgentName != "" {
+		seed.AgentName = c.config.AgentName
+	}
 	if seed.AgentVersion == "" {
 		if version, ok := AgentVersionFromContext(ctx); ok {
 			seed.AgentVersion = version
 		}
+	}
+	if seed.AgentVersion == "" && c.config.AgentVersion != "" {
+		seed.AgentVersion = c.config.AgentVersion
 	}
 
 	startedAt := seed.StartedAt
@@ -586,10 +674,16 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 			seed.AgentName = name
 		}
 	}
+	if seed.AgentName == "" && c.config.AgentName != "" {
+		seed.AgentName = c.config.AgentName
+	}
 	if seed.AgentVersion == "" {
 		if version, ok := AgentVersionFromContext(ctx); ok {
 			seed.AgentVersion = version
 		}
+	}
+	if seed.AgentVersion == "" && c.config.AgentVersion != "" {
+		seed.AgentVersion = c.config.AgentVersion
 	}
 
 	startedAt := seed.StartedAt

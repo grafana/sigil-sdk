@@ -71,7 +71,7 @@ func TestSDKExportsGenerationOverGRPCAboveDefaultMessageLimit(t *testing.T) {
 		GenerationExport: GenerationExportConfig{
 			Protocol:                   GenerationExportProtocolGRPC,
 			Endpoint:                   listener.Addr().String(),
-			Insecure:                   true,
+			Insecure:                   BoolPtr(true),
 			GRPCMaxSendMessageBytes:    defaultGRPCMaxSendMessageBytes,
 			GRPCMaxReceiveMessageBytes: defaultGRPCMaxReceiveMessageBytes,
 			PayloadMaxBytes:            8 << 20,
@@ -283,7 +283,7 @@ func newTransportTestClient(t *testing.T, transport exportTransport, ingest *cap
 
 		cfg.GenerationExport.Protocol = GenerationExportProtocolGRPC
 		cfg.GenerationExport.Endpoint = listener.Addr().String()
-		cfg.GenerationExport.Insecure = true
+		cfg.GenerationExport.Insecure = BoolPtr(true)
 	default:
 		t.Fatalf("unsupported transport: %v", transport)
 	}

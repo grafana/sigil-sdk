@@ -170,33 +170,33 @@ func TestShutdownFlushesPendingGenerations(t *testing.T) {
 func TestMergeGenerationExportConfigInsecure(t *testing.T) {
 	testCases := []struct {
 		name             string
-		baseInsecure     bool
-		overrideInsecure bool
-		wantInsecure     bool
+		baseInsecure     *bool
+		overrideInsecure *bool
+		wantInsecure     *bool
 	}{
 		{
+			name:             "override unset preserves base",
+			baseInsecure:     BoolPtr(true),
+			overrideInsecure: nil,
+			wantInsecure:     BoolPtr(true),
+		},
+		{
 			name:             "override false replaces base true",
-			baseInsecure:     true,
-			overrideInsecure: false,
-			wantInsecure:     false,
+			baseInsecure:     BoolPtr(true),
+			overrideInsecure: BoolPtr(false),
+			wantInsecure:     BoolPtr(false),
 		},
 		{
 			name:             "override true replaces base false",
-			baseInsecure:     false,
-			overrideInsecure: true,
-			wantInsecure:     true,
+			baseInsecure:     BoolPtr(false),
+			overrideInsecure: BoolPtr(true),
+			wantInsecure:     BoolPtr(true),
 		},
 		{
-			name:             "both true remains true",
-			baseInsecure:     true,
-			overrideInsecure: true,
-			wantInsecure:     true,
-		},
-		{
-			name:             "both false remains false",
-			baseInsecure:     false,
-			overrideInsecure: false,
-			wantInsecure:     false,
+			name:             "both nil remains nil",
+			baseInsecure:     nil,
+			overrideInsecure: nil,
+			wantInsecure:     nil,
 		},
 	}
 
@@ -205,8 +205,11 @@ func TestMergeGenerationExportConfigInsecure(t *testing.T) {
 			base := GenerationExportConfig{Insecure: testCase.baseInsecure}
 			override := GenerationExportConfig{Insecure: testCase.overrideInsecure}
 			got := mergeGenerationExportConfig(base, override)
-			if got.Insecure != testCase.wantInsecure {
+			if (got.Insecure == nil) != (testCase.wantInsecure == nil) {
 				t.Fatalf("insecure=%v, want %v", got.Insecure, testCase.wantInsecure)
+			}
+			if got.Insecure != nil && *got.Insecure != *testCase.wantInsecure {
+				t.Fatalf("insecure=%v, want %v", *got.Insecure, *testCase.wantInsecure)
 			}
 		})
 	}
@@ -256,7 +259,7 @@ func TestNewHTTPGenerationExporterUsesEndpointScheme(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			exporter, err := newHTTPGenerationExporter(GenerationExportConfig{
 				Endpoint: testCase.endpoint,
-				Insecure: testCase.insecure,
+				Insecure: BoolPtr(testCase.insecure),
 			})
 			if err != nil {
 				t.Fatalf("newHTTPGenerationExporter failed: %v", err)
