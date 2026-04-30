@@ -209,7 +209,11 @@ func (c *Client) EvaluateHook(ctx context.Context, req HookEvaluateRequest) (*Ho
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set(hookTimeoutHeader, strconv.FormatInt(timeout.Milliseconds(), 10))
-	for key, value := range c.config.GenerationExport.Headers {
+	resolvedHeaders, err := resolveHeadersWithAuth(c.config.GenerationExport.Headers, c.config.GenerationExport.Auth)
+	if err != nil {
+		return failOpenOrError(failOpen, fmt.Errorf("%w: resolve auth headers: %v", ErrHookTransportFailed, err))
+	}
+	for key, value := range resolvedHeaders {
 		httpReq.Header.Set(key, value)
 	}
 
