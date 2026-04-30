@@ -10,129 +10,128 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-func TestResolveHeadersWithAuthTenantMode(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(nil, AuthConfig{Mode: ExportAuthModeTenant, TenantID: "tenant-a"})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	if headers[tenantHeaderName] != "tenant-a" {
-		t.Fatalf("expected tenant header tenant-a, got %q", headers[tenantHeaderName])
-	}
-}
-
-func TestResolveHeadersWithAuthBearerMode(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(nil, AuthConfig{Mode: ExportAuthModeBearer, BearerToken: "token-123"})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	if headers[authorizationHeaderName] != "Bearer token-123" {
-		t.Fatalf("expected bearer header, got %q", headers[authorizationHeaderName])
-	}
-}
-
-func TestResolveHeadersWithAuthExplicitHeaderWins(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(map[string]string{
-		"x-scope-orgid": "tenant-override",
-		"authorization": "Bearer override-token",
-	}, AuthConfig{Mode: ExportAuthModeTenant, TenantID: "tenant-a"})
-	if err != nil {
-		t.Fatalf("resolve tenant headers: %v", err)
-	}
-	if headers["x-scope-orgid"] != "tenant-override" {
-		t.Fatalf("expected override tenant header, got %q", headers["x-scope-orgid"])
-	}
-
-	bearerHeaders, err := resolveHeadersWithAuth(map[string]string{
-		"authorization": "Bearer override-token",
-	}, AuthConfig{Mode: ExportAuthModeBearer, BearerToken: "token-123"})
-	if err != nil {
-		t.Fatalf("resolve bearer headers: %v", err)
-	}
-	if bearerHeaders["authorization"] != "Bearer override-token" {
-		t.Fatalf("expected override authorization header, got %q", bearerHeaders["authorization"])
-	}
-}
-
-func TestResolveHeadersWithAuthBasicMode(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(nil, AuthConfig{
-		Mode:          ExportAuthModeBasic,
-		TenantID:      "42",
-		BasicPassword: "secret",
-	})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	wantAuth := "Basic " + base64Encode("42:secret")
-	if headers[authorizationHeaderName] != wantAuth {
-		t.Fatalf("expected %q, got %q", wantAuth, headers[authorizationHeaderName])
-	}
-	if headers[tenantHeaderName] != "42" {
-		t.Fatalf("expected tenant header 42, got %q", headers[tenantHeaderName])
-	}
-}
-
-func TestResolveHeadersWithAuthBasicModeExplicitUser(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(nil, AuthConfig{
-		Mode:          ExportAuthModeBasic,
-		TenantID:      "42",
-		BasicUser:     "probe-user",
-		BasicPassword: "secret",
-	})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	wantAuth := "Basic " + base64Encode("probe-user:secret")
-	if headers[authorizationHeaderName] != wantAuth {
-		t.Fatalf("expected %q, got %q", wantAuth, headers[authorizationHeaderName])
-	}
-	if headers[tenantHeaderName] != "42" {
-		t.Fatalf("expected tenant header 42, got %q", headers[tenantHeaderName])
-	}
-}
-
-func TestResolveHeadersWithAuthBasicModeExplicitHeaderWins(t *testing.T) {
-	headers, err := resolveHeadersWithAuth(map[string]string{
-		"Authorization": "Basic override",
-		"X-Scope-OrgID": "override-tenant",
-	}, AuthConfig{
-		Mode:          ExportAuthModeBasic,
-		TenantID:      "42",
-		BasicPassword: "secret",
-	})
-	if err != nil {
-		t.Fatalf("resolve headers: %v", err)
-	}
-	if headers["Authorization"] != "Basic override" {
-		t.Fatalf("expected explicit header to win, got %q", headers["Authorization"])
-	}
-	if headers["X-Scope-OrgID"] != "override-tenant" {
-		t.Fatalf("expected explicit tenant header to win, got %q", headers["X-Scope-OrgID"])
-	}
-}
-
 func base64Encode(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
 }
 
-func TestResolveHeadersWithAuthRejectsInvalidConfig(t *testing.T) {
+func TestResolveHeadersWithAuth(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		auth    AuthConfig
+		want    map[string]string
+	}{
+		{
+			name: "tenant mode adds X-Scope-OrgID",
+			auth: AuthConfig{Mode: ExportAuthModeTenant, TenantID: "tenant-a"},
+			want: map[string]string{tenantHeaderName: "tenant-a"},
+		},
+		{
+			name: "bearer mode adds Authorization",
+			auth: AuthConfig{Mode: ExportAuthModeBearer, BearerToken: "token-123"},
+			want: map[string]string{authorizationHeaderName: "Bearer token-123"},
+		},
+		{
+			name: "basic mode derives user from tenant_id",
+			auth: AuthConfig{Mode: ExportAuthModeBasic, TenantID: "42", BasicPassword: "secret"},
+			want: map[string]string{
+				authorizationHeaderName: "Basic " + base64Encode("42:secret"),
+				tenantHeaderName:        "42",
+			},
+		},
+		{
+			name: "basic mode uses explicit basic_user over tenant_id",
+			auth: AuthConfig{Mode: ExportAuthModeBasic, TenantID: "42", BasicUser: "probe-user", BasicPassword: "secret"},
+			want: map[string]string{
+				authorizationHeaderName: "Basic " + base64Encode("probe-user:secret"),
+				tenantHeaderName:        "42",
+			},
+		},
+		{
+			name: "tenant mode preserves explicit override header",
+			headers: map[string]string{
+				"x-scope-orgid": "tenant-override",
+				"authorization": "Bearer override-token",
+			},
+			auth: AuthConfig{Mode: ExportAuthModeTenant, TenantID: "tenant-a"},
+			want: map[string]string{
+				"x-scope-orgid": "tenant-override",
+				"authorization": "Bearer override-token",
+			},
+		},
+		{
+			name:    "bearer mode preserves explicit Authorization",
+			headers: map[string]string{"authorization": "Bearer override-token"},
+			auth:    AuthConfig{Mode: ExportAuthModeBearer, BearerToken: "token-123"},
+			want:    map[string]string{"authorization": "Bearer override-token"},
+		},
+		{
+			name: "basic mode preserves explicit headers",
+			headers: map[string]string{
+				"Authorization": "Basic override",
+				"X-Scope-OrgID": "override-tenant",
+			},
+			auth: AuthConfig{Mode: ExportAuthModeBasic, TenantID: "42", BasicPassword: "secret"},
+			want: map[string]string{
+				"Authorization": "Basic override",
+				"X-Scope-OrgID": "override-tenant",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveHeadersWithAuth(tc.headers, tc.auth)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+			for k, v := range tc.want {
+				if got[k] != v {
+					t.Errorf("got[%q]=%q want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+// resolveHeadersWithAuth rejects only "mode requires X but X missing" cases.
+// Mode-irrelevant fields (e.g. tenantId on a bearer-mode config) are silently
+// ignored — env layering can populate any field independently of mode, and
+// the strict cross-mode rejection only added cleanup work without preventing
+// any real bug.
+func TestResolveHeadersWithAuthRejectsMissingRequiredField(t *testing.T) {
 	testCases := []AuthConfig{
-		{Mode: ExportAuthModeTenant},
-		{Mode: ExportAuthModeBearer},
-		{Mode: ExportAuthModeNone, TenantID: "tenant-a"},
-		{Mode: ExportAuthModeNone, BearerToken: "token"},
-		{Mode: ExportAuthModeNone, BasicUser: "user"},
-		{Mode: ExportAuthModeNone, BasicPassword: "secret"},
-		{Mode: ExportAuthModeTenant, TenantID: "tenant-a", BearerToken: "token"},
-		{Mode: ExportAuthModeBearer, TenantID: "tenant-a", BearerToken: "token"},
-		{Mode: ExportAuthMode("unknown"), TenantID: "tenant-a"},
-		{Mode: ExportAuthModeBasic},
-		{Mode: ExportAuthModeBasic, BasicPassword: "secret"},
+		{Mode: ExportAuthModeTenant},                              // tenant requires tenant_id
+		{Mode: ExportAuthModeBearer},                              // bearer requires bearer_token
+		{Mode: ExportAuthModeBasic},                               // basic requires password
+		{Mode: ExportAuthModeBasic, BasicPassword: "secret"},      // basic also requires user/tenant
+		{Mode: ExportAuthMode("unknown"), TenantID: "tenant-a"},   // unknown mode
 	}
 
 	for _, testCase := range testCases {
 		_, err := resolveHeadersWithAuth(nil, testCase)
 		if err == nil {
 			t.Fatalf("expected error for auth config: %+v", testCase)
+		}
+	}
+}
+
+// Mode-irrelevant fields are tolerated: callers can pass them without an
+// error, the unused fields just have no effect on the resulting headers.
+func TestResolveHeadersWithAuthTolerantOfIrrelevantFields(t *testing.T) {
+	testCases := []AuthConfig{
+		{Mode: ExportAuthModeNone, TenantID: "tenant-a"},
+		{Mode: ExportAuthModeNone, BearerToken: "token"},
+		{Mode: ExportAuthModeNone, BasicPassword: "secret"},
+		{Mode: ExportAuthModeTenant, TenantID: "tenant-a", BearerToken: "token"},
+		{Mode: ExportAuthModeBearer, TenantID: "tenant-a", BearerToken: "token"},
+	}
+
+	for _, testCase := range testCases {
+		if _, err := resolveHeadersWithAuth(nil, testCase); err != nil {
+			t.Errorf("unexpected error for %+v: %v", testCase, err)
 		}
 	}
 }
@@ -181,13 +180,18 @@ func TestMergeAuthConfigPreservesBaseBasicFields(t *testing.T) {
 	}
 }
 
+// TestNewClientPanicsOnInvalidAuthConfig: a caller-supplied auth config with a
+// mode but no required credential is a programming error. NewClient panics so
+// the caller notices. Env-induced auth errors are handled separately by
+// mode-clearing in mergeAuthConfig and don't reach this path.
 func TestNewClientPanicsOnInvalidAuthConfig(t *testing.T) {
 	defer func() {
 		recovered := recover()
 		if recovered == nil {
 			t.Fatalf("expected panic for invalid auth config")
 		}
-		if !strings.Contains(recovered.(string), "invalid generation auth config") {
+		msg, _ := recovered.(string)
+		if !strings.Contains(msg, "invalid generation auth config") {
 			t.Fatalf("unexpected panic message: %v", recovered)
 		}
 	}()

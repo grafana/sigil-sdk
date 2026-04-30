@@ -325,7 +325,7 @@ func newHookTestClient(t *testing.T, options hookTestClientOptions) *Client {
 		GenerationExport: GenerationExportConfig{
 			Protocol:        GenerationExportProtocolHTTP,
 			Endpoint:        options.apiEndpoint + "/api/v1/generations:export",
-			Insecure:        true,
+			Insecure:        BoolPtr(true),
 			BatchSize:       1,
 			FlushInterval:   time.Hour,
 			QueueSize:       1,

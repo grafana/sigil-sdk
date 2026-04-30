@@ -84,22 +84,38 @@ def test_resolve_config_basic_auth_explicit_header_wins() -> None:
     assert cfg.generation_export.headers["X-Scope-OrgID"] == "override-tenant"
 
 
+# Auth configs that resolve_config rejects: only "mode requires X but X
+# missing" cases. Mode-irrelevant fields (e.g. tenant_id when mode=bearer) are
+# silently ignored — env layering can populate any field independently of
+# mode, and rejecting cross-mode mixes only forced extra cleanup upstream.
 @pytest.mark.parametrize(
     "auth",
     [
-        AuthConfig(mode="tenant"),
-        AuthConfig(mode="bearer"),
-        AuthConfig(mode="none", tenant_id="tenant-a"),
-        AuthConfig(mode="none", bearer_token="token"),
-        AuthConfig(mode="none", basic_user="user"),
-        AuthConfig(mode="none", basic_password="secret"),
-        AuthConfig(mode="tenant", tenant_id="tenant-a", bearer_token="token"),
-        AuthConfig(mode="bearer", tenant_id="tenant-a", bearer_token="token"),
-        AuthConfig(mode="unknown", tenant_id="tenant-a"),
-        AuthConfig(mode="basic"),
-        AuthConfig(mode="basic", basic_password="secret"),
+        AuthConfig(mode="tenant"),  # tenant requires tenant_id
+        AuthConfig(mode="bearer"),  # bearer requires bearer_token
+        AuthConfig(mode="basic"),  # basic requires password
+        AuthConfig(mode="basic", basic_password="secret"),  # basic requires user/tenant
+        AuthConfig(mode="unknown", tenant_id="tenant-a"),  # unknown mode
     ],
 )
-def test_resolve_config_rejects_invalid_auth_combinations(auth: AuthConfig) -> None:
+def test_resolve_config_rejects_missing_required_field(auth: AuthConfig) -> None:
     with pytest.raises(ValueError):
         resolve_config(ClientConfig(generation_export=GenerationExportConfig(auth=auth)))
+
+
+# Auth configs that resolve_config tolerates: mode-irrelevant fields are
+# ignored, the resulting headers reflect only the mode-relevant ones.
+@pytest.mark.parametrize(
+    "auth",
+    [
+        AuthConfig(mode="none", tenant_id="tenant-a"),
+        AuthConfig(mode="none", bearer_token="token"),
+        AuthConfig(mode="none", basic_password="secret"),
+        AuthConfig(mode="tenant", tenant_id="tenant-a", bearer_token="ignored"),
+        AuthConfig(mode="bearer", tenant_id="ignored", bearer_token="token"),
+    ],
+)
+def test_resolve_config_tolerates_irrelevant_fields(auth: AuthConfig) -> None:
+    cfg = resolve_config(ClientConfig(generation_export=GenerationExportConfig(auth=auth)))
+    # No exception raised; auth mode preserved.
+    assert cfg.generation_export.auth.mode == auth.mode

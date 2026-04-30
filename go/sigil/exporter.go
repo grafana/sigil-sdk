@@ -90,7 +90,7 @@ func newGRPCGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 		MinVersion: tls.VersionTLS12,
 		NextProtos: []string{"h2"},
 	})
-	if cfg.Insecure || insecureEndpoint {
+	if insecureValue(cfg.Insecure) || insecureEndpoint {
 		transportCreds = insecure.NewCredentials()
 	}
 
@@ -142,7 +142,7 @@ func newHTTPGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 	urlString := endpoint
 	if !strings.HasPrefix(urlString, "http://") && !strings.HasPrefix(urlString, "https://") {
 		scheme := "https://"
-		if cfg.Insecure || insecureEndpoint {
+		if insecureValue(cfg.Insecure) || insecureEndpoint {
 			scheme = "http://"
 		}
 		urlString = scheme + endpoint
@@ -216,6 +216,15 @@ func newGenerationExporter(cfg GenerationExportConfig) (generationExporter, erro
 	}
 }
 
+// insecureValue dereferences a *bool used for the optional Insecure flag,
+// treating nil as false (TLS expected).
+func insecureValue(p *bool) bool {
+	if p == nil {
+		return false
+	}
+	return *p
+}
+
 func mergeGenerationExportConfig(base, override GenerationExportConfig) GenerationExportConfig {
 	out := base
 	if override.Protocol != "" {
@@ -228,7 +237,9 @@ func mergeGenerationExportConfig(base, override GenerationExportConfig) Generati
 		out.Headers = cloneTags(override.Headers)
 	}
 	out.Auth = mergeAuthConfig(out.Auth, override.Auth)
-	out.Insecure = override.Insecure
+	if override.Insecure != nil {
+		out.Insecure = override.Insecure
+	}
 	if override.GRPCMaxSendMessageBytes > 0 {
 		out.GRPCMaxSendMessageBytes = override.GRPCMaxSendMessageBytes
 	}
@@ -299,6 +310,8 @@ func mergeAuthConfig(base, override AuthConfig) AuthConfig {
 	return out
 }
 
+// resolveHeadersWithAuth builds the auth headers for the given mode.
+// Mode-irrelevant fields (e.g. TenantID when mode=bearer) are silently ignored.
 func resolveHeadersWithAuth(headers map[string]string, auth AuthConfig) (map[string]string, error) {
 	mode := auth.Mode
 	if mode == "" {
@@ -310,18 +323,10 @@ func resolveHeadersWithAuth(headers map[string]string, auth AuthConfig) (map[str
 
 	switch mode {
 	case ExportAuthModeNone:
-		basicUser := strings.TrimSpace(auth.BasicUser)
-		basicPassword := strings.TrimSpace(auth.BasicPassword)
-		if tenantID != "" || bearerToken != "" || basicUser != "" || basicPassword != "" {
-			return nil, errors.New("auth mode none does not allow credentials")
-		}
 		return cloneTags(headers), nil
 	case ExportAuthModeTenant:
 		if tenantID == "" {
 			return nil, errors.New("auth mode tenant requires tenant_id")
-		}
-		if bearerToken != "" {
-			return nil, errors.New("auth mode tenant does not allow bearer_token")
 		}
 		out := cloneTags(headers)
 		if hasHeaderKey(out, tenantHeaderName) {
@@ -335,9 +340,6 @@ func resolveHeadersWithAuth(headers map[string]string, auth AuthConfig) (map[str
 	case ExportAuthModeBearer:
 		if bearerToken == "" {
 			return nil, errors.New("auth mode bearer requires bearer_token")
-		}
-		if tenantID != "" {
-			return nil, errors.New("auth mode bearer does not allow tenant_id")
 		}
 		out := cloneTags(headers)
 		if hasHeaderKey(out, authorizationHeaderName) {

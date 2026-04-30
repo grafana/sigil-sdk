@@ -1,5 +1,5 @@
 export { SigilClient } from './client.js';
-export { defaultConfig } from './config.js';
+export { configFromEnv, defaultConfig, mergeConfig } from './config.js';
 export {
   agentNameFromContext,
   agentVersionFromContext,

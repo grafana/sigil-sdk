@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +20,23 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+// ClearAmbientEnv strips SIGIL_* and OTEL_* env vars so test clients aren't
+// influenced by the developer's shell.
+func ClearAmbientEnv() { clearAmbientEnvOnce() }
+
+var clearAmbientEnvOnce = sync.OnceFunc(func() {
+	for _, kv := range os.Environ() {
+		idx := strings.IndexByte(kv, '=')
+		if idx <= 0 {
+			continue
+		}
+		key := kv[:idx]
+		if strings.HasPrefix(key, "SIGIL_") || strings.HasPrefix(key, "OTEL_") {
+			_ = os.Unsetenv(key)
+		}
+	}
+})
 
 type Env struct {
 	Client  *sigil.Client
@@ -43,6 +62,8 @@ type Env struct {
 func NewEnv(t testing.TB, opts ...func(*sigil.Config)) *Env {
 	t.Helper()
 
+	ClearAmbientEnv()
+
 	ingest := &capturingIngestServer{}
 	grpcServer := grpc.NewServer()
 	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
@@ -67,7 +88,7 @@ func NewEnv(t testing.TB, opts ...func(*sigil.Config)) *Env {
 	cfg.GenerationExport = sigil.GenerationExportConfig{
 		Protocol:        sigil.GenerationExportProtocolGRPC,
 		Endpoint:        listener.Addr().String(),
-		Insecure:        true,
+		Insecure:        sigil.BoolPtr(true),
 		BatchSize:       1,
 		FlushInterval:   time.Hour,
 		QueueSize:       8,

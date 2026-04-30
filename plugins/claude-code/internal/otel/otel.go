@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"net/url"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -109,6 +110,18 @@ func parseEndpoint(raw string, insecureFlag bool) (host, tracePath, metricPath s
 func Setup(ctx context.Context, cfg Config) (*Providers, error) {
 	if cfg.Endpoint == "" {
 		return nil, nil
+	}
+
+	// otlptracehttp has WithInsecure() but no WithSecure(), so a parent's
+	// OTEL_EXPORTER_OTLP_INSECURE=true would override cfg.Insecure=false and
+	// silently ship cleartext. Unset locally; we're a subprocess so the
+	// parent env is unaffected.
+	for _, k := range []string{
+		"OTEL_EXPORTER_OTLP_INSECURE",
+		"OTEL_EXPORTER_OTLP_TRACES_INSECURE",
+		"OTEL_EXPORTER_OTLP_METRICS_INSECURE",
+	} {
+		_ = os.Unsetenv(k)
 	}
 
 	host, tracePath, metricPath, insecure := parseEndpoint(cfg.Endpoint, cfg.Insecure)

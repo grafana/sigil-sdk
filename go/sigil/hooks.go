@@ -189,7 +189,7 @@ func (c *Client) EvaluateHook(ctx context.Context, req HookEvaluateRequest) (*Ho
 		timeout = defaultHookTimeout
 	}
 
-	baseURL, err := baseURLFromAPIEndpoint(c.config.API.Endpoint, c.config.GenerationExport.Insecure)
+	baseURL, err := baseURLFromAPIEndpoint(c.config.API.Endpoint, insecureValue(c.config.GenerationExport.Insecure))
 	if err != nil {
 		return failOpenOrError(failOpen, fmt.Errorf("%w: %v", ErrHookTransportFailed, err))
 	}

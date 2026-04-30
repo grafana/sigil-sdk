@@ -32,16 +32,20 @@ var (
 func initLogger() {
 	logger = log.New(io.Discard, "sigil-cc: ", log.Ltime)
 
-	if !strings.EqualFold(os.Getenv("SIGIL_DEBUG"), "true") {
+	if !parseBoolEnv(os.Getenv("SIGIL_DEBUG")) {
 		return
 	}
 
 	dir := filepath.Join(os.Getenv("HOME"), ".claude", "state")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		logger = log.New(os.Stderr, "sigil-cc: ", log.Ldate|log.Ltime)
+		logger.Printf("mkdir %s: %v (falling back to stderr)", dir, err)
 		return
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "sigil-cc.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
+		logger = log.New(os.Stderr, "sigil-cc: ", log.Ldate|log.Ltime)
+		logger.Printf("open log file: %v (falling back to stderr)", err)
 		return
 	}
 	logger = log.New(f, "sigil-cc: ", log.Ldate|log.Ltime)
@@ -67,42 +71,44 @@ func run() {
 	}
 	logger.Printf("session=%s transcript=%s", input.SessionID, input.TranscriptPath)
 
-	sigilURL := os.Getenv("SIGIL_URL")
-	sigilUser := os.Getenv("SIGIL_USER")
-	sigilPassword := os.Getenv("SIGIL_PASSWORD")
+	// Canonical SIGIL_* schema only — no legacy aliases.
+	sigilEndpoint := os.Getenv("SIGIL_ENDPOINT")
+	tenantID := os.Getenv("SIGIL_AUTH_TENANT_ID")
+	authToken := os.Getenv("SIGIL_AUTH_TOKEN")
 
-	if sigilURL == "" || sigilUser == "" || sigilPassword == "" {
+	missing := missingEnvVars(map[string]string{
+		"SIGIL_ENDPOINT":        sigilEndpoint,
+		"SIGIL_AUTH_TENANT_ID":  tenantID,
+		"SIGIL_AUTH_TOKEN":      authToken,
+	})
+	if len(missing) > 0 {
+		// Stderr regardless of SIGIL_DEBUG; the debug-gated logger would swallow this.
+		fmt.Fprintf(os.Stderr, "sigil-cc: not exporting: missing %s\n", strings.Join(missing, ", "))
+		logger.Printf("not exporting: missing %s", strings.Join(missing, ", "))
 		return
 	}
 
-	contentMode := resolveContentMode()
-	extraTags := parseExtraTags(os.Getenv("SIGIL_EXTRA_TAGS"))
+	extraTags := parseExtraTags(os.Getenv("SIGIL_TAGS"))
 	userID := resolveUserID()
+	contentMode := resolveContentMode()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	ctx = sigil.WithUserID(ctx, userID)
 
-	// The Go OTLP SDK reads standard OTEL_EXPORTER_OTLP_* env vars automatically,
-	// which Claude Code sets for its own telemetry. Clear them so our SIGIL_OTEL_*
-	// config takes effect.
-	for _, k := range []string{
-		"OTEL_EXPORTER_OTLP_ENDPOINT",
-		"OTEL_EXPORTER_OTLP_PROTOCOL",
-		"OTEL_EXPORTER_OTLP_HEADERS",
-		"OTEL_EXPORTER_OTLP_INSECURE",
-	} {
-		_ = os.Unsetenv(k)
-	}
-
-	otelEndpoint := os.Getenv("SIGIL_OTEL_ENDPOINT")
+	// SIGIL_OTEL_* takes precedence over OTEL_*; OTEL_* is the fallback.
+	otelEndpoint := envOr("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	otelInsecure := parseBoolEnv(envOr("SIGIL_OTEL_EXPORTER_OTLP_INSECURE", os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")))
+	otelToken := envOr("SIGIL_OTEL_AUTH_TOKEN", authToken)
 	otelProviders, err := otel.Setup(ctx, otel.Config{
 		Endpoint: otelEndpoint,
-		User:     envOr("SIGIL_OTEL_USER", sigilUser),
-		Password: envOr("SIGIL_OTEL_PASSWORD", sigilPassword),
-		Insecure: strings.EqualFold(os.Getenv("SIGIL_OTEL_INSECURE"), "true"),
+		User:     tenantID,
+		Password: otelToken,
+		Insecure: otelInsecure,
 	})
 	if err != nil {
+		// Stderr so an OTel config error doesn't silently kill telemetry.
+		fmt.Fprintf(os.Stderr, "sigil-cc: otel setup failed: %v\n", err)
 		logger.Printf("otel setup: %v", err)
 	} else if otelProviders != nil {
 		logger.Printf("otel: endpoint=%s", otelEndpoint)
@@ -145,16 +151,17 @@ func run() {
 	}
 	logger.Printf("produced %d generations", len(gens))
 
+	// Build the SDK config. The plugin remains basic-only at the auth layer;
+	// SIGIL_AUTH_MODE is hardcoded so users only configure the credentials.
 	cfg := sigil.Config{
-		ContentCapture: contentMode,
 		GenerationExport: sigil.GenerationExportConfig{
 			Protocol: sigil.GenerationExportProtocolHTTP,
-			Endpoint: sigilURL + "/api/v1/generations:export",
+			Endpoint: sigilEndpoint + "/api/v1/generations:export",
 			Auth: sigil.AuthConfig{
 				Mode:          sigil.ExportAuthModeBasic,
-				BasicUser:     sigilUser,
-				BasicPassword: sigilPassword,
-				TenantID:      sigilUser,
+				BasicUser:     tenantID,
+				BasicPassword: authToken,
+				TenantID:      tenantID,
 			},
 		},
 	}
@@ -164,6 +171,10 @@ func run() {
 		cfg.Meter = otelProviders.Meter("sigil-cc")
 	}
 
+	// SDK reads SIGIL_DEBUG / SIGIL_USER_ID automatically via NewClient → resolveFromEnv.
+	// The plugin still computes userID for sigil.WithUserID context propagation
+	// (Claude Code-specific ~/.claude.json fallback via SIGIL_USER_ID_SOURCE).
+	cfg.ContentCapture = contentMode
 	client := sigil.NewClient(cfg)
 	t0 := time.Now()
 
@@ -239,6 +250,29 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseBoolEnv mirrors the SDK's parseBool whitelist (1/true/yes/on).
+func parseBoolEnv(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// missingEnvVars returns the keys of vars whose values are empty, sorted by the
+// order in which the caller listed them.
+func missingEnvVars(vars map[string]string) []string {
+	// preserve a stable order matching the canonical schema doc.
+	order := []string{"SIGIL_ENDPOINT", "SIGIL_AUTH_TENANT_ID", "SIGIL_AUTH_TOKEN"}
+	var out []string
+	for _, k := range order {
+		if v, ok := vars[k]; ok && v == "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // parseExtraTags parses a comma-separated "key=value" string into a tag map.
@@ -327,19 +361,20 @@ func emitToolSpans(ctx context.Context, client *sigil.Client, gen sigil.Generati
 	}
 }
 
-// resolveContentMode returns the effective ContentCaptureMode from environment.
-// Priority: SIGIL_CONTENT_CAPTURE_MODE > SIGIL_CONTENT_CAPTURE (legacy) > MetadataOnly.
+// resolveContentMode returns the effective ContentCaptureMode from canonical env.
+// The plugin's default differs from the SDK default — claude-code defaults to
+// metadata_only because user content is sensitive and the typical opt-in path
+// is "I want full capture, set the env var".
 func resolveContentMode() sigil.ContentCaptureMode {
-	if v := os.Getenv("SIGIL_CONTENT_CAPTURE_MODE"); v != "" {
-		var mode sigil.ContentCaptureMode
-		if err := mode.UnmarshalText([]byte(v)); err != nil {
-			return sigil.ContentCaptureModeMetadataOnly
-		}
-		return mode
+	v := os.Getenv("SIGIL_CONTENT_CAPTURE_MODE")
+	if v == "" {
+		return sigil.ContentCaptureModeMetadataOnly
 	}
-	// Backward compat: SIGIL_CONTENT_CAPTURE=true maps to Full.
-	if strings.EqualFold(os.Getenv("SIGIL_CONTENT_CAPTURE"), "true") {
-		return sigil.ContentCaptureModeFull
+	var mode sigil.ContentCaptureMode
+	if err := mode.UnmarshalText([]byte(v)); err != nil {
+		// Stderr so a typo doesn't silently downgrade to metadata_only.
+		fmt.Fprintf(os.Stderr, "sigil-cc: ignoring invalid SIGIL_CONTENT_CAPTURE_MODE %q, using metadata_only\n", v)
+		return sigil.ContentCaptureModeMetadataOnly
 	}
-	return sigil.ContentCaptureModeMetadataOnly
+	return mode
 }

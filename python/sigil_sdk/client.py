@@ -355,9 +355,13 @@ class Client:
         if seed.agent_name == "":
             agent_name = agent_name_from_context() or ""
             seed.agent_name = agent_name
+        if seed.agent_name == "" and self._config.agent_name:
+            seed.agent_name = self._config.agent_name
         if seed.agent_version == "":
             agent_version = agent_version_from_context() or ""
             seed.agent_version = agent_version
+        if seed.agent_version == "" and self._config.agent_version:
+            seed.agent_version = self._config.agent_version
 
         started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
         seed.started_at = started_at
@@ -396,9 +400,13 @@ class Client:
         if seed.agent_name == "":
             agent_name = agent_name_from_context() or ""
             seed.agent_name = agent_name
+        if seed.agent_name == "" and self._config.agent_name:
+            seed.agent_name = self._config.agent_name
         if seed.agent_version == "":
             agent_version = agent_version_from_context() or ""
             seed.agent_version = agent_version
+        if seed.agent_version == "" and self._config.agent_version:
+            seed.agent_version = self._config.agent_version
 
         started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
         seed.started_at = started_at
@@ -601,10 +609,20 @@ class Client:
             seed.conversation_title = (conversation_title_from_context() or "").strip()
         if seed.user_id == "":
             seed.user_id = (user_id_from_context() or "").strip()
+        if seed.user_id == "" and self._config.user_id:
+            seed.user_id = self._config.user_id
         if seed.agent_name == "":
             seed.agent_name = agent_name_from_context() or ""
+        if seed.agent_name == "" and self._config.agent_name:
+            seed.agent_name = self._config.agent_name
         if seed.agent_version == "":
             seed.agent_version = agent_version_from_context() or ""
+        if seed.agent_version == "" and self._config.agent_version:
+            seed.agent_version = self._config.agent_version
+        if self._config.tags:
+            merged: dict[str, str] = dict(self._config.tags)
+            merged.update(seed.tags)
+            seed.tags = merged
 
         started_at = _to_utc(seed.started_at) if seed.started_at is not None else _to_utc(self._now())
         seed.started_at = started_at
