@@ -267,6 +267,81 @@ test('HookDeniedError exposes rule id and evaluations', () => {
   assert.match(error.message, /blocked by rule/);
 });
 
+test('evaluateHook fails open on URL building error when failOpen is true', async () => {
+  const client = newClient({
+    apiEndpoint: '',
+    hooksEnabled: true,
+    hooksFailOpen: true,
+  });
+  try {
+    const response = await client.evaluateHook({
+      phase: 'preflight',
+      context: { model: { provider: 'openai', name: 'gpt-4o' } },
+      input: {},
+    });
+    assert.equal(response.action, 'allow');
+    assert.deepEqual(response.evaluations, []);
+  } finally {
+    await client.shutdown();
+  }
+});
+
+test('evaluateHook throws on URL building error when failOpen is false', async () => {
+  const client = newClient({
+    apiEndpoint: '',
+    hooksEnabled: true,
+    hooksFailOpen: false,
+  });
+  try {
+    await assert.rejects(
+      () =>
+        client.evaluateHook({
+          phase: 'preflight',
+          context: { model: { provider: 'openai', name: 'gpt-4o' } },
+          input: {},
+        }),
+      /api endpoint is required/,
+    );
+  } finally {
+    await client.shutdown();
+  }
+});
+
+test('evaluateHook with hooksConfigOverride enables hooks when client has them disabled', async () => {
+  let serverHit = false;
+  const server = createServer(async (request, response) => {
+    serverHit = true;
+    for await (const _ of request) {
+      // drain
+    }
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ action: 'allow', evaluations: [] }));
+  });
+  await listen(server);
+  const address = server.address();
+
+  const client = newClient({
+    apiEndpoint: `http://127.0.0.1:${address.port}`,
+    hooksEnabled: false,
+  });
+
+  try {
+    const response = await client.evaluateHook(
+      {
+        phase: 'preflight',
+        context: { model: { provider: 'openai', name: 'gpt-4o' } },
+        input: {},
+      },
+      { enabled: true },
+    );
+    assert.equal(serverHit, true, 'hooksConfigOverride { enabled: true } should contact server');
+    assert.equal(response.action, 'allow');
+  } finally {
+    await client.shutdown();
+    await close(server);
+  }
+});
+
 function newClient(options) {
   const defaults = defaultConfig();
   return new SigilClient({

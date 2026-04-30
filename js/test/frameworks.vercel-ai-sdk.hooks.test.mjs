@@ -162,6 +162,50 @@ test('vercel ai sdk preflight does not call server when hooks disabled at instru
   }
 });
 
+test('vercel ai sdk preflight calls server when enableHooks overrides client config', async () => {
+  let serverHit = false;
+  const server = createServer(async (request, response) => {
+    serverHit = true;
+    for await (const _ of request) {
+      // drain
+    }
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ action: 'allow', evaluations: [] }));
+  });
+  await listen(server);
+  const address = server.address();
+
+  const client = newClient({
+    apiEndpoint: `http://127.0.0.1:${address.port}`,
+    hooksEnabled: false,
+  });
+
+  try {
+    const sigil = createSigilVercelAiSdk(client, {
+      agentName: 'guarded-agent',
+      enableHooks: true,
+    });
+    const hooks = sigil.generateTextHooks({ conversationId: 'conv-override' });
+
+    await hooks.experimental_onStepStart({
+      stepNumber: 0,
+      model: { provider: 'openai', modelId: 'gpt-4o' },
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    hooks.onStepFinish({
+      stepNumber: 0,
+      finishReason: 'stop',
+      text: 'hi',
+      response: { id: 'resp-override', modelId: 'gpt-4o' },
+    });
+
+    assert.equal(serverHit, true, 'enableHooks: true should override client hooks.enabled: false');
+  } finally {
+    await client.shutdown();
+    await close(server);
+  }
+});
+
 function newClient(options) {
   const defaults = defaultConfig();
   return new SigilClient({

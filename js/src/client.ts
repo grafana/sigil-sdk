@@ -396,14 +396,23 @@ export class SigilClient {
    * When `hooks.enabled` is false, this short-circuits to `allow`. When
    * `hooks.failOpen` is true (default), network/timeout failures also resolve
    * to `allow` so the LLM call can proceed.
+   *
+   * Framework adapters can pass `hooksConfigOverride` to override specific
+   * fields of the client's hooks config (e.g., force `enabled: true` when the
+   * adapter has its own `enableHooks` option).
    */
-  async evaluateHook(request: HookEvaluateRequest): Promise<HookEvaluateResponse> {
+  async evaluateHook(
+    request: HookEvaluateRequest,
+    hooksConfigOverride?: Partial<HooksConfig>,
+  ): Promise<HookEvaluateResponse> {
     this.assertOpen();
+    const effectiveHooks: HooksConfig =
+      hooksConfigOverride !== undefined ? { ...this.config.hooks, ...hooksConfigOverride } : this.config.hooks;
     return evaluateHookImpl({
       apiEndpoint: this.config.api.endpoint,
       insecure: this.config.generationExport.insecure,
       extraHeaders: this.config.generationExport.headers,
-      hooks: this.config.hooks,
+      hooks: effectiveHooks,
       request,
     });
   }

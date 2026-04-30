@@ -54,13 +54,14 @@ export async function evaluateHook(params: {
     return allowResponse();
   }
 
-  const url = buildHooksEvaluateEndpoint(params.apiEndpoint, params.insecure);
-  const body = serializeRequest(params.request);
   const timeoutMs = params.hooks.timeoutMs > 0 ? params.hooks.timeoutMs : 15_000;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const url = buildHooksEvaluateEndpoint(params.apiEndpoint, params.insecure);
+    const body = serializeRequest(params.request);
+
     const response = await fetchImpl(url, {
       method: 'POST',
       signal: controller.signal,

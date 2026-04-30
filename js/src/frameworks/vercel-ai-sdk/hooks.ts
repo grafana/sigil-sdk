@@ -468,18 +468,23 @@ export class SigilVercelAiSdkInstrumentation {
       const model = mapModelFromStepStart(event);
       // evaluateHook honors fail-open internally; an exception here means
       // fail_open=false and the LLM call should be aborted.
-      const response: HookEvaluateResponse = await this.client.evaluateHook({
-        phase: 'preflight',
-        context: {
-          agentName: callAgentName,
-          agentVersion: this.agentVersion,
-          model: { provider: model.provider, name: model.modelName },
-          tags,
+      // Pass enabled: true to override the client's hooks.enabled since we've
+      // already verified hooks are enabled via hooksEnabled() / preflightEnabled().
+      const response: HookEvaluateResponse = await this.client.evaluateHook(
+        {
+          phase: 'preflight',
+          context: {
+            agentName: callAgentName,
+            agentVersion: this.agentVersion,
+            model: { provider: model.provider, name: model.modelName },
+            tags,
+          },
+          input: {
+            messages: inputMessages.length > 0 ? inputMessages : undefined,
+          },
         },
-        input: {
-          messages: inputMessages.length > 0 ? inputMessages : undefined,
-        },
-      });
+        { enabled: true },
+      );
       if (response.action === 'deny') {
         throw new HookDeniedError(
           response.reason ?? 'request blocked by Sigil hook rule',
