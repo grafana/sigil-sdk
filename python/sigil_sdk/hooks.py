@@ -239,17 +239,13 @@ def _serialize_input(payload: HookInput) -> dict[str, Any]:
     return out
 
 
-def _message_role_wire(role: Any) -> int:
-    """Maps SDK message roles to sigil.v1.MessageRole enum values."""
+def _message_role_wire(role: Any) -> str:
+    """Maps SDK message roles to JSON string values for the hooks REST API."""
 
     value = getattr(role, "value", role)
-    if value == "user":
-        return 1
-    if value == "assistant":
-        return 2
-    if value == "tool":
-        return 3
-    return 0
+    if value in ("user", "assistant", "tool"):
+        return value
+    return "user"
 
 
 def _serialize_message(message: Message) -> dict[str, Any]:

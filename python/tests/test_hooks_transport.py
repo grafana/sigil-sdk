@@ -131,6 +131,9 @@ def test_evaluate_hook_posts_to_hooks_evaluate() -> None:
         assert payload.get("phase") == "preflight"
         assert payload.get("context", {}).get("agent_name") == "agent-a"
         assert payload.get("context", {}).get("model", {}).get("name") == "gpt-4o"
+        messages = payload.get("input", {}).get("messages", [])
+        assert len(messages) == 1
+        assert messages[0].get("role") == "user", "message role should be a string, not an integer"
         assert response.action == "allow"
         assert len(response.evaluations) == 1
         assert response.evaluations[0].rule_id == "pii"
