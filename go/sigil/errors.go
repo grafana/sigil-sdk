@@ -1,6 +1,10 @@
 package sigil
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // Sentinel errors for errors.Is matching.
 var (
@@ -32,4 +36,36 @@ var (
 	ErrRatingConflict = errors.New("sigil: conversation rating conflict")
 	// ErrRatingTransportFailed wraps conversation rating transport failures.
 	ErrRatingTransportFailed = errors.New("sigil: conversation rating transport failed")
+	// ErrHookDenied is the sentinel returned when hook evaluation responds
+	// with action: "deny". Use errors.Is to detect this independently from
+	// HookDeniedError's typed assertion.
+	ErrHookDenied = errors.New("sigil: hook evaluation denied")
+	// ErrHookTransportFailed wraps hook evaluation transport failures.
+	// Only surfaced when HooksConfig.FailOpen is false.
+	ErrHookTransportFailed = errors.New("sigil: hook evaluation transport failed")
 )
+
+// HookDeniedError is returned by EvaluateHook (and surfaced by framework
+// adapters) when the server denies the request via a hook rule.
+type HookDeniedError struct {
+	RuleID      string
+	Reason      string
+	Evaluations []HookEvaluation
+}
+
+// Error formats the deny reason and the rule that triggered it.
+func (e *HookDeniedError) Error() string {
+	reason := strings.TrimSpace(e.Reason)
+	if reason == "" {
+		reason = "request blocked by Sigil hook rule"
+	}
+	if id := strings.TrimSpace(e.RuleID); id != "" {
+		return fmt.Sprintf("sigil hook denied by rule %s: %s", id, reason)
+	}
+	return fmt.Sprintf("sigil hook denied: %s", reason)
+}
+
+// Unwrap exposes ErrHookDenied for errors.Is matching.
+func (e *HookDeniedError) Unwrap() error {
+	return ErrHookDenied
+}

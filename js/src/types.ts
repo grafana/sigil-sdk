@@ -179,6 +179,7 @@ export interface SigilSdkConfig {
   generationExport: GenerationExportConfig;
   api: ApiConfig;
   embeddingCapture: EmbeddingCaptureConfig;
+  hooks: HooksConfig;
   /**
    * Default content capture mode for all generations and tool executions.
    * Per-recording overrides take precedence. Defaults to `'no_tool_content'`.
@@ -210,6 +211,7 @@ export interface SigilSdkConfigInput {
   generationExport?: Partial<GenerationExportConfig>;
   api?: Partial<ApiConfig>;
   embeddingCapture?: Partial<EmbeddingCaptureConfig>;
+  hooks?: Partial<HooksConfig>;
   contentCapture?: ContentCaptureMode;
   contentCaptureResolver?: ContentCaptureResolver;
   generationSanitizer?: GenerationSanitizer;
@@ -498,4 +500,79 @@ export interface RecorderWithError {
   setCallError(error: unknown): void;
   end(): void;
   getError(): Error | undefined;
+}
+
+/** Phase at which a hook rule is evaluated. */
+export type HookPhase = 'preflight' | 'postflight';
+
+/** Hook evaluation action returned by the server. */
+export type HookAction = 'allow' | 'deny';
+
+/** Runtime configuration for synchronous hook evaluation. */
+export interface HooksConfig {
+  /** Master switch. When false, `evaluateHook` short-circuits to `allow`. */
+  enabled: boolean;
+  /** Phases the SDK is allowed to evaluate. Defaults to `['preflight']`. */
+  phases: HookPhase[];
+  /** Per-request timeout in milliseconds. Defaults to 15000. */
+  timeoutMs: number;
+  /**
+   * When true, network/timeout failures resolve to `action: 'allow'` so the
+   * caller can proceed with the LLM call. Defaults to true.
+   */
+  failOpen: boolean;
+}
+
+/** Identifies the upstream LLM call for hook rule matching. */
+export interface HookModel {
+  provider: string;
+  name: string;
+}
+
+/** Routing/matching context attached to a hook evaluation request. */
+export interface HookContext {
+  agentName?: string;
+  agentVersion?: string;
+  model: HookModel;
+  tags?: Record<string, string>;
+}
+
+/**
+ * Payload describing the request (preflight) or request+response (postflight)
+ * to be evaluated by hook rules.
+ */
+export interface HookInput {
+  messages?: Message[];
+  tools?: ToolDefinition[];
+  systemPrompt?: string;
+  /** Output messages, only meaningful for postflight evaluation. */
+  output?: Message[];
+  /** Plain-text fallback when structured messages are unavailable. */
+  conversationPreview?: string;
+}
+
+/** Hook evaluation request body. */
+export interface HookEvaluateRequest {
+  phase: HookPhase;
+  context: HookContext;
+  input: HookInput;
+}
+
+/** Per-rule outcome reported by the server. */
+export interface HookEvaluation {
+  ruleId: string;
+  evaluatorId: string;
+  evaluatorKind: string;
+  passed: boolean;
+  latencyMs: number;
+  explanation?: string;
+  reason?: string;
+}
+
+/** Hook evaluation response body. */
+export interface HookEvaluateResponse {
+  action: HookAction;
+  ruleId?: string;
+  reason?: string;
+  evaluations: HookEvaluation[];
 }

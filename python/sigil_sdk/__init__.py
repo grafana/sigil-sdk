@@ -8,6 +8,7 @@ from .config import (
     EmbeddingCaptureConfig,
     GenerationExportConfig,
     GenerationSanitizer,
+    HooksConfig,
     default_config,
 )
 from .context import (
@@ -27,12 +28,25 @@ from .context import (
 from .errors import (
     ClientShutdownError,
     EnqueueError,
+    HookDeniedError,
+    HookTransportError,
     MappingError,
     QueueFullError,
     RatingConflictError,
     RatingTransportError,
     SigilError,
     ValidationError,
+)
+from .hooks import (
+    HookAction,
+    HookContext,
+    HookEvaluateRequest,
+    HookEvaluateResponse,
+    HookEvaluation,
+    HookInput,
+    HookModel,
+    HookPhase,
+    hook_denied_from_response,
 )
 from .models import (
     Artifact,
@@ -93,6 +107,18 @@ __all__ = [
     "GenerationSanitizer",
     "GenerationMode",
     "GenerationStart",
+    "HookAction",
+    "HookContext",
+    "HookDeniedError",
+    "HookEvaluateRequest",
+    "HookEvaluateResponse",
+    "HookEvaluation",
+    "HookInput",
+    "HookModel",
+    "HookPhase",
+    "HookTransportError",
+    "HooksConfig",
+    "hook_denied_from_response",
     "MappingError",
     "Message",
     "MessageRole",

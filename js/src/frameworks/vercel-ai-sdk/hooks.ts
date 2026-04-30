@@ -1,5 +1,12 @@
 import type { SigilClient } from '../../client.js';
-import type { GenerationMode, GenerationRecorder, Message, ToolExecutionRecorder } from '../../types.js';
+import { HookDeniedError } from '../../hooks.js';
+import type {
+  GenerationMode,
+  GenerationRecorder,
+  HookEvaluateResponse,
+  Message,
+  ToolExecutionRecorder,
+} from '../../types.js';
 import {
   buildFrameworkMetadata,
   buildFrameworkTags,
@@ -61,6 +68,7 @@ export class SigilVercelAiSdkInstrumentation {
   private readonly extraTags: Record<string, string>;
   private readonly extraMetadata: Record<string, unknown>;
   private readonly resolveConversationIdFn: SigilVercelAiSdkOptions['resolveConversationId'];
+  private readonly hooksOverride: boolean | undefined;
   private callSequence = 0;
 
   constructor(
@@ -74,6 +82,22 @@ export class SigilVercelAiSdkInstrumentation {
     this.extraTags = { ...(options.extraTags ?? {}) };
     this.extraMetadata = { ...(options.extraMetadata ?? {}) };
     this.resolveConversationIdFn = options.resolveConversationId;
+    this.hooksOverride = options.enableHooks;
+  }
+
+  private hooksEnabled(): boolean {
+    if (this.hooksOverride !== undefined) {
+      return this.hooksOverride;
+    }
+    return this.client.hooksConfig.enabled;
+  }
+
+  private preflightEnabled(): boolean {
+    if (!this.hooksEnabled()) {
+      return false;
+    }
+    const phases = this.client.hooksConfig.phases;
+    return phases.length === 0 || phases.includes('preflight');
   }
 
   generateTextHooks(callOptions: CallOptions = {}): GenerateTextHooks {
@@ -440,7 +464,40 @@ export class SigilVercelAiSdkInstrumentation {
       return firstError;
     };
 
+    const runPreflight = async (event: StepStartEvent, inputMessages: Message[]): Promise<void> => {
+      const model = mapModelFromStepStart(event);
+      // evaluateHook honors fail-open internally; an exception here means
+      // fail_open=false and the LLM call should be aborted.
+      // Pass enabled: true to override the client's hooks.enabled since we've
+      // already verified hooks are enabled via hooksEnabled() / preflightEnabled().
+      const response: HookEvaluateResponse = await this.client.evaluateHook(
+        {
+          phase: 'preflight',
+          context: {
+            agentName: callAgentName,
+            agentVersion: this.agentVersion,
+            model: { provider: model.provider, name: model.modelName },
+            tags,
+          },
+          input: {
+            messages: inputMessages.length > 0 ? inputMessages : undefined,
+          },
+        },
+        { enabled: true },
+      );
+      if (response.action === 'deny') {
+        throw new HookDeniedError(
+          response.reason ?? 'request blocked by Sigil hook rule',
+          response.ruleId,
+          response.evaluations,
+        );
+      }
+    };
+
     const hooks: StreamTextHooks = {
+      // Returns Promise<void> when preflight is enabled, void otherwise.
+      // The Vercel AI SDK awaits both shapes; keeping the sync path avoids
+      // microtask scheduling for callers that don't use hooks.
       experimental_onStepStart: (event) => {
         noteStreamObservedStartAt(new Date());
         const fallbackStep = state.nextSyntheticStepNumber;
@@ -450,13 +507,25 @@ export class SigilVercelAiSdkInstrumentation {
           return;
         }
 
-        const inputMessages = this.captureInputs ? mapInputMessages(event.messages) : [];
-        createStepState({
-          stepNumber,
-          stepStartEvent: event,
-          startedAt: new Date(),
-          inputMessages,
-        });
+        const inputMessages = mapInputMessages(event.messages);
+        const finalize = (): void => {
+          createStepState({
+            stepNumber,
+            stepStartEvent: event,
+            startedAt: new Date(),
+            inputMessages: this.captureInputs ? inputMessages : [],
+          });
+        };
+
+        if (!this.preflightEnabled()) {
+          finalize();
+          return;
+        }
+
+        // Preflight evaluates against the actual prompt/messages even when
+        // captureInputs is disabled — the hook server only sees them in
+        // memory and never persists them.
+        return runPreflight(event, inputMessages).then(finalize);
       },
       onStepFinish: (event) => {
         const response = mapResponseFromStepFinish(event);
