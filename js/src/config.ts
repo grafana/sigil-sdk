@@ -120,7 +120,8 @@ function mergeEmbeddingCaptureConfig(config: Partial<EmbeddingCaptureConfig> | u
 function mergeHooksConfig(config: Partial<HooksConfig> | undefined): HooksConfig {
   return {
     enabled: config?.enabled ?? defaultHooksConfig.enabled,
-    phases: config?.phases ? [...config.phases] : [...defaultHooksConfig.phases],
+    phases:
+      Array.isArray(config?.phases) && config.phases.length > 0 ? [...config.phases] : [...defaultHooksConfig.phases],
     timeoutMs: config?.timeoutMs ?? defaultHooksConfig.timeoutMs,
     failOpen: config?.failOpen ?? defaultHooksConfig.failOpen,
   };

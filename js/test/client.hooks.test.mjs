@@ -342,6 +342,40 @@ test('evaluateHook with hooksConfigOverride enables hooks when client has them d
   }
 });
 
+test('empty phases array falls back to default preflight phase', async () => {
+  let receivedBody;
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+    }
+    receivedBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ action: 'allow', evaluations: [] }));
+  });
+  await listen(server);
+  const address = server.address();
+
+  const client = newClient({
+    apiEndpoint: `http://127.0.0.1:${address.port}`,
+    hooksEnabled: true,
+    hooksPhases: [],
+  });
+
+  try {
+    const response = await client.evaluateHook({
+      phase: 'preflight',
+      context: { model: { provider: 'openai', name: 'gpt-4o' } },
+      input: {},
+    });
+    assert.equal(response.action, 'allow');
+    assert.equal(receivedBody.phase, 'preflight', 'empty phases should fallback to default preflight');
+  } finally {
+    await client.shutdown();
+    await close(server);
+  }
+});
+
 function newClient(options) {
   const defaults = defaultConfig();
   return new SigilClient({
