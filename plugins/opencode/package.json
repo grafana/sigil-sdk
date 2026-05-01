@@ -1,6 +1,6 @@
 {
   "name": "@grafana/sigil-opencode",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "OpenCode plugin for Grafana Sigil AI telemetry",
   "repository": {
     "type": "git",
