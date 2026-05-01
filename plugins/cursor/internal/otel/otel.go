@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"net/url"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -96,7 +97,7 @@ func parseEndpoint(raw string, insecureFlag bool) (host, tracePath, metricPath s
 		insecure = true
 	}
 
-	if base := u.Path; base != "" && base != "/" {
+	if base := strings.TrimRight(u.Path, "/"); base != "" {
 		tracePath = base + "/v1/traces"
 		metricPath = base + "/v1/metrics"
 	}
