@@ -4,7 +4,7 @@ go 1.25.6
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1
-	github.com/grafana/sigil-sdk/go v0.1.2
+	github.com/grafana/sigil-sdk/go v0.2.0
 )
 
 require (
