@@ -63,8 +63,29 @@ class FakePi {
 const defaultCtx = {
   sessionManager: {
     getSessionFile: () => "session-1",
+    getSessionId: () => "sess-default-id",
   },
 };
+
+function makeCtx({
+  sessionFile,
+  sessionId,
+}: {
+  sessionFile?: string | (() => string | undefined);
+  sessionId: string | (() => string);
+}) {
+  const fileFn =
+    typeof sessionFile === "function"
+      ? sessionFile
+      : () => sessionFile ?? "session-1";
+  const idFn = typeof sessionId === "function" ? sessionId : () => sessionId;
+  return {
+    sessionManager: {
+      getSessionFile: fileFn,
+      getSessionId: idFn,
+    },
+  };
+}
 
 function assistantMessage() {
   return {
@@ -387,6 +408,194 @@ describe("extension lifecycle", () => {
       expect.stringContaining("did not validate"),
     );
     warn.mockRestore();
+  });
+
+  it("uses sessionId, not file basename, as conversationId", async () => {
+    // Two distinct pi sessions whose session files share a basename
+    // (e.g. extensions that spawn child sessions under <root>/run-N/session.jsonl)
+    // must emit distinct conversationIds.
+    const seeds: Array<{ conversationId?: string }> = [];
+    const recorder = { setResult: vi.fn(), setCallError: vi.fn() };
+    const sigil: SigilLike = {
+      startGeneration: vi.fn(async (seed, run) => {
+        seeds.push(seed as { conversationId?: string });
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    // Session 1: filename basename === "session.jsonl", uuid AAA
+    const ctxA = makeCtx({
+      sessionFile: "/tmp/runs/run-0/session.jsonl",
+      sessionId: "019dd89e-ffad-76ae-9f80-454acd646039",
+    });
+    await pi.emit("session_start", {}, ctxA);
+    await pi.emit("turn_start", {}, ctxA);
+    await pi.emit(
+      "turn_end",
+      {
+        message: assistantMessage(),
+        toolResults: [],
+      },
+      ctxA,
+    );
+    await pi.emit("session_shutdown", {}, ctxA);
+
+    // Session 2: same basename, different uuid BBB
+    const ctxB = makeCtx({
+      sessionFile: "/tmp/runs/run-1/session.jsonl",
+      sessionId: "019de579-98b4-7619-9157-8a6a4f61d487",
+    });
+    await pi.emit("session_start", {}, ctxB);
+    await pi.emit("turn_start", {}, ctxB);
+    await pi.emit(
+      "turn_end",
+      {
+        message: assistantMessage(),
+        toolResults: [],
+      },
+      ctxB,
+    );
+
+    expect(seeds).toHaveLength(2);
+    expect(seeds[0]!.conversationId).toBe(
+      "019dd89e-ffad-76ae-9f80-454acd646039",
+    );
+    expect(seeds[1]!.conversationId).toBe(
+      "019de579-98b4-7619-9157-8a6a4f61d487",
+    );
+    expect(seeds[0]!.conversationId).not.toBe(seeds[1]!.conversationId);
+  });
+
+  it("refreshes conversationId per turn when sessionId changes mid-life", async () => {
+    // SessionManager reassigns this.sessionId on fork/branch
+    // (session-manager.js:927,961). The plugin must observe the current
+    // sessionId at every turn_end, not just at session_start.
+    const seeds: Array<{ conversationId?: string }> = [];
+    const recorder = { setResult: vi.fn(), setCallError: vi.fn() };
+    const sigil: SigilLike = {
+      startGeneration: vi.fn(async (seed, run) => {
+        seeds.push(seed as { conversationId?: string });
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    let currentId = "id-before-fork";
+    const ctx = makeCtx({
+      sessionFile: "/tmp/sess/session.jsonl",
+      sessionId: () => currentId,
+    });
+
+    await pi.emit("session_start", {}, ctx);
+    await pi.emit("turn_start", {}, ctx);
+    await pi.emit(
+      "turn_end",
+      {
+        message: assistantMessage(),
+        toolResults: [],
+      },
+      ctx,
+    );
+
+    // Simulate fork/branch: sessionManager swaps sessionId.
+    currentId = "id-after-fork";
+
+    await pi.emit("turn_start", {}, ctx);
+    await pi.emit(
+      "turn_end",
+      {
+        message: assistantMessage(),
+        toolResults: [],
+      },
+      ctx,
+    );
+
+    expect(seeds).toHaveLength(2);
+    expect(seeds[0]!.conversationId).toBe("id-before-fork");
+    expect(seeds[1]!.conversationId).toBe("id-after-fork");
+  });
+
+  it("yields undefined conversationId when sessionId is empty (no-session mode)", async () => {
+    // session-manager.js:430 initializes sessionId to "" before newSession()
+    // runs, and --no-session never assigns one. We must not emit a literal
+    // empty string as the conversationId.
+    let capturedSeed: { conversationId?: string } | undefined;
+    const recorder = { setResult: vi.fn(), setCallError: vi.fn() };
+    const sigil: SigilLike = {
+      startGeneration: vi.fn(async (seed, run) => {
+        capturedSeed = seed as { conversationId?: string };
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    const ctx = makeCtx({ sessionFile: undefined, sessionId: "" });
+
+    await pi.emit("session_start", {}, ctx);
+    await pi.emit("turn_start", {}, ctx);
+    await pi.emit(
+      "turn_end",
+      {
+        message: assistantMessage(),
+        toolResults: [],
+      },
+      ctx,
+    );
+
+    expect(capturedSeed).toBeDefined();
+    expect(capturedSeed!.conversationId).toBeUndefined();
   });
 });
 

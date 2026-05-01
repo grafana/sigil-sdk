@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   ContentCaptureMode,
@@ -59,7 +59,6 @@ export default function (pi: ExtensionAPI) {
   let telemetry: TelemetryProviders | null = null;
 
   let turnStartTime = 0;
-  let conversationId: string | undefined;
 
   function debugLog(msg: string) {
     if (config?.debug) console.error(`[sigil-pi] ${msg}`);
@@ -85,7 +84,6 @@ export default function (pi: ExtensionAPI) {
 
   async function resetSessionState() {
     config = null;
-    conversationId = undefined;
     if (telemetry) {
       try {
         await telemetry.shutdown();
@@ -98,7 +96,7 @@ export default function (pi: ExtensionAPI) {
     pendingInputMessages.length = 0;
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (_event, _ctx) => {
     try {
       if (sigil) {
         try {
@@ -117,8 +115,11 @@ export default function (pi: ExtensionAPI) {
       if (!config.agentVersion) {
         config = { ...config, agentVersion: detectPiVersion() };
       }
-      const sessionFile = ctx.sessionManager.getSessionFile();
-      conversationId = sessionFile ? basename(sessionFile) : undefined;
+
+      // Note: conversationId is read fresh per turn from
+      // ctx.sessionManager.getSessionId() so fork/branch reassignments
+      // (session-manager.js:927,961) are reflected without restarting
+      // the plugin. We intentionally do NOT cache it here.
 
       // Set up OTel providers if OTLP is configured
       if (config.otlp) {
@@ -197,7 +198,7 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("turn_end", async (event, _ctx) => {
+  pi.on("turn_end", async (event, ctx) => {
     if (!sigil || !config) return;
 
     try {
@@ -211,6 +212,14 @@ export default function (pi: ExtensionAPI) {
       const msg = event.message;
       const contentCapture = config.contentCapture;
       const toolDefs = mapToolNames(turnToolTimings);
+
+      // Read the current sessionId every turn. SessionManager reassigns
+      // sessionId on fork/branch, and extensions that spawn child sessions
+      // can share a literal filename (e.g. "session.jsonl") across runs —
+      // so file-path-derived ids collapse multiple sessions into one.
+      // getSessionId() is the stable unique identifier
+      // (session-manager.d.ts: ReadonlySessionManager).
+      const conversationId = ctx.sessionManager.getSessionId() || undefined;
 
       // Ensure startedAt <= completedAt (msg.timestamp). The provider sets
       // msg.timestamp via Date.now() when creating the message object, which
