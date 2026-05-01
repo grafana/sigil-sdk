@@ -1,4 +1,4 @@
-required-version = "==0.15.10"
+required-version = "==0.15.12"
 target-version = "py310"
 line-length = 120
 
