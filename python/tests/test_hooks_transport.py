@@ -23,6 +23,7 @@ from sigil_sdk import (
     HookPhase,
     HooksConfig,
     HookTransportError,
+    MessageRole,
     hook_denied_from_response,
     user_text_message,
 )
@@ -41,6 +42,25 @@ def test_parse_hook_response_includes_transformed_input() -> None:
     assert parsed.action == "allow"
     assert parsed.transformed_input is not None
     assert parsed.transformed_input.conversation_preview == "[REDACTED]"
+
+
+def test_parse_hook_response_transformed_messages_numeric_proto_role() -> None:
+    from sigil_sdk.hooks import _parse_response
+
+    parsed = _parse_response(
+        {
+            "action": "allow",
+            "transformed_input": {
+                "messages": [
+                    {"role": 2, "parts": [{"text": "hello"}]},
+                ],
+            },
+            "evaluations": [],
+        }
+    )
+    assert parsed.transformed_input is not None
+    assert len(parsed.transformed_input.messages) == 1
+    assert parsed.transformed_input.messages[0].role == MessageRole.ASSISTANT
 
 
 def test_evaluate_hook_disabled_short_circuits() -> None:

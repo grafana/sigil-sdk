@@ -367,12 +367,19 @@ def _parse_hook_input_wire(data: Any) -> HookInput | None:
 def _parse_wire_message_dict(item: Any) -> Message | None:
     if not isinstance(item, dict):
         return None
-    role_raw = str(item.get("role", "user")).lower()
+    role_val = item.get("role", "user")
     role = MessageRole.USER
-    if role_raw == "assistant":
-        role = MessageRole.ASSISTANT
-    elif role_raw == "tool":
-        role = MessageRole.TOOL
+    if isinstance(role_val, int):
+        if role_val == 2:
+            role = MessageRole.ASSISTANT
+        elif role_val == 3:
+            role = MessageRole.TOOL
+    else:
+        role_raw = str(role_val).lower()
+        if role_raw == "assistant":
+            role = MessageRole.ASSISTANT
+        elif role_raw == "tool":
+            role = MessageRole.TOOL
     parts_raw = item.get("parts")
     if not isinstance(parts_raw, list):
         return Message(role=role, parts=[])
