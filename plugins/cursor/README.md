@@ -49,6 +49,21 @@ is the reliable place to put credentials.
 Without `SIGIL_URL` / `SIGIL_USER` / `SIGIL_PASSWORD`, hooks still run but
 nothing is emitted to Sigil.
 
+### Where to find these values
+
+- `SIGIL_URL` — Grafana Cloud → AI Observability → Configuration, **API
+  URL** field.
+- `SIGIL_USER` — Grafana Cloud → AI Observability → Configuration,
+  **Instance ID** field. Numeric Grafana Cloud stack id.
+- `SIGIL_PASSWORD` — a Grafana Cloud access policy token (grafana.com →
+  Security → Access Policies), with the realm set to the stack's region.
+  Required scope: `sigil:write`. Add `metrics:write`, `metrics:import`,
+  `traces:write`, and `logs:write` when also setting
+  `SIGIL_OTEL_ENDPOINT` — one token can cover both channels.
+- `SIGIL_OTEL_ENDPOINT` — Grafana Cloud → your stack → OpenTelemetry
+  card, **OTLP Endpoint URL**. The OTLP gateway region is tied to the
+  stack's region, which can differ from the Sigil region.
+
 ## Content capture
 
 | Mode | User prompt | Assistant text | Thinking | Tool args / results |
