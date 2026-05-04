@@ -104,8 +104,9 @@ func emitGeneration(ctx context.Context, client *sigil.Client, frag *fragment.Fr
 }
 
 // emitToolSpans creates one execute_tool span per tool invocation in the
-// fragment. Spans are anchored at the generation's completed_at so they land
-// on the same timeline as the parent generation span.
+// fragment. Each span is anchored at the tool's own postToolUse timestamp so
+// spans interleave on the generation timeline in wall-clock order (CALL→TOOL
+// →CALL→TOOL) rather than collapsing onto the generation's completed_at.
 //
 // Tool argument/result content is forwarded as-is. Capture-mode clamping
 // happens at the fragment-write boundary (postToolUse drops bytes for any
@@ -118,10 +119,7 @@ func emitToolSpans(ctx context.Context, client *sigil.Client, frag *fragment.Fra
 		if t.ToolName == "" {
 			continue
 		}
-		startedAt := gen.CompletedAt
-		if t.DurationMs != nil && !gen.CompletedAt.IsZero() {
-			startedAt = gen.CompletedAt.Add(-time.Duration(*t.DurationMs) * time.Millisecond)
-		}
+		startedAt, completedAt := toolSpanWindow(*t, gen.CompletedAt)
 		_, toolRec := client.StartToolExecution(ctx, sigil.ToolExecutionStart{
 			ToolName:        t.ToolName,
 			ToolCallID:      t.ToolUseID,
@@ -134,7 +132,7 @@ func emitToolSpans(ctx context.Context, client *sigil.Client, frag *fragment.Fra
 			StartedAt:       startedAt,
 		})
 
-		end := sigil.ToolExecutionEnd{CompletedAt: gen.CompletedAt}
+		end := sigil.ToolExecutionEnd{CompletedAt: completedAt}
 		if len(t.ToolInput) > 0 {
 			end.Arguments = string(t.ToolInput)
 		}
@@ -150,6 +148,35 @@ func emitToolSpans(ctx context.Context, client *sigil.Client, frag *fragment.Fra
 			logger.Printf("tool span enqueue: %v", err)
 		}
 	}
+}
+
+// toolSpanWindow returns the (startedAt, completedAt) wall-clock window for a
+// tool span. completedAt comes from the tool's own postToolUse timestamp so
+// spans land in real order on the timeline; startedAt subtracts the reported
+// duration when available. Both fall back to genCompletedAt when the
+// per-tool timestamp is missing or unparseable.
+func toolSpanWindow(t fragment.ToolRecord, genCompletedAt time.Time) (startedAt, completedAt time.Time) {
+	completedAt = parseToolTimestamp(t.CompletedAt, genCompletedAt)
+	startedAt = completedAt
+	if t.DurationMs != nil && !completedAt.IsZero() {
+		startedAt = completedAt.Add(-time.Duration(*t.DurationMs) * time.Millisecond)
+	}
+	return startedAt, completedAt
+}
+
+// parseToolTimestamp parses an ISO-8601 timestamp recorded in a ToolRecord,
+// falling back to def when empty or unparseable.
+func parseToolTimestamp(s string, def time.Time) time.Time {
+	if s == "" {
+		return def
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	return def
 }
 
 // toolErrorOr wraps an error message string into an error value, with a
