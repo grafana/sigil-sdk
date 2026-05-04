@@ -5,11 +5,12 @@
  */
 
 import type { Meter, Tracer } from "@opentelemetry/api";
-import {
-  AggregationTemporalityPreference,
-  OTLPMetricExporter,
-} from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import {
+  defaultResource,
+  resourceFromAttributes,
+} from "@opentelemetry/resources";
 import {
   MeterProvider,
   PeriodicExportingMetricReader,
@@ -21,26 +22,32 @@ import {
 import type { OtlpConfig } from "./config.js";
 
 const INSTRUMENTATION_SCOPE = "sigil-pi";
+const SERVICE_NAME = "sigil-pi";
 
 export interface TelemetryProviders {
   tracer: Tracer;
   meter: Meter;
+  forceFlush: () => Promise<void>;
   shutdown: () => Promise<void>;
 }
 
 export function createTelemetryProviders(otlp: OtlpConfig): TelemetryProviders {
   const base = otlp.endpoint.replace(/\/+$/, "");
+  const resource = defaultResource().merge(
+    resourceFromAttributes({ "service.name": SERVICE_NAME }),
+  );
 
   const metricExporter = new OTLPMetricExporter({
     url: `${base}/v1/metrics`,
     headers: otlp.headers,
-    temporalityPreference: AggregationTemporalityPreference.DELTA,
   });
   const metricReader = new PeriodicExportingMetricReader({
     exporter: metricExporter,
-    exportIntervalMillis: 15_000,
+    exportIntervalMillis: 5_000,
+    exportTimeoutMillis: 5_000,
   });
   const meterProvider = new MeterProvider({
+    resource,
     readers: [metricReader],
   });
 
@@ -49,25 +56,36 @@ export function createTelemetryProviders(otlp: OtlpConfig): TelemetryProviders {
     headers: otlp.headers,
   });
   const tracerProvider = new BasicTracerProvider({
+    resource,
     spanProcessors: [new BatchSpanProcessor(traceExporter)],
   });
 
   return {
     tracer: tracerProvider.getTracer(INSTRUMENTATION_SCOPE),
     meter: meterProvider.getMeter(INSTRUMENTATION_SCOPE),
+    forceFlush: async () => {
+      await settleOrThrow(
+        [meterProvider.forceFlush(), tracerProvider.forceFlush()],
+        "telemetry force flush failed",
+      );
+    },
     shutdown: async () => {
-      // Both providers must attempt shutdown even if one fails, so we use
-      // allSettled and aggregate errors afterwards rather than short-circuiting.
-      const results = await Promise.allSettled([
-        meterProvider.shutdown(),
-        tracerProvider.shutdown(),
-      ]);
-      const reasons = results
-        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-        .map((r) => r.reason);
-      if (reasons.length > 0) {
-        throw new AggregateError(reasons, "telemetry shutdown failed");
-      }
+      await settleOrThrow(
+        [meterProvider.shutdown(), tracerProvider.shutdown()],
+        "telemetry shutdown failed",
+      );
     },
   };
+}
+
+async function settleOrThrow(promises: Promise<void>[], message: string) {
+  // Both providers must attempt the operation even if one fails, so we use
+  // allSettled and aggregate errors afterwards rather than short-circuiting.
+  const results = await Promise.allSettled(promises);
+  const reasons = results
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => r.reason);
+  if (reasons.length > 0) {
+    throw new AggregateError(reasons, message);
+  }
 }

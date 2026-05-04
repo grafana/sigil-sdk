@@ -263,6 +263,12 @@ export default function (pi: ExtensionAPI) {
           contentCapture,
         });
       });
+      if (telemetry) {
+        void telemetry.forceFlush().catch((err) => {
+          console.warn("[sigil-pi] telemetry flush failed:", err);
+        });
+      }
+
       debugLog(
         `generation queued, model=${msg.model} tokens=${msg.usage.totalTokens}`,
       );

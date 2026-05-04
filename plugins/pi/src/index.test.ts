@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadConfigMock, createSigilClientMock } = vi.hoisted(() => ({
-  loadConfigMock: vi.fn(),
-  createSigilClientMock: vi.fn(),
-}));
+const { loadConfigMock, createSigilClientMock, createTelemetryProvidersMock } =
+  vi.hoisted(() => ({
+    loadConfigMock: vi.fn(),
+    createSigilClientMock: vi.fn(),
+    createTelemetryProvidersMock: vi.fn(),
+  }));
 
 vi.mock("./config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config.js")>();
@@ -15,6 +17,10 @@ vi.mock("./config.js", async (importOriginal) => {
 
 vi.mock("./client.js", () => ({
   createSigilClient: createSigilClientMock,
+}));
+
+vi.mock("./telemetry.js", () => ({
+  createTelemetryProviders: createTelemetryProvidersMock,
 }));
 
 import type { SigilClient } from "@grafana/sigil-sdk-js";
@@ -110,6 +116,7 @@ describe("extension lifecycle", () => {
   beforeEach(() => {
     loadConfigMock.mockReset();
     createSigilClientMock.mockReset();
+    createTelemetryProvidersMock.mockReset();
   });
 
   it("handles the happy path and exports one generation with user input", async () => {
@@ -171,6 +178,62 @@ describe("extension lifecycle", () => {
       type: "text",
       text: "hey",
     });
+  });
+
+  it("force flushes telemetry after exporting a turn", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+    const telemetry = {
+      tracer: { tracer: true },
+      meter: { meter: true },
+      forceFlush: vi.fn(async () => {}),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+      otlp: { endpoint: "http://localhost:4318", headers: {} },
+    });
+    createTelemetryProvidersMock.mockReturnValue(telemetry);
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    expect(createTelemetryProvidersMock).toHaveBeenCalledWith({
+      endpoint: "http://localhost:4318",
+      headers: {},
+    });
+    expect(createSigilClientMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        tracer: telemetry.tracer,
+        meter: telemetry.meter,
+      }),
+    );
+    expect(telemetry.forceFlush).toHaveBeenCalledTimes(1);
   });
 
   it("leaves input empty on a tool-loop continuation with no user message_end", async () => {
