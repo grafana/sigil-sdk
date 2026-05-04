@@ -2,7 +2,13 @@ package com.grafana.sigil.sdk;
 
 /** Per-export authentication settings. */
 public final class AuthConfig {
-    private AuthMode mode = AuthMode.NONE;
+    /**
+     * Auth mode. {@code null} means "not set" — the env layer or
+     * {@link AuthHeaders} resolves it to {@link AuthMode#NONE}. Explicit
+     * {@code setMode(AuthMode.NONE)} is preserved (caller-wins) and not
+     * overridden by {@code SIGIL_AUTH_MODE}.
+     */
+    private AuthMode mode;
     private String tenantId = "";
     private String bearerToken = "";
     private String basicUser = "";
@@ -13,7 +19,7 @@ public final class AuthConfig {
     }
 
     public AuthConfig setMode(AuthMode mode) {
-        this.mode = mode == null ? AuthMode.NONE : mode;
+        this.mode = mode;
         return this;
     }
 

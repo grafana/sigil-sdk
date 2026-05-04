@@ -25,51 +25,9 @@ public sealed class AuthConfigTests
             {
                 new AuthConfig
                 {
-                    Mode = ExportAuthMode.None,
-                    TenantId = "tenant-a",
-                },
-                "generation auth mode 'none' does not allow credentials"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.Tenant,
-                    TenantId = "tenant-a",
-                    BearerToken = "token",
-                },
-                "generation auth mode 'tenant' does not allow bearer_token"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.Bearer,
-                    TenantId = "tenant-a",
-                    BearerToken = "token",
-                },
-                "generation auth mode 'bearer' does not allow tenant_id"
-            },
-            {
-                new AuthConfig
-                {
                     Mode = (ExportAuthMode)99,
                 },
                 "unsupported generation auth mode"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.None,
-                    BasicUser = "user",
-                },
-                "generation auth mode 'none' does not allow credentials"
-            },
-            {
-                new AuthConfig
-                {
-                    Mode = ExportAuthMode.None,
-                    BasicPassword = "secret",
-                },
-                "generation auth mode 'none' does not allow credentials"
             },
             {
                 new AuthConfig
@@ -87,6 +45,44 @@ public sealed class AuthConfigTests
                 "generation auth mode 'basic' requires basic_user or tenant_id"
             },
         };
+
+    [Fact]
+    public void ModeNoneIgnoresIrrelevantCredentialFields()
+    {
+        // env layering can populate cross-mode fields without explicit SIGIL_AUTH_MODE.
+        var auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.None,
+            TenantId = "42",
+            BearerToken = "tok",
+            BasicUser = "user",
+            BasicPassword = "pass",
+        };
+        var headers = ConfigResolver.ResolveHeadersWithAuth(
+            new Dictionary<string, string>(),
+            auth,
+            "generation"
+        );
+        Assert.Empty(headers);
+    }
+
+    [Fact]
+    public void ModeBearerIgnoresIrrelevantTenantField()
+    {
+        var auth = new AuthConfig
+        {
+            Mode = ExportAuthMode.Bearer,
+            BearerToken = "tok",
+            TenantId = "42",
+        };
+        var headers = ConfigResolver.ResolveHeadersWithAuth(
+            new Dictionary<string, string>(),
+            auth,
+            "generation"
+        );
+        Assert.Equal("Bearer tok", headers["Authorization"]);
+        Assert.False(headers.ContainsKey("X-Scope-OrgID"));
+    }
 
     [Theory]
 #pragma warning disable xUnit1044 // Avoid using TheoryData type arguments that are not serializable

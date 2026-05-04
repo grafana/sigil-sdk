@@ -12,6 +12,12 @@ final class AuthHeaders {
     private AuthHeaders() {
     }
 
+    /**
+     * Builds the auth-related headers for {@code auth.mode}. Mode-irrelevant
+     * fields (e.g. {@code tenantId} on a bearer-mode config) are silently
+     * ignored — env layering can populate any field independently of mode,
+     * and rejecting cross-mode mixes only forced extra cleanup upstream.
+     */
     static Map<String, String> resolve(Map<String, String> headers, AuthConfig auth, String label) {
         Map<String, String> out = new LinkedHashMap<>();
         if (headers != null) {
@@ -23,20 +29,12 @@ final class AuthHeaders {
         String bearer = auth == null ? "" : auth.getBearerToken().trim();
 
         if (mode == AuthMode.NONE) {
-            String basicUser = auth == null ? "" : auth.getBasicUser().trim();
-            String basicPassword = auth == null ? "" : auth.getBasicPassword().trim();
-            if (!tenantId.isEmpty() || !bearer.isEmpty() || !basicUser.isEmpty() || !basicPassword.isEmpty()) {
-                throw new IllegalArgumentException(label + " auth mode 'none' does not allow credentials");
-            }
             return out;
         }
 
         if (mode == AuthMode.TENANT) {
             if (tenantId.isEmpty()) {
                 throw new IllegalArgumentException(label + " auth mode 'tenant' requires tenantId");
-            }
-            if (!bearer.isEmpty()) {
-                throw new IllegalArgumentException(label + " auth mode 'tenant' does not allow bearerToken");
             }
             if (!hasHeader(out, TENANT_HEADER)) {
                 out.put(TENANT_HEADER, tenantId);
@@ -47,9 +45,6 @@ final class AuthHeaders {
         if (mode == AuthMode.BEARER) {
             if (bearer.isEmpty()) {
                 throw new IllegalArgumentException(label + " auth mode 'bearer' requires bearerToken");
-            }
-            if (!tenantId.isEmpty()) {
-                throw new IllegalArgumentException(label + " auth mode 'bearer' does not allow tenantId");
             }
             if (!hasHeader(out, AUTHORIZATION_HEADER)) {
                 out.put(AUTHORIZATION_HEADER, formatBearer(bearer));

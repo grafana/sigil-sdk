@@ -274,6 +274,45 @@ Framework helpers:
 
 - Google ADK: `frameworks/google-adk/README.md`
 
+## Environment variables
+
+The SDK reads canonical `SIGIL_*` env vars at client construction. Caller-supplied
+fields on `SigilClientConfig` win; env vars fill anything left at the default;
+SDK schema defaults fill the rest.
+
+| Env var | Field |
+| --- | --- |
+| `SIGIL_ENDPOINT` | `GenerationExportConfig.endpoint` |
+| `SIGIL_PROTOCOL` | `GenerationExportConfig.protocol` (`http`/`grpc`/`none`) |
+| `SIGIL_INSECURE` | `GenerationExportConfig.insecure` (tri-state) |
+| `SIGIL_HEADERS` | `GenerationExportConfig.headers` (CSV: `K=V,...`) |
+| `SIGIL_AUTH_MODE` | `AuthConfig.mode` (`none`/`tenant`/`bearer`/`basic`) |
+| `SIGIL_AUTH_TENANT_ID` | `AuthConfig.tenantId` |
+| `SIGIL_AUTH_TOKEN` | `AuthConfig.bearerToken` and/or `basicPassword` (filled when empty) |
+| `SIGIL_AGENT_NAME` | `SigilClientConfig.agentName` |
+| `SIGIL_AGENT_VERSION` | `SigilClientConfig.agentVersion` |
+| `SIGIL_USER_ID` | `SigilClientConfig.userId` |
+| `SIGIL_TAGS` | `SigilClientConfig.tags` (CSV merged under per-call tags) |
+| `SIGIL_CONTENT_CAPTURE_MODE` | `SigilClientConfig.contentCapture` |
+| `SIGIL_DEBUG` | `SigilClientConfig.debug` (tri-state) |
+
+Use `SigilEnvConfig.fromEnv()` to inspect the resolved config without
+constructing a client. Invalid values (bad auth mode, etc.) are skipped with a
+warning so a single typo does not discard the rest of the env layer.
+
+## Breaking changes (unreleased)
+
+- `GenerationExportConfig.insecure` is now tri-state (`Boolean` instead of
+  `boolean`). The default flips from `true` to `false` (TLS on) when neither
+  caller nor `SIGIL_INSECURE` provides a value. Existing callers that call
+  `setInsecure(true)` keep working through autoboxing. The previous
+  `isInsecure()` boolean accessor was replaced by `getInsecure()`
+  (returns `Boolean`) and `isInsecureResolved()` (returns `boolean`,
+  treats null as TLS on).
+- `AuthHeaders.resolve` no longer rejects mode-irrelevant fields (e.g.
+  `tenantId` set under `mode=BEARER`). This matches Go/JS/Python and lets env
+  layering populate any field independently of mode.
+
 ## Best Practices
 
 - Keep raw artifacts disabled in production unless actively debugging.

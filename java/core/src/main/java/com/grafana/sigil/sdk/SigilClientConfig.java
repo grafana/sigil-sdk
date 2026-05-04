@@ -3,6 +3,9 @@ package com.grafana.sigil.sdk;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.Tracer;
 import java.time.Clock;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.logging.Logger;
 
 /** Top-level runtime configuration for {@link SigilClient}. */
@@ -17,6 +20,12 @@ public final class SigilClientConfig {
     private Meter meter;
     private Logger logger = Logger.getLogger("com.grafana.sigil.sdk");
     private Clock clock = Clock.systemUTC();
+
+    private String agentName = "";
+    private String agentVersion = "";
+    private String userId = "";
+    private Map<String, String> tags = new LinkedHashMap<>();
+    private Boolean debug;
 
     public GenerationExportConfig getGenerationExport() {
         return generationExport;
@@ -129,6 +138,77 @@ public final class SigilClientConfig {
         return this;
     }
 
+    /**
+     * Default {@code gen_ai.agent.name} for generations that don't supply one
+     * per-call. Filled from {@code SIGIL_AGENT_NAME} when the caller leaves
+     * this empty.
+     */
+    public String getAgentName() {
+        return agentName;
+    }
+
+    public SigilClientConfig setAgentName(String agentName) {
+        this.agentName = agentName == null ? "" : agentName;
+        return this;
+    }
+
+    /**
+     * Default {@code gen_ai.agent.version} for generations that don't supply
+     * one per-call. Filled from {@code SIGIL_AGENT_VERSION}.
+     */
+    public String getAgentVersion() {
+        return agentVersion;
+    }
+
+    public SigilClientConfig setAgentVersion(String agentVersion) {
+        this.agentVersion = agentVersion == null ? "" : agentVersion;
+        return this;
+    }
+
+    /**
+     * Default {@code user.id} for generations that don't supply one per-call.
+     * Filled from {@code SIGIL_USER_ID}.
+     */
+    public String getUserId() {
+        return userId;
+    }
+
+    public SigilClientConfig setUserId(String userId) {
+        this.userId = userId == null ? "" : userId;
+        return this;
+    }
+
+    /**
+     * Tags merged into every {@link GenerationStart#getTags()}. Per-call tags
+     * win on key collision. Filled from {@code SIGIL_TAGS}.
+     *
+     * <p>The returned map is unmodifiable; use {@link #setTags(Map)} to
+     * replace it.</p>
+     */
+    public Map<String, String> getTags() {
+        return Collections.unmodifiableMap(tags);
+    }
+
+    public SigilClientConfig setTags(Map<String, String> tags) {
+        this.tags = tags == null ? new LinkedHashMap<>() : new LinkedHashMap<>(tags);
+        return this;
+    }
+
+    /**
+     * Tri-state debug flag mirroring Go's {@code *bool}. {@code null} means
+     * "not set" — filled from {@code SIGIL_DEBUG} when the caller hasn't
+     * supplied a value. Explicit {@code Boolean.FALSE} overrides
+     * {@code SIGIL_DEBUG=true}.
+     */
+    public Boolean getDebug() {
+        return debug;
+    }
+
+    public SigilClientConfig setDebug(Boolean debug) {
+        this.debug = debug;
+        return this;
+    }
+
     public SigilClientConfig copy() {
         return new SigilClientConfig()
                 .setGenerationExport(generationExport.copy())
@@ -140,6 +220,11 @@ public final class SigilClientConfig {
                 .setTracer(tracer)
                 .setMeter(meter)
                 .setLogger(logger)
-                .setClock(clock);
+                .setClock(clock)
+                .setAgentName(agentName)
+                .setAgentVersion(agentVersion)
+                .setUserId(userId)
+                .setTags(tags)
+                .setDebug(debug);
     }
 }
