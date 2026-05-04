@@ -149,6 +149,49 @@ test('evaluateHook parses transformed_input from allow response', async () => {
   }
 });
 
+test('evaluateHook normalizes Go/json-encoded proto transformed_input messages', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(
+      JSON.stringify({
+        action: 'allow',
+        transformed_input: {
+          messages: [
+            {
+              role: 1,
+              parts: [{ Payload: { Text: 'hello' } }],
+            },
+          ],
+        },
+        evaluations: [],
+      }),
+    );
+  });
+  await listen(server);
+  const address = server.address();
+
+  const client = newClient({
+    apiEndpoint: `http://127.0.0.1:${address.port}`,
+    hooksEnabled: true,
+  });
+
+  try {
+    const response = await client.evaluateHook({
+      phase: 'preflight',
+      context: { model: { provider: 'openai', name: 'gpt-4o' } },
+      input: {},
+    });
+    assert.equal(response.action, 'allow');
+    const msg = response.transformedInput?.messages?.[0];
+    assert.equal(msg?.role, 'user');
+    assert.equal(msg?.parts?.[0]?.type, 'text');
+    assert.equal(msg?.parts?.[0]?.type === 'text' ? msg.parts[0].text : '', 'hello');
+  } finally {
+    await client.shutdown();
+    await close(server);
+  }
+});
+
 test('evaluateHook returns deny payload as-is', async () => {
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
