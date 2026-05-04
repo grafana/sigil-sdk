@@ -254,6 +254,42 @@ The SDK emits these OTel histograms through your configured OTel meter provider:
 - `gen_ai.client.time_to_first_token`
 - `gen_ai.client.tool_calls_per_operation`
 
+## Environment variables
+
+The SDK reads canonical `SIGIL_*` env vars at client construction. Caller-supplied
+fields on `SigilClientConfig` win; env vars fill anything left at the default;
+SDK schema defaults fill the rest.
+
+| Env var | Field |
+| --- | --- |
+| `SIGIL_ENDPOINT` | `GenerationExportConfig.Endpoint` |
+| `SIGIL_PROTOCOL` | `GenerationExportConfig.Protocol` (`http`/`grpc`/`none`) |
+| `SIGIL_INSECURE` | `GenerationExportConfig.Insecure` (tri-state `bool?`) |
+| `SIGIL_HEADERS` | `GenerationExportConfig.Headers` (CSV: `K=V,...`) |
+| `SIGIL_AUTH_MODE` | `AuthConfig.Mode` (`none`/`tenant`/`bearer`/`basic`) |
+| `SIGIL_AUTH_TENANT_ID` | `AuthConfig.TenantId` |
+| `SIGIL_AUTH_TOKEN` | `AuthConfig.BearerToken` and/or `BasicPassword` (filled when empty) |
+| `SIGIL_AGENT_NAME` | `SigilClientConfig.AgentName` |
+| `SIGIL_AGENT_VERSION` | `SigilClientConfig.AgentVersion` |
+| `SIGIL_USER_ID` | `SigilClientConfig.UserId` |
+| `SIGIL_TAGS` | `SigilClientConfig.Tags` (CSV merged under per-call tags) |
+| `SIGIL_CONTENT_CAPTURE_MODE` | `SigilClientConfig.ContentCapture` |
+| `SIGIL_DEBUG` | `SigilClientConfig.Debug` (tri-state `bool?`) |
+
+Use `EnvConfig.FromEnv()` to inspect the resolved config without constructing a
+client. Invalid values (bad auth mode, etc.) are skipped with a warning so a
+single typo does not discard the rest of the env layer.
+
+## Breaking changes (unreleased)
+
+- `GenerationExportConfig.Insecure` is now `bool?` instead of `bool`. The
+  default flips from `true` to `false` (TLS on) when neither caller nor
+  `SIGIL_INSECURE` provides a value. Code that reads the property as a plain
+  `bool` needs to coalesce (e.g. `cfg.Insecure ?? false`).
+- `ConfigResolver.ResolveHeadersWithAuth` no longer rejects mode-irrelevant
+  fields (e.g. `TenantId` set under `Mode = Bearer`). This matches Go/JS/Python
+  and lets env layering populate any field independently of mode.
+
 ## Local tasks
 
 Run from repository root:

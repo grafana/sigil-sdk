@@ -143,7 +143,7 @@ public sealed partial class SigilClient : IAsyncDisposable
         _embeddingCapture = InternalUtils.DeepClone(_config.EmbeddingCapture);
 
         _generationExporter = _config.GenerationExporter
-            ?? _config.GenerationExport.Protocol switch
+            ?? _config.GenerationExport.Protocol!.Value switch
             {
                 GenerationExportProtocol.Http => new HttpGenerationExporter(
                     _config.GenerationExport.Endpoint,
@@ -151,7 +151,7 @@ public sealed partial class SigilClient : IAsyncDisposable
                 ),
                 GenerationExportProtocol.Grpc => new GrpcGenerationExporter(
                     _config.GenerationExport.Endpoint,
-                    _config.GenerationExport.Insecure,
+                    _config.GenerationExport.Insecure!.Value,
                     _config.GenerationExport.Headers
                 ),
                 GenerationExportProtocol.None => new NoopGenerationExporter(),
@@ -199,10 +199,18 @@ public sealed partial class SigilClient : IAsyncDisposable
         {
             seed.AgentName = SigilContext.AgentNameFromContext() ?? string.Empty;
         }
+        if (string.IsNullOrWhiteSpace(seed.AgentName))
+        {
+            seed.AgentName = _config.AgentName ?? string.Empty;
+        }
 
         if (string.IsNullOrWhiteSpace(seed.AgentVersion))
         {
             seed.AgentVersion = SigilContext.AgentVersionFromContext() ?? string.Empty;
+        }
+        if (string.IsNullOrWhiteSpace(seed.AgentVersion))
+        {
+            seed.AgentVersion = _config.AgentVersion ?? string.Empty;
         }
 
         seed.StartedAt = seed.StartedAt.HasValue
@@ -251,10 +259,18 @@ public sealed partial class SigilClient : IAsyncDisposable
         {
             seed.AgentName = SigilContext.AgentNameFromContext() ?? string.Empty;
         }
+        if (string.IsNullOrWhiteSpace(seed.AgentName))
+        {
+            seed.AgentName = _config.AgentName ?? string.Empty;
+        }
 
         if (string.IsNullOrWhiteSpace(seed.AgentVersion))
         {
             seed.AgentVersion = SigilContext.AgentVersionFromContext() ?? string.Empty;
+        }
+        if (string.IsNullOrWhiteSpace(seed.AgentVersion))
+        {
+            seed.AgentVersion = _config.AgentVersion ?? string.Empty;
         }
 
         seed.StartedAt = seed.StartedAt.HasValue
@@ -337,7 +353,7 @@ public sealed partial class SigilClient : IAsyncDisposable
 
         var endpoint = BuildConversationRatingEndpoint(
             _config.Api.Endpoint,
-            _config.GenerationExport.Insecure,
+            _config.GenerationExport.Insecure!.Value,
             normalizedConversationId
         );
 
@@ -504,15 +520,33 @@ public sealed partial class SigilClient : IAsyncDisposable
         {
             seed.UserId = SigilContext.UserIdFromContext() ?? string.Empty;
         }
+        if (string.IsNullOrWhiteSpace(seed.UserId))
+        {
+            seed.UserId = _config.UserId ?? string.Empty;
+        }
 
         if (string.IsNullOrWhiteSpace(seed.AgentName))
         {
             seed.AgentName = SigilContext.AgentNameFromContext() ?? string.Empty;
         }
+        if (string.IsNullOrWhiteSpace(seed.AgentName))
+        {
+            seed.AgentName = _config.AgentName ?? string.Empty;
+        }
 
         if (string.IsNullOrWhiteSpace(seed.AgentVersion))
         {
             seed.AgentVersion = SigilContext.AgentVersionFromContext() ?? string.Empty;
+        }
+        if (string.IsNullOrWhiteSpace(seed.AgentVersion))
+        {
+            seed.AgentVersion = _config.AgentVersion ?? string.Empty;
+        }
+
+        // Merge config-default tags as a base layer; per-call seed tags win.
+        if (_config.Tags != null && _config.Tags.Count > 0)
+        {
+            seed.Tags = MergeTagsConfigUnderSeed(_config.Tags, seed.Tags);
         }
 
         seed.StartedAt = seed.StartedAt.HasValue
@@ -2051,6 +2085,33 @@ public sealed partial class SigilClient : IAsyncDisposable
                 part.ToolResult.ContentJson = [];
             }
         }
+    }
+
+    /// <summary>
+    /// Merges config-default tags under per-call seed tags. Seed entries win
+    /// on key collision so per-call generation tags always take precedence
+    /// over env-derived defaults (matches Go's <c>client.go:71-73</c> contract).
+    /// Returns a fresh dictionary so later mutations do not reach the client
+    /// config.
+    /// </summary>
+    internal static Dictionary<string, string> MergeTagsConfigUnderSeed(
+        IReadOnlyDictionary<string, string> configTags,
+        IReadOnlyDictionary<string, string>? seedTags
+    )
+    {
+        var merged = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in configTags)
+        {
+            merged[pair.Key] = pair.Value;
+        }
+        if (seedTags != null)
+        {
+            foreach (var pair in seedTags)
+            {
+                merged[pair.Key] = pair.Value;
+            }
+        }
+        return merged;
     }
 }
 

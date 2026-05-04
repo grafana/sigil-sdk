@@ -1,7 +1,4 @@
 using System.Runtime.CompilerServices;
-using Xunit;
-
-[assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 internal static class TestEnvCleanup
 {
@@ -9,9 +6,7 @@ internal static class TestEnvCleanup
     internal static void ClearSigilEnvVars()
     {
         // Clear canonical SIGIL_* env vars so individual tests don't pick up
-        // developer-machine config when they construct a SigilClient. Tests
-        // that exercise env layering should pass an explicit lookup to
-        // EnvConfig.ResolveFromEnv.
+        // developer-machine config when they construct a SigilClient.
         string[] keys =
         {
             "SIGIL_ENDPOINT",

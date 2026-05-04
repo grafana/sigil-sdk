@@ -163,9 +163,11 @@ public final class SigilClient implements AutoCloseable {
      * fail fast at this point.</p>
      */
     public SigilClient(SigilClientConfig inputConfig) {
-        this.config = inputConfig == null ? new SigilClientConfig() : inputConfig.copy();
+        SigilEnvConfig.EnvResolveResult envResult = SigilEnvConfig.resolveFromEnv(System::getenv, inputConfig);
+        this.config = envResult.config();
         this.logger = config.getLogger();
         this.clock = config.getClock();
+        SigilEnvConfig.logWarnings(this.logger, envResult.warnings());
         this.embeddingCaptureConfig = normalizeEmbeddingCaptureConfig(config.getEmbeddingCapture());
 
         GenerationExportConfig exportConfig = config.getGenerationExport();
@@ -225,8 +227,14 @@ public final class SigilClient implements AutoCloseable {
         if (seed.getAgentName().isBlank()) {
             seed.setAgentName(SigilContext.agentNameFromContext());
         }
+        if (seed.getAgentName().isBlank()) {
+            seed.setAgentName(config.getAgentName());
+        }
         if (seed.getAgentVersion().isBlank()) {
             seed.setAgentVersion(SigilContext.agentVersionFromContext());
+        }
+        if (seed.getAgentVersion().isBlank()) {
+            seed.setAgentVersion(config.getAgentVersion());
         }
 
         Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
@@ -324,8 +332,14 @@ public final class SigilClient implements AutoCloseable {
         if (seed.getAgentName().isBlank()) {
             seed.setAgentName(SigilContext.agentNameFromContext());
         }
+        if (seed.getAgentName().isBlank()) {
+            seed.setAgentName(config.getAgentName());
+        }
         if (seed.getAgentVersion().isBlank()) {
             seed.setAgentVersion(SigilContext.agentVersionFromContext());
+        }
+        if (seed.getAgentVersion().isBlank()) {
+            seed.setAgentVersion(config.getAgentVersion());
         }
 
         Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
@@ -583,11 +597,24 @@ public final class SigilClient implements AutoCloseable {
         if (seed.getUserId().isBlank()) {
             seed.setUserId(SigilContext.userIdFromContext());
         }
+        if (seed.getUserId().isBlank()) {
+            seed.setUserId(config.getUserId());
+        }
         if (seed.getAgentName().isBlank()) {
             seed.setAgentName(SigilContext.agentNameFromContext());
         }
+        if (seed.getAgentName().isBlank()) {
+            seed.setAgentName(config.getAgentName());
+        }
         if (seed.getAgentVersion().isBlank()) {
             seed.setAgentVersion(SigilContext.agentVersionFromContext());
+        }
+        if (seed.getAgentVersion().isBlank()) {
+            seed.setAgentVersion(config.getAgentVersion());
+        }
+        // Merge config-default tags as a base layer; per-call seed tags win.
+        if (!config.getTags().isEmpty()) {
+            seed.setTags(mergeTags(config.getTags(), seed.getTags()));
         }
 
         Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
@@ -702,7 +729,7 @@ public final class SigilClient implements AutoCloseable {
 
     private GenerationExporter createGenerationExporter(GenerationExportConfig exportConfig) {
         return switch (exportConfig.getProtocol()) {
-            case GRPC -> new GrpcGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders(), exportConfig.isInsecure());
+            case GRPC -> new GrpcGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders(), exportConfig.isInsecureResolved());
             case HTTP -> new HttpGenerationExporter(exportConfig.getEndpoint(), exportConfig.getHeaders());
             case NONE -> new NoopGenerationExporter();
         };
@@ -769,7 +796,7 @@ public final class SigilClient implements AutoCloseable {
     }
 
     private String conversationRatingEndpoint(ApiConfig apiConfig, GenerationExportConfig exportConfig, String conversationId) {
-        String baseUrl = baseUrlFromEndpoint(apiConfig.getEndpoint(), exportConfig.isInsecure());
+        String baseUrl = baseUrlFromEndpoint(apiConfig.getEndpoint(), exportConfig.isInsecureResolved());
         return baseUrl + "/api/v1/conversations/" + encodePathSegment(conversationId) + "/ratings";
     }
 
@@ -871,6 +898,22 @@ public final class SigilClient implements AutoCloseable {
         }
 
         return summary;
+    }
+
+    /**
+     * Merges {@code base} and {@code override} into a fresh map. Override values
+     * win on key collision. Used to layer config-default tags under per-call
+     * generation tags (matches Go {@code mergeTags} in client.go:1962).
+     */
+    static Map<String, String> mergeTags(Map<String, String> base, Map<String, String> override) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (base != null) {
+            out.putAll(base);
+        }
+        if (override != null) {
+            out.putAll(override);
+        }
+        return out;
     }
 
     private static String requiredString(JsonNode node, String key) {

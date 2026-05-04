@@ -11,19 +11,7 @@ import org.junit.jupiter.api.Test;
 
 class SigilAuthConfigTest {
     @Test
-    void validatesAuthModeShape() {
-        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.NONE).setTenantId("x"), "trace"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("mode 'none'");
-
-        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.NONE).setBasicUser("user"), "trace"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("mode 'none'");
-
-        assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.NONE).setBasicPassword("secret"), "trace"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("mode 'none'");
-
+    void requiresModeSpecificCredentials() {
         assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.TENANT), "generation export"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("requires tenantId");
@@ -31,6 +19,31 @@ class SigilAuthConfigTest {
         assertThatThrownBy(() -> AuthHeaders.resolve(Map.of(), new AuthConfig().setMode(AuthMode.BEARER), "generation export"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("requires bearerToken");
+    }
+
+    @Test
+    void modeNoneIgnoresIrrelevantCredentialFields() {
+        // env layering can populate cross-mode fields without explicit SIGIL_AUTH_MODE.
+        Map<String, String> headers = AuthHeaders.resolve(
+                Map.of(),
+                new AuthConfig()
+                        .setMode(AuthMode.NONE)
+                        .setTenantId("42")
+                        .setBearerToken("tok")
+                        .setBasicUser("user")
+                        .setBasicPassword("pass"),
+                "trace");
+        assertThat(headers).isEmpty();
+    }
+
+    @Test
+    void modeBearerIgnoresIrrelevantTenantField() {
+        Map<String, String> headers = AuthHeaders.resolve(
+                Map.of(),
+                new AuthConfig().setMode(AuthMode.BEARER).setBearerToken("tok").setTenantId("42"),
+                "generation export");
+        assertThat(headers).containsEntry("Authorization", "Bearer tok");
+        assertThat(headers).doesNotContainKey("X-Scope-OrgID");
     }
 
     @Test

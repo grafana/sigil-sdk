@@ -17,7 +17,13 @@ public enum ExportAuthMode
 
 public sealed class AuthConfig
 {
-    public ExportAuthMode Mode { get; set; } = ExportAuthMode.None;
+    /// <summary>
+    /// Auth mode. <c>null</c> means "not set" — the env layer or
+    /// <c>ConfigResolver</c> resolves it to <see cref="ExportAuthMode.None"/>.
+    /// Explicit <c>Mode = ExportAuthMode.None</c> is preserved (caller-wins)
+    /// and not overridden by <c>SIGIL_AUTH_MODE</c>.
+    /// </summary>
+    public ExportAuthMode? Mode { get; set; }
     public string TenantId { get; set; } = string.Empty;
     public string BearerToken { get; set; } = string.Empty;
     /// <summary>Username for basic auth. When empty, TenantId is used.</summary>
@@ -28,11 +34,31 @@ public sealed class AuthConfig
 
 public sealed class GenerationExportConfig
 {
-    public GenerationExportProtocol Protocol { get; set; } = GenerationExportProtocol.Grpc;
-    public string Endpoint { get; set; } = "localhost:4317";
+    /// <summary>
+    /// Export protocol. <c>null</c> means "not set" — the env layer or
+    /// <c>ConfigResolver</c> resolves it to
+    /// <see cref="GenerationExportProtocol.Grpc"/>. An explicit
+    /// <c>Protocol = ...</c> assignment is preserved (caller-wins) and not
+    /// overridden by <c>SIGIL_PROTOCOL</c>.
+    /// </summary>
+    public GenerationExportProtocol? Protocol { get; set; }
+    /// <summary>
+    /// Export endpoint. Empty string means "not set" — env layer or
+    /// <c>ConfigResolver</c> resolves it to <c>localhost:4317</c>. An explicit
+    /// non-empty value is preserved (caller-wins) and not overridden by
+    /// <c>SIGIL_ENDPOINT</c>.
+    /// </summary>
+    public string Endpoint { get; set; } = "";
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public AuthConfig Auth { get; set; } = new();
-    public bool Insecure { get; set; } = true;
+
+    /// <summary>
+    /// Tri-state insecure flag. <c>null</c> means "not set" — the resolved
+    /// value is <c>false</c> (TLS on) unless <c>SIGIL_INSECURE</c> provides a
+    /// value or the caller explicitly sets one. Matches Go's <c>*bool</c>
+    /// semantics so explicit <c>false</c> overrides <c>SIGIL_INSECURE=true</c>.
+    /// </summary>
+    public bool? Insecure { get; set; }
     public int BatchSize { get; set; } = 100;
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(1);
     public int QueueSize { get; set; } = 2000;
@@ -58,6 +84,48 @@ public sealed class SigilClientConfig
     public Func<DateTimeOffset>? UtcNow { get; set; }
     public Func<TimeSpan, CancellationToken, Task>? SleepAsync { get; set; }
     public IGenerationExporter? GenerationExporter { get; set; }
+
+    /// <summary>
+    /// Default <c>gen_ai.agent.name</c> for generations that don't supply one
+    /// per-call. Filled from <c>SIGIL_AGENT_NAME</c> when the caller leaves
+    /// this empty.
+    /// </summary>
+    public string AgentName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Default <c>gen_ai.agent.version</c>. Filled from <c>SIGIL_AGENT_VERSION</c>.
+    /// </summary>
+    public string AgentVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Default <c>user.id</c>. Filled from <c>SIGIL_USER_ID</c>.
+    /// </summary>
+    public string UserId { get; set; } = string.Empty;
+
+    private Dictionary<string, string> _tags = new();
+
+    /// <summary>
+    /// Tags merged into every <see cref="GenerationStart"/>'s tags. Per-call
+    /// tags win on key collision. Filled from <c>SIGIL_TAGS</c>.
+    /// </summary>
+    /// <remarks>
+    /// The setter takes a defensive copy so caller-side mutations after
+    /// assignment cannot reach the SDK. The getter returns the live
+    /// internal map so the env resolver and client code can populate it.
+    /// </remarks>
+    public Dictionary<string, string> Tags
+    {
+        get => _tags;
+        set => _tags = value == null ? new Dictionary<string, string>() : new Dictionary<string, string>(value);
+    }
+
+    /// <summary>
+    /// Tri-state debug flag mirroring Go's <c>*bool</c>. <c>null</c> means
+    /// "not set" — filled from <c>SIGIL_DEBUG</c> when the caller hasn't
+    /// supplied a value. Explicit <c>false</c> overrides
+    /// <c>SIGIL_DEBUG=true</c>.
+    /// </summary>
+    public bool? Debug { get; set; }
 }
 
 public sealed class EmbeddingCaptureConfig
@@ -74,9 +142,20 @@ internal static class ConfigResolver
 
     public static SigilClientConfig Resolve(SigilClientConfig? config)
     {
-        var resolved = config ?? new SigilClientConfig();
+        return Resolve(config, Environment.GetEnvironmentVariable);
+    }
 
+    internal static SigilClientConfig Resolve(SigilClientConfig? config, Func<string, string?> envLookup)
+    {
+        var (resolved, warnings) = EnvConfig.ResolveFromEnv(envLookup, config ?? new SigilClientConfig());
+
+        var callerLogger = resolved.Logger;
         resolved.Logger ??= _ => { };
+        // Always surface env-resolve warnings to stderr so a typo in
+        // SIGIL_AUTH_MODE / SIGIL_PROTOCOL / SIGIL_CONTENT_CAPTURE_MODE has
+        // operator-visible signal even when the caller didn't supply a Logger.
+        // When the caller provided a Logger, route warnings through it as well.
+        EnvConfig.LogWarnings(callerLogger ?? Console.Error.WriteLine, warnings);
 
 #if NET8_0_OR_GREATER
         resolved.UtcNow ??= TimeProvider.System.GetUtcNow;
@@ -85,6 +164,9 @@ internal static class ConfigResolver
 #endif
 
         resolved.SleepAsync ??= static (delay, ct) => Task.Delay(delay, ct);
+
+        // After env layering, null Insecure resolves to false (TLS on).
+        resolved.GenerationExport.Insecure ??= false;
 
         resolved.GenerationExport.Headers = ResolveHeadersWithAuth(
             resolved.GenerationExport.Headers,
@@ -140,6 +222,14 @@ internal static class ConfigResolver
         return resolved;
     }
 
+    /// <summary>
+    /// Builds the auth-related headers for <paramref name="auth"/>.Mode.
+    /// Mode-irrelevant fields (e.g. <c>TenantId</c> on a bearer-mode config)
+    /// are silently ignored — env layering can populate any field independently
+    /// of mode, and rejecting cross-mode mixes only forced extra cleanup
+    /// upstream. Callers who want strict validation should check their
+    /// <see cref="AuthConfig"/> before constructing the client.
+    /// </summary>
     public static Dictionary<string, string> ResolveHeadersWithAuth(
         Dictionary<string, string> headers,
         AuthConfig auth,
@@ -151,25 +241,16 @@ internal static class ConfigResolver
         var tenantId = auth.TenantId?.Trim() ?? string.Empty;
         var bearerToken = auth.BearerToken?.Trim() ?? string.Empty;
 
-        switch (auth.Mode)
+        // Default null Mode to None so direct callers (without ConfigResolver)
+        // get the same fallback behavior as env-resolved configs.
+        switch (auth.Mode ?? ExportAuthMode.None)
         {
             case ExportAuthMode.None:
-                var noneBasicUser = auth.BasicUser?.Trim() ?? string.Empty;
-                var noneBasicPassword = auth.BasicPassword?.Trim() ?? string.Empty;
-                if (tenantId.Length > 0 || bearerToken.Length > 0 || noneBasicUser.Length > 0 || noneBasicPassword.Length > 0)
-                {
-                    throw new ArgumentException($"{label} auth mode 'none' does not allow credentials");
-                }
                 return resolved;
             case ExportAuthMode.Tenant:
                 if (tenantId.Length == 0)
                 {
                     throw new ArgumentException($"{label} auth mode 'tenant' requires tenant_id");
-                }
-
-                if (bearerToken.Length > 0)
-                {
-                    throw new ArgumentException($"{label} auth mode 'tenant' does not allow bearer_token");
                 }
 
                 if (!resolved.ContainsKey(TenantHeaderName))
@@ -182,11 +263,6 @@ internal static class ConfigResolver
                 if (bearerToken.Length == 0)
                 {
                     throw new ArgumentException($"{label} auth mode 'bearer' requires bearer_token");
-                }
-
-                if (tenantId.Length > 0)
-                {
-                    throw new ArgumentException($"{label} auth mode 'bearer' does not allow tenant_id");
                 }
 
                 if (!resolved.ContainsKey(AuthorizationHeaderName))
