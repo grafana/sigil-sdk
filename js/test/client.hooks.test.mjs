@@ -116,6 +116,39 @@ test('evaluateHook posts JSON to /api/v1/hooks:evaluate and parses allow respons
   }
 });
 
+test('evaluateHook parses transformed_input from allow response', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(
+      JSON.stringify({
+        action: 'allow',
+        transformed_input: { conversation_preview: '[REDACTED]' },
+        evaluations: [],
+      }),
+    );
+  });
+  await listen(server);
+  const address = server.address();
+
+  const client = newClient({
+    apiEndpoint: `http://127.0.0.1:${address.port}`,
+    hooksEnabled: true,
+  });
+
+  try {
+    const response = await client.evaluateHook({
+      phase: 'preflight',
+      context: { model: { provider: 'openai', name: 'gpt-4o' } },
+      input: {},
+    });
+    assert.equal(response.action, 'allow');
+    assert.equal(response.transformedInput?.conversationPreview, '[REDACTED]');
+  } finally {
+    await client.shutdown();
+    await close(server);
+  }
+});
+
 test('evaluateHook returns deny payload as-is', async () => {
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });

@@ -28,6 +28,21 @@ from sigil_sdk import (
 )
 
 
+def test_parse_hook_response_includes_transformed_input() -> None:
+    from sigil_sdk.hooks import _parse_response
+
+    parsed = _parse_response(
+        {
+            "action": "allow",
+            "transformed_input": {"conversation_preview": "[REDACTED]"},
+            "evaluations": [],
+        }
+    )
+    assert parsed.action == "allow"
+    assert parsed.transformed_input is not None
+    assert parsed.transformed_input.conversation_preview == "[REDACTED]"
+
+
 def test_evaluate_hook_disabled_short_circuits() -> None:
     class _Handler(BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802

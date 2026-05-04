@@ -1,4 +1,10 @@
-import type { HookEvaluateRequest, HookEvaluateResponse, HookEvaluation, HooksConfig } from './types.js';
+import type {
+  HookEvaluateRequest,
+  HookEvaluateResponse,
+  HookEvaluation,
+  HookInput,
+  HooksConfig,
+} from './types.js';
 import { asError } from './utils.js';
 
 const hooksEvaluatePath = '/api/v1/hooks:evaluate';
@@ -218,7 +224,45 @@ function parseEvaluateResponse(payload: unknown): HookEvaluateResponse {
     });
   }
 
-  return { action, ruleId, reason, evaluations };
+  const transformedInput = parseTransformedInputPayload(payload);
+
+  return { action, ruleId, reason, transformedInput, evaluations };
+}
+
+function parseTransformedInputPayload(payload: Record<string, unknown>): HookInput | undefined {
+  const raw = payload.transformed_input;
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const out: HookInput = {};
+  if (Array.isArray(raw.messages) && raw.messages.length > 0) {
+    out.messages = raw.messages as HookInput['messages'];
+  }
+  if (Array.isArray(raw.tools) && raw.tools.length > 0) {
+    out.tools = raw.tools as HookInput['tools'];
+  }
+  if (typeof raw.system_prompt === 'string' && raw.system_prompt.length > 0) {
+    out.systemPrompt = raw.system_prompt;
+  }
+  if (Array.isArray(raw.output) && raw.output.length > 0) {
+    out.output = raw.output as HookInput['output'];
+  }
+  if (typeof raw.conversation_preview === 'string' && raw.conversation_preview.length > 0) {
+    out.conversationPreview = raw.conversation_preview;
+  }
+  if (
+    out.messages === undefined &&
+    out.tools === undefined &&
+    out.systemPrompt === undefined &&
+    out.output === undefined &&
+    out.conversationPreview === undefined
+  ) {
+    return undefined;
+  }
+  return out;
 }
 
 function stringField(value: unknown): string {

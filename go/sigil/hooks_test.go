@@ -111,6 +111,35 @@ func TestEvaluateHookSendsRequestAndParsesAllow(t *testing.T) {
 	}
 }
 
+func TestEvaluateHookParsesTransformedInput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"action":"allow",
+			"transformed_input":{"conversation_preview":"[REDACTED]"},
+			"evaluations":[]
+		}`))
+	}))
+	defer server.Close()
+
+	client := newHookTestClient(t, hookTestClientOptions{
+		apiEndpoint:  server.URL,
+		hooksEnabled: true,
+	})
+	t.Cleanup(func() { _ = client.Shutdown(context.Background()) })
+
+	resp, err := client.EvaluateHook(context.Background(), HookEvaluateRequest{
+		Phase:   HookPhasePreflight,
+		Context: HookContext{Model: &HookModel{Provider: "openai", Name: "gpt-4o"}},
+	})
+	if err != nil {
+		t.Fatalf("evaluate hook: %v", err)
+	}
+	if resp.TransformedInput == nil || resp.TransformedInput.ConversationPreview != "[REDACTED]" {
+		t.Fatalf("unexpected transformed input: %#v", resp.TransformedInput)
+	}
+}
+
 func TestEvaluateHookReturnsDeny(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
