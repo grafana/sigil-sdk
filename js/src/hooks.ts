@@ -1,10 +1,4 @@
-import type {
-  HookEvaluateRequest,
-  HookEvaluateResponse,
-  HookEvaluation,
-  HookInput,
-  HooksConfig,
-} from './types.js';
+import type { HookEvaluateRequest, HookEvaluateResponse, HookEvaluation, HookInput, HooksConfig } from './types.js';
 import { asError } from './utils.js';
 
 const hooksEvaluatePath = '/api/v1/hooks:evaluate';
