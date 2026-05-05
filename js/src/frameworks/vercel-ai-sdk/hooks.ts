@@ -464,7 +464,7 @@ export class SigilVercelAiSdkInstrumentation {
       return firstError;
     };
 
-    const runPreflight = async (event: StepStartEvent, inputMessages: Message[]): Promise<void> => {
+    const runPreflight = async (event: StepStartEvent, inputMessages: Message[]): Promise<Message[]> => {
       const model = mapModelFromStepStart(event);
       // evaluateHook honors fail-open internally; an exception here means
       // fail_open=false and the LLM call should be aborted.
@@ -492,6 +492,11 @@ export class SigilVercelAiSdkInstrumentation {
           response.evaluations,
         );
       }
+      const ti = response.transformedInput?.messages;
+      if (ti !== undefined && ti.length > 0) {
+        return ti;
+      }
+      return inputMessages;
     };
 
     const hooks: StreamTextHooks = {
@@ -508,17 +513,17 @@ export class SigilVercelAiSdkInstrumentation {
         }
 
         const inputMessages = mapInputMessages(event.messages);
-        const finalize = (): void => {
+        const finalize = (resolvedMessages: Message[]): void => {
           createStepState({
             stepNumber,
             stepStartEvent: event,
             startedAt: new Date(),
-            inputMessages: this.captureInputs ? inputMessages : [],
+            inputMessages: this.captureInputs ? resolvedMessages : [],
           });
         };
 
         if (!this.preflightEnabled()) {
-          finalize();
+          finalize(inputMessages);
           return;
         }
 

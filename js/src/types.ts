@@ -598,5 +598,10 @@ export interface HookEvaluateResponse {
   action: HookAction;
   ruleId?: string;
   reason?: string;
+  /**
+   * When the server applied hook transform rules, the redacted/sanitized
+   * payload to use instead of the original request input.
+   */
+  transformedInput?: HookInput;
   evaluations: HookEvaluation[];
 }

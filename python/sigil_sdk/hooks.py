@@ -13,7 +13,7 @@ from urllib import request as urllib_request
 
 from .config import HooksConfig
 from .errors import HookDeniedError, HookTransportError
-from .models import Message, PartKind, ToolDefinition
+from .models import Message, MessageRole, Part, PartKind, ToolDefinition
 
 HOOKS_EVALUATE_PATH = "/api/v1/hooks:evaluate"
 HOOK_TIMEOUT_HEADER = "X-Sigil-Hook-Timeout-Ms"
@@ -93,6 +93,7 @@ class HookEvaluateResponse:
     action: str
     rule_id: str = ""
     reason: str = ""
+    transformed_input: HookInput | None = None
     evaluations: list[HookEvaluation] = field(default_factory=list)
 
     @property
@@ -325,12 +326,77 @@ def _parse_response(payload: Any) -> HookEvaluateResponse:
                     reason=_string_field(entry.get("reason")),
                 )
             )
+    raw_ti = payload.get("transformed_input")
+    transformed_input = _parse_hook_input_wire(raw_ti)
+
     return HookEvaluateResponse(
         action=action,
         rule_id=rule_id,
         reason=reason,
+        transformed_input=transformed_input,
         evaluations=evaluations,
     )
+
+
+def _parse_hook_input_wire(data: Any) -> HookInput | None:
+    """Parses server transformed_input (snake_case JSON) into HookInput."""
+
+    if not isinstance(data, dict):
+        return None
+    out = HookInput()
+    cp = data.get("conversation_preview")
+    if isinstance(cp, str) and cp != "":
+        out.conversation_preview = cp
+    sp = data.get("system_prompt")
+    if isinstance(sp, str) and sp != "":
+        out.system_prompt = sp
+    raw_msgs = data.get("messages")
+    if isinstance(raw_msgs, list):
+        msgs: list[Message] = []
+        for item in raw_msgs:
+            m = _parse_wire_message_dict(item)
+            if m is not None:
+                msgs.append(m)
+        if msgs:
+            out.messages = msgs
+    if out.messages or out.conversation_preview or out.system_prompt:
+        return out
+    return None
+
+
+def _parse_wire_message_dict(item: Any) -> Message | None:
+    if not isinstance(item, dict):
+        return None
+    role_val = item.get("role", "user")
+    role = MessageRole.USER
+    if isinstance(role_val, int):
+        if role_val == 2:
+            role = MessageRole.ASSISTANT
+        elif role_val == 3:
+            role = MessageRole.TOOL
+    else:
+        role_raw = str(role_val).lower()
+        if role_raw == "assistant":
+            role = MessageRole.ASSISTANT
+        elif role_raw == "tool":
+            role = MessageRole.TOOL
+    parts_raw = item.get("parts")
+    if not isinstance(parts_raw, list):
+        return Message(role=role, parts=[])
+    parts: list[Part] = []
+    for pr in parts_raw:
+        if not isinstance(pr, dict):
+            continue
+        txt = pr.get("text")
+        if isinstance(txt, str) and txt != "":
+            parts.append(Part(kind=PartKind.TEXT, text=txt))
+            continue
+        think = pr.get("thinking")
+        if isinstance(think, str) and think != "":
+            parts.append(Part(kind=PartKind.THINKING, thinking=think))
+    name = item.get("name")
+    n = str(name) if isinstance(name, str) else ""
+    return Message(role=role, parts=parts, name=n)
 
 
 def _string_field(value: Any) -> str:

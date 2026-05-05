@@ -1,4 +1,15 @@
-import type { HookEvaluateRequest, HookEvaluateResponse, HookEvaluation, HooksConfig } from './types.js';
+import type {
+  HookEvaluateRequest,
+  HookEvaluateResponse,
+  HookEvaluation,
+  HookInput,
+  HooksConfig,
+  Message,
+  MessagePart,
+  ToolCallPart,
+  ToolDefinition,
+  ToolResultPart,
+} from './types.js';
 import { asError } from './utils.js';
 
 const hooksEvaluatePath = '/api/v1/hooks:evaluate';
@@ -218,7 +229,276 @@ function parseEvaluateResponse(payload: unknown): HookEvaluateResponse {
     });
   }
 
-  return { action, ruleId, reason, evaluations };
+  const transformedInput = parseTransformedInputPayload(payload);
+
+  return { action, ruleId, reason, transformedInput, evaluations };
+}
+
+function parseTransformedInputPayload(payload: Record<string, unknown>): HookInput | undefined {
+  const raw = payload.transformed_input;
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  return parseHookInputWire(raw);
+}
+
+/** Parses `transformed_input` from the Sigil API (SDK-shaped JSON and Go/proto JSON encodings). */
+function parseHookInputWire(raw: Record<string, unknown>): HookInput | undefined {
+  const out: HookInput = {};
+  const msgs = parseWireMessages(raw.messages);
+  if (msgs !== undefined && msgs.length > 0) {
+    out.messages = msgs;
+  }
+  const tools = parseWireTools(raw.tools);
+  if (tools !== undefined && tools.length > 0) {
+    out.tools = tools;
+  }
+  const output = parseWireMessages(raw.output);
+  if (output !== undefined && output.length > 0) {
+    out.output = output;
+  }
+  const sp = raw.system_prompt ?? raw.systemPrompt;
+  if (typeof sp === 'string' && sp.length > 0) {
+    out.systemPrompt = sp;
+  }
+  const cp = raw.conversation_preview ?? raw.conversationPreview;
+  if (typeof cp === 'string' && cp.length > 0) {
+    out.conversationPreview = cp;
+  }
+  if (
+    out.messages === undefined &&
+    out.tools === undefined &&
+    out.systemPrompt === undefined &&
+    out.output === undefined &&
+    out.conversationPreview === undefined
+  ) {
+    return undefined;
+  }
+  return out;
+}
+
+function parseWireTools(raw: unknown): ToolDefinition[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return undefined;
+  }
+  const out: ToolDefinition[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const td = parseWireToolDefinition(item);
+    if (td !== undefined) {
+      out.push(td);
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function parseWireToolDefinition(rec: Record<string, unknown>): ToolDefinition | undefined {
+  const name = typeof rec.name === 'string' ? rec.name : '';
+  if (name.length === 0) {
+    return undefined;
+  }
+  const out: ToolDefinition = { name };
+  if (typeof rec.description === 'string') {
+    out.description = rec.description;
+  }
+  if (typeof rec.type === 'string') {
+    out.type = rec.type;
+  }
+  const schemaKey = rec.input_schema_json ?? rec.inputSchemaJson ?? rec.inputSchemaJSON;
+  if (typeof schemaKey === 'string' && schemaKey.length > 0) {
+    out.inputSchemaJSON = maybeDecodeGoProtoJSONBytes(schemaKey);
+  }
+  return out;
+}
+
+function maybeDecodeGoProtoJSONBytes(value: string): string {
+  if (!/^[A-Za-z0-9+/]+=*$/.test(value) || value.length < 4) {
+    return value;
+  }
+  try {
+    const g = globalThis as typeof globalThis & {
+      Buffer?: { from(data: string, enc: string): { toString(enc: string): string } };
+    };
+    if (g.Buffer !== undefined) {
+      const text = g.Buffer.from(value, 'base64').toString('utf8');
+      if (text.length > 0) {
+        return text;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return value;
+}
+
+function parseWireMessages(raw: unknown): Message[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return undefined;
+  }
+  const out: Message[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const m = parseWireMessage(item);
+    if (m !== undefined) {
+      out.push(m);
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function parseWireMessage(rec: Record<string, unknown>): Message | undefined {
+  const role = wireRoleToSdk(rec.role);
+  const partsRaw = rec.parts;
+  const parts: MessagePart[] = [];
+  if (Array.isArray(partsRaw)) {
+    for (const p of partsRaw) {
+      if (!isRecord(p)) {
+        continue;
+      }
+      const part = parseWireMessagePart(p);
+      if (part !== undefined) {
+        parts.push(part);
+      }
+    }
+  }
+  const name = typeof rec.name === 'string' ? rec.name : undefined;
+  const content = typeof rec.content === 'string' ? rec.content : undefined;
+  return {
+    role,
+    ...(name !== undefined ? { name } : {}),
+    ...(content !== undefined ? { content } : {}),
+    ...(parts.length > 0 ? { parts } : {}),
+  };
+}
+
+function wireRoleToSdk(role: unknown): string {
+  if (typeof role === 'string') {
+    return role.toLowerCase();
+  }
+  if (role === 1) {
+    return 'user';
+  }
+  if (role === 2) {
+    return 'assistant';
+  }
+  if (role === 3) {
+    return 'tool';
+  }
+  return 'user';
+}
+
+function parseWireMessagePart(rec: Record<string, unknown>): MessagePart | undefined {
+  const typ = rec.type;
+  if (typ === 'text' && typeof rec.text === 'string') {
+    return { type: 'text', text: rec.text };
+  }
+  if (typ === 'thinking' && typeof rec.thinking === 'string') {
+    return { type: 'thinking', thinking: rec.thinking };
+  }
+  if (typ === 'tool_call' && isRecord(rec.toolCall)) {
+    const tc = parseWireToolCallPart(rec.toolCall);
+    return tc !== undefined ? { type: 'tool_call', toolCall: tc } : undefined;
+  }
+  if (typ === 'tool_result' && isRecord(rec.toolResult)) {
+    const tr = parseWireToolResultPart(rec.toolResult);
+    return tr !== undefined ? { type: 'tool_result', toolResult: tr } : undefined;
+  }
+
+  const payload = rec.Payload ?? rec.payload;
+  if (isRecord(payload)) {
+    if (typeof payload.Text === 'string') {
+      return { type: 'text', text: payload.Text };
+    }
+    if (typeof payload.Thinking === 'string') {
+      return { type: 'thinking', thinking: payload.Thinking };
+    }
+    if (isRecord(payload.ToolCall)) {
+      const tc = parseWireToolCallPart(payload.ToolCall);
+      return tc !== undefined ? { type: 'tool_call', toolCall: tc } : undefined;
+    }
+    if (isRecord(payload.ToolResult)) {
+      const tr = parseWireToolResultPart(payload.ToolResult);
+      return tr !== undefined ? { type: 'tool_result', toolResult: tr } : undefined;
+    }
+  }
+
+  const kind = typeof rec.kind === 'string' ? rec.kind : '';
+  if (kind === 'text' && typeof rec.text === 'string') {
+    return { type: 'text', text: rec.text };
+  }
+  if (kind === 'thinking' && typeof rec.thinking === 'string') {
+    return { type: 'thinking', thinking: rec.thinking };
+  }
+  if (kind === 'tool_call') {
+    const rawTc = rec.tool_call ?? rec.toolCall;
+    if (isRecord(rawTc)) {
+      const tc = parseWireToolCallPart(rawTc);
+      return tc !== undefined ? { type: 'tool_call', toolCall: tc } : undefined;
+    }
+  }
+  if (kind === 'tool_result') {
+    const rawTr = rec.tool_result ?? rec.toolResult;
+    if (isRecord(rawTr)) {
+      const tr = parseWireToolResultPart(rawTr);
+      return tr !== undefined ? { type: 'tool_result', toolResult: tr } : undefined;
+    }
+  }
+  return undefined;
+}
+
+function parseWireToolCallPart(rec: Record<string, unknown>): ToolCallPart | undefined {
+  const name = typeof rec.name === 'string' ? rec.name : '';
+  if (name.length === 0) {
+    return undefined;
+  }
+  const out: ToolCallPart = { name };
+  if (typeof rec.id === 'string') {
+    out.id = rec.id;
+  }
+  const rawInput = rec.input_json ?? rec.inputJson ?? rec.inputJSON;
+  if (typeof rawInput === 'string' && rawInput.length > 0) {
+    out.inputJSON = maybeDecodeGoProtoJSONBytes(rawInput);
+  }
+  return out;
+}
+
+function parseWireToolResultPart(rec: Record<string, unknown>): ToolResultPart | undefined {
+  const out: ToolResultPart = {};
+  if (typeof rec.tool_call_id === 'string') {
+    out.toolCallId = rec.tool_call_id;
+  } else if (typeof rec.toolCallId === 'string') {
+    out.toolCallId = rec.toolCallId;
+  }
+  if (typeof rec.name === 'string') {
+    out.name = rec.name;
+  }
+  if (typeof rec.content === 'string') {
+    out.content = rec.content;
+  }
+  const rawCj = rec.content_json ?? rec.contentJson ?? rec.contentJSON;
+  if (typeof rawCj === 'string' && rawCj.length > 0) {
+    out.contentJSON = maybeDecodeGoProtoJSONBytes(rawCj);
+  }
+  if (rec.is_error === true || rec.isError === true) {
+    out.isError = true;
+  }
+  if (
+    out.toolCallId === undefined &&
+    out.name === undefined &&
+    out.content === undefined &&
+    out.contentJSON === undefined &&
+    out.isError === undefined
+  ) {
+    return undefined;
+  }
+  return out;
 }
 
 function stringField(value: unknown): string {
