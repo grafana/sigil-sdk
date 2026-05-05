@@ -25,7 +25,7 @@
   },
   "scripts": {
     "prebuild": "bash scripts/ensure-sdk.sh",
-    "build": "tsc --noEmit && esbuild src/index.ts --bundle --format=esm --platform=node --target=es2022 --outfile=dist/index.js --external:@mariozechner/pi-coding-agent --external:@mariozechner/pi-ai --external:@sinclair/typebox --external:@grpc/grpc-js --external:@grpc/proto-loader",
+    "build": "node scripts/build.mjs",
     "lint": "biome check .",
     "lint:fix": "biome check --fix .",
     "pretypecheck": "bash scripts/ensure-sdk.sh",
