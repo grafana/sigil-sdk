@@ -23,6 +23,36 @@ pnpm --filter @grafana/sigil-pi run build
 pi install /absolute/path/to/sigil-sdk/plugins/pi
 ```
 
+## Get your credentials from Grafana Cloud
+
+Skip this section if you're connecting to self-hosted Sigil — see [Auth modes](#auth-modes) for `tenant` / `bearer` / `none`.
+
+You need four values from your Grafana Cloud stack: the Sigil API URL, an OTLP endpoint, an instance ID, and an access policy token.
+
+### Sigil API URL and Instance ID
+
+In **Observability → AI Observability → Configuration** (`https://<stack>.grafana.net/plugins/grafana-sigil-app`), copy:
+
+- **API URL** → `endpoint`. Looks like `https://sigil-prod-<region>.grafana.net`.
+- **Instance ID** → `auth.user` (and `otlp.basicUser`). Numeric stack ID.
+
+### Access policy token
+
+In **Administration → Users and access → Cloud access policies** (`https://<stack>.grafana.net/a/grafana-auth-app`), click **Create access policy**. One token covers both the generations channel and OTel:
+
+- **Scopes**: tick `metrics: Write` and `traces: Write`. Use **Add scope** to add `sigil:write`.
+- Click **Create**, then **Add token** on the new policy. Copy the `glc_…` token once — you can't view it again.
+
+This token goes into both `auth.password` and `otlp.basicPassword`.
+
+### OTLP endpoint
+
+The AI Observability UI relies on traces and metrics for latency charts, tool call breakdowns, and other panels. Without OTel configured, half the UI is empty — treat this as required.
+
+Open the **Grafana Cloud Portal**, click into your stack, and find the **OpenTelemetry** card. Copy:
+
+- **OTLP Endpoint URL** → `otlp.endpoint`. Looks like `https://otlp-gateway-prod-<region>.grafana.net/otlp`.
+
 ## Configure
 
 Create `~/.config/sigil-pi/config.json`:
@@ -71,11 +101,11 @@ Token values support `${ENV_VAR}` interpolation.
 
 ### OTLP (metrics & traces)
 
-The `otlp` block exports OTel histograms and trace spans:
+The `otlp` block exports OTel histograms and trace spans. The AI Observability UI relies on these for latency, tool-call, and throughput panels — leaving it unconfigured leaves half the UI empty.
 
 ```json
 "otlp": {
-  "endpoint": "https://otlp-gateway.grafana.net/otlp",
+  "endpoint": "https://otlp-gateway-prod-<region>.grafana.net/otlp",
   "basicUser": "123456",
   "basicPassword": "${GRAFANA_CLOUD_TOKEN}"
 }
@@ -121,7 +151,7 @@ Tweak individual knobs:
 | `agentVersion` | auto-detected | Pi agent version |
 | `contentCapture` | `"metadata_only"` | `full`, `no_tool_content`, or `metadata_only` |
 | `debug` | `false` | Log lifecycle events to stderr |
-| `otlp.endpoint` | — | OTLP HTTP endpoint (e.g. `https://otlp-gateway.grafana.net/otlp`) |
+| `otlp.endpoint` | — | OTLP HTTP endpoint (e.g. `https://otlp-gateway-prod-<region>.grafana.net/otlp`). Required for the AI Observability UI to populate latency/tool-call panels. |
 | `otlp.basicUser` / `otlp.basicPassword` | — | OTLP Basic auth |
 | `otlp.bearerToken` | — | OTLP Bearer token |
 | `otlp.headers` | — | Custom OTLP headers |
