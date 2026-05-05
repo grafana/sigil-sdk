@@ -13,6 +13,7 @@ import type {
   TokenUsage,
   ToolDefinition,
 } from '../types.js';
+import { canonicalEffectiveVersion } from '../utils.js';
 
 type ExportGenerationsMethod = (
   request: unknown,
@@ -171,7 +172,7 @@ function parseGRPCExportResponse(response: unknown, request: ExportGenerationsRe
 }
 
 function mapGenerationToProto(generation: Generation): Record<string, unknown> {
-  return {
+  const proto: Record<string, unknown> = {
     id: generation.id,
     conversationId: generation.conversationId,
     operationName: generation.operationName,
@@ -204,6 +205,13 @@ function mapGenerationToProto(generation: Generation): Record<string, unknown> {
     agentName: generation.agentName,
     agentVersion: generation.agentVersion,
   };
+
+  const effectiveVersion = canonicalEffectiveVersion(generation.effectiveVersion);
+  if (effectiveVersion !== undefined) {
+    proto.effectiveVersion = effectiveVersion;
+  }
+
+  return proto;
 }
 
 function mapMessageToProto(message: Message): Record<string, unknown> {

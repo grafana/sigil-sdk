@@ -62,6 +62,12 @@ public final class Generation extends GenerationResult {
     }
 
     @Override
+    public Generation setEffectiveVersion(String effectiveVersion) {
+        super.setEffectiveVersion(effectiveVersion);
+        return this;
+    }
+
+    @Override
     public Generation setMode(GenerationMode mode) {
         super.setMode(mode);
         return this;
@@ -129,6 +135,7 @@ public final class Generation extends GenerationResult {
         out.setToolChoice(getToolChoice());
         out.setThinkingEnabled(getThinkingEnabled());
         out.setParentGenerationIds(getParentGenerationIds());
+        out.setEffectiveVersion(getEffectiveVersion());
         out.setUsage(getUsage().copy());
         out.setStopReason(getStopReason());
         out.setStartedAt(getStartedAt());

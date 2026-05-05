@@ -10,7 +10,7 @@ import type {
   TokenUsage,
   ToolDefinition,
 } from '../types.js';
-import { isRecord } from '../utils.js';
+import { canonicalEffectiveVersion, isRecord } from '../utils.js';
 
 export class HTTPGenerationExporter implements GenerationExporter {
   private readonly endpoint: string;
@@ -131,6 +131,10 @@ function mapGenerationToProtoJSON(generation: Generation): Record<string, unknow
   }
   if (generation.parentGenerationIds?.length) {
     proto.parent_generation_ids = generation.parentGenerationIds;
+  }
+  const effectiveVersion = canonicalEffectiveVersion(generation.effectiveVersion);
+  if (effectiveVersion !== undefined) {
+    proto.effective_version = effectiveVersion;
   }
 
   return proto;

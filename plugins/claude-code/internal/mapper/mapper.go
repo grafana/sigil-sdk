@@ -112,7 +112,7 @@ func mergeAssistantGroup(lines []transcript.Line) transcript.Line {
 
 // agentCall holds the metadata captured from an Agent tool_use block.
 type agentCall struct {
-	parentGenID string    // generation that spawned this call
+	parentGenID string           // generation that spawned this call
 	parentGen   sigil.Generation // copy for inheriting fields
 }
 
@@ -185,6 +185,7 @@ func synthesiseSubagentGens(line transcript.Line, uctx *userContext, calls map[s
 				ParentGenerationIDs: []string{ac.parentGenID},
 				AgentName:           agentName + "/subagent",
 				AgentVersion:        ac.parentGen.AgentVersion,
+				EffectiveVersion:    ac.parentGen.EffectiveVersion,
 				Mode:                sigil.GenerationModeSync,
 				OperationName:       "generateText",
 				Model:               ac.parentGen.Model,
@@ -298,6 +299,7 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 		ConversationTitle: opts.SessionID,
 		AgentName:         agentName,
 		AgentVersion:      line.Version,
+		EffectiveVersion:  line.Version,
 		Mode:              sigil.GenerationModeSync,
 		OperationName:     "generateText",
 		Model: sigil.ModelRef{

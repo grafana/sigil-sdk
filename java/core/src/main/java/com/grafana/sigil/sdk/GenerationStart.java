@@ -24,6 +24,7 @@ public final class GenerationStart {
     private String toolChoice = "";
     private Boolean thinkingEnabled;
     private final List<String> parentGenerationIds = new ArrayList<>();
+    private String effectiveVersion = "";
     private final List<ToolDefinition> tools = new ArrayList<>();
     private final Map<String, String> tags = new LinkedHashMap<>();
     private final Map<String, Object> metadata = new LinkedHashMap<>();
@@ -177,6 +178,16 @@ public final class GenerationStart {
         return this;
     }
 
+    /** See {@link GenerationResult#getEffectiveVersion()}. */
+    public String getEffectiveVersion() {
+        return effectiveVersion;
+    }
+
+    public GenerationStart setEffectiveVersion(String effectiveVersion) {
+        this.effectiveVersion = effectiveVersion == null ? "" : effectiveVersion;
+        return this;
+    }
+
     public List<ToolDefinition> getTools() {
         return tools;
     }
@@ -249,6 +260,7 @@ public final class GenerationStart {
                 .setToolChoice(toolChoice)
                 .setThinkingEnabled(thinkingEnabled)
                 .setParentGenerationIds(parentGenerationIds)
+                .setEffectiveVersion(effectiveVersion)
                 .setContentCapture(contentCapture)
                 .setStartedAt(startedAt);
         for (ToolDefinition tool : tools) {

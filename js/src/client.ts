@@ -1096,6 +1096,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
         : this.seed.parentGenerationIds?.length
           ? [...this.seed.parentGenerationIds]
           : undefined,
+      effectiveVersion: firstNonEmptyString(this.result?.effectiveVersion, this.seed.effectiveVersion),
       input: this.result?.input?.map(cloneMessage),
       output: this.result?.output?.map(cloneMessage),
       tools: this.result?.tools?.map(cloneToolDefinition) ?? this.seed.tools?.map(cloneToolDefinition),

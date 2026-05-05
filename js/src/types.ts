@@ -341,6 +341,7 @@ export interface GenerationStart {
   toolChoice?: string;
   thinkingEnabled?: boolean;
   parentGenerationIds?: string[];
+  effectiveVersion?: string;
   tools?: ToolDefinition[];
   tags?: Record<string, string>;
   metadata?: Record<string, unknown>;
@@ -365,6 +366,8 @@ export interface GenerationResult {
   toolChoice?: string;
   thinkingEnabled?: boolean;
   parentGenerationIds?: string[];
+  /** See {@link GenerationStart.effectiveVersion}. */
+  effectiveVersion?: string;
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];
@@ -419,6 +422,8 @@ export interface Generation {
   toolChoice?: string;
   thinkingEnabled?: boolean;
   parentGenerationIds?: string[];
+  /** See {@link GenerationStart.effectiveVersion}. */
+  effectiveVersion?: string;
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];

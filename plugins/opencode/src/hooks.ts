@@ -84,6 +84,7 @@ async function handleEvent(
     conversationId: assistantMsg.sessionID,
     agentName: buildAgentName(config.agentName, assistantMsg.mode),
     agentVersion: config.agentVersion,
+    effectiveVersion: config.agentVersion,
     model: { provider: assistantMsg.providerID, name: assistantMsg.modelID },
     startedAt: new Date(assistantMsg.time.created),
     ...(contentCapture && {

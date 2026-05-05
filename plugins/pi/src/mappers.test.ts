@@ -127,6 +127,31 @@ describe("mapGenerationStart", () => {
     );
     expect(start.thinkingEnabled).toBeUndefined();
   });
+
+  it("propagates agentVersion into effectiveVersion", () => {
+    const msg = makeMsg();
+    const a = mapGenerationStart(msg, "s", "pi", "1.4.7", 0, [
+      { name: "bash" },
+    ]);
+    const b = mapGenerationStart(msg, "s", "pi", "1.4.7", 0, [
+      { name: "read" },
+    ]);
+    expect(a.effectiveVersion).toBe("1.4.7");
+    expect(a.effectiveVersion).toBe(b.effectiveVersion);
+    expect(a.effectiveVersion).toBe(a.agentVersion);
+  });
+
+  it("leaves effectiveVersion unset when agentVersion is missing", () => {
+    const start = mapGenerationStart(
+      makeMsg(),
+      "s",
+      "pi",
+      undefined,
+      0,
+      undefined,
+    );
+    expect(start.effectiveVersion).toBeUndefined();
+  });
 });
 
 describe("mapGenerationResult", () => {

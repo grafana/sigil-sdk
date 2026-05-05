@@ -1,5 +1,7 @@
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Proto = Sigil.V1;
 
@@ -76,6 +78,12 @@ internal static class ProtoMapping
         }
         proto.ParentGenerationIds.AddRange(model.ParentGenerationIds);
 
+        var trimmedEffectiveVersion = model.EffectiveVersion.Trim();
+        if (trimmedEffectiveVersion.Length > 0)
+        {
+            proto.EffectiveVersion = CanonicalEffectiveVersion(trimmedEffectiveVersion);
+        }
+
         foreach (var tag in model.Tags)
         {
             proto.Tags[tag.Key] = tag.Value;
@@ -93,6 +101,13 @@ internal static class ProtoMapping
         proto.RawArtifacts.AddRange(model.Artifacts.Select(MapArtifact));
 
         return proto;
+    }
+
+    private static string CanonicalEffectiveVersion(string value)
+    {
+        using var sha = SHA256.Create();
+        var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(value));
+        return "sha256:" + BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
     }
 
     private static Proto.GenerationMode MapMode(GenerationMode? mode)

@@ -1,10 +1,14 @@
 package sigil
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	sigilv1 "github.com/grafana/sigil-sdk/go/sigil/internal/gen/sigil/v1"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -46,6 +50,11 @@ func generationToProto(g Generation) (*sigilv1.Generation, error) {
 		ToolChoice:          cloneStringPtr(g.ToolChoice),
 		ThinkingEnabled:     cloneBoolPtr(g.ThinkingEnabled),
 		ParentGenerationIds: cloneStringSlice(g.ParentGenerationIDs),
+	}
+
+	if trimmed := strings.TrimSpace(g.EffectiveVersion); trimmed != "" {
+		sum := sha256.Sum256([]byte(trimmed))
+		out.EffectiveVersion = proto.String("sha256:" + hex.EncodeToString(sum[:]))
 	}
 
 	if !g.StartedAt.IsZero() {

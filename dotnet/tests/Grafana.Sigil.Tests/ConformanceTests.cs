@@ -274,6 +274,139 @@ public sealed class ConformanceTests
         Assert.Equal(expectedVersion.Length == 0 ? null : expectedVersion, span.GetTagItem("gen_ai.agent.version")?.ToString());
     }
 
+    // echo -n "1.2.3" | shasum -a 256
+    private const string EffectiveVersionDigest1_2_3 =
+        "sha256:c47f5b18b8a430e698b9fe15e51f6119984e78334bcf3f45e210d30c37ef2f9e";
+
+    [Fact]
+    public async Task EffectiveVersionUnsetLeavesProtoFieldAbsent()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+        });
+        recorder.SetResult(new Generation());
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.False(generation.HasEffectiveVersion);
+    }
+
+    [Fact]
+    public async Task EffectiveVersionRawHashesToPinnedDigest()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            EffectiveVersion = "1.2.3",
+        });
+        recorder.SetResult(new Generation());
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.Equal(EffectiveVersionDigest1_2_3, generation.EffectiveVersion);
+    }
+
+    [Fact]
+    public async Task EffectiveVersionWhitespaceOnlyLeavesProtoFieldAbsent()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            EffectiveVersion = "   ",
+        });
+        recorder.SetResult(new Generation());
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.False(generation.HasEffectiveVersion);
+    }
+
+    [Fact]
+    public async Task EffectiveVersionSurroundingWhitespaceIsTrimmedBeforeHashing()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            EffectiveVersion = "  1.2.3\t\n",
+        });
+        recorder.SetResult(new Generation());
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.Equal(EffectiveVersionDigest1_2_3, generation.EffectiveVersion);
+    }
+
+    // echo -n "result-only" | shasum -a 256
+    private const string EffectiveVersionDigestResultOnly =
+        "sha256:f61f2b041f07a7e4a58a926df31279f4c11ebd1f716147d8ee8cbfad6a69f30e";
+
+    [Fact]
+    public async Task EffectiveVersionStartFallsThroughWhenResultIsEmpty()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            EffectiveVersion = "1.2.3",
+        });
+        recorder.SetResult(new Generation());
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.Equal(EffectiveVersionDigest1_2_3, generation.EffectiveVersion);
+    }
+
+    [Fact]
+    public async Task EffectiveVersionStartFallsThroughWhenResultIsWhitespaceOnly()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            EffectiveVersion = "1.2.3",
+        });
+        recorder.SetResult(new Generation { EffectiveVersion = "   " });
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.Equal(EffectiveVersionDigest1_2_3, generation.EffectiveVersion);
+    }
+
+    [Fact]
+    public async Task EffectiveVersionResultWinsOverStart()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
+            EffectiveVersion = "ignored",
+        });
+        recorder.SetResult(new Generation { EffectiveVersion = "result-only" });
+        recorder.End();
+        Assert.Null(recorder.Error);
+        await env.ShutdownAsync();
+
+        var generation = env.SingleGeneration();
+        Assert.Equal(EffectiveVersionDigestResultOnly, generation.EffectiveVersion);
+    }
+
     [Fact]
     public async Task StreamingTelemetrySemantics()
     {

@@ -722,6 +722,110 @@ func TestConformance_AgentIdentitySemantics(t *testing.T) {
 	}
 }
 
+// echo -n "1.2.3" | shasum -a 256
+const effectiveVersionDigest1_2_3 = "sha256:c47f5b18b8a430e698b9fe15e51f6119984e78334bcf3f45e210d30c37ef2f9e"
+
+func TestConformance_EffectiveVersionSemantics(t *testing.T) {
+	testCases := []struct {
+		name             string
+		effectiveVersion string
+		want             string // empty means proto field must be unset
+	}{
+		{
+			name: "unset leaves proto field absent",
+		},
+		{
+			name:             "whitespace-only leaves proto field absent",
+			effectiveVersion: "   ",
+		},
+		{
+			name:             "raw 1.2.3 hashes to pinned digest",
+			effectiveVersion: "1.2.3",
+			want:             effectiveVersionDigest1_2_3,
+		},
+		{
+			name:             "surrounding whitespace is trimmed before hashing",
+			effectiveVersion: "  1.2.3\t\n",
+			want:             effectiveVersionDigest1_2_3,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newConformanceEnv(t)
+
+			start := sigil.GenerationStart{
+				Model:            conformanceModel,
+				EffectiveVersion: tc.effectiveVersion,
+			}
+			recordGeneration(t, env, context.Background(), start, sigil.Generation{})
+
+			env.Shutdown(t)
+			generation := env.Ingest.SingleGeneration(t)
+
+			if tc.want == "" {
+				if generation.EffectiveVersion != nil {
+					t.Fatalf("expected unset proto effective_version, got %q", generation.GetEffectiveVersion())
+				}
+				return
+			}
+			if got := generation.GetEffectiveVersion(); got != tc.want {
+				t.Fatalf("unexpected effective_version: got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConformance_EffectiveVersionResultOverridesStart(t *testing.T) {
+	// echo -n "result-only" | shasum -a 256
+	const resultOnlyDigest = "sha256:f61f2b041f07a7e4a58a926df31279f4c11ebd1f716147d8ee8cbfad6a69f30e"
+
+	testCases := []struct {
+		name        string
+		startValue  string
+		resultValue string
+		want        string
+	}{
+		{
+			name:       "start falls through when result is empty",
+			startValue: "1.2.3",
+			want:       effectiveVersionDigest1_2_3,
+		},
+		{
+			name:        "start falls through when result is whitespace-only",
+			startValue:  "1.2.3",
+			resultValue: "   ",
+			want:        effectiveVersionDigest1_2_3,
+		},
+		{
+			name:        "result wins over start",
+			startValue:  "ignored",
+			resultValue: "result-only",
+			want:        resultOnlyDigest,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newConformanceEnv(t)
+
+			start := sigil.GenerationStart{
+				Model:            conformanceModel,
+				EffectiveVersion: tc.startValue,
+			}
+			result := sigil.Generation{EffectiveVersion: tc.resultValue}
+			recordGeneration(t, env, context.Background(), start, result)
+
+			env.Shutdown(t)
+			generation := env.Ingest.SingleGeneration(t)
+
+			if got := generation.GetEffectiveVersion(); got != tc.want {
+				t.Fatalf("unexpected effective_version: got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestConformance_StreamingMode(t *testing.T) {
 	env := newConformanceEnv(t)
 

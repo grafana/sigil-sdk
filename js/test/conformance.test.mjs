@@ -558,6 +558,89 @@ test('conformance rating submission semantics', async () => {
   }
 });
 
+// echo -n "1.2.3" | shasum -a 256
+const EFFECTIVE_VERSION_DIGEST_1_2_3 = 'sha256:c47f5b18b8a430e698b9fe15e51f6119984e78334bcf3f45e210d30c37ef2f9e';
+
+test('conformance effective_version semantics', async () => {
+  const cases = [
+    { name: 'unset leaves proto field absent', effectiveVersion: undefined, want: undefined },
+    { name: 'whitespace-only leaves proto field absent', effectiveVersion: '   ', want: undefined },
+    { name: 'raw 1.2.3 hashes to pinned digest', effectiveVersion: '1.2.3', want: EFFECTIVE_VERSION_DIGEST_1_2_3 },
+    {
+      name: 'surrounding whitespace is trimmed before hashing',
+      effectiveVersion: '  1.2.3\t\n',
+      want: EFFECTIVE_VERSION_DIGEST_1_2_3,
+    },
+  ];
+
+  for (const tc of cases) {
+    const env = await createConformanceEnv();
+    try {
+      const recorder = env.client.startGeneration({
+        model: { provider: 'openai', name: 'gpt-5' },
+        effectiveVersion: tc.effectiveVersion,
+      });
+      recorder.setResult({});
+      recorder.end();
+      assert.equal(recorder.getError(), undefined, `${tc.name}: recorder error`);
+      await env.client.shutdown();
+
+      const generation = env.singleGeneration();
+      if (tc.want === undefined) {
+        assert.equal(generation.effectiveVersion, undefined, `${tc.name}: expected unset`);
+      } else {
+        assert.equal(generation.effectiveVersion, tc.want, tc.name);
+      }
+    } finally {
+      await env.close();
+    }
+  }
+});
+
+test('conformance effective_version result overrides start', async () => {
+  // echo -n "result-only" | shasum -a 256
+  const RESULT_ONLY_DIGEST = 'sha256:f61f2b041f07a7e4a58a926df31279f4c11ebd1f716147d8ee8cbfad6a69f30e';
+  const cases = [
+    {
+      name: 'start falls through when result is empty',
+      startValue: '1.2.3',
+      resultValue: undefined,
+      want: EFFECTIVE_VERSION_DIGEST_1_2_3,
+    },
+    {
+      name: 'start falls through when result is whitespace-only',
+      startValue: '1.2.3',
+      resultValue: '   ',
+      want: EFFECTIVE_VERSION_DIGEST_1_2_3,
+    },
+    {
+      name: 'result wins over start',
+      startValue: 'ignored',
+      resultValue: 'result-only',
+      want: RESULT_ONLY_DIGEST,
+    },
+  ];
+
+  for (const tc of cases) {
+    const env = await createConformanceEnv();
+    try {
+      const recorder = env.client.startGeneration({
+        model: { provider: 'openai', name: 'gpt-5' },
+        effectiveVersion: tc.startValue,
+      });
+      recorder.setResult({ effectiveVersion: tc.resultValue });
+      recorder.end();
+      assert.equal(recorder.getError(), undefined, `${tc.name}: recorder error`);
+      await env.client.shutdown();
+
+      const generation = env.singleGeneration();
+      assert.equal(generation.effectiveVersion, tc.want, tc.name);
+    } finally {
+      await env.close();
+    }
+  }
+});
+
 test('conformance shutdown flush semantics', async () => {
   const env = await createConformanceEnv({ batchSize: 10 });
 

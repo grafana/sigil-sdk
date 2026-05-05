@@ -503,6 +503,90 @@ def test_conformance_agent_identity_semantics() -> None:
             env.shutdown()
 
 
+# echo -n "1.2.3" | shasum -a 256
+EFFECTIVE_VERSION_DIGEST_1_2_3 = "sha256:c47f5b18b8a430e698b9fe15e51f6119984e78334bcf3f45e210d30c37ef2f9e"
+
+
+def test_conformance_effective_version_semantics() -> None:
+    cases = [
+        ("unset leaves proto field absent", "", ""),
+        ("whitespace-only leaves proto field absent", "   ", ""),
+        ("raw 1.2.3 hashes to pinned digest", "1.2.3", EFFECTIVE_VERSION_DIGEST_1_2_3),
+        (
+            "surrounding whitespace is trimmed before hashing",
+            "  1.2.3\t\n",
+            EFFECTIVE_VERSION_DIGEST_1_2_3,
+        ),
+    ]
+
+    for _, effective_version, want in cases:
+        env = _ConformanceEnv()
+        try:
+            recorder = env.client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="openai", name="gpt-5"),
+                    effective_version=effective_version,
+                )
+            )
+            recorder.set_result(Generation())
+            recorder.end()
+            assert recorder.err() is None
+            env.shutdown()
+
+            generation = env.servicer.single_generation()
+            if want == "":
+                assert not generation.HasField("effective_version")
+            else:
+                assert generation.effective_version == want
+        finally:
+            env.shutdown()
+
+
+def test_conformance_effective_version_result_overrides_start() -> None:
+    # echo -n "result-only" | shasum -a 256
+    result_only_digest = "sha256:f61f2b041f07a7e4a58a926df31279f4c11ebd1f716147d8ee8cbfad6a69f30e"
+
+    cases = [
+        (
+            "start falls through when result is empty",
+            "1.2.3",
+            "",
+            EFFECTIVE_VERSION_DIGEST_1_2_3,
+        ),
+        (
+            "start falls through when result is whitespace-only",
+            "1.2.3",
+            "   ",
+            EFFECTIVE_VERSION_DIGEST_1_2_3,
+        ),
+        (
+            "result wins over start",
+            "ignored",
+            "result-only",
+            result_only_digest,
+        ),
+    ]
+
+    for _, start_value, result_value, want in cases:
+        env = _ConformanceEnv()
+        try:
+            recorder = env.client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="openai", name="gpt-5"),
+                    effective_version=start_value,
+                )
+            )
+            recorder.set_result(Generation(effective_version=result_value))
+            recorder.end()
+            assert recorder.err() is None
+            env.shutdown()
+
+            generation = env.servicer.single_generation()
+            assert generation.effective_version == want
+        finally:
+            env.shutdown()
+
+
 def test_conformance_streaming_telemetry_semantics() -> None:
     env = _ConformanceEnv()
     try:

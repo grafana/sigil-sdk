@@ -249,6 +249,125 @@ class ConformanceTest {
         }
     }
 
+    // echo -n "1.2.3" | shasum -a 256
+    private static final String EFFECTIVE_VERSION_DIGEST_1_2_3 =
+            "sha256:c47f5b18b8a430e698b9fe15e51f6119984e78334bcf3f45e210d30c37ef2f9e";
+
+    @Test
+    void effectiveVersionUnsetLeavesProtoFieldAbsent() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5")));
+            recorder.setResult(new GenerationResult());
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.hasEffectiveVersion()).isFalse();
+        }
+    }
+
+    @Test
+    void effectiveVersionRawHashesToPinnedDigest() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setEffectiveVersion("1.2.3"));
+            recorder.setResult(new GenerationResult());
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.getEffectiveVersion()).isEqualTo(EFFECTIVE_VERSION_DIGEST_1_2_3);
+        }
+    }
+
+    @Test
+    void effectiveVersionWhitespaceOnlyLeavesProtoFieldAbsent() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setEffectiveVersion("   "));
+            recorder.setResult(new GenerationResult());
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.hasEffectiveVersion()).isFalse();
+        }
+    }
+
+    @Test
+    void effectiveVersionSurroundingWhitespaceIsTrimmedBeforeHashing() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setEffectiveVersion("  1.2.3\t\n"));
+            recorder.setResult(new GenerationResult());
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.getEffectiveVersion()).isEqualTo(EFFECTIVE_VERSION_DIGEST_1_2_3);
+        }
+    }
+
+    // echo -n "result-only" | shasum -a 256
+    private static final String EFFECTIVE_VERSION_DIGEST_RESULT_ONLY =
+            "sha256:f61f2b041f07a7e4a58a926df31279f4c11ebd1f716147d8ee8cbfad6a69f30e";
+
+    @Test
+    void effectiveVersionStartFallsThroughWhenResultIsEmpty() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setEffectiveVersion("1.2.3"));
+            recorder.setResult(new GenerationResult());
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.getEffectiveVersion()).isEqualTo(EFFECTIVE_VERSION_DIGEST_1_2_3);
+        }
+    }
+
+    @Test
+    void effectiveVersionStartFallsThroughWhenResultIsWhitespaceOnly() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setEffectiveVersion("1.2.3"));
+            recorder.setResult(new GenerationResult().setEffectiveVersion("   "));
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.getEffectiveVersion()).isEqualTo(EFFECTIVE_VERSION_DIGEST_1_2_3);
+        }
+    }
+
+    @Test
+    void effectiveVersionResultWinsOverStart() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationRecorder recorder = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setEffectiveVersion("ignored"));
+            recorder.setResult(new GenerationResult().setEffectiveVersion("result-only"));
+            recorder.end();
+            assertThat(recorder.error()).isEmpty();
+            env.client.shutdown();
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            assertThat(generation.getEffectiveVersion()).isEqualTo(EFFECTIVE_VERSION_DIGEST_RESULT_ONLY);
+        }
+    }
+
     @Test
     void streamingTelemetrySemantics() throws Exception {
         try (ConformanceEnv env = new ConformanceEnv(1)) {
