@@ -45,6 +45,8 @@ pip install sigil-sdk-openai-agents
 pip install sigil-sdk-llamaindex
 pip install sigil-sdk-google-adk
 pip install sigil-sdk-strands
+pip install sigil-sdk-litellm
+pip install sigil-sdk-pydantic-ai
 ```
 
 Framework handler usage:
@@ -57,6 +59,7 @@ from sigil_sdk_openai_agents import with_sigil_openai_agents_hooks
 from sigil_sdk_llamaindex import with_sigil_llamaindex_callbacks
 from sigil_sdk_google_adk import with_sigil_google_adk_callbacks
 from sigil_sdk_strands import with_sigil_strands_hooks
+from sigil_sdk_pydantic_ai import with_sigil_pydantic_ai_capability
 
 client = Client()
 chain_config = with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto")
@@ -65,15 +68,27 @@ openai_agents_run_options = with_sigil_openai_agents_hooks(None, client=client, 
 llamaindex_config = with_sigil_llamaindex_callbacks(None, client=client, provider_resolver="auto")
 google_adk_agent_config = with_sigil_google_adk_callbacks(None, client=client, provider_resolver="auto")
 strands_agent_config = with_sigil_strands_hooks(None, client=client, provider_resolver="auto")
+pydantic_ai_capabilities = with_sigil_pydantic_ai_capability(None, client=client, provider_resolver="auto")
+```
+
+LiteLLM uses a callback class instead of a `with_sigil_*` helper:
+
+```python
+import litellm
+from sigil_sdk import Client
+from sigil_sdk_litellm import SigilLiteLLMLogger
+
+client = Client()
+litellm.callbacks = [SigilLiteLLMLogger(client=client)]
 ```
 
 Framework handlers use the `Client` instance you pass in. If that client is configured with
 `generation_sanitizer`, the same redaction policy applies automatically to generations recorded
-through LangChain, LangGraph, OpenAI Agents, LlamaIndex, and Google ADK integrations.
+through LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands, LiteLLM, and Pydantic AI integrations.
 
 Framework handlers inject framework tags/metadata on recorded generations:
 
-- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, or `strands`)
+- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `strands`, `litellm`, or `pydantic-ai`)
 - `sigil.framework.source=handler` (or `hooks` for Strands Agents)
 - `sigil.framework.language=python`
 - `metadata["sigil.framework.run_id"]`
@@ -113,6 +128,8 @@ Full framework examples:
 - LlamaIndex: `../python-frameworks/llamaindex/README.md`
 - Google ADK: `../python-frameworks/google-adk/README.md`
 - Strands Agents: `../python-frameworks/strands/README.md`
+- LiteLLM: `../python-frameworks/litellm/README.md`
+- Pydantic AI: `../python-frameworks/pydantic-ai/README.md`
 
 ## Quick Start (Sync Generation)
 
