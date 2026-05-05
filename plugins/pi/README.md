@@ -163,4 +163,4 @@ Every generation always carries model, token usage (input/output/cache), cost, s
 | `no_tool_content` | assistant text and thinking |
 | `full` | assistant text, thinking, tool call arguments, tool results |
 
-When `otlp` is configured, the SDK additionally exports `gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, and `gen_ai.client.tool_calls_per_operation` histograms (provider/model/agent labels) plus one trace span per generation.
+When `otlp` is configured, the SDK additionally exports `gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, and `gen_ai.client.tool_calls_per_operation` histograms (provider/model/agent labels) plus one trace span per generation. The plugin sets the OTel resource `service.name` to `sigil-pi` for both metrics and traces.
