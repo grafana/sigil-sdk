@@ -3,18 +3,28 @@ package hook
 import (
 	"log"
 
+	"github.com/grafana/sigil-sdk/go/sigil"
+
+	"github.com/grafana/sigil-sdk/plugins/cursor/internal/config"
 	"github.com/grafana/sigil-sdk/plugins/cursor/internal/fragment"
 )
 
 // AfterAgentResponse appends an assistant text segment + token counts to the
 // fragment. Cursor may emit multiple afterAgentResponse events per generation
 // (e.g. one per streamed chunk); each becomes its own segment.
-func AfterAgentResponse(p Payload, logger *log.Logger) {
+//
+// Assistant text is gated by content-capture mode for the same reason as the
+// user prompt and tool I/O: in metadata_only the mapper would drop it at emit
+// time, so we don't want to persist it to disk first. Model, provider, and
+// token counts are metadata and are always written.
+func AfterAgentResponse(p Payload, cfg config.Config, logger *log.Logger) {
 	if p.ConversationID == "" || p.GenerationID == "" {
 		logger.Print("afterAgentResponse: missing conversation_id or generation_id")
 		return
 	}
 	ts := p.ResolvedTimestamp()
+	keepText := cfg.ContentCapture == sigil.ContentCaptureModeFull ||
+		cfg.ContentCapture == sigil.ContentCaptureModeNoToolContent
 
 	err := fragment.Update(p.ConversationID, p.GenerationID, logger, func(f *fragment.Fragment) bool {
 		fragment.Touch(f, ts)
@@ -24,7 +34,7 @@ func AfterAgentResponse(p Payload, logger *log.Logger) {
 		if p.Provider != "" {
 			f.Provider = p.Provider
 		}
-		if p.Text != "" {
+		if keepText && p.Text != "" {
 			f.Assistant = append(f.Assistant, fragment.AssistantSegment{Text: p.Text, Timestamp: ts})
 		}
 		if p.InputTokens != nil || p.OutputTokens != nil ||

@@ -76,9 +76,9 @@ func run(logger *log.Logger, stdin io.Reader, stdout io.Writer) {
 	case "sessionStart":
 		hook.SessionStart(payload, logger)
 	case "beforeSubmitPrompt":
-		hook.BeforeSubmit(payload, logger)
+		hook.BeforeSubmit(payload, cfg, logger)
 	case "afterAgentResponse":
-		hook.AfterAgentResponse(payload, logger)
+		hook.AfterAgentResponse(payload, cfg, logger)
 	case "afterAgentThought":
 		hook.AfterAgentThought(payload, logger)
 	case "postToolUse":
