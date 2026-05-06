@@ -5,6 +5,7 @@ Plugins that send generations from coding agents to [Grafana AI Observability](h
 | Agent | Plugin | Status |
 |-------|--------|--------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | [`claude-code/`](claude-code/) | Available |
+| [Cursor](https://cursor.com) | [`cursor/`](cursor/) | Available |
 | [OpenCode](https://opencode.ai) | [`opencode/`](opencode/) | Available |
 | [Pi](https://github.com/badlogic/pi) | [`pi/`](pi/) | Available |
 

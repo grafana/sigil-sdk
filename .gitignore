@@ -70,3 +70,7 @@ python-frameworks/pydantic-ai/build
 scripts/mysql-port-forward.sh
 
 examples/getting-started/python-pydantic-ai/.env
+
+# Override the global ctags ignore so the cursor plugin's tags package is tracked.
+!plugins/cursor/internal/tags/
+!plugins/cursor/internal/tags/**
