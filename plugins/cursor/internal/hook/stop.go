@@ -21,8 +21,8 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 
-	if !config.HasCredentials(cfg) {
-		logger.Print("stop: missing SIGIL_URL/SIGIL_USER/SIGIL_PASSWORD — skipping emission")
+	if !config.HasCredentials() {
+		logger.Print("stop: missing SIGIL_ENDPOINT/SIGIL_AUTH_TENANT_ID/SIGIL_AUTH_TOKEN — skipping emission")
 		if err := fragment.Delete(p.ConversationID, p.GenerationID); err != nil {
 			logger.Printf("stop: delete fragment: %v", err)
 		}
@@ -82,7 +82,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	providers := setupOTelIfConfigured(ctx, cfg, logger)
+	providers := setupOTelIfConfigured(ctx, logger)
 	defer func() { _ = providers.Shutdown(ctx) }()
 
 	client := buildClient(cfg, providers)
@@ -92,7 +92,6 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		Fragment:       frag,
 		Session:        session,
 		Stop:           &mapper.StopInput{Status: p.Status, Error: frag.PendingStop.Error},
-		ExtraTags:      cfg.ExtraTags,
 		ContentCapture: cfg.ContentCapture,
 		UserIDOverride: cfg.UserIDOverride,
 		Now:            time.Now(),

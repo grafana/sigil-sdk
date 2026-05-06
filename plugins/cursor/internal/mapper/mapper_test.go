@@ -281,13 +281,9 @@ func TestMapFragment_MissingModelAndProvider_FallsBackToCursor(t *testing.T) {
 	}
 }
 
-func TestMapFragment_TagsBuiltinsWinOverExtras(t *testing.T) {
+func TestMapFragment_BuiltinTags(t *testing.T) {
 	got := MapFragment(Inputs{
 		Fragment: basicFragment(t),
-		ExtraTags: map[string]string{
-			"git.branch": "user-supplied",
-			"keep":       "ok",
-		},
 		Session: &fragment.Session{
 			ConversationID: "conv-1",
 			WorkspaceRoots: []string{"/no-such-dir-without-git"},
@@ -295,13 +291,10 @@ func TestMapFragment_TagsBuiltinsWinOverExtras(t *testing.T) {
 		ContentCapture: sigil.ContentCaptureModeMetadataOnly,
 		Now:            fixedTime,
 	})
-	// No real .git in temp path → builtin returns "" → user value passes through.
-	if got.Generation.Tags["git.branch"] != "user-supplied" {
-		t.Errorf("user-supplied git.branch should pass through when no .git resolved; got %q",
+	// No real .git → git.branch absent.
+	if _, ok := got.Generation.Tags["git.branch"]; ok {
+		t.Errorf("git.branch should be absent when no .git resolves; got %q",
 			got.Generation.Tags["git.branch"])
-	}
-	if got.Generation.Tags["keep"] != "ok" {
-		t.Errorf("non-builtin tag should pass through; got %q", got.Generation.Tags["keep"])
 	}
 	if got.Generation.Tags["cwd"] != "/repo" {
 		t.Errorf("cwd should come from first tool record; got %q", got.Generation.Tags["cwd"])

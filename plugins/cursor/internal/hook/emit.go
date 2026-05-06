@@ -19,61 +19,38 @@ import (
 
 const otelInstrumentationName = "sigil-cursor"
 
-// setupOTelIfConfigured builds OTel providers from cfg.OTel. Returns nil
-// providers (no error) when SIGIL_OTEL_ENDPOINT is unset. Cursor may set
-// OTEL_EXPORTER_OTLP_* for its own telemetry — we clear those first so
-// SIGIL_OTEL_* always wins.
-func setupOTelIfConfigured(ctx context.Context, cfg config.Config, logger *log.Logger) *otel.Providers {
-	if cfg.OTel.Endpoint == "" {
+// setupOTelIfConfigured builds OTel providers when OTEL_EXPORTER_OTLP_ENDPOINT
+// is set. The OTel SDK reads transport env vars (endpoint, headers, insecure,
+// protocol) natively; the plugin only provides convenience auth-header
+// injection from SIGIL_AUTH_*.
+func setupOTelIfConfigured(ctx context.Context, logger *log.Logger) *otel.Providers {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
 		return nil
 	}
-	for _, k := range []string{
-		"OTEL_EXPORTER_OTLP_ENDPOINT",
-		"OTEL_EXPORTER_OTLP_PROTOCOL",
-		"OTEL_EXPORTER_OTLP_HEADERS",
-		"OTEL_EXPORTER_OTLP_INSECURE",
-	} {
-		_ = os.Unsetenv(k)
-	}
-	user := cfg.OTel.User
-	if user == "" {
-		user = cfg.User
-	}
-	password := cfg.OTel.Password
-	if password == "" {
-		password = cfg.Password
-	}
-	providers, err := otel.Setup(ctx, otel.Config{
-		Endpoint: cfg.OTel.Endpoint,
-		User:     user,
-		Password: password,
-		Insecure: cfg.OTel.Insecure,
-	})
+	providers, err := otel.Setup(ctx)
 	if err != nil {
 		logger.Printf("otel: setup: %v", err)
 		return nil
 	}
 	if providers != nil {
-		logger.Printf("otel: endpoint=%s", cfg.OTel.Endpoint)
+		logger.Printf("otel: endpoint=%s", endpoint)
 	}
 	return providers
 }
 
-// buildClient constructs the Sigil client from cfg. Wires the OTel providers'
-// tracer/meter when present so SDK self-telemetry flows to our OTLP endpoint
-// rather than the global noop providers.
+// buildClient constructs the Sigil client. Endpoint, tenant ID, and token
+// come from the SDK's automatic SIGIL_* env resolution (config.ApplyEnv has
+// already injected dotenv values into the OS env). The plugin only owns the
+// pieces the SDK can't infer: HTTP protocol, the `/api/v1/generations:export`
+// path suffix, basic-auth mode, and the OTel tracer/meter wiring.
 func buildClient(cfg config.Config, providers *otel.Providers) *sigil.Client {
 	c := sigil.Config{
 		ContentCapture: cfg.ContentCapture,
 		GenerationExport: sigil.GenerationExportConfig{
 			Protocol: sigil.GenerationExportProtocolHTTP,
-			Endpoint: strings.TrimRight(cfg.URL, "/") + "/api/v1/generations:export",
-			Auth: sigil.AuthConfig{
-				Mode:          sigil.ExportAuthModeBasic,
-				BasicUser:     cfg.User,
-				BasicPassword: cfg.Password,
-				TenantID:      cfg.User,
-			},
+			Endpoint: strings.TrimRight(os.Getenv("SIGIL_ENDPOINT"), "/") + "/api/v1/generations:export",
+			Auth:     sigil.AuthConfig{Mode: sigil.ExportAuthModeBasic},
 		},
 	}
 	if providers != nil {

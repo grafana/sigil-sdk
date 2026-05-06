@@ -1,31 +1,33 @@
+// Package otel sets up OTLP HTTP trace + metric providers for the cursor
+// plugin.
+//
+// The plugin does not invent its own SIGIL_OTEL_* env-var schema. It uses the
+// OpenTelemetry-standard OTEL_EXPORTER_OTLP_* vars (read natively by the OTel
+// SDK exporters) plus a thin convenience: when OTEL_EXPORTER_OTLP_HEADERS has
+// no Authorization entry, the plugin injects a Basic header derived from
+// SIGIL_AUTH_TENANT_ID + SIGIL_AUTH_TOKEN so users don't have to hand-encode
+// it.
 package otel
 
 import (
 	"context"
 	"encoding/base64"
-	"net/url"
+	"os"
+	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Config holds config for optional OTLP HTTP export.
-type Config struct {
-	Endpoint string
-	User     string
-	Password string
-	Insecure bool
-}
+// envOTLPEndpoint is the canonical OTel env var the SDK exporters read.
+const envOTLPEndpoint = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
-// Providers holds initialized OTel providers.
-// All methods are nil-safe.
+// Providers holds initialized OTel providers. All methods are nil-safe.
 type Providers struct {
 	tp *sdktrace.TracerProvider
 	mp *sdkmetric.MeterProvider
@@ -81,89 +83,84 @@ func (p *Providers) Shutdown(_ context.Context) error {
 	return p.tp.Shutdown(ctx)
 }
 
-// parseEndpoint extracts host, base path, and TLS setting from an endpoint string.
-// Handles both "host:port" and full URLs like "https://gateway.example.com/otlp".
-func parseEndpoint(raw string, insecureFlag bool) (host, tracePath, metricPath string, insecure bool) {
-	insecure = insecureFlag
-
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return raw, "", "", insecure
-	}
-
-	host = u.Host
-	if u.Scheme == "http" {
-		insecure = true
-	}
-
-	if base := u.Path; base != "" && base != "/" {
-		tracePath = base + "/v1/traces"
-		metricPath = base + "/v1/metrics"
-	}
-
-	return host, tracePath, metricPath, insecure
-}
-
-// Setup creates OTLP HTTP trace and metric providers.
-// Returns nil and no error if endpoint is empty.
-func Setup(ctx context.Context, cfg Config) (*Providers, error) {
-	if cfg.Endpoint == "" {
+// Setup creates OTLP HTTP trace + metric providers from the OTel-standard
+// env vars (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_HEADERS, etc.).
+// Returns nil providers (no error) when no OTLP endpoint is configured.
+//
+// As a convenience, when OTEL_EXPORTER_OTLP_HEADERS is missing an
+// Authorization entry, an `Authorization=Basic base64(tenant:token)` header
+// is synthesized from SIGIL_AUTH_TENANT_ID + SIGIL_AUTH_TOKEN before the
+// exporter constructors read the env. Users who want a different scheme can
+// set OTEL_EXPORTER_OTLP_HEADERS themselves and the plugin won't touch it.
+func Setup(ctx context.Context) (*Providers, error) {
+	if os.Getenv(envOTLPEndpoint) == "" {
 		return nil, nil
 	}
 
-	host, tracePath, metricPath, insecure := parseEndpoint(cfg.Endpoint, cfg.Insecure)
+	injectAuthHeaderIfMissing()
 
-	res, _ := resource.Merge(
-		resource.Default(),
-		resource.NewSchemaless(attribute.String("service.name", "sigil-cursor")),
-	)
-
-	auth := "Basic " + base64.StdEncoding.EncodeToString([]byte(cfg.User+":"+cfg.Password))
-	headers := map[string]string{"Authorization": auth}
+	if name := os.Getenv("OTEL_SERVICE_NAME"); name == "" {
+		_ = os.Setenv("OTEL_SERVICE_NAME", "sigil-cursor")
+	}
 
 	setupCtx, setupCancel := context.WithTimeout(ctx, 3*time.Second)
 	defer setupCancel()
 
-	traceOpts := []otlptracehttp.Option{
-		otlptracehttp.WithEndpoint(host),
-		otlptracehttp.WithHeaders(headers),
-	}
-	if tracePath != "" {
-		traceOpts = append(traceOpts, otlptracehttp.WithURLPath(tracePath))
-	}
-	if insecure {
-		traceOpts = append(traceOpts, otlptracehttp.WithInsecure())
-	}
-	traceExp, err := otlptracehttp.New(setupCtx, traceOpts...)
+	traceExp, err := otlptracehttp.New(setupCtx)
 	if err != nil {
 		return nil, err
 	}
-
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(traceExp, sdktrace.WithBatchTimeout(1*time.Second)),
-		sdktrace.WithResource(res),
 	)
 
-	metricOpts := []otlpmetrichttp.Option{
-		otlpmetrichttp.WithEndpoint(host),
-		otlpmetrichttp.WithHeaders(headers),
-	}
-	if metricPath != "" {
-		metricOpts = append(metricOpts, otlpmetrichttp.WithURLPath(metricPath))
-	}
-	if insecure {
-		metricOpts = append(metricOpts, otlpmetrichttp.WithInsecure())
-	}
-	metricExp, err := otlpmetrichttp.New(setupCtx, metricOpts...)
+	metricExp, err := otlpmetrichttp.New(setupCtx)
 	if err != nil {
 		_ = tp.Shutdown(ctx)
 		return nil, err
 	}
-
 	mp := sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExp, sdkmetric.WithInterval(1*time.Second))),
-		sdkmetric.WithResource(res),
 	)
 
 	return &Providers{tp: tp, mp: mp}, nil
+}
+
+// injectAuthHeaderIfMissing adds an Authorization=Basic header to
+// OTEL_EXPORTER_OTLP_HEADERS unless one is already present (case-insensitive).
+// Falls back silently when SIGIL_AUTH_TENANT_ID + SIGIL_AUTH_TOKEN aren't
+// both set — the user is presumed to be running an unauthenticated
+// collector and handling auth themselves.
+func injectAuthHeaderIfMissing() {
+	tenant := os.Getenv("SIGIL_AUTH_TENANT_ID")
+	token := os.Getenv("SIGIL_AUTH_TOKEN")
+	if tenant == "" || token == "" {
+		return
+	}
+	existing := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")
+	if hasAuthorizationHeader(existing) {
+		return
+	}
+	authHeader := "Authorization=Basic " + base64.StdEncoding.EncodeToString([]byte(tenant+":"+token))
+	if existing == "" {
+		_ = os.Setenv("OTEL_EXPORTER_OTLP_HEADERS", authHeader)
+		return
+	}
+	_ = os.Setenv("OTEL_EXPORTER_OTLP_HEADERS", existing+","+authHeader)
+}
+
+// hasAuthorizationHeader checks whether a CSV header string already contains
+// an Authorization key. OTel header names are case-insensitive in practice so
+// we compare lowered prefixes.
+func hasAuthorizationHeader(headers string) bool {
+	for _, pair := range strings.Split(headers, ",") {
+		eq := strings.IndexByte(pair, '=')
+		if eq < 0 {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(pair[:eq]), "Authorization") {
+			return true
+		}
+	}
+	return false
 }

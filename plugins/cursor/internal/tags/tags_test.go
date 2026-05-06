@@ -8,18 +8,12 @@ import (
 
 func TestBuild(t *testing.T) {
 	cases := []struct {
-		name   string
-		extras map[string]string
-		in     BuiltinInputs
-		check  func(t *testing.T, got map[string]string)
+		name  string
+		in    BuiltinInputs
+		check func(t *testing.T, got map[string]string)
 	}{
 		{
-			name: "builtins overwrite extras",
-			extras: map[string]string{
-				"git.branch": "fake",
-				"cwd":        "fake-cwd",
-				"keep":       "ok",
-			},
+			name: "git branch and explicit cwd populated",
 			in: BuiltinInputs{
 				WorkspaceRoot: "/ws",
 				Cwd:           "/real-cwd",
@@ -27,13 +21,10 @@ func TestBuild(t *testing.T) {
 			},
 			check: func(t *testing.T, got map[string]string) {
 				if got["git.branch"] != "main" {
-					t.Errorf("built-in git.branch must win; got %q", got["git.branch"])
+					t.Errorf("git.branch = %q; want main", got["git.branch"])
 				}
 				if got["cwd"] != "/real-cwd" {
-					t.Errorf("built-in cwd must win; got %q", got["cwd"])
-				}
-				if got["keep"] != "ok" {
-					t.Errorf("non-builtin extra must pass through; got %q", got["keep"])
+					t.Errorf("cwd = %q; want /real-cwd", got["cwd"])
 				}
 			},
 		},
@@ -76,37 +67,7 @@ func TestBuild(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.check(t, Build(tc.extras, tc.in))
-		})
-	}
-}
-
-func TestParseExtra(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want map[string]string
-	}{
-		{"empty", "", nil},
-		{"single", "k=v", map[string]string{"k": "v"}},
-		{"multiple", "a=1,b=2", map[string]string{"a": "1", "b": "2"}},
-		{"trims whitespace", "  k =  v  ", map[string]string{"k": "v"}},
-		{"skips entry without equals", "bad", nil},
-		{"skips empty key", "=v", nil},
-		{"skips empty value", "k=", nil},
-		{"skips mixed malformed", "ok=1,bad,=v,k=", map[string]string{"ok": "1"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ParseExtra(tc.in)
-			if len(got) != len(tc.want) {
-				t.Fatalf("len(got)=%d len(want)=%d (got=%v)", len(got), len(tc.want), got)
-			}
-			for k, v := range tc.want {
-				if got[k] != v {
-					t.Fatalf("got[%q]=%q want %q", k, got[k], v)
-				}
-			}
+			tc.check(t, Build(tc.in))
 		})
 	}
 }

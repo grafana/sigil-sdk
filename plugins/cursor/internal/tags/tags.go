@@ -16,14 +16,12 @@ type BuiltinInputs struct {
 	IsBackgroundAgent bool
 }
 
-// Build merges extras with the built-in tags. Built-ins overwrite extras on
-// key collision so a user-supplied `git.branch=fake` cannot shadow the real
-// resolved branch. Returns nil when no tags are present.
-func Build(extras map[string]string, in BuiltinInputs) map[string]string {
-	out := make(map[string]string, len(extras)+4)
-	for k, v := range extras {
-		out[k] = v
-	}
+// Build returns the per-generation built-in tags. SIGIL_TAGS-supplied values
+// are layered in by the SDK at the client level; built-ins take precedence
+// because the SDK merges per-generation Tags atop client-level Tags.
+// Returns nil when no built-ins are present.
+func Build(in BuiltinInputs) map[string]string {
+	out := make(map[string]string, 4)
 	if in.GitBranch != "" {
 		out["git.branch"] = in.GitBranch
 	}
@@ -39,32 +37,6 @@ func Build(extras map[string]string, in BuiltinInputs) map[string]string {
 	}
 	if in.IsBackgroundAgent {
 		out["subagent"] = "true"
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// ParseExtra parses a comma-separated `k=v` string into a tag map.
-// Malformed entries (no `=`, empty key, empty value) are silently skipped.
-// Returns nil for empty input so callers can short-circuit.
-func ParseExtra(raw string) map[string]string {
-	if raw == "" {
-		return nil
-	}
-	out := make(map[string]string)
-	for _, pair := range strings.Split(raw, ",") {
-		k, v, ok := strings.Cut(pair, "=")
-		if !ok {
-			continue
-		}
-		k = strings.TrimSpace(k)
-		v = strings.TrimSpace(v)
-		if k == "" || v == "" {
-			continue
-		}
-		out[k] = v
 	}
 	if len(out) == 0 {
 		return nil

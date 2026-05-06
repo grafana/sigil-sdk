@@ -31,7 +31,7 @@ func SessionEnd(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 
-	if !config.HasCredentials(cfg) {
+	if !config.HasCredentials() {
 		logger.Print("sessionEnd: missing credentials — wiping conversation dir without emission")
 		removeAndLog(p.ConversationID, logger)
 		return
@@ -40,7 +40,7 @@ func SessionEnd(p Payload, cfg config.Config, logger *log.Logger) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	providers := setupOTelIfConfigured(ctx, cfg, logger)
+	providers := setupOTelIfConfigured(ctx, logger)
 	defer func() { _ = providers.Shutdown(ctx) }()
 
 	client := buildClient(cfg, providers)
@@ -113,7 +113,6 @@ func emitOneStranded(
 		Fragment:       frag,
 		Session:        session,
 		Stop:           stop,
-		ExtraTags:      cfg.ExtraTags,
 		ContentCapture: cfg.ContentCapture,
 		UserIDOverride: cfg.UserIDOverride,
 		Now:            time.Now(),

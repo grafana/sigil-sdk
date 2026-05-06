@@ -31,38 +31,43 @@ per-key; the file fills in unset keys. Cursor runs hooks under a clean
 process environment that does not inherit your shell profile, so the file
 is the reliable place to put credentials.
 
+The Sigil and OTel env-var schemas come from the SDKs, not this plugin:
+
+- `SIGIL_*` — read by the Sigil Go SDK
+  ([`go/sigil/env.go`](../../go/sigil/env.go)).
+- `OTEL_EXPORTER_OTLP_*` — read by the OpenTelemetry Go SDK exporters.
+
 | Variable | Required | Purpose |
 |---|---|---|
-| `SIGIL_URL` | yes | Sigil endpoint root, e.g. `https://sigil.grafana.net` |
-| `SIGIL_USER` | yes | Basic-auth user / tenant id |
-| `SIGIL_PASSWORD` | yes | Basic-auth token |
-| `SIGIL_CONTENT_CAPTURE_MODE` | no | `full`, `no_tool_content`, or `metadata_only` (default) |
-| `SIGIL_EXTRA_TAGS` | no | Comma-separated `k=v` pairs added to every generation |
-| `SIGIL_USER_ID` | no | Override the user id (default: `user_email` from Cursor's payload) |
-| `SIGIL_DEBUG` | no | `true` writes a log to `$XDG_STATE_HOME/sigil-cursor/sigil-cursor.log` |
-| `SIGIL_OTEL_ENDPOINT` | no | OTLP HTTP endpoint for the SDK's own self-telemetry |
-| `SIGIL_OTEL_USER` | no | OTLP basic-auth user (defaults to `SIGIL_USER`) |
-| `SIGIL_OTEL_PASSWORD` | no | OTLP basic-auth password (defaults to `SIGIL_PASSWORD`) |
-| `SIGIL_OTEL_INSECURE` | no | `true` to disable TLS for the OTLP endpoint |
-| `SIGIL_CURSOR_BIN` | no | Override the binary path used by `scripts/run.sh` |
+| `SIGIL_ENDPOINT` | yes | Sigil API URL, e.g. `https://sigil-prod-<region>.grafana.net`. The plugin appends `/api/v1/generations:export`. |
+| `SIGIL_AUTH_TENANT_ID` | yes | Grafana Cloud stack/instance ID. Used as Basic-auth username and the `X-Scope-OrgID` header. |
+| `SIGIL_AUTH_TOKEN` | yes | `glc_…` Cloud access policy token with the `sigil:write` scope. |
+| `SIGIL_TAGS` | no | Comma-separated `k=v` pairs added to every generation. Built-ins (`git.branch`, `cwd`, `subagent`) win on collision. |
+| `SIGIL_CONTENT_CAPTURE_MODE` | no | `full`, `no_tool_content`, or `metadata_only` (default). |
+| `SIGIL_USER_ID` | no | Override the per-generation user id (default: `user_email` from Cursor's payload). |
+| `SIGIL_DEBUG` | no | `true` writes a log to `$XDG_STATE_HOME/sigil-cursor/sigil-cursor.log`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | yes | OTLP HTTP endpoint for traces and metrics. The plugin runs without it, but the AI Observability UI depends on these signals — half the panels are empty. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | no | Extra OTLP headers (CSV `k=v`). When `Authorization` is missing the plugin synthesizes `Authorization=Basic base64(SIGIL_AUTH_TENANT_ID:SIGIL_AUTH_TOKEN)` so the OTel SDK exporter picks it up. |
+| `OTEL_EXPORTER_OTLP_INSECURE` | no | Standard OTel toggle. `true` disables TLS for the OTLP endpoint. |
+| `SIGIL_CURSOR_BIN` | no | Override the binary path used by `scripts/run.sh`. |
 
-Without `SIGIL_URL` / `SIGIL_USER` / `SIGIL_PASSWORD`, hooks still run but
-nothing is emitted to Sigil.
+Without `SIGIL_ENDPOINT` / `SIGIL_AUTH_TENANT_ID` / `SIGIL_AUTH_TOKEN`,
+hooks still run but nothing is emitted to Sigil.
 
 ### Where to find these values
 
-- `SIGIL_URL` — Grafana Cloud → AI Observability → Configuration, **API
-  URL** field.
-- `SIGIL_USER` — Grafana Cloud → AI Observability → Configuration,
-  **Instance ID** field. Numeric Grafana Cloud stack id.
-- `SIGIL_PASSWORD` — a Grafana Cloud access policy token (grafana.com →
+- `SIGIL_ENDPOINT` — Grafana Cloud → AI Observability → Configuration,
+  **API URL** field.
+- `SIGIL_AUTH_TENANT_ID` — Grafana Cloud → AI Observability →
+  Configuration, **Instance ID** field. Numeric Grafana Cloud stack id.
+- `SIGIL_AUTH_TOKEN` — a Grafana Cloud access policy token (grafana.com →
   Security → Access Policies), with the realm set to the stack's region.
   Required scope: `sigil:write`. Add `metrics:write`, `metrics:import`,
-  `traces:write`, and `logs:write` when also setting
-  `SIGIL_OTEL_ENDPOINT` — one token can cover both channels.
-- `SIGIL_OTEL_ENDPOINT` — Grafana Cloud → your stack → OpenTelemetry
-  card, **OTLP Endpoint URL**. The OTLP gateway region is tied to the
-  stack's region, which can differ from the Sigil region.
+  and `traces:write` when also setting `OTEL_EXPORTER_OTLP_ENDPOINT` —
+  one token can cover both channels.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` — Grafana Cloud → your stack →
+  OpenTelemetry card, **OTLP Endpoint URL**. The OTLP gateway region is
+  tied to the stack's region, which can differ from the Sigil region.
 
 ## Content capture
 
@@ -77,8 +82,10 @@ Thinking content is never exported regardless of mode — only
 
 ## Built-in tags
 
-The plugin sets these tags automatically; user values from
-`SIGIL_EXTRA_TAGS` lose to built-ins on key collision:
+The plugin sets these tags automatically; user values from `SIGIL_TAGS`
+lose to built-ins on key collision (the SDK applies `SIGIL_TAGS` as the
+client-level base layer; the plugin sets built-ins per-generation, which
+override on the same key):
 
 - `git.branch` — best-effort branch resolution. Walks up to 6 parent
   directories from the workspace root looking for a `.git` entry; follows
@@ -89,8 +96,8 @@ The plugin sets these tags automatically; user values from
 - `cwd` — first `cwd` observed in `postToolUse`, falling back to the first
   workspace root.
 - `subagent` — `"true"` for background-agent runs.
-- `entrypoint` — never auto-populated. Set via `SIGIL_EXTRA_TAGS` if you
-  want a value here. Cursor's `composer_mode` is **not** auto-mapped; the
+- `entrypoint` — never auto-populated. Set via `SIGIL_TAGS` if you want
+  a value here. Cursor's `composer_mode` is **not** auto-mapped; the
   equivalence has not been validated.
 
 ## How it works

@@ -1,3 +1,10 @@
+// Package config resolves the cursor plugin's runtime knobs from OS env and a
+// dotenv file at $XDG_CONFIG_HOME/sigil-cursor/config.env.
+//
+// Cursor launches hooks under a stripped environment (shell rc files do not
+// run), so the dotenv is the reliable place to put credentials. ApplyEnv
+// copies dotenv values into the process env so the SDK's own canonical
+// SIGIL_* env-var resolution (see go/sigil/env.go) sees them too.
 package config
 
 import (
@@ -8,34 +15,26 @@ import (
 	"strings"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
-
-	"github.com/grafana/sigil-sdk/plugins/cursor/internal/tags"
 )
 
-// Config holds all values resolved from environment + dotenv file.
+// Config holds the cursor-side knobs the plugin needs before constructing the
+// SDK client. Endpoint, auth, and SIGIL_TAGS are read by the SDK directly via
+// resolveFromEnv — they are deliberately absent here. OTel transport
+// (OTEL_EXPORTER_OTLP_*) is read by the OpenTelemetry SDK exporters
+// natively, so this struct doesn't carry it either.
 type Config struct {
-	URL            string
-	User           string
-	Password       string
 	ContentCapture sigil.ContentCaptureMode
-	ExtraTags      map[string]string
 	UserIDOverride string
 	Debug          bool
-	OTel           OTelConfig
 }
 
-type OTelConfig struct {
-	Endpoint string
-	User     string
-	Password string
-	Insecure bool
-}
-
-// HasCredentials reports whether the URL/user/password are all populated.
-// Without all three the plugin still runs accumulator hooks but skips Sigil
-// emission.
-func HasCredentials(c Config) bool {
-	return c.URL != "" && c.User != "" && c.Password != ""
+// HasCredentials reports whether the canonical SIGIL_* credentials are
+// populated in the OS env. Call after ApplyEnv so dotenv-supplied values are
+// visible.
+func HasCredentials() bool {
+	return os.Getenv("SIGIL_ENDPOINT") != "" &&
+		os.Getenv("SIGIL_AUTH_TENANT_ID") != "" &&
+		os.Getenv("SIGIL_AUTH_TOKEN") != ""
 }
 
 // FilePath is the dotenv config path. Honors XDG_CONFIG_HOME, falls back to
@@ -48,46 +47,44 @@ func FilePath() string {
 	return filepath.Join(home, ".config", "sigil-cursor", "config.env")
 }
 
-// Load resolves the runtime config by composing OS env with the dotenv file
-// at FilePath(). OS env wins per-key; the file fills in unset keys.
+// ApplyEnv loads the dotenv file and writes any keys whose OS env value is
+// empty. Idempotent — a non-empty OS value always wins per-key. Returns the
+// parsed dotenv map for callers that need to introspect (currently only
+// tests).
 //
-// Cursor is GUI-launched, so the user's shell rc files (.zshrc/.bashrc) do
-// not run for hook processes — the dotenv file is the reliable place to put
-// credentials. Reading it from every hook is cheap and avoids depending on
-// sessionStart firing first (which Cursor does not always guarantee).
-func Load(logger *log.Logger) Config {
+// Calling this once at process start is what makes the SDK's automatic
+// SIGIL_* resolution work under Cursor's stripped hook environment. An
+// empty-but-set OS value is treated as unset to match the SDK's own
+// envTrimmed behaviour and to handle hosts that pre-create blank vars.
+func ApplyEnv(logger *log.Logger) map[string]string {
 	fileEnv := LoadDotenv(FilePath(), logger)
+	for k, v := range fileEnv {
+		if existing := os.Getenv(k); existing != "" {
+			continue
+		}
+		_ = os.Setenv(k, v)
+	}
+	return fileEnv
+}
+
+// Load resolves the cursor-local subset of config from OS env. Call ApplyEnv
+// first so dotenv-only values are reflected in the OS env.
+func Load(logger *log.Logger) Config {
 	return Config{
-		URL:            envOr("SIGIL_URL", fileEnv),
-		User:           envOr("SIGIL_USER", fileEnv),
-		Password:       envOr("SIGIL_PASSWORD", fileEnv),
-		ContentCapture: resolveContentCapture(envOr("SIGIL_CONTENT_CAPTURE_MODE", fileEnv), logger),
-		ExtraTags:      tags.ParseExtra(envOr("SIGIL_EXTRA_TAGS", fileEnv)),
-		UserIDOverride: envOr("SIGIL_USER_ID", fileEnv),
-		Debug:          BoolEnv("SIGIL_DEBUG", fileEnv),
-		OTel: OTelConfig{
-			Endpoint: envOr("SIGIL_OTEL_ENDPOINT", fileEnv),
-			User:     envOr("SIGIL_OTEL_USER", fileEnv),
-			Password: envOr("SIGIL_OTEL_PASSWORD", fileEnv),
-			Insecure: BoolEnv("SIGIL_OTEL_INSECURE", fileEnv),
-		},
+		ContentCapture: resolveContentCapture(os.Getenv("SIGIL_CONTENT_CAPTURE_MODE"), logger),
+		UserIDOverride: os.Getenv("SIGIL_USER_ID"),
+		Debug:          parseBool(os.Getenv("SIGIL_DEBUG")),
 	}
 }
 
-// envOr returns os.Getenv(key) if non-empty, else the file fallback.
-func envOr(key string, fileEnv map[string]string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// parseBool mirrors the SDK's parseBool whitelist (1/true/yes/on). Anything
+// else (including the empty string) is false.
+func parseBool(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
 	}
-	return fileEnv[key]
-}
-
-// BoolEnv reads a boolean env var. The OS env wins; the dotenv map fills in.
-// Only `true` (case-insensitive) yields true; anything else is false. The
-// fileEnv arg may be nil — callers that need both sources but don't already
-// have the file loaded can pass `LoadDotenv(FilePath(), nil)`.
-func BoolEnv(key string, fileEnv map[string]string) bool {
-	return strings.EqualFold(envOr(key, fileEnv), "true")
+	return false
 }
 
 // resolveContentCapture parses SIGIL_CONTENT_CAPTURE_MODE. Unknown values

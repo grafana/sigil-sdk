@@ -49,7 +49,6 @@ type Inputs struct {
 	Fragment       *fragment.Fragment
 	Session        *fragment.Session
 	Stop           *StopInput
-	ExtraTags      map[string]string
 	ContentCapture sigil.ContentCaptureMode
 	UserIDOverride string
 	Now            time.Time
@@ -103,7 +102,7 @@ func MapFragment(in Inputs) Mapped {
 		isBackgroundAgent = in.Session.IsBackgroundAgent
 	}
 
-	tagMap := tags.Build(in.ExtraTags, tags.BuiltinInputs{
+	tagMap := tags.Build(tags.BuiltinInputs{
 		WorkspaceRoot:     workspaceRoot,
 		Cwd:               firstToolCwd(frag.Tools),
 		GitBranch:         tags.ResolveGitBranch(workspaceRoot),

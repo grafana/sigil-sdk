@@ -48,11 +48,11 @@ func TestLoadDotenv_AllVariants(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.env")
 	body := `# leading comment
-SIGIL_URL=https://sigil.example.com
-export SIGIL_USER=alice
-SIGIL_PASSWORD="secret with spaces"
+SIGIL_ENDPOINT=https://sigil.example.com
+export SIGIL_AUTH_TENANT_ID=alice
+SIGIL_AUTH_TOKEN="secret with spaces"
 SIGIL_CONTENT_CAPTURE_MODE='full'
-SIGIL_EXTRA_TAGS=a=1,b=2  # inline comment
+SIGIL_TAGS=a=1,b=2  # inline comment
 SIGIL_DEBUG=true
 no_equals_line
 =missingkey
@@ -63,11 +63,11 @@ EMPTY=
 	}
 	got := LoadDotenv(path, log.New(&bytes.Buffer{}, "", 0))
 	want := map[string]string{
-		"SIGIL_URL":                  "https://sigil.example.com",
-		"SIGIL_USER":                 "alice",
-		"SIGIL_PASSWORD":             "secret with spaces",
+		"SIGIL_ENDPOINT":             "https://sigil.example.com",
+		"SIGIL_AUTH_TENANT_ID":       "alice",
+		"SIGIL_AUTH_TOKEN":           "secret with spaces",
 		"SIGIL_CONTENT_CAPTURE_MODE": "full",
-		"SIGIL_EXTRA_TAGS":           "a=1,b=2",
+		"SIGIL_TAGS":                 "a=1,b=2",
 		"SIGIL_DEBUG":                "true",
 	}
 	if len(got) != len(want) {
@@ -118,36 +118,6 @@ UNTERMINATED="oops
 	}
 }
 
-func TestBoolEnv(t *testing.T) {
-	cases := []struct {
-		name    string
-		envVal  string
-		fileVal string
-		want    bool
-	}{
-		{"os env true", "true", "", true},
-		{"os env TRUE case-insensitive", "TRUE", "", true},
-		{"os env false", "false", "", false},
-		{"os env empty falls back to file true", "", "true", true},
-		{"os env empty file false", "", "false", false},
-		{"os env wins over file", "false", "true", false},
-		{"both empty", "", "", false},
-		{"random string", "yes", "", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("FAKE_KEY", tc.envVal)
-			fileEnv := map[string]string{}
-			if tc.fileVal != "" {
-				fileEnv["FAKE_KEY"] = tc.fileVal
-			}
-			if got := BoolEnv("FAKE_KEY", fileEnv); got != tc.want {
-				t.Errorf("BoolEnv(%q,%q) = %v; want %v", tc.envVal, tc.fileVal, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestLoadDotenv_MissingFileSilent(t *testing.T) {
 	var buf bytes.Buffer
 	got := LoadDotenv("/nonexistent/path/config.env", log.New(&buf, "", 0))
@@ -159,59 +129,77 @@ func TestLoadDotenv_MissingFileSilent(t *testing.T) {
 	}
 }
 
-func TestLoad_OSEnvWinsPerKey(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("SIGIL_URL", "https://from-os-env.example.com")
-	// Unset everything else so we get clean fallback behavior.
-	for _, k := range []string{"SIGIL_USER", "SIGIL_PASSWORD", "SIGIL_CONTENT_CAPTURE_MODE", "SIGIL_EXTRA_TAGS", "SIGIL_USER_ID", "SIGIL_DEBUG", "SIGIL_OTEL_ENDPOINT"} {
-		t.Setenv(k, "")
+// ApplyEnv copies dotenv values into OS env unless the OS env already has a
+// non-empty value for the same key. An empty-but-set OS value is treated as
+// unset so dotenv can still fill it.
+func TestApplyEnv(t *testing.T) {
+	cases := []struct {
+		name      string
+		osValue   string // "" means t.Setenv("", "") — present but empty
+		osUnset   bool   // when true, the OS env var is not set at all
+		fileValue string
+		want      string
+	}{
+		{name: "OS non-empty wins over dotenv", osValue: "from-os", fileValue: "from-file", want: "from-os"},
+		{name: "OS empty falls back to dotenv", osValue: "", fileValue: "from-file", want: "from-file"},
+		{name: "OS unset falls back to dotenv", osUnset: true, fileValue: "from-file", want: "from-file"},
+		{name: "both empty stays empty", osValue: "", fileValue: "", want: ""},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", dir)
+			const key = "SIGIL_ENDPOINT"
+			if tc.osUnset {
+				_ = os.Unsetenv(key)
+				t.Cleanup(func() { _ = os.Unsetenv(key) })
+			} else {
+				t.Setenv(key, tc.osValue)
+			}
 
-	cfgDir := filepath.Join(dir, "sigil-cursor")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	body := `SIGIL_URL=https://from-file.example.com
-SIGIL_USER=fromfile
-SIGIL_PASSWORD=fromfile-pass
-SIGIL_CONTENT_CAPTURE_MODE=full
-`
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.env"), []byte(body), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+			cfgDir := filepath.Join(dir, "sigil-cursor")
+			if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			var body string
+			if tc.fileValue != "" {
+				body = key + "=" + tc.fileValue + "\n"
+			}
+			if err := os.WriteFile(filepath.Join(cfgDir, "config.env"), []byte(body), 0o600); err != nil {
+				t.Fatalf("write: %v", err)
+			}
 
-	cfg := Load(log.New(&bytes.Buffer{}, "", 0))
-	if cfg.URL != "https://from-os-env.example.com" {
-		t.Errorf("URL: OS env should win; got %q", cfg.URL)
-	}
-	if cfg.User != "fromfile" {
-		t.Errorf("User: file should fall back; got %q", cfg.User)
-	}
-	if cfg.Password != "fromfile-pass" {
-		t.Errorf("Password: file should fall back; got %q", cfg.Password)
-	}
-	if cfg.ContentCapture != sigil.ContentCaptureModeFull {
-		t.Errorf("ContentCapture: file value should win; got %v", cfg.ContentCapture)
+			ApplyEnv(log.New(&bytes.Buffer{}, "", 0))
+			if got := os.Getenv(key); got != tc.want {
+				t.Errorf("os.Getenv(%q) = %q; want %q", key, got, tc.want)
+			}
+		})
 	}
 }
 
 func TestHasCredentials(t *testing.T) {
 	cases := []struct {
-		name string
-		cfg  Config
-		want bool
+		name      string
+		endpoint  string
+		tenant    string
+		token     string
+		want      bool
 	}{
-		{"all set", Config{URL: "u", User: "user", Password: "pw"}, true},
-		{"missing URL", Config{User: "user", Password: "pw"}, false},
-		{"missing user", Config{URL: "u", Password: "pw"}, false},
-		{"missing password", Config{URL: "u", User: "user"}, false},
+		{"all set", "https://e", "t", "k", true},
+		{"missing endpoint", "", "t", "k", false},
+		{"missing tenant", "https://e", "", "k", false},
+		{"missing token", "https://e", "t", "", false},
+		{"all empty", "", "", "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := HasCredentials(tc.cfg); got != tc.want {
-				t.Errorf("HasCredentials(%+v) = %v; want %v", tc.cfg, got, tc.want)
+			t.Setenv("SIGIL_ENDPOINT", tc.endpoint)
+			t.Setenv("SIGIL_AUTH_TENANT_ID", tc.tenant)
+			t.Setenv("SIGIL_AUTH_TOKEN", tc.token)
+			if got := HasCredentials(); got != tc.want {
+				t.Errorf("HasCredentials() = %v; want %v", got, tc.want)
 			}
 		})
 	}
 }
+

@@ -32,6 +32,10 @@ const permissiveResponse = `{"continue":true,"permission":"allow"}` + "\n"
 var beforeSubmitMarker = []byte(`"hook_event_name":"beforeSubmitPrompt"`)
 
 func main() {
+	// Cursor's hook env is stripped — ApplyEnv copies the dotenv file into
+	// the process env before anything else reads from it (logger init, the
+	// SDK's own SIGIL_* resolution, OTel setup).
+	config.ApplyEnv(nil)
 	logger := initLogger()
 	defer recoverAndLog(logger)
 	run(logger, os.Stdin, os.Stdout)
@@ -98,12 +102,11 @@ func run(logger *log.Logger, stdin io.Reader, stdout io.Writer) {
 // /dev/null — hooks must not surface anything to stderr/stdout under any
 // circumstance because Cursor reads stdout for the hook's response.
 //
-// SIGIL_DEBUG is checked in the OS env first, then in the dotenv file
-// (Cursor's hook process strips most env, so the dotenv is often the only
-// place users can reliably set it).
+// Reads from os.Getenv directly; main() already injected dotenv values via
+// config.ApplyEnv before calling here.
 func initLogger() *log.Logger {
 	logger := log.New(io.Discard, "sigil-cursor: ", log.Ltime)
-	if !config.BoolEnv("SIGIL_DEBUG", config.LoadDotenv(config.FilePath(), nil)) {
+	if !parseBoolEnv(os.Getenv("SIGIL_DEBUG")) {
 		return logger
 	}
 	path := fragment.LogFilePath()
@@ -115,6 +118,15 @@ func initLogger() *log.Logger {
 		return logger
 	}
 	return log.New(f, "sigil-cursor: ", log.Ldate|log.Ltime|log.Lmicroseconds)
+}
+
+// parseBoolEnv mirrors the SDK's parseBool whitelist (1/true/yes/on).
+func parseBoolEnv(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // recoverAndLog catches panics so Cursor never sees a non-zero exit (which
