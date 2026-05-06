@@ -42,32 +42,52 @@ If you'd rather not use the plugin marketplace, install the binary the same way 
 }
 ```
 
+## Get your credentials from Grafana Cloud
+
+You need four values from your Grafana Cloud stack: the Sigil API URL, an OTLP endpoint, an instance ID, and an access policy token.
+
+### Sigil API URL and Instance ID
+
+In **Observability → AI Observability → Configuration** (`https://<stack>.grafana.net/plugins/grafana-sigil-app`), copy:
+
+- **API URL** → `SIGIL_ENDPOINT`. Looks like `https://sigil-prod-<region>.grafana.net`.
+- **Instance ID** → `SIGIL_AUTH_TENANT_ID`. Numeric stack ID. Used as Basic-auth username and the `X-Scope-OrgID` header.
+
+### Access policy token
+
+In **Administration → Users and access → Cloud access policies** (`https://<stack>.grafana.net/a/grafana-auth-app`), click **Create access policy**. One token covers both the generations channel and OTel:
+
+- **Scopes**: tick `metrics: Write` and `traces: Write`. Use **Add scope** to add `sigil:write`.
+- Click **Create**, then **Add token** on the new policy. Copy the `glc_…` token once — you can't view it again.
+
+This token → `SIGIL_AUTH_TOKEN`. The same value is reused for OTel auth.
+
+### OTLP endpoint
+
+The AI Observability UI relies on traces and metrics for latency charts, tool call breakdowns, and other panels. Without OTel configured, half the UI is empty — treat this as required.
+
+Open the **Grafana Cloud Portal**, click into your stack, and find the **OpenTelemetry** card. Copy:
+
+- **OTLP Endpoint URL** → `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT`. Looks like `https://otlp-gateway-prod-<region>.grafana.net/otlp`.
+
 ## Configure
 
-`sigil-cc` reads its config from the environment:
-
-| Variable | What it is |
-|----------|-----------|
-| `SIGIL_URL` | Your Sigil endpoint (e.g. `https://sigil.example.com`). |
-| `SIGIL_USER` | Your Grafana Cloud stack/tenant ID. Sent as Basic auth user and `X-Scope-OrgID`. |
-| `SIGIL_PASSWORD` | A `glc_…` token minted at Grafana Cloud → Access Policies ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)). The token needs the appropriate Sigil scope. |
-| `SIGIL_OTEL_ENDPOINT` | OTLP HTTP endpoint for metrics and traces (e.g. `https://otlp-gateway.grafana.net/otlp`). Technically optional, but without it you only get generations, no spans or metrics. |
-| `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`) |
-
-These don't have to live in `settings.json`. `sigil-cc` reads from its process environment, so anything that's in Claude Code's environment when the hook fires works. Pick whichever fits your secret-management style.
+`sigil-cc` reads its config from the environment. The hook fires inside Claude Code's process, so anything in Claude Code's environment when it starts works.
 
 ### Shell environment (recommended)
 
 Keeps tokens out of any global config file.
 
 ```bash
-export SIGIL_URL=https://sigil.example.com
-export SIGIL_USER=123456
-export SIGIL_PASSWORD=glc_...
-export SIGIL_OTEL_ENDPOINT=https://otlp-gateway.grafana.net/otlp
+export SIGIL_ENDPOINT=https://sigil-prod-us-central-0.grafana.net
+export SIGIL_AUTH_TENANT_ID=123456
+export SIGIL_AUTH_TOKEN=glc_...
+export SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-us-central-0.grafana.net/otlp
 export SIGIL_CONTENT_CAPTURE_MODE=full
 claude
 ```
+
+OTel auth defaults to `SIGIL_AUTH_TENANT_ID` (Basic-auth user) and `SIGIL_AUTH_TOKEN` (Basic-auth password). Override the password with `SIGIL_OTEL_AUTH_TOKEN` if you want a separate token.
 
 ### `~/.claude/settings.json` `env` block
 
@@ -76,10 +96,10 @@ Persistent across all Claude Code sessions.
 ```json
 {
   "env": {
-    "SIGIL_URL": "https://sigil.example.com",
-    "SIGIL_OTEL_ENDPOINT": "https://otel.example.com",
-    "SIGIL_USER": "your-tenant-id",
-    "SIGIL_PASSWORD": "glc_...",
+    "SIGIL_ENDPOINT": "https://sigil-prod-us-central-0.grafana.net",
+    "SIGIL_AUTH_TENANT_ID": "123456",
+    "SIGIL_AUTH_TOKEN": "glc_...",
+    "SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
     "SIGIL_CONTENT_CAPTURE_MODE": "full"
   }
 }
@@ -95,7 +115,7 @@ claude  # ask it anything, then exit
 
 Then either:
 
-- Check the Sigil UI. A new generation should appear.
+- Check the Sigil UI under **Observability → AI Observability → Conversations**. A new generation should appear within seconds.
 - Or enable debug logging and tail the log:
 
   ```bash
@@ -104,21 +124,20 @@ Then either:
   tail -f ~/.claude/state/sigil-cc.log
   ```
 
-If nothing appears, the most common causes are: `sigil-cc` not on `$PATH`, missing `SIGIL_URL`/`SIGIL_USER`/`SIGIL_PASSWORD`, or a token without the right scope.
+If nothing appears, the most common causes are: `sigil-cc` not on `$PATH`, missing `SIGIL_ENDPOINT` / `SIGIL_AUTH_TENANT_ID` / `SIGIL_AUTH_TOKEN`, or a token without the `sigil:write` scope.
 
 ## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `SIGIL_URL` | yes | Sigil endpoint |
-| `SIGIL_USER` | yes | Basic auth username (also `X-Scope-OrgID`) |
-| `SIGIL_PASSWORD` | yes | Basic auth password |
-| `SIGIL_OTEL_ENDPOINT` | recommended | OTLP HTTP endpoint for metrics + traces (e.g. `https://otlp-gateway.grafana.net/otlp` or `host:4318`). Without it you only get generations (no spans or metrics). |
-| `SIGIL_OTEL_USER` | no | OTLP auth username (defaults to `SIGIL_USER`) |
-| `SIGIL_OTEL_PASSWORD` | no | OTLP auth password (defaults to `SIGIL_PASSWORD`) |
-| `SIGIL_OTEL_INSECURE` | no | `true` to disable TLS (default: TLS enabled) |
-| `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`) |
-| `SIGIL_EXTRA_TAGS` | no | Comma-separated `key=value` tags added to every generation (e.g. `account=work,env=dev`). Built-in tags (`git.branch`, `cwd`, `entrypoint`, `subagent`) take precedence on collision. |
+| `SIGIL_ENDPOINT` | yes | Sigil API URL from AI Observability → Configuration. The `/api/v1/generations:export` path is appended automatically. |
+| `SIGIL_AUTH_TENANT_ID` | yes | Grafana Cloud stack/instance ID. Sent as Basic-auth username and `X-Scope-OrgID` header. |
+| `SIGIL_AUTH_TOKEN` | yes | `glc_…` access policy token with `sigil:write` (and `metrics:write` / `traces:write` if using OTel). [Access Policies docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/). |
+| `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | yes | OTLP HTTP endpoint for metrics and traces (e.g. `https://otlp-gateway-prod-<region>.grafana.net/otlp`). Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. The plugin runs without it, but the AI Observability UI depends on these signals — half the panels are empty. |
+| `SIGIL_OTEL_AUTH_TOKEN` | no | OTel Basic-auth password. Defaults to `SIGIL_AUTH_TOKEN`. The OTel Basic-auth username is always `SIGIL_AUTH_TENANT_ID`. |
+| `SIGIL_OTEL_EXPORTER_OTLP_INSECURE` | no | `true` to disable TLS. Falls back to `OTEL_EXPORTER_OTLP_INSECURE`. Default: TLS enabled. |
+| `SIGIL_CONTENT_CAPTURE_MODE` | no | Content capture mode: `full`, `metadata_only`, `no_tool_content` (default: `metadata_only`). |
+| `SIGIL_TAGS` | no | Comma-separated `key=value` tags added to every generation (e.g. `account=work,env=dev`). Built-in tags (`git.branch`, `cwd`, `entrypoint`, `subagent`) take precedence on collision. |
 | `SIGIL_USER_ID` | no | Explicit override for the per-generation user id. When set to a non-whitespace value it wins over `~/.claude.json` and ignores `SIGIL_USER_ID_SOURCE`. |
 | `SIGIL_USER_ID_SOURCE` | no | Field to read from `~/.claude.json` when `SIGIL_USER_ID` is unset: `email` (default, uses `oauthAccount.emailAddress`) or `accountUuid` (uses `oauthAccount.accountUuid`). Unknown values fall back to `email`. |
 | `SIGIL_DEBUG` | no | Set to `true` to log to `~/.claude/state/sigil-cc.log` (otherwise silent). |
@@ -163,6 +182,7 @@ Manual test:
 
 ```bash
 echo '{"session_id":"test","transcript_path":"/path/to/session.jsonl"}' | \
-  SIGIL_URL=https://sigil.example.com SIGIL_USER=123 SIGIL_PASSWORD=glc_... \
+  SIGIL_ENDPOINT=https://sigil-prod-us-central-0.grafana.net \
+  SIGIL_AUTH_TENANT_ID=123 SIGIL_AUTH_TOKEN=glc_... \
   ./sigil-cc
 ```
