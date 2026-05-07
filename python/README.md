@@ -612,19 +612,3 @@ Provider wrappers are wrapper-first and mapper-explicit:
 - `sigil-sdk-gemini`
 
 Each package exposes sync + async wrappers and explicit mapper functions for custom integration points.
-
-## Regenerating gRPC Stubs
-
-Install dev dependencies once:
-
-```bash
-python3 -m pip install -e 'sdks/python[dev]'
-```
-
-Then regenerate:
-
-```bash
-./sdks/python/scripts/generate_proto.sh
-```
-
-This regenerates `sigil_sdk/internal/gen/sigil/v1/*_pb2*.py` from `sigil/proto/sigil/v1/generation_ingest.proto`.

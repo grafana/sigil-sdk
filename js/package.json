@@ -54,9 +54,10 @@
   "sideEffects": false,
   "scripts": {
     "clean": "find dist -type f -delete 2>/dev/null || true && find dist -type d -empty -delete 2>/dev/null || true",
-    "build": "pnpm run clean && tsc --project tsconfig.build.json",
+    "sync-proto": "node scripts/sync-proto.mjs",
+    "build": "pnpm run sync-proto && pnpm run clean && tsc --project tsconfig.build.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test:build": "rm -rf .test-dist && tsc --project tsconfig.test.json",
+    "test:build": "pnpm run sync-proto && rm -rf .test-dist && tsc --project tsconfig.test.json",
     "test": "pnpm run test:build && node --import ./test/_setup.mjs --test test/**/*.test.mjs",
     "test:ci": "pnpm run test",
     "lint": "biome check .",
