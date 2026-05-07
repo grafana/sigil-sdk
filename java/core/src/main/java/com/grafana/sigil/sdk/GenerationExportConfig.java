@@ -15,10 +15,10 @@ public final class GenerationExportConfig {
     private GenerationExportProtocol protocol;
     /**
      * Export endpoint. Empty string means "not set" — env layer or
-     * {@link SigilClient} resolves it to
-     * {@code http://localhost:8080/api/v1/generations:export}. An explicit
-     * non-empty value is preserved (caller-wins) and not overridden by
-     * {@code SIGIL_ENDPOINT}.
+     * {@link SigilClient} resolves it to {@code http://localhost:8080}.
+     * The HTTP exporter auto-appends {@code /api/v1/generations:export}
+     * when the URL has no path. An explicit non-empty value is preserved
+     * (caller-wins) and not overridden by {@code SIGIL_ENDPOINT}.
      */
     private String endpoint = "";
     private final Map<String, String> headers = new LinkedHashMap<>();

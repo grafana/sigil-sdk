@@ -54,7 +54,7 @@ SigilClient client = new SigilClient(new SigilClientConfig()
         .setEndpoint("http://localhost:8080"))
     .setGenerationExport(new GenerationExportConfig()
         .setProtocol(GenerationExportProtocol.HTTP)
-        .setEndpoint("http://localhost:8080/api/v1/generations:export")
+        .setEndpoint("http://localhost:8080")
         .setAuth(new AuthConfig().setMode(AuthMode.TENANT).setTenantId("dev-tenant"))));
 
 try {

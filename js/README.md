@@ -30,7 +30,7 @@ import { SigilClient } from "@grafana/sigil-sdk-js";
 const client = new SigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: "http://localhost:8080/api/v1/generations:export",
+    endpoint: "http://localhost:8080",
     auth: { mode: "tenant", tenantId: "dev-tenant" },
   },
   api: {
@@ -326,7 +326,7 @@ If explicit headers already contain `Authorization` or `X-Scope-OrgID`, explicit
 const client = new SigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: "http://localhost:8080/api/v1/generations:export",
+    endpoint: "http://localhost:8080",
     auth: { mode: "tenant", tenantId: "prod-tenant" },
   },
   api: {
@@ -337,13 +337,13 @@ const client = new SigilClient({
 
 ### Grafana Cloud auth (basic)
 
-For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key:
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for full setup steps; for this SDK endpoint, copy the **API URL** from **Observability → AI Observability → Configuration**. It looks like `https://sigil-prod-<region>.grafana.net`.
 
 ```ts
 const client = new SigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: "https://<your-stack>.grafana.net/api/v1/generations:export",
+    endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
       tenantId: process.env.GRAFANA_CLOUD_INSTANCE_ID,
@@ -374,7 +374,7 @@ const generationBearerToken = (process.env.SIGIL_GEN_BEARER_TOKEN ?? "").trim();
 const client = new SigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: "http://localhost:8080/api/v1/generations:export",
+    endpoint: "http://localhost:8080",
     auth:
       generationBearerToken.length > 0
         ? { mode: "bearer", bearerToken: generationBearerToken }

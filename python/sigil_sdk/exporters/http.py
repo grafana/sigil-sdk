@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from urllib import request as urllib_request
+from urllib.parse import urlparse, urlunparse
 
 from ..models import (
     ExportGenerationResult,
@@ -116,11 +117,24 @@ def _normalize_endpoint(endpoint: str, path: str = _EXPORT_PATH) -> str:
     trimmed = endpoint.strip()
     if not trimmed:
         raise ValueError("endpoint is required")
-    if not (trimmed.startswith("http://") or trimmed.startswith("https://")):
-        trimmed = f"http://{trimmed}"
-    base = trimmed.rstrip("/")
-    if base.endswith(_EXPORT_PATH):
-        base = base[: -len(_EXPORT_PATH)]
-    if base.endswith(_WF_EXPORT_PATH):
-        base = base[: -len(_WF_EXPORT_PATH)]
-    return base + path
+
+    lower = trimmed.lower()
+    if lower.startswith("http://") or lower.startswith("https://"):
+        normalized = trimmed
+    else:
+        normalized = f"http://{trimmed}"
+
+    parsed = urlparse(normalized)
+    if not parsed.netloc:
+        raise ValueError("endpoint host is required")
+
+    current_path = parsed.path
+    if not current_path or current_path == "/":
+        return urlunparse(parsed._replace(path=path))
+
+    # A client configured with the canonical generation endpoint should still
+    # export workflow steps to the sibling workflow-step endpoint.
+    if path == _WF_EXPORT_PATH and current_path.rstrip("/") == _EXPORT_PATH:
+        return urlunparse(parsed._replace(path=_WF_EXPORT_PATH))
+
+    return urlunparse(parsed)

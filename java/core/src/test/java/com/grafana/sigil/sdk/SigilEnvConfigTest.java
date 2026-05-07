@@ -30,7 +30,7 @@ class SigilEnvConfigTest {
         assertThat(cfg.getDebug()).isNull();
         assertThat(cfg.getGenerationExport().getInsecure()).isNull();
         assertThat(cfg.getGenerationExport().getEndpoint())
-                .isEqualTo("http://localhost:8080/api/v1/generations:export");
+                .isEqualTo("http://localhost:8080");
         assertThat(result.warnings()).isEmpty();
     }
 

@@ -12,7 +12,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Configure Sigil and OTel endpoints from your Grafana Cloud stack:
+Configure Sigil and OTel endpoints from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find the Sigil API URL:
 
 ```bash
 SIGIL_EXPORT_PROTOCOL=http

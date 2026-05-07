@@ -63,7 +63,7 @@ import { SigilClient } from "@grafana/sigil-sdk-js";
 const client = new SigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: "http://localhost:8080/api/v1/generations:export",
+    endpoint: "http://localhost:8080",
     auth: { mode: "tenant", tenantId: "dev-tenant" },
   },
 });
@@ -90,7 +90,7 @@ await client.shutdown();
 ```go
 cfg := sigil.DefaultConfig()
 cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP
-cfg.GenerationExport.Endpoint = "http://localhost:8080/api/v1/generations:export"
+cfg.GenerationExport.Endpoint = "http://localhost:8080"
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:     sigil.ExportAuthModeTenant,
 	TenantID: "dev-tenant",
@@ -113,11 +113,14 @@ rec.SetResult(sigil.Generation{
 ### Python
 
 ```python
-from sigil_sdk import Client, ClientConfig, GenerationStart, ModelRef, assistant_text_message
+from sigil_sdk import Client, ClientConfig, GenerationExportConfig, GenerationStart, ModelRef, assistant_text_message
 
 client = Client(
     ClientConfig(
-        generation_export_endpoint="http://localhost:8080/api/v1/generations:export",
+        generation_export=GenerationExportConfig(
+            protocol="http",
+            endpoint="http://localhost:8080",
+        ),
     )
 )
 
@@ -163,13 +166,13 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 
 ### Grafana Cloud credentials
 
-You need three values to connect. All are visible in the **AI Observability plugin → Connection tab** in your Grafana Cloud stack.
+You need three values to connect. The endpoint and instance ID are visible in **AI Observability → Configuration** in your Grafana Cloud stack; see the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the full setup flow.
 
 | What | Where to find it |
 |------|-----------------|
-| **Instance ID** — numeric stack ID, used as tenant ID and basic-auth username | Shown under **Instance ID** in the Connection tab. Also in the Cloud Portal under your stack details. |
+| **Instance ID** — numeric stack ID, used as tenant ID and basic-auth username | Shown under **Instance ID** in AI Observability → Configuration. Also in the Cloud Portal under your stack details. |
 | **API token** — starts with `glc_`, used as the basic-auth password | Create one via **Administration → Cloud Access Policies** ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)). Scope it to your stack with write permissions for AI Observability. |
-| **Endpoint URL** — the ingest URL for your region | Shown under **API URL** in the Connection tab. Append `/api/v1/generations:export` to get the full ingest URL. |
+| **Endpoint URL** — the ingest URL for your region | Shown under **API URL** in AI Observability → Configuration. |
 
 ## Plugins
 

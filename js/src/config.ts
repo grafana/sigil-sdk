@@ -21,7 +21,7 @@ const defaultExportAuthConfig: ExportAuthConfig = {
 
 export const defaultGenerationExportConfig: GenerationExportConfig = {
   protocol: 'http',
-  endpoint: 'http://localhost:8080/api/v1/generations:export',
+  endpoint: 'http://localhost:8080',
   auth: defaultExportAuthConfig,
   insecure: false,
   batchSize: 100,

@@ -65,8 +65,12 @@ from sigil_sdk.exporters.http import _normalize_endpoint
         ("http://host:8080", "http://host:8080/api/v1/generations:export"),
         ("http://host:8080/", "http://host:8080/api/v1/generations:export"),
         ("https://host:443", "https://host:443/api/v1/generations:export"),
+        ("HTTPS://host:443", "https://host:443/api/v1/generations:export"),
         ("host:8080", "http://host:8080/api/v1/generations:export"),
         ("host:8080/api/v1/generations:export", "http://host:8080/api/v1/generations:export"),
+        ("http://host:8080/custom/ingest", "http://host:8080/custom/ingest"),
+        ("http://host:8080?token=abc", "http://host:8080/api/v1/generations:export?token=abc"),
+        ("http://host:8080/custom/ingest?token=abc", "http://host:8080/custom/ingest?token=abc"),
     ],
 )
 def test_normalize_endpoint(raw: str, expected: str) -> None:
