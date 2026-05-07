@@ -144,12 +144,15 @@ If nothing appears, the most common causes are: `sigil-cc` not on `$PATH`, missi
 
 ## How It Works
 
-1. Claude Code fires the Stop hook after each turn, passing `{session_id, transcript_path}` on stdin
+1. Claude Code fires `SessionStart` and persists the session model (used by tool hooks).
+2. Claude Code fires the Stop hook after each turn, passing `{session_id, transcript_path}` on stdin
 2. `sigil-cc` loads the byte offset from the last run (or 0 for first run)
 3. Reads new JSONL lines from the transcript starting at that offset
 4. Maps assistant messages with token usage to Sigil Generation records
 5. Sends via the sigil-sdk HTTP client
 6. On successful flush, saves the new offset for next invocation
+
+Additionally, the plugin registers a `PreToolUse` hook that evaluates Sigil **postflight** guards against the tool call name. If a guard denies, the hook returns a Claude Code `permissionDecision: "deny"` and the tool call is blocked before execution.
 
 Each assistant API response becomes one Generation with model, tokens, tools, timestamps, tags, and conversation title. The hook always exits 0; telemetry is best-effort.
 

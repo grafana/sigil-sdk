@@ -171,6 +171,23 @@ func TestParseExtraTags(t *testing.T) {
 	}
 }
 
+func TestParseStdin_PreToolUse(t *testing.T) {
+	in := `{"hook_event_name":"PreToolUse","session_id":"s1","transcript_path":"/tmp/t.jsonl","tool_name":"Bash","tool_input":{"command":"echo hi"},"tool_use_id":"tu_1"}`
+	got, err := parseHookInput(strings.NewReader(in))
+	if err != nil {
+		t.Fatalf("parseStdin: %v", err)
+	}
+	if got.HookEventName != "PreToolUse" {
+		t.Fatalf("HookEventName=%q", got.HookEventName)
+	}
+	if got.ToolName != "Bash" || got.ToolUseID != "tu_1" {
+		t.Fatalf("tool fields = %#v", got)
+	}
+	if len(got.ToolInput) == 0 || !strings.Contains(string(got.ToolInput), "echo hi") {
+		t.Fatalf("ToolInput=%s", string(got.ToolInput))
+	}
+}
+
 func TestBuildToolResultMap(t *testing.T) {
 	tests := []struct {
 		name     string

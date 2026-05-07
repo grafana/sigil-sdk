@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -20,8 +21,24 @@ import (
 )
 
 type hookInput struct {
-	SessionID      string `json:"session_id"`
-	TranscriptPath string `json:"transcript_path"`
+	HookEventName  string          `json:"hook_event_name"`
+	SessionID      string          `json:"session_id"`
+	TranscriptPath string          `json:"transcript_path"`
+	Model          string          `json:"model,omitempty"`
+	ToolName       string          `json:"tool_name,omitempty"`
+	ToolInput      json.RawMessage `json:"tool_input,omitempty"`
+	ToolUseID      string          `json:"tool_use_id,omitempty"`
+}
+
+type hookDecision struct {
+	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
+}
+
+type hookSpecificOutput struct {
+	HookEventName              string `json:"hookEventName"`
+	PermissionDecision         string `json:"permissionDecision,omitempty"`
+	PermissionDecisionReason   string `json:"permissionDecisionReason,omitempty"`
+	AdditionalContext          string `json:"additionalContext,omitempty"`
 }
 
 var (
@@ -64,12 +81,12 @@ func main() {
 }
 
 func run() {
-	input, err := parseStdin()
+	input, err := parseHookInput(os.Stdin)
 	if err != nil {
 		logger.Printf("stdin: %v", err)
 		return
 	}
-	logger.Printf("session=%s transcript=%s", input.SessionID, input.TranscriptPath)
+	logger.Printf("event=%s session=%s transcript=%s", input.HookEventName, input.SessionID, input.TranscriptPath)
 
 	// Canonical SIGIL_* schema only — no legacy aliases.
 	sigilEndpoint := os.Getenv("SIGIL_ENDPOINT")
@@ -96,6 +113,26 @@ func run() {
 	defer cancel()
 	ctx = sigil.WithUserID(ctx, userID)
 
+	st := state.Load(input.SessionID)
+
+	switch strings.TrimSpace(input.HookEventName) {
+	case "", "Stop":
+		// Stop hook uses the transcript to export generations.
+	case "SessionStart":
+		st.Model = strings.TrimSpace(input.Model)
+		if err := state.Save(input.SessionID, st); err != nil {
+			logger.Printf("save state: %v", err)
+		}
+		return
+	case "PreToolUse":
+		handlePreToolUse(ctx, input, st, sigilEndpoint, tenantID, authToken)
+		return
+	default:
+		// Ignore unsupported events; hooks are best-effort and should not crash
+		// Claude Code.
+		return
+	}
+
 	// SIGIL_OTEL_* takes precedence over OTEL_*; OTEL_* is the fallback.
 	otelEndpoint := envOr("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 	otelInsecure := parseBoolEnv(envOr("SIGIL_OTEL_EXPORTER_OTLP_INSECURE", os.Getenv("OTEL_EXPORTER_OTLP_INSECURE")))
@@ -114,8 +151,6 @@ func run() {
 		logger.Printf("otel: endpoint=%s", otelEndpoint)
 	}
 	defer func() { _ = otelProviders.Shutdown(ctx) }()
-
-	st := state.Load(input.SessionID)
 
 	lines, _, err := transcript.Read(input.TranscriptPath, st.Offset)
 	if err != nil {
@@ -227,8 +262,111 @@ func run() {
 	logger.Printf("done: %d generations in %s", len(gens), time.Since(t0))
 }
 
-func parseStdin() (*hookInput, error) {
-	data, err := io.ReadAll(os.Stdin)
+func handlePreToolUse(
+	ctx context.Context,
+	input *hookInput,
+	st state.Session,
+	sigilEndpoint, tenantID, authToken string,
+) {
+	toolName := strings.TrimSpace(input.ToolName)
+	if toolName == "" {
+		return
+	}
+
+	modelName := strings.TrimSpace(st.Model)
+	if modelName == "" {
+		modelName = "unknown"
+	}
+
+	failOpen := true
+	cfg := sigil.Config{
+		API: sigil.APIConfig{
+			Endpoint: sigilEndpoint,
+		},
+		Hooks: sigil.HooksConfig{
+			Enabled:  true,
+			Phases:   []sigil.HookPhase{sigil.HookPhasePostflight},
+			Timeout:  1500 * time.Millisecond,
+			FailOpen: &failOpen,
+		},
+		// Hook evaluation needs auth headers; reuse the export auth inputs.
+		GenerationExport: sigil.GenerationExportConfig{
+			Auth: sigil.AuthConfig{
+				Mode:          sigil.ExportAuthModeBasic,
+				BasicUser:     tenantID,
+				BasicPassword: authToken,
+				TenantID:      tenantID,
+			},
+		},
+	}
+
+	client := sigil.NewClient(cfg)
+	defer func() { _ = client.Shutdown(ctx) }()
+
+	req := sigil.HookEvaluateRequest{
+		Phase: sigil.HookPhasePostflight,
+		Context: sigil.HookContext{
+			AgentName:    "claude-code",
+			AgentVersion: version,
+			Model:        &sigil.HookModel{Provider: "anthropic", Name: modelName},
+		},
+		Input: sigil.HookInput{
+			Output: []sigil.Message{{
+				Role: sigil.RoleAssistant,
+				Parts: []sigil.Part{{
+					Kind: sigil.PartKindToolCall,
+					ToolCall: &sigil.ToolCall{
+						ID:        strings.TrimSpace(input.ToolUseID),
+						Name:      toolName,
+					},
+				}},
+			}},
+		},
+	}
+	if payload, mErr := json.Marshal(req); mErr == nil {
+		logger.Printf("pre_tool_use hook request: %s", string(payload))
+	}
+
+	resp, err := client.EvaluateHook(ctx, req)
+	if err != nil {
+		// Fail-open means tool execution continues.
+		logger.Printf("pre_tool_use hook eval: tool=%q endpoint=%q err=%v", toolName, sigilEndpoint, err)
+		return
+	}
+
+	if resp != nil {
+		logger.Printf(
+			"pre_tool_use hook eval: tool=%q endpoint=%q action=%q rule_id=%q reason=%q",
+			toolName,
+			sigilEndpoint,
+			string(resp.Action),
+			resp.RuleID,
+			resp.Reason,
+		)
+	}
+
+	if deniedErr := sigil.HookDeniedFromResponse(resp); deniedErr != nil {
+		reason := "tool call denied by Sigil guard"
+		var denied *sigil.HookDeniedError
+		if errors.As(deniedErr, &denied) && strings.TrimSpace(denied.Reason) != "" {
+			reason = denied.Reason
+		}
+		if strings.TrimSpace(reason) == "" {
+			reason = "tool call denied by Sigil guard"
+		}
+		out := hookDecision{
+			HookSpecificOutput: hookSpecificOutput{
+				HookEventName:            "PreToolUse",
+				PermissionDecision:       "deny",
+				PermissionDecisionReason: reason,
+			},
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(out)
+	}
+}
+
+func parseHookInput(r io.Reader) (*hookInput, error) {
+	data, err := io.ReadAll(r)
 	if err != nil || len(data) == 0 {
 		return nil, fmt.Errorf("empty stdin")
 	}
@@ -238,6 +376,8 @@ func parseStdin() (*hookInput, error) {
 		return nil, err
 	}
 
+	input.SessionID = strings.TrimSpace(input.SessionID)
+	input.TranscriptPath = strings.TrimSpace(input.TranscriptPath)
 	if input.SessionID == "" || input.TranscriptPath == "" {
 		return nil, fmt.Errorf("missing session_id or transcript_path")
 	}
