@@ -702,7 +702,19 @@ class Client:
             self._trigger_async_flush()
 
     def enqueue_workflow_step(self, step: WorkflowStep) -> None:
-        """Enqueues a workflow step for background export."""
+        """Enqueues a fully-built ``WorkflowStep`` for background export.
+
+        This is a low-level primitive intended for advanced cases such as
+        forwarding pre-built steps from another system. For general use, prefer
+        a framework adapter (LangGraph, LangChain) or the upcoming
+        ``Client.start_workflow_step`` recorder API, which automatically
+        handles step IDs, timestamps, identity inheritance, and
+        ``linked_generation_ids`` for nested generations.
+
+        Design doc:
+        ``sigil/docs/design-docs/2026-05-07-workflow-step-recorder-api.md``
+        in the grafana/sigil repository.
+        """
         if self._shutting_down or self._closed:
             raise ClientShutdownError("sigil: client is shutting down")
         should_trigger_flush = False
