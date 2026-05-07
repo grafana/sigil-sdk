@@ -10,6 +10,30 @@
   "license": "Apache-2.0",
   "keywords": ["telemetry", "observability", "sigil", "grafana"],
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sigil-cc",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sigil-cc",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

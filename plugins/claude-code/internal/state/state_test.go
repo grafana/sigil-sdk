@@ -20,7 +20,7 @@ func TestLoad_MissingFile(t *testing.T) {
 func TestSaveLoad_Roundtrip(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
-	want := Session{Offset: 12345, Title: "Fix the authentication bug"}
+	want := Session{Offset: 12345, Title: "Fix the authentication bug", Model: "claude-sonnet-4-6"}
 	if err := Save("test-session", want); err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +31,9 @@ func TestSaveLoad_Roundtrip(t *testing.T) {
 	}
 	if got.Title != want.Title {
 		t.Errorf("Title = %q, want %q", got.Title, want.Title)
+	}
+	if got.Model != want.Model {
+		t.Errorf("Model = %q, want %q", got.Model, want.Model)
 	}
 }
 
