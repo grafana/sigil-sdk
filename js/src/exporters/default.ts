@@ -40,6 +40,12 @@ class UnavailableGenerationExporter implements GenerationExporter {
   }
 }
 
+/**
+ * Lazily loads the Node/gRPC exporter only when protocol=grpc is used.
+ *
+ * This keeps edge runtimes (for example Cloudflare Workers) on the HTTP/none
+ * path from evaluating Node-only gRPC modules during startup.
+ */
 class LazyGRPCGenerationExporter implements GenerationExporter {
   private initPromise: Promise<GenerationExporter> | undefined;
   private exporter: GenerationExporter | undefined;

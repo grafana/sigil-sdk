@@ -118,6 +118,8 @@ export function mergeConfig(
 }
 
 function defaultEnv(): Record<string, string | undefined> {
+  // Edge runtimes (for example Cloudflare Workers) may not define `process`.
+  // Fall back to an empty env object so default config resolution stays safe.
   if (typeof process !== 'undefined' && process.env !== undefined) {
     return process.env;
   }
