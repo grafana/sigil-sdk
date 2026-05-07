@@ -4,7 +4,6 @@ import type {
   GenerationExportConfig,
   GenerationExporter,
 } from '../types.js';
-import { GRPCGenerationExporter } from './grpc.js';
 import { HTTPGenerationExporter } from './http.js';
 
 export function createDefaultGenerationExporter(config: GenerationExportConfig): GenerationExporter {
@@ -12,7 +11,7 @@ export function createDefaultGenerationExporter(config: GenerationExportConfig):
     case 'http':
       return new HTTPGenerationExporter(config.endpoint, config.headers);
     case 'grpc':
-      return new GRPCGenerationExporter(config.endpoint, config.headers, config.insecure);
+      return new LazyGRPCGenerationExporter(config.endpoint, config.headers, config.insecure);
     case 'none':
       return new NoopGenerationExporter();
     default:
@@ -38,5 +37,52 @@ class UnavailableGenerationExporter implements GenerationExporter {
 
   async exportGenerations(): Promise<never> {
     throw this.reason;
+  }
+}
+
+/**
+ * Lazily loads the Node/gRPC exporter only when protocol=grpc is used.
+ *
+ * This keeps edge runtimes (for example Cloudflare Workers) on the HTTP/none
+ * path from evaluating Node-only gRPC modules during startup.
+ */
+class LazyGRPCGenerationExporter implements GenerationExporter {
+  private initPromise: Promise<GenerationExporter> | undefined;
+  private exporter: GenerationExporter | undefined;
+
+  constructor(
+    private readonly endpoint: string,
+    private readonly headers: Record<string, string> | undefined,
+    private readonly insecure: boolean,
+  ) {}
+
+  async exportGenerations(request: ExportGenerationsRequest): Promise<ExportGenerationsResponse> {
+    const exporter = await this.getExporter();
+    return exporter.exportGenerations(request);
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.initPromise === undefined && this.exporter === undefined) {
+      return;
+    }
+    const exporter = await this.getExporter();
+    await exporter.shutdown?.();
+  }
+
+  private async getExporter(): Promise<GenerationExporter> {
+    if (this.exporter !== undefined) {
+      return this.exporter;
+    }
+    if (this.initPromise !== undefined) {
+      return this.initPromise;
+    }
+    this.initPromise = this.initializeExporter();
+    this.exporter = await this.initPromise;
+    return this.exporter;
+  }
+
+  private async initializeExporter(): Promise<GenerationExporter> {
+    const grpc = await import('./grpc.js');
+    return new grpc.GRPCGenerationExporter(this.endpoint, this.headers, this.insecure);
   }
 }
