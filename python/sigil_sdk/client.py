@@ -51,6 +51,7 @@ from .models import (
     EmbeddingResult,
     EmbeddingStart,
     ExportGenerationsRequest,
+    ExportWorkflowStepsRequest,
     Generation,
     GenerationMode,
     GenerationStart,
@@ -59,6 +60,7 @@ from .models import (
     SubmitConversationRatingResponse,
     ToolExecutionEnd,
     ToolExecutionStart,
+    WorkflowStep,
     _metadata_key_content_capture_mode,
 )
 from .proto_mapping import generation_to_proto
@@ -277,6 +279,7 @@ class Client:
         self._sleep = self._config.sleep
 
         self._pending_generations: list[Generation] = []
+        self._pending_workflow_steps: list[WorkflowStep] = []
         self._pending_lock = threading.Lock()
         self._flush_lock = threading.Lock()
         self._flush_thread_lock = threading.Lock()
@@ -698,6 +701,18 @@ class Client:
         if should_trigger_flush:
             self._trigger_async_flush()
 
+    def enqueue_workflow_step(self, step: WorkflowStep) -> None:
+        """Enqueues a workflow step for background export."""
+        if self._shutting_down or self._closed:
+            raise ClientShutdownError("sigil: client is shutting down")
+        should_trigger_flush = False
+        with self._pending_lock:
+            self._pending_workflow_steps.append(copy.deepcopy(step))
+            if len(self._pending_workflow_steps) >= self._config.generation_export.batch_size:
+                should_trigger_flush = True
+        if should_trigger_flush:
+            self._trigger_async_flush()
+
     def _trigger_async_flush(self) -> None:
         with self._flush_thread_lock:
             if self._flush_thread is not None and self._flush_thread.is_alive():
@@ -727,18 +742,55 @@ class Client:
         with self._flush_lock:
             while True:
                 with self._pending_lock:
-                    if not self._pending_generations:
+                    has_gens = bool(self._pending_generations)
+                    has_wfs = bool(self._pending_workflow_steps)
+                    if not has_gens and not has_wfs:
                         return
                     batch_size = self._config.generation_export.batch_size
-                    batch = self._pending_generations[:batch_size]
-                    del self._pending_generations[:batch_size]
 
-                response = self._export_with_retry(ExportGenerationsRequest(generations=batch))
-                for result in response.results:
-                    if not result.accepted:
-                        self._log_warn(f"sigil generation rejected id={result.generation_id} error={result.error}")
+                    gen_batch: list[Generation] = []
+                    if has_gens:
+                        gen_batch = self._pending_generations[:batch_size]
+                        del self._pending_generations[:batch_size]
 
-    def _export_with_retry(self, request: ExportGenerationsRequest):
+                    wf_batch: list[WorkflowStep] = []
+                    if has_wfs:
+                        wf_batch = self._pending_workflow_steps[:batch_size]
+                        del self._pending_workflow_steps[:batch_size]
+
+                if gen_batch:
+                    gen_request = ExportGenerationsRequest(generations=gen_batch)
+                    try:
+                        response = self._export_with_retry(
+                            lambda req=gen_request: self._generation_exporter.export_generations(req)
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        self._log_warn("sigil generation export failed", exc)
+                    else:
+                        for result in response.results:
+                            if not result.accepted:
+                                self._log_warn(
+                                    f"sigil generation rejected id={result.generation_id} error={result.error}"
+                                )
+
+                if wf_batch:
+                    wf_request = ExportWorkflowStepsRequest(workflow_steps=wf_batch)
+                    try:
+                        wf_response = self._export_with_retry(
+                            lambda req=wf_request: self._generation_exporter.export_workflow_steps(req)
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        self._log_warn("sigil workflow step export failed", exc)
+                    else:
+                        for result in wf_response.results:
+                            if not result.accepted:
+                                self._log_warn(f"sigil workflow step rejected id={result.step_id} error={result.error}")
+
+    def _export_with_retry(self, send: Callable[[], Any]):
+        """Run an export call with the configured exponential backoff retry.
+
+        ``send`` must be a zero-arg callable that performs the exporter call
+        and returns the response. Re-raised on the final attempt."""
         attempts = self._config.generation_export.max_retries + 1
         backoff = self._config.generation_export.initial_backoff.total_seconds()
         max_backoff = self._config.generation_export.max_backoff.total_seconds()
@@ -748,7 +800,7 @@ class Client:
         last_error: Exception | None = None
         for attempt in range(attempts):
             try:
-                return self._generation_exporter.export_generations(request)
+                return send()
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 if attempt == attempts - 1:

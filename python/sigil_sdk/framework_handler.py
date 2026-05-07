@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,6 +27,7 @@ from sigil_sdk import (
     ToolCall,
     ToolDefinition,
     ToolExecutionStart,
+    WorkflowStep,
     user_text_message,
 )
 from sigil_sdk.usage import map_usage
@@ -89,6 +91,21 @@ class _ToolRunState:
     capture_outputs: bool
 
 
+@dataclass(slots=True)
+class _WorkflowStepState:
+    step_id: str
+    conversation_id: str
+    step_name: str
+    started_at: datetime
+    tags: dict[str, str]
+    metadata: dict[str, Any]
+    parent_step_ids: list[str]
+    graph_root_key: str
+    capture_outputs: bool
+    input_state: dict[str, Any] = field(default_factory=dict)
+    linked_generation_ids: list[str] = field(default_factory=list)
+
+
 def merge_framework_callback_kwargs(
     callback_kwargs: dict[str, Any],
     *,
@@ -121,12 +138,15 @@ class SigilFrameworkHandlerBase:
         provider: str = "",
         capture_inputs: bool = True,
         capture_outputs: bool = True,
+        capture_workflow_steps: bool = False,
+        conversation_title: str = "",
         extra_tags: dict[str, str] | None = None,
         extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         self._client = client
         self._agent_name = agent_name
         self._agent_version = agent_version
+        self._conversation_title = conversation_title.strip()
         self._framework_name = framework_name.strip()
         self._framework_source = framework_source.strip() or _default_framework_source
         self._framework_language = framework_language.strip() or _default_framework_language
@@ -137,12 +157,117 @@ class SigilFrameworkHandlerBase:
         self._provider = provider
         self._capture_inputs = capture_inputs
         self._capture_outputs = capture_outputs
+        self._capture_workflow_steps = capture_workflow_steps
         self._extra_tags = dict(extra_tags or {})
         self._extra_metadata = dict(extra_metadata or {})
         self._runs: dict[str, _RunState] = {}
         self._tool_runs: dict[str, _ToolRunState] = {}
         self._chain_spans: dict[str, Span] = {}
         self._retriever_spans: dict[str, Span] = {}
+        self._workflow_step_runs: dict[str, _WorkflowStepState] = {}
+
+        # Graph-level state for workflow step wiring. Keyed by the run_key of
+        # each graph root so multiple concurrent graph invocations on the same
+        # handler stay isolated.
+        self._graph_root_run_keys: set[str] = set()
+        self._graph_run_conversation_id: dict[str, str] = {}
+        self._graph_run_last_step_id: dict[str, str] = {}
+        # parent_run_id chain for any active run (chain/llm/chat). Used to walk
+        # upwards from an LLM run to find the enclosing workflow step.
+        self._run_to_graph_key: dict[str, str] = {}
+
+    def _find_graph_root_key(self, run_key: str) -> str:
+        """Walk the parent chain starting at run_key until we reach a known
+        graph root run_key. Returns the root key, or "" if none is found.
+
+        Uses a visited set as a defensive guard against pathological cycles
+        in the parent map (which shouldn't happen but we don't want to spin)."""
+        visited: set[str] = set()
+        current = run_key
+        while current and current not in visited:
+            if current in self._graph_root_run_keys:
+                return current
+            visited.add(current)
+            current = self._run_to_graph_key.get(current, "")
+        return ""
+
+    def _find_enclosing_workflow_step(self, run_key: str) -> _WorkflowStepState | None:
+        """Walk the parent chain to find the closest ancestor whose run_key is
+        registered as a workflow step. Returns None if none is found.
+
+        This is what makes ``linked_generation_ids`` work for LLM runs nested
+        inside sub-chains (LCEL composition, conditional edges, etc.) — the
+        immediate parent is often a sub-chain, but the workflow step is one
+        or two levels above."""
+        visited: set[str] = set()
+        current = self._run_to_graph_key.get(run_key, "")
+        while current and current not in visited:
+            visited.add(current)
+            state = self._workflow_step_runs.get(current)
+            if state is not None:
+                return state
+            current = self._run_to_graph_key.get(current, "")
+        return None
+
+    def _resolve_graph_conversation_id(self, conversation_id: str, parent_run_id: UUID | None) -> str:
+        """When capture_workflow_steps is on, ensure all nodes under the same
+        graph invocation share a single conversation_id."""
+        if not self._capture_workflow_steps or parent_run_id is None:
+            return conversation_id
+        root = self._find_graph_root_key(str(parent_run_id))
+        if root == "":
+            return conversation_id
+        cached = self._graph_run_conversation_id.get(root)
+        if cached:
+            return cached
+        self._graph_run_conversation_id[root] = conversation_id
+        return conversation_id
+
+    def _track_run_generation_id(self, run_key: str, generation_id: str) -> None:
+        """Register a generation id against the enclosing workflow step (if any)
+        so it ends up in ``linked_generation_ids``."""
+        if generation_id == "":
+            return
+        state = self._find_enclosing_workflow_step(run_key)
+        if state is not None:
+            state.linked_generation_ids.append(generation_id)
+
+    def _is_graph_node(self, parent_run_id: UUID | None) -> bool:
+        """Return True if parent_run_id is one of the active graph roots
+        (i.e. this chain is a direct child of a compiled graph, not a
+        nested sub-chain)."""
+        if parent_run_id is None:
+            return False
+        return str(parent_run_id) in self._graph_root_run_keys
+
+    def _cleanup_graph_state_for_root(self, root_run_key: str) -> None:
+        """Remove all per-graph state once a graph root chain ends, including
+        any leftover ``_run_to_graph_key`` entries whose parent chain reached
+        this root, so the maps don't leak across long-lived handlers."""
+        if not root_run_key:
+            return
+        # Collect descendants while the parent chain is still complete.
+        descendants = [
+            run_key for run_key in list(self._run_to_graph_key.keys()) if self._reaches_run(run_key, root_run_key)
+        ]
+        for run_key in descendants:
+            self._run_to_graph_key.pop(run_key, None)
+            self._workflow_step_runs.pop(run_key, None)
+        self._graph_root_run_keys.discard(root_run_key)
+        self._graph_run_conversation_id.pop(root_run_key, None)
+        self._graph_run_last_step_id.pop(root_run_key, None)
+
+    def _reaches_run(self, start_key: str, target_key: str) -> bool:
+        """Return True if walking ``_run_to_graph_key`` from start_key
+        eventually reaches target_key."""
+        visited: set[str] = set()
+        current = self._run_to_graph_key.get(start_key, "")
+        while current and current not in visited:
+            if current == target_key:
+                return True
+            visited.add(current)
+            current = self._run_to_graph_key.get(current, "")
+        return False
 
     def _on_llm_start(
         self,
@@ -184,6 +309,7 @@ class SigilFrameworkHandlerBase:
             invocation_params=invocation_params,
             callback_kwargs=callback_kwargs,
         )
+        conversation_id = self._resolve_graph_conversation_id(conversation_id, parent_run_id)
         parent_run_key = _normalize_run_key(parent_run_id)
         component_name = _resolve_component_name(serialized, callback_kwargs)
         callback_tags = _normalize_framework_tags(_read(callback_kwargs, "tags"))
@@ -210,8 +336,12 @@ class SigilFrameworkHandlerBase:
             metadata[_span_attr_framework_event_id] = event_id
         metadata = _normalize_framework_metadata(metadata)
 
+        if parent_run_id is not None:
+            self._run_to_graph_key[run_key] = str(parent_run_id)
+
         start = GenerationStart(
             conversation_id=conversation_id,
+            conversation_title=self._conversation_title,
             agent_name=self._agent_name,
             agent_version=self._agent_version,
             mode=mode,
@@ -219,6 +349,9 @@ class SigilFrameworkHandlerBase:
             tags=tags,
             metadata=metadata,
         )
+        if start.id == "":
+            start.id = f"gen_{secrets.token_hex(8)}"
+        self._track_run_generation_id(run_key, start.id)
 
         recorder = (
             self._client.start_streaming_generation(start)
@@ -269,6 +402,7 @@ class SigilFrameworkHandlerBase:
             invocation_params=invocation_params,
             callback_kwargs=callback_kwargs,
         )
+        conversation_id = self._resolve_graph_conversation_id(conversation_id, parent_run_id)
         parent_run_key = _normalize_run_key(parent_run_id)
         component_name = _resolve_component_name(serialized, callback_kwargs)
         callback_tags = _normalize_framework_tags(_read(callback_kwargs, "tags"))
@@ -295,8 +429,12 @@ class SigilFrameworkHandlerBase:
             metadata[_span_attr_framework_event_id] = event_id
         metadata = _normalize_framework_metadata(metadata)
 
+        if parent_run_id is not None:
+            self._run_to_graph_key[run_key] = str(parent_run_id)
+
         start = GenerationStart(
             conversation_id=conversation_id,
+            conversation_title=self._conversation_title,
             agent_name=self._agent_name,
             agent_version=self._agent_version,
             mode=mode,
@@ -310,6 +448,9 @@ class SigilFrameworkHandlerBase:
             top_p=_as_optional_float(_read(invocation_params, "top_p")),
             tool_choice=_as_str(_read(invocation_params, "tool_choice")) or None,
         )
+        if start.id == "":
+            start.id = f"gen_{secrets.token_hex(8)}"
+        self._track_run_generation_id(run_key, start.id)
 
         recorder = (
             self._client.start_streaming_generation(start)
@@ -338,7 +479,9 @@ class SigilFrameworkHandlerBase:
             run_state.recorder.set_first_token_at(datetime.now(timezone.utc))
 
     def _on_llm_end(self, *, response: Any, run_id: UUID) -> None:
-        run_state = self._runs.pop(str(run_id), None)
+        run_key = str(run_id)
+        run_state = self._runs.pop(run_key, None)
+        self._run_to_graph_key.pop(run_key, None)
         if run_state is None:
             return
 
@@ -388,7 +531,9 @@ class SigilFrameworkHandlerBase:
             raise recorder_error
 
     def _on_llm_error(self, *, error: BaseException, run_id: UUID) -> None:
-        run_state = self._runs.pop(str(run_id), None)
+        run_key = str(run_id)
+        run_state = self._runs.pop(run_key, None)
+        self._run_to_graph_key.pop(run_key, None)
         if run_state is None:
             return
 
@@ -496,11 +641,39 @@ class SigilFrameworkHandlerBase:
         parent_run_id: UUID | None,
         run_type: str = "chain",
         callback_kwargs: dict[str, Any] | None = None,
+        inputs: dict[str, Any] | None = None,
     ) -> None:
         run_key = str(run_id)
-        if run_key in self._chain_spans:
+
+        # Register parent mapping for transitive graph resolution.
+        if parent_run_id is not None:
+            self._run_to_graph_key[run_key] = str(parent_run_id)
+
+        if self._capture_workflow_steps:
+            # Top-level graph wrapper (parent=None) becomes a graph root.
+            # Tracking a set instead of a single value keeps concurrent graph
+            # invocations on the same handler isolated.
+            if parent_run_id is None:
+                self._graph_root_run_keys.add(run_key)
+                return
+            # Only promote direct children of a graph root to workflow steps.
+            # Sub-chains inside a node (e.g. conditional edge routers) are skipped.
+            if not self._is_graph_node(parent_run_id):
+                return
+            if run_key in self._workflow_step_runs:
+                return
+            self._start_workflow_step(
+                serialized=serialized,
+                run_key=run_key,
+                parent_run_id=parent_run_id,
+                run_type=run_type,
+                callback_kwargs=callback_kwargs,
+                inputs=inputs,
+            )
             return
 
+        if run_key in self._chain_spans:
+            return
         span = self._start_framework_span(
             run_key=run_key,
             parent_run_id=parent_run_id,
@@ -513,11 +686,141 @@ class SigilFrameworkHandlerBase:
         )
         self._chain_spans[run_key] = span
 
-    def _on_chain_end(self, *, run_id: UUID) -> None:
+    def _on_chain_end(self, *, run_id: UUID, outputs: dict[str, Any] | None = None) -> None:
+        run_key = str(run_id)
+        if run_key in self._graph_root_run_keys:
+            self._cleanup_graph_state_for_root(run_key)
+            return
+        if run_key in self._workflow_step_runs:
+            self._end_workflow_step(run_key=run_key, outputs=outputs, error=None)
+            return
+        self._run_to_graph_key.pop(run_key, None)
         self._end_framework_span(self._chain_spans, run_id=run_id, error=None)
 
     def _on_chain_error(self, *, error: BaseException, run_id: UUID) -> None:
+        run_key = str(run_id)
+        if run_key in self._graph_root_run_keys:
+            self._cleanup_graph_state_for_root(run_key)
+            return
+        if run_key in self._workflow_step_runs:
+            self._end_workflow_step(run_key=run_key, outputs=None, error=error)
+            return
+        self._run_to_graph_key.pop(run_key, None)
         self._end_framework_span(self._chain_spans, run_id=run_id, error=error)
+
+    def _start_workflow_step(
+        self,
+        *,
+        serialized: dict[str, Any] | None,
+        run_key: str,
+        parent_run_id: UUID | None,
+        run_type: str,
+        callback_kwargs: dict[str, Any] | None,
+        inputs: dict[str, Any] | None,
+    ) -> None:
+        conversation_id, thread_id = _resolve_framework_conversation_id(
+            framework_name=self._framework_name,
+            run_key=run_key,
+            serialized=serialized,
+            invocation_params=None,
+            callback_kwargs=callback_kwargs,
+        )
+        conversation_id = self._resolve_graph_conversation_id(conversation_id, parent_run_id)
+        component_name = _resolve_component_name(serialized, callback_kwargs)
+        langgraph_node = _resolve_langgraph_node(callback_kwargs, None, serialized)
+        step_name = langgraph_node or component_name or run_type
+
+        tags = dict(self._extra_tags)
+        tags["sigil.framework.name"] = self._framework_name
+        tags["sigil.framework.source"] = self._framework_source
+        tags["sigil.framework.language"] = self._framework_language
+        tags["sigil.workflow_step.type"] = run_type
+
+        metadata: dict[str, Any] = dict(self._extra_metadata)
+        metadata[_span_attr_framework_run_id] = run_key
+        metadata[_span_attr_framework_run_type] = run_type
+        if thread_id != "":
+            metadata[_span_attr_framework_thread_id] = thread_id
+        parent_run_key = _normalize_run_key(parent_run_id)
+        if parent_run_key != "":
+            metadata[_span_attr_framework_parent_run_id] = parent_run_key
+        if component_name != "":
+            metadata[_span_attr_framework_component_name] = component_name
+        if langgraph_node != "":
+            metadata[_span_attr_framework_langgraph_node] = langgraph_node
+        metadata = _normalize_framework_metadata(metadata)
+
+        step_id = f"wfs_{secrets.token_hex(8)}"
+        graph_root_key = self._find_graph_root_key(run_key)
+
+        parent_step_ids: list[str] = []
+        if graph_root_key:
+            last_step = self._graph_run_last_step_id.get(graph_root_key, "")
+            if last_step:
+                parent_step_ids = [last_step]
+
+        input_state: dict[str, Any] = {}
+        if self._capture_inputs and inputs is not None:
+            input_state = _safe_serializable_dict(inputs)
+
+        self._workflow_step_runs[run_key] = _WorkflowStepState(
+            step_id=step_id,
+            conversation_id=conversation_id,
+            step_name=step_name,
+            started_at=datetime.now(timezone.utc),
+            tags=tags,
+            metadata=metadata,
+            parent_step_ids=parent_step_ids,
+            graph_root_key=graph_root_key,
+            capture_outputs=self._capture_outputs,
+            input_state=input_state,
+        )
+
+    def _end_workflow_step(
+        self,
+        *,
+        run_key: str,
+        outputs: dict[str, Any] | None,
+        error: BaseException | None,
+    ) -> None:
+        state = self._workflow_step_runs.pop(run_key, None)
+        if state is None:
+            return
+
+        output_state: dict[str, Any] = {}
+        if state.capture_outputs and outputs is not None:
+            output_state = _safe_serializable_dict(outputs)
+
+        step = WorkflowStep(
+            id=state.step_id,
+            conversation_id=state.conversation_id,
+            step_name=state.step_name,
+            framework=self._framework_name,
+            agent_name=self._agent_name,
+            agent_version=self._agent_version,
+            started_at=state.started_at,
+            completed_at=datetime.now(timezone.utc),
+            input_state=state.input_state,
+            output_state=output_state,
+            error=str(error) if error is not None else "",
+            tags=state.tags,
+            metadata=state.metadata,
+            linked_generation_ids=list(state.linked_generation_ids),
+            parent_step_ids=state.parent_step_ids,
+        )
+
+        try:
+            self._client.enqueue_workflow_step(step)
+        except Exception as exc:  # noqa: BLE001
+            # Surface enqueue failures via the SDK warn channel instead of
+            # silently dropping them: a failure here usually means the client
+            # is shutting down or misconfigured, and we want to know.
+            log_warn = getattr(self._client, "_log_warn", None)
+            if log_warn is not None:
+                log_warn("sigil: failed to enqueue workflow step", exc)
+
+        if state.graph_root_key:
+            self._graph_run_last_step_id[state.graph_root_key] = state.step_id
 
     def _on_retriever_start(
         self,
@@ -1179,6 +1482,23 @@ def _as_str(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
+
+
+def _safe_serializable_dict(value: Any) -> dict[str, Any]:
+    """Convert a value to a JSON-safe dict for Struct proto fields.
+
+    Does a JSON roundtrip so non-native types (e.g. LangChain BaseMessage)
+    are coerced to strings by default=str and the returned dict contains
+    only primitives that google.protobuf.Struct can handle.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        try:
+            return json.loads(json.dumps(value, default=str))
+        except Exception:  # noqa: BLE001
+            return {"raw": str(value)}
+    return {"raw": str(value)}
 
 
 def _json_bytes(value: Any) -> bytes:

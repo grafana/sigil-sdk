@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from ..models import ExportGenerationResult, ExportGenerationsResponse
+from ..models import (
+    ExportGenerationResult,
+    ExportGenerationsResponse,
+    ExportWorkflowStepResult,
+    ExportWorkflowStepsResponse,
+)
 
 
 class NoopGenerationExporter:
@@ -17,6 +22,11 @@ class NoopGenerationExporter:
                 )
                 for generation in request.generations
             ]
+        )
+
+    def export_workflow_steps(self, request):
+        return ExportWorkflowStepsResponse(
+            results=[ExportWorkflowStepResult(step_id=step.id, accepted=True) for step in request.workflow_steps]
         )
 
     def shutdown(self) -> None:
