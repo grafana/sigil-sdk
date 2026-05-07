@@ -60,6 +60,7 @@ describe("createSigilClient", () => {
         auth: { mode: "tenant", tenantId: "t-1" },
       },
       contentCapture: "metadata_only",
+      logger: expect.any(Object),
       generationSanitizer: SANITIZER,
     });
   });
@@ -88,6 +89,7 @@ describe("createSigilClient", () => {
         },
       },
       contentCapture: "metadata_only",
+      logger: expect.any(Object),
       generationSanitizer: SANITIZER,
     });
   });
@@ -97,6 +99,52 @@ describe("createSigilClient", () => {
     expect(SigilClientMock).toHaveBeenCalledWith(
       expect.objectContaining({ contentCapture: "full" }),
     );
+  });
+
+  it("uses warn as the default sdk log level", () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      createSigilClient(makeConfig());
+      const [{ logger }] = SigilClientMock.mock.calls[0]!;
+      logger.debug("debug");
+      logger.warn("warn");
+      logger.error("error");
+
+      expect(debug).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith("[sigil-pi] warn");
+      expect(error).toHaveBeenCalledWith("[sigil-pi] error");
+    } finally {
+      debug.mockRestore();
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it("downgrades best-effort export sdk logs to debug", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      createSigilClient(makeConfig());
+      const [{ logger: defaultLogger }] = SigilClientMock.mock.calls[0]!;
+      defaultLogger.warn("sigil generation export failed: transport down");
+      defaultLogger.warn("sigil generation rejected id=g-1: invalid");
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+
+      createSigilClient(makeConfig({ debug: true }));
+      const [{ logger: debugLogger }] = SigilClientMock.mock.calls[1]!;
+      debugLogger.warn("sigil generation export failed: transport down");
+
+      expect(error).toHaveBeenCalledWith(
+        "[sigil-pi] sigil generation export failed: transport down",
+      );
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
   });
 
   it("returns null when sdk constructor throws", () => {
