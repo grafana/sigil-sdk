@@ -12,8 +12,6 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-logger = logging.getLogger("sigil_sdk")
-
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
@@ -34,6 +32,8 @@ from sigil_sdk import (
     user_text_message,
 )
 from sigil_sdk.usage import map_usage
+
+logger = logging.getLogger("sigil_sdk")
 
 ProviderResolver = str | Callable[[str, dict[str, Any] | None, dict[str, Any] | None], str]
 
