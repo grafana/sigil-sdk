@@ -12,6 +12,9 @@ import (
 type Session struct {
 	Offset int64  `json:"offset"`
 	Title  string `json:"title,omitempty"`
+	// Model is captured from SessionStart so tool hooks can include model context
+	// when calling Sigil guards (PreToolUse events do not include model fields).
+	Model string `json:"model,omitempty"`
 }
 
 func dir() string {

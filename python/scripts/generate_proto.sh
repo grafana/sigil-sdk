@@ -6,20 +6,23 @@ SDK_DIR="${ROOT_DIR}/python"
 OUT_DIR="${SDK_DIR}/sigil_sdk/internal/gen"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-if ! "${PYTHON_BIN}" -c "import grpc_tools" >/dev/null 2>&1; then
-  cat <<'EOF'
+if "${PYTHON_BIN}" -c "import grpc_tools" >/dev/null 2>&1; then
+  PYTHON=("${PYTHON_BIN}")
+elif command -v uv >/dev/null 2>&1; then
+  PYTHON=(uv run --quiet --directory "${SDK_DIR}" --with grpcio-tools python)
+else
+  cat >&2 <<'EOF'
 grpcio-tools is required to regenerate protobuf stubs.
-Install it with:
-  python3 -m pip install 'sdks/python[dev]'
-or:
+Either install uv (preferred — https://docs.astral.sh/uv/) and re-run,
+or install grpcio-tools into your Python:
   python3 -m pip install grpcio-tools
 EOF
   exit 1
 fi
 
-PROTO_INCLUDE="$(${PYTHON_BIN} -c 'import pathlib, grpc_tools; print(pathlib.Path(grpc_tools.__file__).parent / "_proto")')"
+PROTO_INCLUDE="$("${PYTHON[@]}" -c 'import pathlib, grpc_tools; print(pathlib.Path(grpc_tools.__file__).parent / "_proto")')"
 
-"${PYTHON_BIN}" -m grpc_tools.protoc \
+"${PYTHON[@]}" -m grpc_tools.protoc \
   -I"${ROOT_DIR}/proto" \
   -I"${PROTO_INCLUDE}" \
   --python_out="${OUT_DIR}" \

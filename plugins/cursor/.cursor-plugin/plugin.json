@@ -1,0 +1,9 @@
+{
+  "name": "grafana-ai-observability",
+  "version": "0.2.0",
+  "description": "Send Cursor agent telemetry to Grafana Sigil",
+  "author": { "name": "Grafana Labs" },
+  "license": "Apache-2.0",
+  "keywords": ["telemetry", "observability", "sigil", "grafana", "cursor"],
+  "hooks": "hooks/hooks.json"
+}

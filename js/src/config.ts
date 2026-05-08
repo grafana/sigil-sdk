@@ -80,13 +80,13 @@ export function defaultConfig(): SigilSdkConfig {
  * Most callers should use `new SigilClient()` (env reading is automatic).
  * Use `configFromEnv()` for tests, debugging, or advanced layering.
  */
-export function configFromEnv(env: Record<string, string | undefined> = process.env): SigilSdkConfig {
+export function configFromEnv(env: Record<string, string | undefined> = defaultEnv()): SigilSdkConfig {
   return mergeConfig({}, env);
 }
 
 export function mergeConfig(
   config: SigilSdkConfigInput,
-  env: Record<string, string | undefined> = process.env,
+  env: Record<string, string | undefined> = defaultEnv(),
 ): SigilSdkConfig {
   // Layer env values under user-provided fields. The user-provided field wins
   // when defined; env fills in undefined fields; defaults fill the rest.
@@ -115,6 +115,15 @@ export function mergeConfig(
     tags: overlaid.tags ? { ...overlaid.tags } : undefined,
     debug: overlaid.debug,
   };
+}
+
+function defaultEnv(): Record<string, string | undefined> {
+  // Edge runtimes (for example Cloudflare Workers) may not define `process`.
+  // Fall back to an empty env object so default config resolution stays safe.
+  if (typeof process !== 'undefined' && process.env !== undefined) {
+    return process.env;
+  }
+  return {};
 }
 
 function envOverrides(env: Record<string, string | undefined>, logger: SigilLogger): SigilSdkConfigInput {

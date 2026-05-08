@@ -40,13 +40,18 @@ Instrument once with a thin OpenTelemetry-native SDK, then use it to see what yo
 |----------|-----------|------|
 | Go | Anthropic, OpenAI, Gemini | [`go-providers/`](go-providers/) |
 | Python | Anthropic, OpenAI, Gemini | [`python-providers/`](python-providers/) |
+| Java | Anthropic, OpenAI, Gemini | [`java/providers/`](java/providers/) |
+| .NET | Anthropic, OpenAI, Gemini | [`dotnet/src/`](dotnet/src/) |
+| TypeScript/JavaScript | Anthropic, OpenAI, Gemini | [`js/docs/providers/`](js/docs/providers/) |
 
 ## Framework Integrations
 
 | Language | Frameworks | Path |
 |----------|------------|------|
 | Go | Google ADK | [`go-frameworks/`](go-frameworks/) |
-| Python | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands Agents | [`python-frameworks/`](python-frameworks/) |
+| Python | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands Agents, LiteLLM, Pydantic AI | [`python-frameworks/`](python-frameworks/) |
+| Java | Google ADK | [`java/frameworks/`](java/frameworks/) |
+| TypeScript/JavaScript | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands, Vercel AI SDK | [`js/docs/frameworks/`](js/docs/frameworks/) |
 
 ## Quick Examples
 
@@ -150,7 +155,10 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 | Language | Example |
 |----------|---------|
 | Python | [`examples/getting-started/python/`](examples/getting-started/python/) |
+| Python + Pydantic AI | [`examples/getting-started/python-pydantic-ai/`](examples/getting-started/python-pydantic-ai/) |
+| Python + Strands | [`examples/getting-started/python-strands/`](examples/getting-started/python-strands/) |
 | TypeScript | [`examples/getting-started/typescript/`](examples/getting-started/typescript/) |
+| TypeScript + Strands | [`examples/getting-started/typescript-strands/`](examples/getting-started/typescript-strands/) |
 | Go | [`examples/getting-started/go/`](examples/getting-started/go/) |
 
 ### Grafana Cloud credentials
@@ -165,11 +173,15 @@ You need three values to connect. All are visible in the **AI Observability plug
 
 ## Plugins
 
-- [OpenCode](plugins/opencode/) — AI Observability integration for OpenCode
+Drop-in integrations for coding agents. See [`plugins/`](plugins/) for details.
+
+- [Claude Code](plugins/claude-code/)
+- [OpenCode](plugins/opencode/)
+- [Pi](plugins/pi/)
 
 ## Proto
 
-Vendored protobuf definitions used by SDKs live in [`proto/`](proto/).
+Vendored protobuf definitions used by SDKs live in [`proto/`](proto/). See [`docs/development.md`](docs/development.md#regenerating-protobuf-stubs) for how to regenerate language stubs.
 
 ## License
 

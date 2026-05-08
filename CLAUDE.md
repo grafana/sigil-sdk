@@ -198,6 +198,10 @@ Provider wrappers and framework adapters already exist; reuse them where possibl
 
 All paths above are relative to the [grafana/sigil-sdk](https://github.com/grafana/sigil-sdk) repository root.
 
+## Regenerating protobuf stubs
+
+After editing `proto/sigil/v1/generation_ingest.proto`, run `mise run generate:proto`. See [`docs/development.md`](docs/development.md) for details.
+
 ## Useful examples to copy patterns from
 
 In the sigil-sdk repo:

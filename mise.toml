@@ -150,6 +150,11 @@ description = "Run Pi plugin tests"
 depends = ["deps"]
 run = "pnpm --filter @grafana/sigil-pi run test"
 
+[tasks."test:go:plugin-cursor"]
+description = "Run Cursor plugin tests as standalone module"
+dir = "plugins/cursor"
+run = "GOWORK=off go test ./..."
+
 [tasks."test:go:sdk-conformance"]
 description = "Run the Go SDK core conformance harness"
 dir = "go"
@@ -408,6 +413,7 @@ mise run test:go:sdk-openai
 mise run test:go:sdk-gemini
 mise run test:go:sdk-google-adk
 mise run test:go:plugin-claude-code
+mise run test:go:plugin-cursor
 mise run test:ts:sdk-js
 mise run test:ts:plugin-pi
 mise run test:py:sdk-core
@@ -460,6 +466,25 @@ done
 
 echo "All Python SDK versions bumped to ${VERSION}"
 '''
+
+# --- Proto generation ---
+
+[tasks."generate:proto:go"]
+description = "Regenerate Go protobuf stubs from proto/sigil/v1/*.proto"
+run = "bash go/scripts/generate_proto.sh"
+
+[tasks."generate:proto:python"]
+description = "Regenerate Python protobuf stubs from proto/sigil/v1/*.proto"
+run = "bash python/scripts/generate_proto.sh"
+
+[tasks."generate:proto:js"]
+description = "Sync proto/sigil/v1/*.proto into js/proto for the JS SDK"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-sdk-js run sync-proto"
+
+[tasks."generate:proto"]
+description = "Regenerate protobuf stubs for all SDKs"
+depends = ["generate:proto:go", "generate:proto:python", "generate:proto:js"]
 
 # --- Mock generation (stubs) ---
 

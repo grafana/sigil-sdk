@@ -236,6 +236,67 @@ describe("extension lifecycle", () => {
     expect(telemetry.forceFlush).toHaveBeenCalledTimes(1);
   });
 
+  it("does not print telemetry flush failures", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+    const telemetry = {
+      tracer: { tracer: true },
+      meter: { meter: true },
+      forceFlush: vi.fn(async () => {
+        throw new Error("flush timeout");
+      }),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+      debug: false,
+      otlp: { endpoint: "http://localhost:4318", headers: {} },
+    });
+    createTelemetryProvidersMock.mockReturnValue(telemetry);
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const pi = new FakePi();
+      registerExtension(pi as any);
+
+      await pi.emit("session_start");
+      await pi.emit("turn_start");
+      await pi.emit("turn_end", {
+        message: assistantMessage(),
+        toolResults: [],
+      });
+      await Promise.resolve();
+
+      expect(telemetry.forceFlush).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   it("leaves input empty on a tool-loop continuation with no user message_end", async () => {
     const recorder = {
       setResult: vi.fn(),
@@ -406,7 +467,7 @@ describe("extension lifecycle", () => {
     expect(toolRecorders[1]!.setCallError).toHaveBeenCalled();
   });
 
-  it("swallows sigil failures instead of throwing", async () => {
+  it("swallows sigil failures instead of throwing or printing by default", async () => {
     const sigil = {
       startGeneration: vi.fn(async () => {
         throw new Error("transport down");
@@ -419,18 +480,70 @@ describe("extension lifecycle", () => {
       auth: { mode: "none" },
       agentName: "pi",
       contentCapture: "metadata_only",
+      debug: false,
     });
     createSigilClientMock.mockReturnValue(sigil);
 
-    const pi = new FakePi();
-    registerExtension(pi as any);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const pi = new FakePi();
+      registerExtension(pi as any);
 
-    await pi.emit("session_start");
-    await pi.emit("turn_start");
+      await pi.emit("session_start");
+      await pi.emit("turn_start");
 
-    await expect(
-      pi.emit("turn_end", { message: assistantMessage(), toolResults: [] }),
-    ).resolves.toBeUndefined();
+      await expect(
+        pi.emit("turn_end", { message: assistantMessage(), toolResults: [] }),
+      ).resolves.toBeUndefined();
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
+  it("prints sigil failures in debug mode", async () => {
+    const sigil = {
+      startGeneration: vi.fn(async () => {
+        throw new Error("transport down");
+      }),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+      debug: true,
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const pi = new FakePi();
+      registerExtension(pi as any);
+
+      await pi.emit("session_start");
+      await pi.emit("turn_start");
+      await pi.emit("turn_end", {
+        message: assistantMessage(),
+        toolResults: [],
+      });
+
+      expect(error).toHaveBeenCalledWith(
+        "[sigil-pi] generation export failed",
+        expect.any(Error),
+      );
+      expect(error.mock.calls.map(([message]) => message)).not.toEqual(
+        expect.arrayContaining([expect.stringContaining("generation queued")]),
+      );
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("warns and skips when assistant message shape is invalid", async () => {

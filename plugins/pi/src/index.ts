@@ -60,8 +60,8 @@ export default function (pi: ExtensionAPI) {
 
   let turnStartTime = 0;
 
-  function debugLog(msg: string) {
-    if (config?.debug) console.error(`[sigil-pi] ${msg}`);
+  function debugLog(msg: string, ...args: unknown[]) {
+    if (config?.debug) console.error(`[sigil-pi] ${msg}`, ...args);
   }
 
   // Tool execution timing: toolCallId → start timestamp
@@ -249,29 +249,38 @@ export default function (pi: ExtensionAPI) {
         pendingInputMessages.slice(),
       );
 
-      await sigil.startGeneration(seed, async (recorder) => {
-        recorder.setResult(result);
-        if (msg.errorMessage) {
-          recorder.setCallError(new Error(msg.errorMessage));
-        }
+      try {
+        await sigil.startGeneration(seed, async (recorder) => {
+          recorder.setResult(result);
+          if (msg.errorMessage) {
+            recorder.setCallError(new Error(msg.errorMessage));
+          }
 
-        // sigil and config are guaranteed non-null by the guard at the top of this handler.
-        emitToolSpans(sigil as SigilClient, msg, toolResults, turnToolTimings, {
-          conversationId,
-          agentName: (config as SigilPiConfig).agentName,
-          agentVersion: (config as SigilPiConfig).agentVersion,
-          contentCapture,
+          // sigil and config are guaranteed non-null by the guard at the top of this handler.
+          emitToolSpans(
+            sigil as SigilClient,
+            msg,
+            toolResults,
+            turnToolTimings,
+            {
+              conversationId,
+              agentName: (config as SigilPiConfig).agentName,
+              agentVersion: (config as SigilPiConfig).agentVersion,
+              contentCapture,
+            },
+          );
         });
-      });
+        debugLog(
+          `generation queued, model=${msg.model} tokens=${msg.usage.totalTokens}`,
+        );
+      } catch (err) {
+        debugLog("generation export failed", err);
+      }
       if (telemetry) {
         void telemetry.forceFlush().catch((err) => {
-          console.warn("[sigil-pi] telemetry flush failed:", err);
+          debugLog("telemetry flush failed", err);
         });
       }
-
-      debugLog(
-        `generation queued, model=${msg.model} tokens=${msg.usage.totalTokens}`,
-      );
     } catch (err) {
       console.warn("[sigil-pi] turn_end failed:", err);
     } finally {
