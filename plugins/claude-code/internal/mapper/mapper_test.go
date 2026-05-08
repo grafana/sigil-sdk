@@ -776,6 +776,35 @@ func TestProcess_ParentGenerationIDs(t *testing.T) {
 	}
 }
 
+func TestProcess_EffectiveVersionStableAcrossToolSubsets(t *testing.T) {
+	lines := []transcript.Line{
+		makeUserLine("first"),
+		makeAssistantLine("claude-sonnet-4-20250514", 20, []transcript.ContentBlock{
+			{Type: "tool_use", ID: "tu_a", Name: "Read", Input: json.RawMessage(`{"path":"a"}`)},
+		}, "end_turn"),
+		makeUserLine("second"),
+		makeAssistantLine("claude-sonnet-4-20250514", 20, []transcript.ContentBlock{
+			{Type: "tool_use", ID: "tu_b", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`)},
+		}, "end_turn"),
+	}
+
+	st := &state.Session{}
+	gens := Process(lines, st, Options{SessionID: "sess-1"}, nil)
+
+	if len(gens) != 2 {
+		t.Fatalf("got %d generations, want 2", len(gens))
+	}
+	if gens[0].EffectiveVersion == "" {
+		t.Fatalf("gen[0].EffectiveVersion is empty; expected raw line.Version")
+	}
+	if gens[0].EffectiveVersion != gens[1].EffectiveVersion {
+		t.Fatalf("EffectiveVersion mismatch across turns: %q vs %q", gens[0].EffectiveVersion, gens[1].EffectiveVersion)
+	}
+	if gens[0].EffectiveVersion != gens[0].AgentVersion {
+		t.Fatalf("EffectiveVersion %q should equal AgentVersion %q", gens[0].EffectiveVersion, gens[0].AgentVersion)
+	}
+}
+
 func TestProcess_UserPromptRedaction(t *testing.T) {
 	tests := []struct {
 		name       string

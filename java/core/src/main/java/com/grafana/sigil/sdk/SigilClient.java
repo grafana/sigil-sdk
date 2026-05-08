@@ -645,6 +645,7 @@ public final class SigilClient implements AutoCloseable {
         initial.setToolChoice(seed.getToolChoice());
         initial.setThinkingEnabled(seed.getThinkingEnabled());
         initial.getParentGenerationIds().addAll(seed.getParentGenerationIds());
+        initial.setEffectiveVersion(seed.getEffectiveVersion());
         if (ccMode == ContentCaptureMode.METADATA_ONLY) {
             initial.setConversationTitle("");
         }

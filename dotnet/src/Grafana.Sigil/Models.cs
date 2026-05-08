@@ -243,6 +243,7 @@ public sealed class GenerationStart
     public string? ToolChoice { get; set; }
     public bool? ThinkingEnabled { get; set; }
     public List<string> ParentGenerationIds { get; set; } = [];
+    public string EffectiveVersion { get; set; } = string.Empty;
     public List<ToolDefinition> Tools { get; set; } = [];
     public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, object?> Metadata { get; set; } = new(StringComparer.Ordinal);
@@ -293,6 +294,8 @@ public sealed class Generation
     public string? ToolChoice { get; set; }
     public bool? ThinkingEnabled { get; set; }
     public List<string> ParentGenerationIds { get; set; } = [];
+    /// <summary>See <see cref="GenerationStart.EffectiveVersion"/>.</summary>
+    public string EffectiveVersion { get; set; } = string.Empty;
     public List<Message> Input { get; set; } = [];
     public List<Message> Output { get; set; } = [];
     public List<ToolDefinition> Tools { get; set; } = [];

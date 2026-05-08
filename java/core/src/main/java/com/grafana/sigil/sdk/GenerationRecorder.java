@@ -215,6 +215,7 @@ public class GenerationRecorder implements AutoCloseable {
         generation.setTopP(result.getTopP() == null ? seed.getTopP() : result.getTopP());
         generation.setToolChoice(firstNonBlank(result.getToolChoice(), seed.getToolChoice()));
         generation.setThinkingEnabled(result.getThinkingEnabled() == null ? seed.getThinkingEnabled() : result.getThinkingEnabled());
+        generation.setEffectiveVersion(firstNonBlank(result.getEffectiveVersion(), seed.getEffectiveVersion()));
 
         for (Message message : result.getInput()) {
             generation.getInput().add(message == null ? new Message() : message.copy());

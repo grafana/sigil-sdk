@@ -94,6 +94,7 @@ export function mapGenerationStart(
     conversationId,
     agentName,
     agentVersion,
+    effectiveVersion: agentVersion,
     model: { provider: msg.provider, name: msg.model },
     startedAt: new Date(turnStartTime),
     ...(tools && tools.length > 0 ? { tools } : {}),

@@ -26,6 +26,7 @@ public class GenerationResult {
     private String toolChoice = "";
     private Boolean thinkingEnabled;
     private final List<String> parentGenerationIds = new ArrayList<>();
+    private String effectiveVersion = "";
     private final List<Message> input = new ArrayList<>();
     private final List<Message> output = new ArrayList<>();
     private final List<ToolDefinition> tools = new ArrayList<>();
@@ -203,6 +204,15 @@ public class GenerationResult {
         return this;
     }
 
+    public String getEffectiveVersion() {
+        return effectiveVersion;
+    }
+
+    public GenerationResult setEffectiveVersion(String effectiveVersion) {
+        this.effectiveVersion = effectiveVersion == null ? "" : effectiveVersion;
+        return this;
+    }
+
     public List<Message> getInput() {
         return input;
     }
@@ -340,6 +350,7 @@ public class GenerationResult {
                 .setToolChoice(toolChoice)
                 .setThinkingEnabled(thinkingEnabled)
                 .setParentGenerationIds(parentGenerationIds)
+                .setEffectiveVersion(effectiveVersion)
                 .setUsage(usage == null ? new TokenUsage() : usage.copy())
                 .setStopReason(stopReason)
                 .setStartedAt(startedAt)

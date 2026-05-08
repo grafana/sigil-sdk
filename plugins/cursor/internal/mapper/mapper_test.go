@@ -383,6 +383,32 @@ func TestBuildToolDefinitions_DedupAndSort(t *testing.T) {
 	}
 }
 
+func TestMapFragment_EffectiveVersionStableAcrossToolSubsets(t *testing.T) {
+	session := &fragment.Session{CursorVersion: "0.45.2"}
+
+	fragA := basicFragment(t)
+	fragA.Tools = []fragment.ToolRecord{{ToolName: "Read", ToolUseID: "t1"}}
+
+	fragB := basicFragment(t)
+	fragB.Tools = []fragment.ToolRecord{{ToolName: "Bash", ToolUseID: "t2"}}
+
+	gotA := MapFragment(Inputs{Fragment: fragA, Session: session, ContentCapture: sigil.ContentCaptureModeFull, Now: fixedTime})
+	gotB := MapFragment(Inputs{Fragment: fragB, Session: session, ContentCapture: sigil.ContentCaptureModeFull, Now: fixedTime})
+
+	if gotA.Generation.EffectiveVersion == "" {
+		t.Fatalf("EffectiveVersion is empty; expected raw cursorVersion")
+	}
+	if gotA.Generation.EffectiveVersion != gotB.Generation.EffectiveVersion {
+		t.Fatalf("EffectiveVersion mismatch across turns: %q vs %q", gotA.Generation.EffectiveVersion, gotB.Generation.EffectiveVersion)
+	}
+	if gotA.Generation.EffectiveVersion != gotA.Generation.AgentVersion {
+		t.Fatalf("EffectiveVersion %q should equal AgentVersion %q", gotA.Generation.EffectiveVersion, gotA.Generation.AgentVersion)
+	}
+	if gotA.Start.EffectiveVersion != gotA.Generation.EffectiveVersion {
+		t.Fatalf("Start.EffectiveVersion %q != Generation.EffectiveVersion %q", gotA.Start.EffectiveVersion, gotA.Generation.EffectiveVersion)
+	}
+}
+
 func TestParseTimestamp(t *testing.T) {
 	def := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	cases := []struct {

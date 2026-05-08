@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import timezone
 
 from google.protobuf import json_format, struct_pb2, timestamp_pb2
@@ -79,6 +80,11 @@ def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:
         message.tool_choice = generation.tool_choice
     if generation.thinking_enabled is not None:
         message.thinking_enabled = generation.thinking_enabled
+
+    trimmed_effective_version = generation.effective_version.strip()
+    if trimmed_effective_version:
+        digest = hashlib.sha256(trimmed_effective_version.encode("utf-8")).hexdigest()
+        message.effective_version = "sha256:" + digest
 
     return message
 

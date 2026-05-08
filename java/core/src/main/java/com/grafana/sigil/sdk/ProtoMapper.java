@@ -6,8 +6,12 @@ import com.google.protobuf.NullValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.Value;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import sigil.v1.GenerationIngest;
@@ -68,6 +72,10 @@ final class ProtoMapper {
             builder.setThinkingEnabled(generation.getThinkingEnabled());
         }
         builder.addAllParentGenerationIds(generation.getParentGenerationIds());
+        String trimmedEffectiveVersion = generation.getEffectiveVersion().strip();
+        if (!trimmedEffectiveVersion.isEmpty()) {
+            builder.setEffectiveVersion(canonicalEffectiveVersion(trimmedEffectiveVersion));
+        }
 
         builder.putAllTags(generation.getTags());
         if (!generation.getMetadata().isEmpty()) {
@@ -204,6 +212,16 @@ final class ProtoMapper {
             return GenerationIngest.ArtifactKind.ARTIFACT_KIND_PROVIDER_EVENT;
         }
         return GenerationIngest.ArtifactKind.ARTIFACT_KIND_REQUEST;
+    }
+
+    private static String canonicalEffectiveVersion(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            return "sha256:" + HexFormat.of().formatHex(bytes);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     private static Timestamp toTimestamp(Instant instant) {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   Artifact,
   EmbeddingResult,
@@ -16,6 +17,19 @@ import type {
 } from './types.js';
 
 const textEncoder = new TextEncoder();
+
+// Returns "sha256:<hex>" of the trimmed input, or undefined when the trimmed
+// input is empty (so the proto field stays absent on the wire).
+export function canonicalEffectiveVersion(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return `sha256:${createHash('sha256').update(trimmed).digest('hex')}`;
+}
 
 export function encodedSizeBytes(value: unknown): number {
   return textEncoder.encode(JSON.stringify(value)).byteLength;

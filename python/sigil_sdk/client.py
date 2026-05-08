@@ -1145,6 +1145,9 @@ class GenerationRecorder:
         if len(generation.parent_generation_ids) == 0:
             generation.parent_generation_ids = list(self.seed.parent_generation_ids)
 
+        if not generation.effective_version.strip():
+            generation.effective_version = self.seed.effective_version
+
         merged_tags = dict(self.seed.tags)
         merged_tags.update(generation.tags)
         generation.tags = merged_tags

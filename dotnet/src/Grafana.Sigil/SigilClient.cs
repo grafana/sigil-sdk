@@ -583,6 +583,7 @@ public sealed partial class SigilClient : IAsyncDisposable
             ToolChoice = seed.ToolChoice,
             ThinkingEnabled = seed.ThinkingEnabled,
             ParentGenerationIds = [.. seed.ParentGenerationIds],
+            EffectiveVersion = seed.EffectiveVersion,
         };
 
         var activity = _activitySource.StartActivity(
@@ -2370,6 +2371,11 @@ public sealed class GenerationRecorder
         if (generation.ParentGenerationIds.Count == 0)
         {
             generation.ParentGenerationIds.AddRange(_seed.ParentGenerationIds);
+        }
+
+        if (string.IsNullOrWhiteSpace(generation.EffectiveVersion))
+        {
+            generation.EffectiveVersion = _seed.EffectiveVersion;
         }
 
         if (generation.Tools.Count == 0)
