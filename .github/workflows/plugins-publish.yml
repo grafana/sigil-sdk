@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       plugin:
-        description: 'Which plugin to publish'
+        description: "Which plugin to publish"
         required: true
         type: choice
         options:
@@ -12,7 +12,7 @@ on:
           - opencode
           - all
       version:
-        description: 'Semver bump (applied to each selected plugin from its own current version)'
+        description: "Semver bump (applied to each selected plugin from its own current version)"
         required: true
         type: choice
         options:
@@ -123,7 +123,7 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           BRANCH="release/plugins-${TIMESTAMP}"
           git checkout -b "${BRANCH}"
-          git commit -m "chore(plugins): bump versions (${{ inputs.version }}) [skip ci]"
+          git commit -m "chore(plugins): bump versions (${{ inputs.version }})"
 
           # Push branch and tags
           for p in ${PLUGINS}; do
@@ -167,7 +167,7 @@ jobs:
     steps:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: '24'
+          node-version: "24"
           registry-url: https://registry.npmjs.org
 
       - name: Download plugin tarballs
