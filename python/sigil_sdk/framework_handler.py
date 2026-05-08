@@ -257,8 +257,7 @@ class SigilFrameworkHandlerBase:
             orphan = self._workflow_step_runs.pop(run_key, None)
             if orphan is not None:
                 logger.warning(
-                    "sigil: dropping in-flight workflow step %s (node %s) — "
-                    "on_chain_end callback never fired",
+                    "sigil: dropping in-flight workflow step %s (node %s) — on_chain_end callback never fired",
                     orphan.step_id,
                     orphan.step_name,
                 )
