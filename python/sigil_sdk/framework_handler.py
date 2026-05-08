@@ -830,12 +830,10 @@ class SigilFrameworkHandlerBase:
         try:
             self._client.enqueue_workflow_step(step)
         except Exception as exc:  # noqa: BLE001
-            # Surface enqueue failures via the SDK warn channel instead of
-            # silently dropping them: a failure here usually means the client
-            # is shutting down or misconfigured, and we want to know.
             log_warn = getattr(self._client, "_log_warn", None)
             if log_warn is not None:
                 log_warn("sigil: failed to enqueue workflow step", exc)
+            return
 
         if state.graph_root_key:
             self._graph_run_last_step_id[state.graph_root_key] = state.step_id
