@@ -1024,9 +1024,12 @@ type Generation struct {
 	ToolChoice          *string                `protobuf:"bytes,27,opt,name=tool_choice,json=toolChoice,proto3,oneof" json:"tool_choice,omitempty"`
 	ThinkingEnabled     *bool                  `protobuf:"varint,28,opt,name=thinking_enabled,json=thinkingEnabled,proto3,oneof" json:"thinking_enabled,omitempty"`
 	ParentGenerationIds []string               `protobuf:"bytes,29,rep,name=parent_generation_ids,json=parentGenerationIds,proto3" json:"parent_generation_ids,omitempty"`
-	EffectiveVersion    *string                `protobuf:"bytes,30,opt,name=effective_version,json=effectiveVersion,proto3,oneof" json:"effective_version,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Optional SDK-supplied catalog key. Must match `^sha256:[0-9a-f]{64}$`
+	// when set; ingest rejects any other shape. Sigil falls back to a
+	// server-computed sha256 of (system_prompt + sorted tools) when omitted.
+	EffectiveVersion *string `protobuf:"bytes,30,opt,name=effective_version,json=effectiveVersion,proto3,oneof" json:"effective_version,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Generation) Reset() {
@@ -1269,6 +1272,326 @@ func (x *Generation) GetEffectiveVersion() string {
 	return ""
 }
 
+type ExportWorkflowStepsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkflowSteps []*WorkflowStep        `protobuf:"bytes,1,rep,name=workflow_steps,json=workflowSteps,proto3" json:"workflow_steps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportWorkflowStepsRequest) Reset() {
+	*x = ExportWorkflowStepsRequest{}
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportWorkflowStepsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportWorkflowStepsRequest) ProtoMessage() {}
+
+func (x *ExportWorkflowStepsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportWorkflowStepsRequest.ProtoReflect.Descriptor instead.
+func (*ExportWorkflowStepsRequest) Descriptor() ([]byte, []int) {
+	return file_sigil_v1_generation_ingest_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ExportWorkflowStepsRequest) GetWorkflowSteps() []*WorkflowStep {
+	if x != nil {
+		return x.WorkflowSteps
+	}
+	return nil
+}
+
+type ExportWorkflowStepsResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Results       []*ExportWorkflowStepResult `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportWorkflowStepsResponse) Reset() {
+	*x = ExportWorkflowStepsResponse{}
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportWorkflowStepsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportWorkflowStepsResponse) ProtoMessage() {}
+
+func (x *ExportWorkflowStepsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportWorkflowStepsResponse.ProtoReflect.Descriptor instead.
+func (*ExportWorkflowStepsResponse) Descriptor() ([]byte, []int) {
+	return file_sigil_v1_generation_ingest_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ExportWorkflowStepsResponse) GetResults() []*ExportWorkflowStepResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type ExportWorkflowStepResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StepId        string                 `protobuf:"bytes,1,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	Accepted      bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExportWorkflowStepResult) Reset() {
+	*x = ExportWorkflowStepResult{}
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExportWorkflowStepResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExportWorkflowStepResult) ProtoMessage() {}
+
+func (x *ExportWorkflowStepResult) ProtoReflect() protoreflect.Message {
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExportWorkflowStepResult.ProtoReflect.Descriptor instead.
+func (*ExportWorkflowStepResult) Descriptor() ([]byte, []int) {
+	return file_sigil_v1_generation_ingest_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ExportWorkflowStepResult) GetStepId() string {
+	if x != nil {
+		return x.StepId
+	}
+	return ""
+}
+
+func (x *ExportWorkflowStepResult) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *ExportWorkflowStepResult) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type WorkflowStep struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ConversationId      string                 `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	StepName            string                 `protobuf:"bytes,3,opt,name=step_name,json=stepName,proto3" json:"step_name,omitempty"`
+	Framework           string                 `protobuf:"bytes,4,opt,name=framework,proto3" json:"framework,omitempty"`
+	StartedAt           *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	CompletedAt         *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=completed_at,json=completedAt,proto3" json:"completed_at,omitempty"`
+	InputState          *structpb.Struct       `protobuf:"bytes,7,opt,name=input_state,json=inputState,proto3" json:"input_state,omitempty"`
+	OutputState         *structpb.Struct       `protobuf:"bytes,8,opt,name=output_state,json=outputState,proto3" json:"output_state,omitempty"`
+	Error               string                 `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
+	Tags                map[string]string      `protobuf:"bytes,10,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	LinkedGenerationIds []string               `protobuf:"bytes,11,rep,name=linked_generation_ids,json=linkedGenerationIds,proto3" json:"linked_generation_ids,omitempty"`
+	ParentStepIds       []string               `protobuf:"bytes,12,rep,name=parent_step_ids,json=parentStepIds,proto3" json:"parent_step_ids,omitempty"`
+	AgentName           string                 `protobuf:"bytes,13,opt,name=agent_name,json=agentName,proto3" json:"agent_name,omitempty"`
+	AgentVersion        string                 `protobuf:"bytes,14,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
+	TraceId             string                 `protobuf:"bytes,15,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	SpanId              string                 `protobuf:"bytes,16,opt,name=span_id,json=spanId,proto3" json:"span_id,omitempty"`
+	Metadata            *structpb.Struct       `protobuf:"bytes,17,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *WorkflowStep) Reset() {
+	*x = WorkflowStep{}
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkflowStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkflowStep) ProtoMessage() {}
+
+func (x *WorkflowStep) ProtoReflect() protoreflect.Message {
+	mi := &file_sigil_v1_generation_ingest_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkflowStep.ProtoReflect.Descriptor instead.
+func (*WorkflowStep) Descriptor() ([]byte, []int) {
+	return file_sigil_v1_generation_ingest_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *WorkflowStep) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetStepName() string {
+	if x != nil {
+		return x.StepName
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetFramework() string {
+	if x != nil {
+		return x.Framework
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetCompletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CompletedAt
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetInputState() *structpb.Struct {
+	if x != nil {
+		return x.InputState
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetOutputState() *structpb.Struct {
+	if x != nil {
+		return x.OutputState
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetTags() map[string]string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetLinkedGenerationIds() []string {
+	if x != nil {
+		return x.LinkedGenerationIds
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetParentStepIds() []string {
+	if x != nil {
+		return x.ParentStepIds
+	}
+	return nil
+}
+
+func (x *WorkflowStep) GetAgentName() string {
+	if x != nil {
+		return x.AgentName
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetAgentVersion() string {
+	if x != nil {
+		return x.AgentVersion
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetSpanId() string {
+	if x != nil {
+		return x.SpanId
+	}
+	return ""
+}
+
+func (x *WorkflowStep) GetMetadata() *structpb.Struct {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
 var File_sigil_v1_generation_ingest_proto protoreflect.FileDescriptor
 
 const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
@@ -1383,7 +1706,40 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\x06_top_pB\x0e\n" +
 	"\f_tool_choiceB\x13\n" +
 	"\x11_thinking_enabledB\x14\n" +
-	"\x12_effective_version*g\n" +
+	"\x12_effective_version\"[\n" +
+	"\x1aExportWorkflowStepsRequest\x12=\n" +
+	"\x0eworkflow_steps\x18\x01 \x03(\v2\x16.sigil.v1.WorkflowStepR\rworkflowSteps\"[\n" +
+	"\x1bExportWorkflowStepsResponse\x12<\n" +
+	"\aresults\x18\x01 \x03(\v2\".sigil.v1.ExportWorkflowStepResultR\aresults\"e\n" +
+	"\x18ExportWorkflowStepResult\x12\x17\n" +
+	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x1a\n" +
+	"\baccepted\x18\x02 \x01(\bR\baccepted\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x80\x06\n" +
+	"\fWorkflowStep\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x1b\n" +
+	"\tstep_name\x18\x03 \x01(\tR\bstepName\x12\x1c\n" +
+	"\tframework\x18\x04 \x01(\tR\tframework\x129\n" +
+	"\n" +
+	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12=\n" +
+	"\fcompleted_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\vcompletedAt\x128\n" +
+	"\vinput_state\x18\a \x01(\v2\x17.google.protobuf.StructR\n" +
+	"inputState\x12:\n" +
+	"\foutput_state\x18\b \x01(\v2\x17.google.protobuf.StructR\voutputState\x12\x14\n" +
+	"\x05error\x18\t \x01(\tR\x05error\x124\n" +
+	"\x04tags\x18\n" +
+	" \x03(\v2 .sigil.v1.WorkflowStep.TagsEntryR\x04tags\x122\n" +
+	"\x15linked_generation_ids\x18\v \x03(\tR\x13linkedGenerationIds\x12&\n" +
+	"\x0fparent_step_ids\x18\f \x03(\tR\rparentStepIds\x12\x1d\n" +
+	"\n" +
+	"agent_name\x18\r \x01(\tR\tagentName\x12#\n" +
+	"\ragent_version\x18\x0e \x01(\tR\fagentVersion\x12\x19\n" +
+	"\btrace_id\x18\x0f \x01(\tR\atraceId\x12\x17\n" +
+	"\aspan_id\x18\x10 \x01(\tR\x06spanId\x123\n" +
+	"\bmetadata\x18\x11 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x1a7\n" +
+	"\tTagsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*g\n" +
 	"\x0eGenerationMode\x12\x1f\n" +
 	"\x1bGENERATION_MODE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14GENERATION_MODE_SYNC\x10\x01\x12\x1a\n" +
@@ -1400,7 +1756,9 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\x13ARTIFACT_KIND_TOOLS\x10\x03\x12 \n" +
 	"\x1cARTIFACT_KIND_PROVIDER_EVENT\x10\x042w\n" +
 	"\x17GenerationIngestService\x12\\\n" +
-	"\x11ExportGenerations\x12\".sigil.v1.ExportGenerationsRequest\x1a#.sigil.v1.ExportGenerationsResponseB>Z<github.com/grafana/sigil/sigil/internal/gen/sigil/v1;sigilv1b\x06proto3"
+	"\x11ExportGenerations\x12\".sigil.v1.ExportGenerationsRequest\x1a#.sigil.v1.ExportGenerationsResponse2\x7f\n" +
+	"\x19WorkflowStepIngestService\x12b\n" +
+	"\x13ExportWorkflowSteps\x12$.sigil.v1.ExportWorkflowStepsRequest\x1a%.sigil.v1.ExportWorkflowStepsResponseB>Z<github.com/grafana/sigil/sigil/internal/gen/sigil/v1;sigilv1b\x06proto3"
 
 var (
 	file_sigil_v1_generation_ingest_proto_rawDescOnce sync.Once
@@ -1415,27 +1773,32 @@ func file_sigil_v1_generation_ingest_proto_rawDescGZIP() []byte {
 }
 
 var file_sigil_v1_generation_ingest_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_sigil_v1_generation_ingest_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_sigil_v1_generation_ingest_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_sigil_v1_generation_ingest_proto_goTypes = []any{
-	(GenerationMode)(0),               // 0: sigil.v1.GenerationMode
-	(MessageRole)(0),                  // 1: sigil.v1.MessageRole
-	(ArtifactKind)(0),                 // 2: sigil.v1.ArtifactKind
-	(*ExportGenerationsRequest)(nil),  // 3: sigil.v1.ExportGenerationsRequest
-	(*ExportGenerationsResponse)(nil), // 4: sigil.v1.ExportGenerationsResponse
-	(*ExportGenerationResult)(nil),    // 5: sigil.v1.ExportGenerationResult
-	(*ModelRef)(nil),                  // 6: sigil.v1.ModelRef
-	(*PartMetadata)(nil),              // 7: sigil.v1.PartMetadata
-	(*ToolCall)(nil),                  // 8: sigil.v1.ToolCall
-	(*ToolResult)(nil),                // 9: sigil.v1.ToolResult
-	(*Part)(nil),                      // 10: sigil.v1.Part
-	(*Message)(nil),                   // 11: sigil.v1.Message
-	(*ToolDefinition)(nil),            // 12: sigil.v1.ToolDefinition
-	(*TokenUsage)(nil),                // 13: sigil.v1.TokenUsage
-	(*Artifact)(nil),                  // 14: sigil.v1.Artifact
-	(*Generation)(nil),                // 15: sigil.v1.Generation
-	nil,                               // 16: sigil.v1.Generation.TagsEntry
-	(*timestamppb.Timestamp)(nil),     // 17: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),           // 18: google.protobuf.Struct
+	(GenerationMode)(0),                 // 0: sigil.v1.GenerationMode
+	(MessageRole)(0),                    // 1: sigil.v1.MessageRole
+	(ArtifactKind)(0),                   // 2: sigil.v1.ArtifactKind
+	(*ExportGenerationsRequest)(nil),    // 3: sigil.v1.ExportGenerationsRequest
+	(*ExportGenerationsResponse)(nil),   // 4: sigil.v1.ExportGenerationsResponse
+	(*ExportGenerationResult)(nil),      // 5: sigil.v1.ExportGenerationResult
+	(*ModelRef)(nil),                    // 6: sigil.v1.ModelRef
+	(*PartMetadata)(nil),                // 7: sigil.v1.PartMetadata
+	(*ToolCall)(nil),                    // 8: sigil.v1.ToolCall
+	(*ToolResult)(nil),                  // 9: sigil.v1.ToolResult
+	(*Part)(nil),                        // 10: sigil.v1.Part
+	(*Message)(nil),                     // 11: sigil.v1.Message
+	(*ToolDefinition)(nil),              // 12: sigil.v1.ToolDefinition
+	(*TokenUsage)(nil),                  // 13: sigil.v1.TokenUsage
+	(*Artifact)(nil),                    // 14: sigil.v1.Artifact
+	(*Generation)(nil),                  // 15: sigil.v1.Generation
+	(*ExportWorkflowStepsRequest)(nil),  // 16: sigil.v1.ExportWorkflowStepsRequest
+	(*ExportWorkflowStepsResponse)(nil), // 17: sigil.v1.ExportWorkflowStepsResponse
+	(*ExportWorkflowStepResult)(nil),    // 18: sigil.v1.ExportWorkflowStepResult
+	(*WorkflowStep)(nil),                // 19: sigil.v1.WorkflowStep
+	nil,                                 // 20: sigil.v1.Generation.TagsEntry
+	nil,                                 // 21: sigil.v1.WorkflowStep.TagsEntry
+	(*timestamppb.Timestamp)(nil),       // 22: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),             // 23: google.protobuf.Struct
 }
 var file_sigil_v1_generation_ingest_proto_depIdxs = []int32{
 	15, // 0: sigil.v1.ExportGenerationsRequest.generations:type_name -> sigil.v1.Generation
@@ -1452,18 +1815,28 @@ var file_sigil_v1_generation_ingest_proto_depIdxs = []int32{
 	11, // 11: sigil.v1.Generation.output:type_name -> sigil.v1.Message
 	12, // 12: sigil.v1.Generation.tools:type_name -> sigil.v1.ToolDefinition
 	13, // 13: sigil.v1.Generation.usage:type_name -> sigil.v1.TokenUsage
-	17, // 14: sigil.v1.Generation.started_at:type_name -> google.protobuf.Timestamp
-	17, // 15: sigil.v1.Generation.completed_at:type_name -> google.protobuf.Timestamp
-	16, // 16: sigil.v1.Generation.tags:type_name -> sigil.v1.Generation.TagsEntry
-	18, // 17: sigil.v1.Generation.metadata:type_name -> google.protobuf.Struct
+	22, // 14: sigil.v1.Generation.started_at:type_name -> google.protobuf.Timestamp
+	22, // 15: sigil.v1.Generation.completed_at:type_name -> google.protobuf.Timestamp
+	20, // 16: sigil.v1.Generation.tags:type_name -> sigil.v1.Generation.TagsEntry
+	23, // 17: sigil.v1.Generation.metadata:type_name -> google.protobuf.Struct
 	14, // 18: sigil.v1.Generation.raw_artifacts:type_name -> sigil.v1.Artifact
-	3,  // 19: sigil.v1.GenerationIngestService.ExportGenerations:input_type -> sigil.v1.ExportGenerationsRequest
-	4,  // 20: sigil.v1.GenerationIngestService.ExportGenerations:output_type -> sigil.v1.ExportGenerationsResponse
-	20, // [20:21] is the sub-list for method output_type
-	19, // [19:20] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	19, // 19: sigil.v1.ExportWorkflowStepsRequest.workflow_steps:type_name -> sigil.v1.WorkflowStep
+	18, // 20: sigil.v1.ExportWorkflowStepsResponse.results:type_name -> sigil.v1.ExportWorkflowStepResult
+	22, // 21: sigil.v1.WorkflowStep.started_at:type_name -> google.protobuf.Timestamp
+	22, // 22: sigil.v1.WorkflowStep.completed_at:type_name -> google.protobuf.Timestamp
+	23, // 23: sigil.v1.WorkflowStep.input_state:type_name -> google.protobuf.Struct
+	23, // 24: sigil.v1.WorkflowStep.output_state:type_name -> google.protobuf.Struct
+	21, // 25: sigil.v1.WorkflowStep.tags:type_name -> sigil.v1.WorkflowStep.TagsEntry
+	23, // 26: sigil.v1.WorkflowStep.metadata:type_name -> google.protobuf.Struct
+	3,  // 27: sigil.v1.GenerationIngestService.ExportGenerations:input_type -> sigil.v1.ExportGenerationsRequest
+	16, // 28: sigil.v1.WorkflowStepIngestService.ExportWorkflowSteps:input_type -> sigil.v1.ExportWorkflowStepsRequest
+	4,  // 29: sigil.v1.GenerationIngestService.ExportGenerations:output_type -> sigil.v1.ExportGenerationsResponse
+	17, // 30: sigil.v1.WorkflowStepIngestService.ExportWorkflowSteps:output_type -> sigil.v1.ExportWorkflowStepsResponse
+	29, // [29:31] is the sub-list for method output_type
+	27, // [27:29] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_sigil_v1_generation_ingest_proto_init() }
@@ -1484,9 +1857,9 @@ func file_sigil_v1_generation_ingest_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sigil_v1_generation_ingest_proto_rawDesc), len(file_sigil_v1_generation_ingest_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   14,
+			NumMessages:   19,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_sigil_v1_generation_ingest_proto_goTypes,
 		DependencyIndexes: file_sigil_v1_generation_ingest_proto_depIdxs,

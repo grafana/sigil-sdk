@@ -31,6 +31,7 @@ enum GenerationMode {
   GENERATION_MODE_STREAM = 2;
 }
 
+
 message ModelRef {
   string provider = 1;
   string name = 2;
@@ -143,5 +144,48 @@ message Generation {
   optional string tool_choice = 27;
   optional bool thinking_enabled = 28;
   repeated string parent_generation_ids = 29;
+  // Optional SDK-supplied catalog key. Must match `^sha256:[0-9a-f]{64}$`
+  // when set; ingest rejects any other shape. Sigil falls back to a
+  // server-computed sha256 of (system_prompt + sorted tools) when omitted.
   optional string effective_version = 30;
+}
+
+// --- Workflow Step ingest (separate schema from Generation) ---
+
+service WorkflowStepIngestService {
+  rpc ExportWorkflowSteps(ExportWorkflowStepsRequest) returns (ExportWorkflowStepsResponse);
+}
+
+message ExportWorkflowStepsRequest {
+  repeated WorkflowStep workflow_steps = 1;
+}
+
+message ExportWorkflowStepsResponse {
+  repeated ExportWorkflowStepResult results = 1;
+}
+
+message ExportWorkflowStepResult {
+  string step_id = 1;
+  bool accepted = 2;
+  string error = 3;
+}
+
+message WorkflowStep {
+  string id = 1;
+  string conversation_id = 2;
+  string step_name = 3;
+  string framework = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+  google.protobuf.Struct input_state = 7;
+  google.protobuf.Struct output_state = 8;
+  string error = 9;
+  map<string, string> tags = 10;
+  repeated string linked_generation_ids = 11;
+  repeated string parent_step_ids = 12;
+  string agent_name = 13;
+  string agent_version = 14;
+  string trace_id = 15;
+  string span_id = 16;
+  google.protobuf.Struct metadata = 17;
 }
