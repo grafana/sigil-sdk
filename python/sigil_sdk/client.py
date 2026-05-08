@@ -737,8 +737,8 @@ class Client:
     def _run_async_flush(self) -> None:
         try:
             self._flush_internal()
-        except Exception as exc:  # noqa: BLE001
-            self._log_warn("sigil generation export failed", exc)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _has_generation_sanitizer(self) -> bool:
         return self._config.generation_sanitizer is not None

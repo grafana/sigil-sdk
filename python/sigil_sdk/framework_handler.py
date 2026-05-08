@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import secrets
 from collections.abc import Callable
@@ -10,6 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
+
+logger = logging.getLogger("sigil_sdk")
 
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
@@ -246,13 +249,19 @@ class SigilFrameworkHandlerBase:
         this root, so the maps don't leak across long-lived handlers."""
         if not root_run_key:
             return
-        # Collect descendants while the parent chain is still complete.
         descendants = [
             run_key for run_key in list(self._run_to_graph_key.keys()) if self._reaches_run(run_key, root_run_key)
         ]
         for run_key in descendants:
             self._run_to_graph_key.pop(run_key, None)
-            self._workflow_step_runs.pop(run_key, None)
+            orphan = self._workflow_step_runs.pop(run_key, None)
+            if orphan is not None:
+                logger.warning(
+                    "sigil: dropping in-flight workflow step %s (node %s) — "
+                    "on_chain_end callback never fired",
+                    orphan.step_id,
+                    orphan.step_name,
+                )
         self._graph_root_run_keys.discard(root_run_key)
         self._graph_run_conversation_id.pop(root_run_key, None)
         self._graph_run_last_step_id.pop(root_run_key, None)
