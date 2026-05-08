@@ -25,7 +25,7 @@ pi install /absolute/path/to/sigil-sdk/plugins/pi
 
 ## Get your credentials from Grafana Cloud
 
-Skip this section if you're connecting to self-hosted Sigil — see [Auth modes](#auth-modes) for `tenant` / `bearer` / `none`.
+Skip this section if you're not connecting to Grafana Cloud — refer to [Auth modes](#auth-modes) for `tenant` / `bearer` / `none`.
 
 You need four values from your Grafana Cloud stack: the Sigil API URL, an OTLP endpoint, an instance ID, and an access policy token.
 
@@ -63,12 +63,12 @@ Create `~/.config/sigil-pi/config.json`:
   "auth": {
     "mode": "basic",
     "user": "123456",
-    "password": "${GRAFANA_CLOUD_TOKEN}"
+    "password": "${SIGIL_AUTH_TOKEN}"
   },
   "otlp": {
     "endpoint": "https://otlp-gateway.grafana.net/otlp",
     "basicUser": "123456",
-    "basicPassword": "${GRAFANA_CLOUD_TOKEN}"
+    "basicPassword": "${SIGIL_AUTH_TOKEN}"
   }
 }
 ```
@@ -79,7 +79,7 @@ Token values support `${ENV_VAR}` interpolation.
 
 **basic** — HTTP Basic auth + X-Scope-OrgID (Grafana Cloud):
 ```json
-{ "mode": "basic", "user": "123456", "password": "${GRAFANA_CLOUD_TOKEN}" }
+{ "mode": "basic", "user": "123456", "password": "${SIGIL_AUTH_TOKEN}" }
 ```
 
 `user` is your Grafana Cloud stack/tenant ID. `password` is a `glc_…` token created in Grafana Cloud -> Access Policies ([docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/)) with the appropriate Sigil scope.
@@ -107,7 +107,7 @@ The `otlp` block exports OTel histograms and trace spans. The AI Observability U
 "otlp": {
   "endpoint": "https://otlp-gateway-prod-<region>.grafana.net/otlp",
   "basicUser": "123456",
-  "basicPassword": "${GRAFANA_CLOUD_TOKEN}"
+  "basicPassword": "${SIGIL_AUTH_TOKEN}"
 }
 ```
 
@@ -141,7 +141,7 @@ Tweak individual knobs:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `endpoint` | — | Sigil URL (`/api/v1/generations:export` auto-appended) |
+| `endpoint` | — | Sigil URL |
 | `auth.mode` | `"none"` | One of `basic`, `tenant`, `bearer`, `none` |
 | `auth.user` | — | Basic auth user (Grafana Cloud stack ID) |
 | `auth.password` | — | Basic auth password (`glc_…` token) |

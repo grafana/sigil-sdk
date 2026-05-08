@@ -39,7 +39,7 @@ The Sigil and OTel env-var schemas come from the SDKs, not this plugin:
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `SIGIL_ENDPOINT` | yes | Sigil API URL, e.g. `https://sigil-prod-<region>.grafana.net`. The plugin appends `/api/v1/generations:export`. |
+| `SIGIL_ENDPOINT` | yes | Sigil API URL, for example `https://sigil-prod-<region>.grafana.net`. |
 | `SIGIL_AUTH_TENANT_ID` | yes | Grafana Cloud stack/instance ID. Used as Basic-auth username and the `X-Scope-OrgID` header. |
 | `SIGIL_AUTH_TOKEN` | yes | `glc_…` Cloud access policy token with the `sigil:write` scope. |
 | `SIGIL_TAGS` | no | Comma-separated `k=v` pairs added to every generation. Built-ins (`git.branch`, `cwd`, `subagent`) win on collision. |

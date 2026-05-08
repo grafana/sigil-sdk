@@ -81,17 +81,17 @@ def create_model():
 
 
 meter_provider = setup_metrics()
-grafana_instance_id = required_env("GRAFANA_INSTANCE_ID")
+tenant_id = required_env("SIGIL_AUTH_TENANT_ID")
 sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
-            protocol=os.getenv("SIGIL_EXPORT_PROTOCOL", "http"),
+            protocol=os.getenv("SIGIL_PROTOCOL", "http"),
             endpoint=required_env("SIGIL_ENDPOINT"),
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=grafana_instance_id,
-                basic_user=grafana_instance_id,
-                basic_password=required_env("GRAFANA_CLOUD_TOKEN"),
+                tenant_id=tenant_id,
+                basic_user=tenant_id,
+                basic_password=required_env("SIGIL_AUTH_TOKEN"),
             ),
         ),
         meter=meter_provider.get_meter("sigil-strands-example"),

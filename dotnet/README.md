@@ -30,7 +30,11 @@ dotnet add package Grafana.Sigil.OpenAI
 # or: Grafana.Sigil.Anthropic / Grafana.Sigil.Gemini
 ```
 
+For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance ID, and API token), refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/).
+
 ## Quickstart (OpenAI Responses wrapper)
+
+The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [environment variables](#environment-variables) section.
 
 ```csharp
 using Grafana.Sigil;
@@ -41,8 +45,8 @@ var sigil = new SigilClient(new SigilClientConfig
 {
     GenerationExport = new GenerationExportConfig
     {
-        Protocol = GenerationExportProtocol.Grpc,
-        Endpoint = "localhost:4317",
+        Protocol = GenerationExportProtocol.Http,
+        Endpoint = "http://localhost:8080",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Tenant,
@@ -256,8 +260,8 @@ The SDK emits these OTel histograms through your configured OTel meter provider:
 
 ## Environment variables
 
-The SDK reads canonical `SIGIL_*` env vars at client construction. Caller-supplied
-fields on `SigilClientConfig` win; env vars fill anything left at the default;
+The SDK reads `SIGIL_*` environment variables at client construction. Caller-supplied
+fields on `SigilClientConfig` win; environment variables fill anything left at the default;
 SDK schema defaults fill the rest.
 
 | Env var | Field |

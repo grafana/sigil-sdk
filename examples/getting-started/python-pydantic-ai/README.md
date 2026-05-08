@@ -6,8 +6,10 @@ Runs a Pydantic AI agent and records the generation to Grafana Cloud AI Observab
 
 ```bash
 cd examples/getting-started/python-pydantic-ai
-# Set ANTHROPIC_API_KEY, GRAFANA_INSTANCE_ID, GRAFANA_CLOUD_TOKEN, SIGIL_ENDPOINT
-# See the SDK README or Grafana Cloud AI Observability getting started docs for where to find each value.
+cp .env.example .env
+# Fill in ANTHROPIC_API_KEY, SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID, SIGIL_AUTH_TOKEN.
+# See the Grafana Cloud AI Observability getting started docs for where to find each value:
+# https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/
 ```
 
 ```bash
@@ -20,4 +22,4 @@ pip install -r requirements.txt
 python main.py
 ```
 
-You should see the LLM response printed, followed by `Done`. Open the AI Observability plugin in your Grafana Cloud stack to see the recorded generation, and check your Grafana Cloud Traces and Metrics datasources for SDK-emitted spans and metrics.
+When the LLM response prints, followed by `Done`, open the AI Observability plugin in your Grafana Cloud stack to view the recorded generation, then check your Grafana Cloud Traces and Metrics datasources for SDK-emitted spans and metrics.

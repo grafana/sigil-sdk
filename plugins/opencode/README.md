@@ -13,7 +13,7 @@ Hooks into OpenCode's chat lifecycle to capture assistant messages and send them
 ```json
 {
   "enabled": true,
-  "endpoint": "http://localhost:8080/api/v1/generations:export",
+  "endpoint": "http://localhost:8080",
   "auth": { "mode": "none" },
   "agentName": "opencode",
   "contentCapture": true

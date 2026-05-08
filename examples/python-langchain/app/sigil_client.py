@@ -27,9 +27,9 @@ def setup_sigil(
     tracer_provider: TracerProvider,
     meter_provider: MeterProvider,
 ) -> Client:
-    endpoint = _required_env("SIGIL_GENERATION_EXPORT_ENDPOINT")
+    endpoint = _required_env("SIGIL_ENDPOINT")
     api_endpoint = _required_env("SIGIL_API_ENDPOINT")
-    tenant_id = _required_env("SIGIL_TENANT_ID")
+    tenant_id = _required_env("SIGIL_AUTH_TENANT_ID")
     auth_token = os.getenv("SIGIL_AUTH_TOKEN", "").strip()
 
     if auth_token:
