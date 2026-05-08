@@ -753,7 +753,7 @@ class Client:
         return copy.deepcopy(sanitized)
 
     def _flush_internal(self) -> None:
-        errors: list[Exception] = []
+        first_error: Exception | None = None
         with self._flush_lock:
             while True:
                 with self._pending_lock:
@@ -786,7 +786,7 @@ class Client:
                                 )
                     except Exception as exc:  # noqa: BLE001
                         self._log_warn("sigil generation export failed", exc)
-                        errors.append(exc)
+                        first_error = first_error or exc
 
                 if wf_batch:
                     wf_request = ExportWorkflowStepsRequest(workflow_steps=wf_batch)
@@ -799,10 +799,13 @@ class Client:
                                 self._log_warn(f"sigil workflow step rejected id={result.step_id} error={result.error}")
                     except Exception as exc:  # noqa: BLE001
                         self._log_warn("sigil workflow step export failed", exc)
-                        errors.append(exc)
+                        first_error = first_error or exc
 
-        if errors:
-            raise errors[0]
+                if first_error is not None:
+                    break
+
+        if first_error is not None:
+            raise first_error
 
     def _export_with_retry(self, send: Callable[[], Any]):
         """Run an export call with the configured exponential backoff retry.
