@@ -143,4 +143,5 @@ message Generation {
   optional string tool_choice = 27;
   optional bool thinking_enabled = 28;
   repeated string parent_generation_ids = 29;
+  optional string effective_version = 30;
 }

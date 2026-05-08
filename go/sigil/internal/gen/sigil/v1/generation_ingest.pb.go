@@ -1024,6 +1024,7 @@ type Generation struct {
 	ToolChoice          *string                `protobuf:"bytes,27,opt,name=tool_choice,json=toolChoice,proto3,oneof" json:"tool_choice,omitempty"`
 	ThinkingEnabled     *bool                  `protobuf:"varint,28,opt,name=thinking_enabled,json=thinkingEnabled,proto3,oneof" json:"thinking_enabled,omitempty"`
 	ParentGenerationIds []string               `protobuf:"bytes,29,rep,name=parent_generation_ids,json=parentGenerationIds,proto3" json:"parent_generation_ids,omitempty"`
+	EffectiveVersion    *string                `protobuf:"bytes,30,opt,name=effective_version,json=effectiveVersion,proto3,oneof" json:"effective_version,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1261,6 +1262,13 @@ func (x *Generation) GetParentGenerationIds() []string {
 	return nil
 }
 
+func (x *Generation) GetEffectiveVersion() string {
+	if x != nil && x.EffectiveVersion != nil {
+		return *x.EffectiveVersion
+	}
+	return ""
+}
+
 var File_sigil_v1_generation_ingest_proto protoreflect.FileDescriptor
 
 const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
@@ -1325,7 +1333,7 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\fcontent_type\x18\x03 \x01(\tR\vcontentType\x12\x18\n" +
 	"\apayload\x18\x04 \x01(\fR\apayload\x12\x1b\n" +
 	"\trecord_id\x18\x05 \x01(\tR\brecordId\x12\x10\n" +
-	"\x03uri\x18\x06 \x01(\tR\x03uri\"\xab\n" +
+	"\x03uri\x18\x06 \x01(\tR\x03uri\"\xf3\n" +
 	"\n" +
 	"\n" +
 	"Generation\x12\x0e\n" +
@@ -1365,7 +1373,8 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\vtool_choice\x18\x1b \x01(\tH\x03R\n" +
 	"toolChoice\x88\x01\x01\x12.\n" +
 	"\x10thinking_enabled\x18\x1c \x01(\bH\x04R\x0fthinkingEnabled\x88\x01\x01\x122\n" +
-	"\x15parent_generation_ids\x18\x1d \x03(\tR\x13parentGenerationIds\x1a7\n" +
+	"\x15parent_generation_ids\x18\x1d \x03(\tR\x13parentGenerationIds\x120\n" +
+	"\x11effective_version\x18\x1e \x01(\tH\x05R\x10effectiveVersion\x88\x01\x01\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\r\n" +
@@ -1373,7 +1382,8 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\f_temperatureB\b\n" +
 	"\x06_top_pB\x0e\n" +
 	"\f_tool_choiceB\x13\n" +
-	"\x11_thinking_enabled*g\n" +
+	"\x11_thinking_enabledB\x14\n" +
+	"\x12_effective_version*g\n" +
 	"\x0eGenerationMode\x12\x1f\n" +
 	"\x1bGENERATION_MODE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14GENERATION_MODE_SYNC\x10\x01\x12\x1a\n" +

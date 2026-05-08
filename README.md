@@ -181,7 +181,7 @@ Drop-in integrations for coding agents. See [`plugins/`](plugins/) for details.
 
 ## Proto
 
-Vendored protobuf definitions used by SDKs live in [`proto/`](proto/).
+Vendored protobuf definitions used by SDKs live in [`proto/`](proto/). See [`docs/development.md`](docs/development.md#regenerating-protobuf-stubs) for how to regenerate language stubs.
 
 ## License
 
