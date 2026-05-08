@@ -261,6 +261,74 @@ handler = SigilLangGraphHandler(
 result = graph.invoke(input, config={"callbacks": [handler]})
 ```
 
+### Complete LangGraph instrumentation example
+
+End-to-end example showing OTel setup, Sigil client, handler, and correct shutdown order.
+The `OTEL_EXPORTER_OTLP_ENDPOINT` env var is read automatically by the OTel exporters.
+
+Minimal `.env`:
+```
+SIGIL_ENDPOINT=http://localhost:8080
+SIGIL_TENANT_ID=anonymous
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+```python
+import os
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+import sigil_sdk
+from sigil_sdk.config import AuthConfig, GenerationExportConfig
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+# 1. OTel providers MUST be configured BEFORE creating the Sigil client.
+resource = Resource.create({"service.name": "my-langgraph-app"})
+tp = TracerProvider(resource=resource)
+tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(tp)
+mp = MeterProvider(resource=resource, metric_readers=[
+    PeriodicExportingMetricReader(OTLPMetricExporter())
+])
+metrics.set_meter_provider(mp)
+
+# 2. Sigil client — endpoint is the Sigil API base URL (SDK appends the path).
+client = sigil_sdk.Client(
+    sigil_sdk.ClientConfig(
+        generation_export=GenerationExportConfig(
+            protocol="http",
+            endpoint=os.environ.get("SIGIL_ENDPOINT", "http://localhost:8080"),
+            auth=AuthConfig(
+                mode="tenant",
+                tenant_id=os.environ.get("SIGIL_TENANT_ID", "anonymous"),
+            ),
+        ),
+    )
+)
+
+# 3. LangGraph handler with workflow step capture.
+handler = SigilLangGraphHandler(
+    client=client,
+    agent_name="my-pipeline",
+    conversation_title="My Pipeline Run",
+    capture_workflow_steps=True,
+)
+
+# 4. Run the graph with the handler as a callback.
+result = graph.invoke(input, config={"callbacks": [handler]})
+
+# 5. Shutdown order: Sigil first, then OTel providers.
+client.shutdown()
+tp.shutdown()
+mp.shutdown()
+```
+
 The handler:
 1. Detects graph root and direct-child nodes via `parent_run_id` matching
 2. Creates a `_WorkflowStepState` per node with `step_id`, `parent_step_ids`, `input_state`

@@ -333,11 +333,13 @@ with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_ve
 
 `ContentCaptureMode` controls what content is included in exported generation payloads and OTel span attributes. Use it to prevent sensitive text (prompts, tool I/O, model responses) from leaving the process.
 
-| Mode | Generations | Tool spans |
-|------|------------|------------|
-| `FULL` | All content exported | Arguments and results in span attributes |
-| `NO_TOOL_CONTENT` (SDK default) | All content exported | Arguments and results excluded |
-| `METADATA_ONLY` | Structure preserved, all text stripped | Arguments and results excluded |
+
+| Mode                            | Generations                            | Tool spans                               |
+| ------------------------------- | -------------------------------------- | ---------------------------------------- |
+| `FULL`                          | All content exported                   | Arguments and results in span attributes |
+| `NO_TOOL_CONTENT` (SDK default) | All content exported                   | Arguments and results excluded           |
+| `METADATA_ONLY`                 | Structure preserved, all text stripped | Arguments and results excluded           |
+
 
 The default is `NO_TOOL_CONTENT`, which matches the SDK's behavior before this feature was added.
 
