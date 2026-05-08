@@ -318,6 +318,7 @@ func handlePreToolUse(
 					ToolCall: &sigil.ToolCall{
 						ID:        strings.TrimSpace(input.ToolUseID),
 						Name:      toolName,
+						InputJSON: input.ToolInput,
 					},
 				}},
 			}},
