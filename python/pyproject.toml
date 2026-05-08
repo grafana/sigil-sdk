@@ -6,7 +6,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
-  "grpcio>=1.78.0",
+  "grpcio>=1.80.0",
   "protobuf>=6.31.1",
   "opentelemetry-api>=1.27.0",
   "opentelemetry-sdk>=1.27.0",
@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "grpcio-tools>=1.78.0",
+  "grpcio-tools>=1.80.0",
   "pytest>=8.2.0",
 ]
 

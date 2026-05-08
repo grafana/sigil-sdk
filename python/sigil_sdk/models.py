@@ -263,6 +263,52 @@ class Generation:
 
 
 @dataclass(slots=True)
+class WorkflowStep:
+    """Workflow step execution record — separate from Generation."""
+
+    id: str = ""
+    conversation_id: str = ""
+    step_name: str = ""
+    framework: str = ""
+    agent_name: str = ""
+    agent_version: str = ""
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    input_state: dict[str, Any] = field(default_factory=dict)
+    output_state: dict[str, Any] = field(default_factory=dict)
+    error: str = ""
+    tags: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    linked_generation_ids: list[str] = field(default_factory=list)
+    parent_step_ids: list[str] = field(default_factory=list)
+    trace_id: str = ""
+    span_id: str = ""
+
+
+@dataclass(slots=True)
+class ExportWorkflowStepResult:
+    """Per-item workflow step ingest result."""
+
+    step_id: str
+    accepted: bool
+    error: str = ""
+
+
+@dataclass(slots=True)
+class ExportWorkflowStepsRequest:
+    """Workflow step export request payload."""
+
+    workflow_steps: list[WorkflowStep]
+
+
+@dataclass(slots=True)
+class ExportWorkflowStepsResponse:
+    """Workflow step export response payload."""
+
+    results: list[ExportWorkflowStepResult]
+
+
+@dataclass(slots=True)
 class ToolExecutionStart:
     """Seed fields for execute_tool span recording."""
 

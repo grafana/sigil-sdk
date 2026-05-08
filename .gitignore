@@ -16,7 +16,7 @@ coverage/
 *.tsbuildinfo
 js/.test-dist/
 python/build/
-python-frameworks/litellm/build/
+python-frameworks/*/build/
 
 *.db
 coverage.out

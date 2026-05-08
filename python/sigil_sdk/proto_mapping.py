@@ -14,6 +14,7 @@ from .models import (
     GenerationMode,
     MessageRole,
     PartKind,
+    WorkflowStep,
 )
 
 
@@ -97,6 +98,62 @@ def generation_to_proto_json(generation: Generation) -> dict[str, object]:
         message,
         preserving_proto_field_name=True,
     )
+
+
+def workflow_step_to_proto_json(step: WorkflowStep) -> dict[str, object]:
+    """Converts a WorkflowStep into proto-json dictionary with snake_case keys."""
+
+    message = workflow_step_to_proto(step)
+    return json_format.MessageToDict(
+        message,
+        preserving_proto_field_name=True,
+    )
+
+
+def workflow_step_to_proto(step: WorkflowStep) -> sigil_pb2.WorkflowStep:
+    """Converts a WorkflowStep model into protobuf sigil.v1.WorkflowStep."""
+
+    message = sigil_pb2.WorkflowStep(
+        id=step.id,
+        conversation_id=step.conversation_id,
+        step_name=step.step_name,
+        framework=step.framework,
+        agent_name=step.agent_name,
+        agent_version=step.agent_version,
+        error=step.error,
+        tags=dict(step.tags),
+        linked_generation_ids=list(step.linked_generation_ids),
+        parent_step_ids=list(step.parent_step_ids),
+        trace_id=step.trace_id,
+        span_id=step.span_id,
+    )
+
+    if step.started_at is not None:
+        started_at = timestamp_pb2.Timestamp()
+        started_at.FromDatetime(step.started_at.astimezone(timezone.utc))
+        message.started_at.CopyFrom(started_at)
+
+    if step.completed_at is not None:
+        completed_at = timestamp_pb2.Timestamp()
+        completed_at.FromDatetime(step.completed_at.astimezone(timezone.utc))
+        message.completed_at.CopyFrom(completed_at)
+
+    if step.input_state:
+        input_state = struct_pb2.Struct()
+        input_state.update(step.input_state)
+        message.input_state.CopyFrom(input_state)
+
+    if step.output_state:
+        output_state = struct_pb2.Struct()
+        output_state.update(step.output_state)
+        message.output_state.CopyFrom(output_state)
+
+    if step.metadata:
+        metadata = struct_pb2.Struct()
+        metadata.update(step.metadata)
+        message.metadata.CopyFrom(metadata)
+
+    return message
 
 
 def _map_generation_mode(mode: GenerationMode | None) -> int:

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..models import ExportGenerationsRequest, ExportGenerationsResponse
+from ..models import (
+    ExportGenerationsRequest,
+    ExportGenerationsResponse,
+    ExportWorkflowStepsRequest,
+    ExportWorkflowStepsResponse,
+)
 
 
 class GenerationExporter(Protocol):
@@ -12,6 +17,9 @@ class GenerationExporter(Protocol):
 
     def export_generations(self, request: ExportGenerationsRequest) -> ExportGenerationsResponse:
         """Exports one generation batch."""
+
+    def export_workflow_steps(self, request: ExportWorkflowStepsRequest) -> ExportWorkflowStepsResponse:
+        """Exports one workflow step batch."""
 
     def shutdown(self) -> None:
         """Closes transport resources."""

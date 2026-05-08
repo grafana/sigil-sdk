@@ -72,6 +72,37 @@ for _event in graph.stream(
 client.shutdown()
 ```
 
+## Workflow step capture
+
+Enable `capture_workflow_steps=True` to record each graph node as a Sigil workflow step.
+This builds a visual DAG in the Sigil UI showing node execution order, duration, input/output state,
+and which LLM generations ran inside each node.
+
+Always set `conversation_title` to a short human-readable label — it appears as the conversation
+name in the Sigil UI. Without it, the title falls back to an opaque auto-generated ID.
+
+```python
+from sigil_sdk import Client
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+client = Client()
+handler = SigilLangGraphHandler(
+    client=client,
+    agent_name="my-pipeline",
+    conversation_title="My Pipeline Run",
+    capture_workflow_steps=True,
+)
+
+result = graph.invoke(input, config={"callbacks": [handler]})
+client.shutdown()
+```
+
+The handler automatically:
+- Detects graph root and direct-child nodes
+- Creates a workflow step per node with `input_state`, `output_state`, and timestamps
+- Links LLM generation IDs to their parent step via `linked_generation_ids`
+- Tracks sequential `parent_step_ids` so the DAG edges are correct
+
 ## Persistent thread example (LangGraph checkpointer)
 
 ```python

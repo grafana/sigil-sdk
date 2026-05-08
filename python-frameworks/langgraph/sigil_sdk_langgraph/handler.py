@@ -53,6 +53,8 @@ class _SigilLangGraphBase(SigilFrameworkHandlerBase):
         provider: str = "",
         capture_inputs: bool = True,
         capture_outputs: bool = True,
+        capture_workflow_steps: bool = False,
+        conversation_title: str = "",
         extra_tags: dict[str, str] | None = None,
         extra_metadata: dict[str, Any] | None = None,
     ) -> None:
@@ -68,6 +70,8 @@ class _SigilLangGraphBase(SigilFrameworkHandlerBase):
             provider=provider,
             capture_inputs=capture_inputs,
             capture_outputs=capture_outputs,
+            capture_workflow_steps=capture_workflow_steps,
+            conversation_title=conversation_title,
             extra_tags=extra_tags,
             extra_metadata=extra_metadata,
         )
@@ -158,7 +162,7 @@ class SigilLangGraphHandler(_SigilLangGraphBase, BaseCallbackHandler):
     def on_chain_start(
         self,
         serialized: dict[str, Any] | None,
-        _inputs: dict[str, Any] | None,
+        inputs: dict[str, Any] | None,
         *,
         run_id: UUID,
         parent_run_id: UUID | None = None,
@@ -174,10 +178,11 @@ class SigilLangGraphHandler(_SigilLangGraphBase, BaseCallbackHandler):
             parent_run_id=parent_run_id,
             run_type=run_type or "chain",
             callback_kwargs=_merge_callback_kwargs(kwargs, tags=tags, metadata=metadata, run_name=run_name),
+            inputs=inputs,
         )
 
-    def on_chain_end(self, _outputs: dict[str, Any] | None, *, run_id: UUID, **_kwargs: Any) -> None:
-        self._on_chain_end(run_id=run_id)
+    def on_chain_end(self, outputs: dict[str, Any] | None, *, run_id: UUID, **_kwargs: Any) -> None:
+        self._on_chain_end(run_id=run_id, outputs=outputs)
 
     def on_chain_error(self, error: BaseException, *, run_id: UUID, **_kwargs: Any) -> None:
         self._on_chain_error(error=error, run_id=run_id)
@@ -293,7 +298,7 @@ class SigilAsyncLangGraphHandler(_SigilLangGraphBase, AsyncCallbackHandler):
     async def on_chain_start(
         self,
         serialized: dict[str, Any] | None,
-        _inputs: dict[str, Any] | None,
+        inputs: dict[str, Any] | None,
         *,
         run_id: UUID,
         parent_run_id: UUID | None = None,
@@ -309,10 +314,11 @@ class SigilAsyncLangGraphHandler(_SigilLangGraphBase, AsyncCallbackHandler):
             parent_run_id=parent_run_id,
             run_type=run_type or "chain",
             callback_kwargs=_merge_callback_kwargs(kwargs, tags=tags, metadata=metadata, run_name=run_name),
+            inputs=inputs,
         )
 
-    async def on_chain_end(self, _outputs: dict[str, Any] | None, *, run_id: UUID, **_kwargs: Any) -> None:
-        self._on_chain_end(run_id=run_id)
+    async def on_chain_end(self, outputs: dict[str, Any] | None, *, run_id: UUID, **_kwargs: Any) -> None:
+        self._on_chain_end(run_id=run_id, outputs=outputs)
 
     async def on_chain_error(self, error: BaseException, *, run_id: UUID, **_kwargs: Any) -> None:
         self._on_chain_error(error=error, run_id=run_id)

@@ -176,6 +176,178 @@ On generation and tool spans, capture or preserve these when available:
   - `gen_ai.response.finish_reasons`
   - error classification fields (`error.type`, `error.category`)
 
+## Workflow step instrumentation (agentic pipelines)
+
+Sigil has two separate ingest pipelines: **generations** (LLM calls) and **workflow steps** (agentic execution nodes).
+
+### When to use workflow steps
+
+Use workflow steps when instrumenting agentic frameworks (LangGraph, CrewAI, Google ADK, custom orchestrators) where:
+- The pipeline has non-LLM nodes (routing, formatting, validation, tool calls)
+- You want to see the full execution graph, not just LLM calls
+- You need input/output state captured per node
+
+### Architecture
+
+- Workflow steps are a **separate entity** from generations, with their own proto message, ingest endpoint, and storage.
+- Generations track LLM calls (model, tokens, cost). Workflow steps track execution nodes (input state, output state, duration).
+- The two are linked via `linked_generation_ids` on the workflow step (which LLM calls ran inside this node) and `parent_step_ids` (DAG edges between workflow nodes).
+
+### Ingest endpoints
+
+| Entity | gRPC | HTTP |
+|--------|------|------|
+| Generations | `GenerationIngestService.ExportGenerations` | `POST /api/v1/generations:export` |
+| Workflow steps | `WorkflowStepIngestService.ExportWorkflowSteps` | `POST /api/v1/workflow-steps:export` |
+
+### WorkflowStep fields
+
+```
+id                     — unique step ID (e.g. "wfs_<hex>")
+conversation_id        — links step to a conversation
+step_name              — node name (e.g. "classify", "analyze")
+framework              — framework name (e.g. "langgraph")
+started_at / completed_at — execution timestamps
+input_state            — node input (Struct/dict)
+output_state           — node output (Struct/dict)
+error                  — error message if the node failed
+tags                   — key-value filtering tags
+metadata               — arbitrary metadata (Struct/dict)
+linked_generation_ids  — generation IDs of LLM calls inside this step
+parent_step_ids        — IDs of upstream workflow steps (DAG edges)
+agent_name / agent_version — agent identity
+trace_id / span_id     — OTel correlation
+```
+
+### SDK workflow step API
+
+The SDK client exposes `enqueue_workflow_step(step)` which queues the step for batch export alongside generations. The flush pipeline handles both.
+
+#### Python
+```python
+from sigil_sdk import Client, WorkflowStep
+from datetime import datetime, timezone
+
+step = WorkflowStep(
+    id="wfs_abc123",
+    conversation_id="conv-1",
+    step_name="classify",
+    framework="langgraph",
+    started_at=datetime.now(timezone.utc),
+    completed_at=datetime.now(timezone.utc),
+    input_state={"text": "input data"},
+    output_state={"category": "incident"},
+    tags={"sigil.framework.name": "langgraph"},
+    linked_generation_ids=["gen_xyz"],  # LLM calls inside this step
+    parent_step_ids=[],                  # first node, no parents
+)
+client.enqueue_workflow_step(step)
+```
+
+### Framework adapter pattern (LangGraph)
+
+The `SigilLangGraphHandler` automatically captures workflow steps when `capture_workflow_steps=True`.
+Always set `conversation_title` to a short human-readable label — it appears as the conversation name in the Sigil UI. Without it, the title falls back to an opaque auto-generated ID.
+
+```python
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+handler = SigilLangGraphHandler(
+    client=client,
+    agent_name="my-pipeline",
+    conversation_title="Incident Response Pipeline",
+    capture_workflow_steps=True,
+)
+result = graph.invoke(input, config={"callbacks": [handler]})
+```
+
+### Complete LangGraph instrumentation example
+
+End-to-end example showing OTel setup, Sigil client, handler, and correct shutdown order.
+The `OTEL_EXPORTER_OTLP_ENDPOINT` env var is read automatically by the OTel exporters.
+
+Minimal `.env`:
+```
+SIGIL_ENDPOINT=http://localhost:8080
+SIGIL_TENANT_ID=anonymous
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+```python
+import os
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+import sigil_sdk
+from sigil_sdk.config import AuthConfig, GenerationExportConfig
+from sigil_sdk_langgraph import SigilLangGraphHandler
+
+# 1. OTel providers MUST be configured BEFORE creating the Sigil client.
+resource = Resource.create({"service.name": "my-langgraph-app"})
+tp = TracerProvider(resource=resource)
+tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(tp)
+mp = MeterProvider(resource=resource, metric_readers=[
+    PeriodicExportingMetricReader(OTLPMetricExporter())
+])
+metrics.set_meter_provider(mp)
+
+# 2. Sigil client — endpoint is the Sigil API base URL (SDK appends the path).
+client = sigil_sdk.Client(
+    sigil_sdk.ClientConfig(
+        generation_export=GenerationExportConfig(
+            protocol="http",
+            endpoint=os.environ.get("SIGIL_ENDPOINT", "http://localhost:8080"),
+            auth=AuthConfig(
+                mode="tenant",
+                tenant_id=os.environ.get("SIGIL_TENANT_ID", "anonymous"),
+            ),
+        ),
+    )
+)
+
+# 3. LangGraph handler with workflow step capture.
+handler = SigilLangGraphHandler(
+    client=client,
+    agent_name="my-pipeline",
+    conversation_title="My Pipeline Run",
+    capture_workflow_steps=True,
+)
+
+# 4. Run the graph with the handler as a callback.
+result = graph.invoke(input, config={"callbacks": [handler]})
+
+# 5. Shutdown order: Sigil first, then OTel providers.
+client.shutdown()
+tp.shutdown()
+mp.shutdown()
+```
+
+The handler:
+1. Detects graph root and direct-child nodes via `parent_run_id` matching
+2. Creates a `_WorkflowStepState` per node with `step_id`, `parent_step_ids`, `input_state`
+3. Links LLM generation IDs to their parent step via `linked_generation_ids`
+4. On node end, builds a `WorkflowStep` and enqueues it
+5. Tracks sequential `parent_step_ids` so the DAG edges are correct
+
+**Key implementation detail**: For `linked_generation_ids` to work, the LLM run must be findable from its parent chain run. The handler stores `_run_to_graph_key[llm_run_key] = parent_chain_key` and `_workflow_step_runs[chain_key]` so that `_track_run_generation_id` can walk up the chain to find the enclosing workflow step.
+
+### Workflow step vs generation: decision table
+
+| Signal | Use Generation | Use WorkflowStep |
+|--------|---------------|-------------------|
+| LLM API call (tokens, model, cost) | Yes | No |
+| Non-LLM node (routing, formatting) | No | Yes |
+| Tool execution | Yes (start_tool_execution) | Optional (as a step) |
+| Node input/output state | No | Yes |
+| DAG edges between nodes | parent_generation_ids | parent_step_ids |
+
 ## Multi-agent dependency tracking
 
 When instrumenting multi-agent pipelines where one agent's output feeds into another:
