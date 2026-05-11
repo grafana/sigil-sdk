@@ -1,0 +1,18 @@
+{
+  "name": "sigil-codex",
+  "version": "0.1.0",
+  "description": "Send Codex session telemetry to Grafana Sigil",
+  "author": {
+    "name": "Grafana Labs"
+  },
+  "repository": "https://github.com/grafana/sigil-sdk",
+  "homepage": "https://github.com/grafana/sigil-sdk/tree/main/plugins/codex",
+  "license": "Apache-2.0",
+  "keywords": ["telemetry", "observability", "sigil", "grafana", "codex"],
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Grafana AI Observability for Codex",
+    "category": "Coding",
+    "capabilities": ["Read", "Write"]
+  }
+}

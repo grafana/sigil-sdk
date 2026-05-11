@@ -1,0 +1,243 @@
+package mapper
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/grafana/sigil-sdk/go/sigil"
+
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/fragment"
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/redact"
+)
+
+const (
+	AgentName         = "codex"
+	SubagentAgentName = AgentName + "/subagent"
+)
+
+type Inputs struct {
+	Fragment       *fragment.Fragment
+	SubagentLink   *fragment.SubagentLink
+	ContentCapture sigil.ContentCaptureMode
+	Now            time.Time
+}
+
+type Mapped struct {
+	Start      sigil.GenerationStart
+	Generation sigil.Generation
+}
+
+func Map(in Inputs) Mapped {
+	frag := in.Fragment
+	now := in.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	completedAt := parseTimestamp(frag.CompletedAt, parseTimestamp(frag.LastEventAt, now))
+	startedAt := parseTimestamp(frag.StartedAt, completedAt)
+	mode := in.ContentCapture
+	if mode == sigil.ContentCaptureModeDefault {
+		mode = sigil.ContentCaptureModeMetadataOnly
+	}
+
+	modelName := strings.TrimSpace(frag.Model)
+	if modelName == "" {
+		modelName = "unknown"
+	}
+	model := sigil.ModelRef{Provider: inferProviderFromModel(modelName), Name: modelName}
+	if model.Provider == "" {
+		model.Provider = "codex"
+	}
+
+	id := GenerationID(frag.SessionID, frag.TurnID)
+	tags := map[string]string{"entrypoint": "codex"}
+	if frag.Cwd != "" {
+		tags["cwd"] = frag.Cwd
+	}
+	if frag.Source != "" {
+		tags["hook.source"] = frag.Source
+	}
+	tags["codex.stop_hook_active"] = strconv.FormatBool(frag.StopHookActive)
+
+	tools := buildToolDefinitions(frag.Tools)
+	input, output := buildMessages(frag, mode)
+	conversationID, agentName, parentIDs, metadata := linkFields(frag, in.SubagentLink, tags)
+
+	start := sigil.GenerationStart{
+		ID:                  id,
+		ConversationID:      conversationID,
+		AgentName:           agentName,
+		Mode:                sigil.GenerationModeSync,
+		OperationName:       "generateText",
+		Model:               model,
+		Tools:               tools,
+		ParentGenerationIDs: parentIDs,
+		Tags:                tags,
+		Metadata:            metadata,
+		StartedAt:           startedAt,
+		ContentCapture:      mode,
+	}
+	gen := sigil.Generation{
+		ID:                  id,
+		ConversationID:      conversationID,
+		AgentName:           agentName,
+		Mode:                sigil.GenerationModeSync,
+		OperationName:       "generateText",
+		Model:               model,
+		ResponseModel:       modelName,
+		Input:               input,
+		Output:              output,
+		Tools:               tools,
+		ParentGenerationIDs: parentIDs,
+		StopReason:          "completed",
+		StartedAt:           startedAt,
+		CompletedAt:         completedAt,
+		Tags:                tags,
+		Metadata:            metadata,
+	}
+	return Mapped{Start: start, Generation: gen}
+}
+
+func linkFields(frag *fragment.Fragment, link *fragment.SubagentLink, tags map[string]string) (conversationID, agentName string, parentIDs []string, metadata map[string]any) {
+	conversationID = frag.SessionID
+	agentName = AgentName
+	if link == nil || link.ParentSessionID == "" {
+		return conversationID, agentName, nil, nil
+	}
+
+	agentName = SubagentAgentName
+	tags["subagent"] = "true"
+	tags["codex.thread_source"] = "subagent"
+	tags["codex.link_source"] = "partial"
+	if link.AgentRole != "" {
+		tags["codex.agent_role"] = link.AgentRole
+	}
+
+	childSessionID := link.ChildSessionID
+	if childSessionID == "" {
+		childSessionID = frag.SessionID
+	}
+	metadata = map[string]any{
+		"codex.child_session_id":  childSessionID,
+		"codex.parent_session_id": link.ParentSessionID,
+	}
+	if link.AgentNickname != "" {
+		metadata["codex.agent_nickname"] = link.AgentNickname
+	}
+	if link.AgentDepth != 0 {
+		metadata["codex.agent_depth"] = link.AgentDepth
+	}
+	if link.Source != "" {
+		metadata["codex.link_state_source"] = link.Source
+	}
+	if link.ParentTurnID != "" {
+		metadata["codex.parent_turn_id"] = link.ParentTurnID
+	}
+	if link.SpawnCallID != "" {
+		metadata["codex.spawn_call_id"] = link.SpawnCallID
+	}
+
+	if link.ParentGenerationID == "" {
+		return conversationID, agentName, nil, metadata
+	}
+	conversationID = link.ParentSessionID
+	parentIDs = []string{link.ParentGenerationID}
+	tags["codex.link_source"] = "transcript"
+	return conversationID, agentName, parentIDs, metadata
+}
+
+func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (input, output []sigil.Message) {
+	if mode == sigil.ContentCaptureModeDefault {
+		mode = sigil.ContentCaptureModeMetadataOnly
+	}
+	red := redact.New()
+	cleanText := func(s string) string {
+		if mode == sigil.ContentCaptureModeFull || mode == sigil.ContentCaptureModeNoToolContent {
+			return red.Redact(s)
+		}
+		return ""
+	}
+
+	if mode != sigil.ContentCaptureModeMetadataOnly && strings.TrimSpace(frag.Prompt) != "" {
+		input = append(input, sigil.UserTextMessage(cleanText(frag.Prompt)))
+	}
+	for i := range frag.Tools {
+		t := &frag.Tools[i]
+		if t.ToolName == "" {
+			continue
+		}
+		call := sigil.ToolCall{ID: t.ToolUseID, Name: t.ToolName}
+		if mode == sigil.ContentCaptureModeFull && len(t.ToolInput) > 0 {
+			call.InputJSON = red.RedactJSON(t.ToolInput)
+		}
+		output = append(output, sigil.Message{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.ToolCallPart(call)}})
+		if mode == sigil.ContentCaptureModeMetadataOnly {
+			continue
+		}
+		result := sigil.ToolResult{ToolCallID: t.ToolUseID, Name: t.ToolName, IsError: t.Status == "error"}
+		if mode == sigil.ContentCaptureModeFull && len(t.ToolResponse) > 0 {
+			result.ContentJSON = red.RedactJSON(t.ToolResponse)
+		}
+		input = append(input, sigil.Message{Role: sigil.RoleTool, Parts: []sigil.Part{sigil.ToolResultPart(result)}})
+	}
+	if mode != sigil.ContentCaptureModeMetadataOnly && strings.TrimSpace(frag.LastAssistantMessage) != "" {
+		output = append(output, sigil.AssistantTextMessage(cleanText(frag.LastAssistantMessage)))
+	}
+	return input, output
+}
+
+func buildToolDefinitions(tools []fragment.ToolRecord) []sigil.ToolDefinition {
+	seen := map[string]struct{}{}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		if t.ToolName == "" {
+			continue
+		}
+		if _, ok := seen[t.ToolName]; ok {
+			continue
+		}
+		seen[t.ToolName] = struct{}{}
+		names = append(names, t.ToolName)
+	}
+	sort.Strings(names)
+	out := make([]sigil.ToolDefinition, 0, len(names))
+	for _, name := range names {
+		out = append(out, sigil.ToolDefinition{Name: name, Type: "function"})
+	}
+	return out
+}
+
+func GenerationID(sessionID, turnID string) string {
+	sum := sha256.Sum256([]byte(sessionID + "\x00" + turnID))
+	return "codex-" + hex.EncodeToString(sum[:])[:24]
+}
+
+func inferProviderFromModel(model string) string {
+	m := strings.ToLower(model)
+	switch {
+	case strings.Contains(m, "claude"):
+		return "anthropic"
+	case strings.HasPrefix(m, "gpt"), strings.HasPrefix(m, "o1"), strings.HasPrefix(m, "o3"), strings.HasPrefix(m, "o4"):
+		return "openai"
+	case strings.Contains(m, "gemini"):
+		return "google"
+	}
+	return ""
+}
+
+func parseTimestamp(s string, def time.Time) time.Time {
+	if s == "" {
+		return def
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t
+	}
+	return def
+}
