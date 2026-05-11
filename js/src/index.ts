@@ -31,6 +31,7 @@ export type {
   EmbeddingRecorder,
   EmbeddingResult,
   EmbeddingStart,
+  ExecuteToolCallsOptions,
   ExportGenerationResult,
   ExportGenerationsRequest,
   ExportGenerationsResponse,
