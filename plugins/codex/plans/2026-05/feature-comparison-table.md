@@ -66,7 +66,7 @@ under the Sigil Codex state directory until stale cleanup removes it.
 | Tool capture | Yes, via `postToolUse` and `postToolUseFailure`. | Yes, from transcript tool calls/results. | Supported Codex hook tools only via `PostToolUse`; raw args/results persist only in `full`. |
 | Tool execution spans | Yes. | Yes. | Yes, for supported Codex hook tools from fragment tool records. |
 | Failed tool status | Yes, from failure hook. | Yes, when transcript tool result data marks an error. | Conservative: error only when Codex provides explicit status/error data or a known response shape proves failure; otherwise unknown. |
-| Token usage | Yes, from Cursor payloads. | Yes, from transcript `usage` fields. | No; token usage is intentionally absent until Codex exposes reliable counts. |
+| Token usage | Yes, from Cursor payloads. | Yes, from transcript `usage` fields. | Yes, from rollout `event_msg/token_count` records. Usage is a per-turn cumulative `total_token_usage` delta; no monetary cost is calculated in the plugin. |
 | Conversation id | Cursor `conversation_id`. | Claude Code `session_id`. | Codex `session_id`. |
 | Generation id | Cursor `generation_id`. | Derived from transcript context. | Deterministic hash of `session_id + turn_id`. |
 | Subagent linkage | Background-agent work is tagged when available; no parent edge. | Synthesizes `agent_name=claude-code/subagent` generations from `Agent` tool calls with `ParentGenerationIDs`. | Best-effort `agent_name=codex/subagent`: resolved child turns use parent conversation id and `ParentGenerationIDs`; partial child links stay in the child conversation. |
@@ -77,7 +77,39 @@ Evidence:
 
 - Cursor stop/session-end handling: [`plugins/cursor/internal/hook/stop.go`](plugins/cursor/internal/hook/stop.go), [`plugins/cursor/internal/hook/sessionend.go`](plugins/cursor/internal/hook/sessionend.go)
 - Claude Code transcript export: [`plugins/claude-code/cmd/sigil-cc/main.go`](plugins/claude-code/cmd/sigil-cc/main.go), [`plugins/claude-code/internal/transcript/transcript.go`](plugins/claude-code/internal/transcript/transcript.go)
-- Codex handlers, fragments, subagent parser, and mapping: [`plugins/codex/internal/hook/handlers.go`](plugins/codex/internal/hook/handlers.go), [`plugins/codex/internal/fragment/fragment.go`](plugins/codex/internal/fragment/fragment.go), [`plugins/codex/internal/codexlog/codexlog.go`](plugins/codex/internal/codexlog/codexlog.go), [`plugins/codex/internal/mapper/mapper.go`](plugins/codex/internal/mapper/mapper.go)
+- Codex handlers, fragments, rollout parser, token usage mapper, and subagent mapping: [`plugins/codex/internal/hook/handlers.go`](plugins/codex/internal/hook/handlers.go), [`plugins/codex/internal/fragment/fragment.go`](plugins/codex/internal/fragment/fragment.go), [`plugins/codex/internal/codexlog/codexlog.go`](plugins/codex/internal/codexlog/codexlog.go), [`plugins/codex/internal/mapper/mapper.go`](plugins/codex/internal/mapper/mapper.go)
+
+## Codex Token Usage Flow
+
+```mermaid
+sequenceDiagram
+  participant C as Codex
+  participant R as Rollout JSONL
+  participant H as sigil-codex Stop
+  participant M as mapper
+  participant S as Sigil
+
+  C->>R: turn_context turn_id=T
+  C->>R: event_msg token_count total_token_usage=N
+  C->>R: optional more model calls and token_count records
+  H->>R: scan transcript_path for turn T
+  H->>H: final cumulative total - pre-turn or pre-model baseline
+  H->>M: TokenSnapshot
+  M->>S: Generation.Usage + low-cardinality metadata
+```
+
+Codex differs from Claude Code here: Claude Code usage is embedded in assistant
+transcript messages, while Codex usage is stored as separate rollout
+`event_msg/token_count` records. The Codex plugin therefore reads the rollout at
+`Stop`, tracks the active `turn_context.turn_id`, and maps only an attributable
+cumulative delta to `Generation.Usage`
+[`plugins/codex/internal/codexlog/codexlog.go`](plugins/codex/internal/codexlog/codexlog.go),
+[`plugins/codex/internal/hook/handlers.go`](plugins/codex/internal/hook/handlers.go),
+[`plugins/codex/internal/mapper/mapper.go`](plugins/codex/internal/mapper/mapper.go).
+Pre-model `token_count` records inside the target turn are treated as baseline
+snapshots for resumed rollouts rather than as current-turn usage.
+Raw cumulative token values and context window are metadata, not tags, and
+pricing remains outside the plugin.
 
 ## Content And Privacy
 

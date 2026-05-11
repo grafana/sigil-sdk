@@ -255,9 +255,23 @@ therefore reads only local transcript metadata: child `session_meta`, parent
 `turn_context`, and parent `spawn_agent` call/output records
 [`codexlog.go`](plugins/codex/internal/codexlog/codexlog.go).
 
-The Codex plugin does not export token usage. Current hook payloads do not
-provide reliable token counts, and this implementation does not keep placeholder
-usage fields in fragments or mapped generations.
+The Codex plugin exports token usage when the Codex rollout can be attributed to
+the completed turn. Hook stdin does not carry token counts directly, so the
+Stop handler reads the rollout path from `transcript_path`, tracks
+`turn_context.turn_id`, and computes per-generation usage from the completed
+turn's cumulative `total_token_usage` delta
+[`codexlog.go`](../../internal/codexlog/codexlog.go),
+[`handlers.go`](../../internal/hook/handlers.go). The mapper sets
+`Generation.Usage` for input, output, total, cache-read, and reasoning tokens,
+and stores final cumulative totals plus context window in metadata rather than
+tags [`mapper.go`](../../internal/mapper/mapper.go).
+When Codex emits a `token_count` after `turn_context` but before assistant
+model activity, the parser treats that snapshot as a resumed-thread baseline
+instead of charging it to the new turn.
+
+The plugin does not calculate monetary cost. Sigil or Grafana dashboards should
+derive cost downstream from provider, model, and token counts when pricing
+metadata is available.
 
 Current Codex `PostToolUse` input documents `tool_response`, but not generic
 status, duration, or timestamp fields
@@ -330,7 +344,8 @@ its conversation id and includes `parent_generation_ids`.
   currently expose a plugin hook with that lifecycle meaning.
 - No authoritative subagent lifecycle contract. The implementation links
   subagents only when local transcript metadata proves the relationship.
-- No token usage export until Codex exposes a reliable source for token counts.
+- No monetary cost calculation. The plugin exports token counts only; pricing is
+  downstream enrichment.
 - No manual `~/.codex/hooks.json` setup path in user docs. The expected source
   is the installed plugin.
 

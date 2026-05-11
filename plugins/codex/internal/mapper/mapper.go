@@ -10,6 +10,7 @@ import (
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/codexlog"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/fragment"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/redact"
 )
@@ -22,6 +23,7 @@ const (
 type Inputs struct {
 	Fragment       *fragment.Fragment
 	SubagentLink   *fragment.SubagentLink
+	TokenSnapshot  *codexlog.TokenSnapshot
 	ContentCapture sigil.ContentCaptureMode
 	Now            time.Time
 }
@@ -66,6 +68,7 @@ func Map(in Inputs) Mapped {
 	tools := buildToolDefinitions(frag.Tools)
 	input, output := buildMessages(frag, mode)
 	conversationID, agentName, parentIDs, metadata := linkFields(frag, in.SubagentLink, tags)
+	usage, metadata := usageFields(in.TokenSnapshot, metadata)
 
 	start := sigil.GenerationStart{
 		ID:                  id,
@@ -93,6 +96,7 @@ func Map(in Inputs) Mapped {
 		Output:              output,
 		Tools:               tools,
 		ParentGenerationIDs: parentIDs,
+		Usage:               usage,
 		StopReason:          "completed",
 		StartedAt:           startedAt,
 		CompletedAt:         completedAt,
@@ -148,6 +152,42 @@ func linkFields(frag *fragment.Fragment, link *fragment.SubagentLink, tags map[s
 	parentIDs = []string{link.ParentGenerationID}
 	tags["codex.link_source"] = "transcript"
 	return conversationID, agentName, parentIDs, metadata
+}
+
+func usageFields(snapshot *codexlog.TokenSnapshot, metadata map[string]any) (sigil.TokenUsage, map[string]any) {
+	if snapshot == nil || !hasPositiveCodexUsage(snapshot.TurnUsage) {
+		return sigil.TokenUsage{}, metadata
+	}
+	usage := sigil.TokenUsage{
+		InputTokens:          snapshot.TurnUsage.InputTokens,
+		OutputTokens:         snapshot.TurnUsage.OutputTokens,
+		TotalTokens:          snapshot.TurnUsage.TotalTokens,
+		CacheReadInputTokens: snapshot.TurnUsage.CachedInputTokens,
+		ReasoningTokens:      snapshot.TurnUsage.ReasoningOutputTokens,
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	if snapshot.Source != "" {
+		metadata["codex.token_usage.source"] = snapshot.Source
+	}
+	if snapshot.ModelContextWindow > 0 {
+		metadata["codex.token_usage.context_window"] = snapshot.ModelContextWindow
+	}
+	metadata["codex.token_usage.total.input_tokens"] = snapshot.TotalUsage.InputTokens
+	metadata["codex.token_usage.total.output_tokens"] = snapshot.TotalUsage.OutputTokens
+	metadata["codex.token_usage.total.cached_input_tokens"] = snapshot.TotalUsage.CachedInputTokens
+	metadata["codex.token_usage.total.reasoning_output_tokens"] = snapshot.TotalUsage.ReasoningOutputTokens
+	metadata["codex.token_usage.total.total_tokens"] = snapshot.TotalUsage.TotalTokens
+	return usage, metadata
+}
+
+func hasPositiveCodexUsage(u codexlog.TokenUsage) bool {
+	return u.InputTokens > 0 ||
+		u.CachedInputTokens > 0 ||
+		u.OutputTokens > 0 ||
+		u.ReasoningOutputTokens > 0 ||
+		u.TotalTokens > 0
 }
 
 func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (input, output []sigil.Message) {

@@ -1,6 +1,7 @@
 package hook
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -269,6 +271,79 @@ func TestStopSuccessfulExportDeletesFragmentAndUsesAuth(t *testing.T) {
 	}
 }
 
+func TestStopExportsRolloutTokenUsage(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	logger := log.New(io.Discard, "", 0)
+	var body []byte
+	var requestCount atomic.Int64
+	server := newTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		var err error
+		body, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	t.Setenv("SIGIL_ENDPOINT", server.URL)
+	t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+	t.Setenv("SIGIL_AUTH_TOKEN", "token")
+
+	transcript := writeHookTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"previous"}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10,"reasoning_output_tokens":3,"total_tokens":110},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10,"reasoning_output_tokens":3,"total_tokens":110},"model_context_window":258400}}}`,
+		`{"type":"turn_context","payload":{"turn_id":"turn"}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":170,"cached_input_tokens":60,"output_tokens":25,"reasoning_output_tokens":7,"total_tokens":195},"last_token_usage":{"input_tokens":70,"cached_input_tokens":40,"output_tokens":15,"reasoning_output_tokens":4,"total_tokens":85},"model_context_window":258400}}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":260,"cached_input_tokens":140,"output_tokens":40,"reasoning_output_tokens":12,"total_tokens":300},"last_token_usage":{"input_tokens":90,"cached_input_tokens":80,"output_tokens":15,"reasoning_output_tokens":5,"total_tokens":105},"model_context_window":258400}}}`,
+	)
+	if err := fragment.Update("sess", "turn", logger, func(f *fragment.Fragment) bool {
+		f.Model = "gpt-5.5"
+		f.TranscriptPath = transcript
+		return true
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	Stop(Payload{HookEventName: "Stop", SessionID: "sess", TurnID: "turn"}, config.Config{ContentCapture: sigil.ContentCaptureModeMetadataOnly}, logger)
+
+	if requestCount.Load() != 1 {
+		t.Fatalf("request count = %d, want 1", requestCount.Load())
+	}
+	var req struct {
+		Generations []struct {
+			Usage    map[string]any `json:"usage"`
+			Metadata map[string]any `json:"metadata"`
+		} `json:"generations"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&req); err != nil {
+		t.Fatalf("decode export body %s: %v", string(body), err)
+	}
+	if len(req.Generations) != 1 {
+		t.Fatalf("generations len = %d, want 1; body=%s", len(req.Generations), string(body))
+	}
+	usage := req.Generations[0].Usage
+	if jsonInt64(t, usage["input_tokens"]) != 160 ||
+		jsonInt64(t, usage["cache_read_input_tokens"]) != 120 ||
+		jsonInt64(t, usage["output_tokens"]) != 30 ||
+		jsonInt64(t, usage["reasoning_tokens"]) != 9 ||
+		jsonInt64(t, usage["total_tokens"]) != 190 {
+		t.Fatalf("unexpected usage: %+v", usage)
+	}
+	metadata := req.Generations[0].Metadata
+	if jsonInt64(t, metadata["codex.token_usage.total.total_tokens"]) != 300 ||
+		jsonInt64(t, metadata["codex.token_usage.context_window"]) != 258400 ||
+		metadata["codex.token_usage.source"] != "turn_context_delta" {
+		t.Fatalf("unexpected metadata: %+v", metadata)
+	}
+}
+
 func TestStopResolvesSubagentParentGeneration(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
@@ -388,4 +463,27 @@ func writeHookTranscript(t *testing.T, lines ...string) string {
 		t.Fatalf("write transcript: %v", err)
 	}
 	return path
+}
+
+func jsonInt64(t *testing.T, v any) int64 {
+	t.Helper()
+	switch value := v.(type) {
+	case json.Number:
+		n, err := value.Int64()
+		if err != nil {
+			t.Fatalf("parse json number %q: %v", value, err)
+		}
+		return n
+	case string:
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			t.Fatalf("parse json string %q: %v", value, err)
+		}
+		return n
+	case float64:
+		return int64(value)
+	default:
+		t.Fatalf("expected numeric JSON value, got %T (%#v)", v, v)
+	}
+	return 0
 }

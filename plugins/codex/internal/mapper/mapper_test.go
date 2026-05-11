@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/codexlog"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/fragment"
 )
 
@@ -215,5 +216,70 @@ func TestMapPartialSubagentLink(t *testing.T) {
 	}
 	if got.Generation.Metadata["codex.parent_session_id"] != "parent" {
 		t.Fatalf("unexpected metadata: %+v", got.Generation.Metadata)
+	}
+}
+
+func TestMapSetsUsageFromTokenSnapshot(t *testing.T) {
+	f := &fragment.Fragment{
+		SessionID: "sess",
+		TurnID:    "turn",
+		Model:     "gpt-5.5",
+	}
+	snapshot := &codexlog.TokenSnapshot{
+		TurnID: "turn",
+		TurnUsage: codexlog.TokenUsage{
+			InputTokens:           160,
+			CachedInputTokens:     120,
+			OutputTokens:          30,
+			ReasoningOutputTokens: 9,
+			TotalTokens:           190,
+		},
+		TotalUsage: codexlog.TokenUsage{
+			InputTokens:           260,
+			CachedInputTokens:     140,
+			OutputTokens:          40,
+			ReasoningOutputTokens: 12,
+			TotalTokens:           300,
+		},
+		ModelContextWindow: 258400,
+		Source:             "turn_context_delta",
+	}
+
+	got := Map(Inputs{Fragment: f, TokenSnapshot: snapshot, ContentCapture: sigil.ContentCaptureModeMetadataOnly, Now: time.Unix(1, 0)})
+
+	if got.Generation.Usage.InputTokens != 160 ||
+		got.Generation.Usage.CacheReadInputTokens != 120 ||
+		got.Generation.Usage.OutputTokens != 30 ||
+		got.Generation.Usage.ReasoningTokens != 9 ||
+		got.Generation.Usage.TotalTokens != 190 {
+		t.Fatalf("unexpected usage: %+v", got.Generation.Usage)
+	}
+	if got.Generation.Metadata["codex.token_usage.total.input_tokens"] != int64(260) ||
+		got.Generation.Metadata["codex.token_usage.total.cached_input_tokens"] != int64(140) ||
+		got.Generation.Metadata["codex.token_usage.total.output_tokens"] != int64(40) ||
+		got.Generation.Metadata["codex.token_usage.total.reasoning_output_tokens"] != int64(12) ||
+		got.Generation.Metadata["codex.token_usage.total.total_tokens"] != int64(300) ||
+		got.Generation.Metadata["codex.token_usage.context_window"] != int64(258400) ||
+		got.Generation.Metadata["codex.token_usage.source"] != "turn_context_delta" {
+		t.Fatalf("unexpected metadata: %+v", got.Generation.Metadata)
+	}
+	if _, ok := got.Generation.Tags["codex.token_usage.total.total_tokens"]; ok {
+		t.Fatalf("token counts should not be tags: %+v", got.Generation.Tags)
+	}
+}
+
+func TestMapWithoutTokenSnapshotPreservesExistingBehavior(t *testing.T) {
+	f := &fragment.Fragment{
+		SessionID: "sess",
+		TurnID:    "turn",
+		Model:     "gpt-5.5",
+	}
+	got := Map(Inputs{Fragment: f, ContentCapture: sigil.ContentCaptureModeMetadataOnly, Now: time.Unix(1, 0)})
+
+	if got.Generation.Usage != (sigil.TokenUsage{}) {
+		t.Fatalf("Usage = %+v, want zero", got.Generation.Usage)
+	}
+	if got.Generation.Metadata != nil {
+		t.Fatalf("Metadata = %+v, want nil", got.Generation.Metadata)
 	}
 }

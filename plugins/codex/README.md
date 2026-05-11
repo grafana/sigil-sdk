@@ -248,13 +248,33 @@ Stop export is bounded below the Codex hook timeout and uses a reduced retry
 budget so a down Sigil endpoint fails cleanly instead of leaving Codex waiting
 on long SDK backoff.
 
-Current Codex hook payloads do not provide token counts, so this plugin does
-not export token usage or keep placeholder token-usage fields. Current
-documented payloads also do not provide a generic tool status or duration field
-[OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks). Tool
-status is marked as an error only when Codex provides an explicit error/status
-field or a known response shape such as a non-zero `exit_code`; otherwise the
-status is left unknown.
+Codex hook payloads do not place token counts directly in hook stdin, but they
+can include `transcript_path`. On `Stop`, the plugin reads the Codex rollout
+JSONL at that path and looks for `event_msg` records whose payload type is
+`token_count`. It attributes those records by the active `turn_context.turn_id`
+and computes Sigil generation usage from the completed turn's cumulative
+`total_token_usage` delta, not from `last_token_usage`. That avoids
+undercounting turns that make more than one model sampling call before `Stop`.
+If Codex emits a `token_count` immediately after `turn_context` but before any
+assistant model activity, the plugin treats it as the resumed-thread baseline
+rather than usage for the new turn.
+If the rollout is missing, malformed, oversized, or cannot be attributed
+unambiguously, the generation still exports without usage
+[`codexlog.go`](internal/codexlog/codexlog.go),
+[`handlers.go`](internal/hook/handlers.go).
+
+When usage is available, the plugin sets Sigil `Generation.Usage` fields for
+input, output, total, cache-read, and reasoning tokens. It stores final
+cumulative totals and context window as generation metadata, not tags, to avoid
+high-cardinality tag values [`mapper.go`](internal/mapper/mapper.go). The plugin
+does not calculate monetary cost; cost should be derived downstream from the
+provider, model, and token counts when pricing metadata is available.
+
+Current documented payloads do not provide a generic tool status or duration
+field [OpenAI Codex hooks docs](https://developers.openai.com/codex/hooks).
+Tool status is marked as an error only when Codex provides an explicit
+error/status field or a known response shape such as a non-zero `exit_code`;
+otherwise the status is left unknown.
 Codex `PostToolUse` currently covers supported hook tools such as Bash,
 `apply_patch`, and MCP calls; it does not cover every shell execution path,
 WebSearch, or other non-shell, non-MCP tools

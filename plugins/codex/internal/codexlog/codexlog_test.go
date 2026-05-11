@@ -116,6 +116,130 @@ func TestResolveSpawnLinkMalformedOutputFailsOpen(t *testing.T) {
 	}
 }
 
+func TestReadTokenUsageForTurnUsesCumulativeDelta(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"turn-1"}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10,"reasoning_output_tokens":3,"total_tokens":110},"last_token_usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":10,"reasoning_output_tokens":3,"total_tokens":110},"model_context_window":200000}}}`,
+		`{"type":"turn_context","payload":{"turn_id":"turn-2"}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":170,"cached_input_tokens":60,"output_tokens":25,"reasoning_output_tokens":7,"total_tokens":195},"last_token_usage":{"input_tokens":70,"cached_input_tokens":40,"output_tokens":15,"reasoning_output_tokens":4,"total_tokens":85},"model_context_window":200000}}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":260,"cached_input_tokens":140,"output_tokens":40,"reasoning_output_tokens":12,"total_tokens":300},"last_token_usage":{"input_tokens":90,"cached_input_tokens":80,"output_tokens":15,"reasoning_output_tokens":5,"total_tokens":105},"model_context_window":200000}}}`,
+	)
+
+	got, ok, err := ReadTokenUsageForTurn(path, "turn-2")
+	if err != nil {
+		t.Fatalf("ReadTokenUsageForTurn: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected token usage")
+	}
+	want := TokenUsage{InputTokens: 160, CachedInputTokens: 120, OutputTokens: 30, ReasoningOutputTokens: 9, TotalTokens: 190}
+	if got.TurnUsage != want {
+		t.Fatalf("TurnUsage = %+v, want %+v", got.TurnUsage, want)
+	}
+	if got.LastUsage.TotalTokens != 105 {
+		t.Fatalf("LastUsage.TotalTokens = %d, want final sample 105", got.LastUsage.TotalTokens)
+	}
+	if got.BaselineUsage.TotalTokens != 110 || got.TotalUsage.TotalTokens != 300 || got.ModelContextWindow != 200000 || got.Source != "turn_context_delta" {
+		t.Fatalf("unexpected snapshot: %+v", got)
+	}
+}
+
+func TestReadTokenUsageForTurnUsesZeroBaselineForFirstTurn(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"turn-1"}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3,"reasoning_output_tokens":1,"total_tokens":13},"last_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3,"reasoning_output_tokens":1,"total_tokens":13},"model_context_window":128000}}}`,
+	)
+
+	got, ok, err := ReadTokenUsageForTurn(path, "turn-1")
+	if err != nil {
+		t.Fatalf("ReadTokenUsageForTurn: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected token usage")
+	}
+	want := TokenUsage{InputTokens: 10, CachedInputTokens: 2, OutputTokens: 3, ReasoningOutputTokens: 1, TotalTokens: 13}
+	if got.TurnUsage != want {
+		t.Fatalf("TurnUsage = %+v, want %+v", got.TurnUsage, want)
+	}
+}
+
+func TestReadTokenUsageForTurnUsesPreModelTokenCountAsBaseline(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"turn-1"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":900,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":1050},"last_token_usage":{"input_tokens":200,"cached_input_tokens":100,"output_tokens":50,"reasoning_output_tokens":10,"total_tokens":250},"model_context_window":128000}}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1120,"cached_input_tokens":980,"output_tokens":80,"reasoning_output_tokens":20,"total_tokens":1200},"last_token_usage":{"input_tokens":120,"cached_input_tokens":80,"output_tokens":30,"reasoning_output_tokens":10,"total_tokens":150},"model_context_window":128000}}}`,
+	)
+
+	got, ok, err := ReadTokenUsageForTurn(path, "turn-1")
+	if err != nil {
+		t.Fatalf("ReadTokenUsageForTurn: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected token usage")
+	}
+	want := TokenUsage{InputTokens: 120, CachedInputTokens: 80, OutputTokens: 30, ReasoningOutputTokens: 10, TotalTokens: 150}
+	if got.TurnUsage != want {
+		t.Fatalf("TurnUsage = %+v, want %+v", got.TurnUsage, want)
+	}
+	if got.BaselineUsage.TotalTokens != 1050 {
+		t.Fatalf("BaselineUsage.TotalTokens = %d, want 1050", got.BaselineUsage.TotalTokens)
+	}
+}
+
+func TestReadTokenUsageForTurnIgnoresNullInfo(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"turn-1"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"plan_type":"pro"}}}`,
+	)
+
+	_, ok, err := ReadTokenUsageForTurn(path, "turn-1")
+	if err != nil {
+		t.Fatalf("ReadTokenUsageForTurn: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no usage for null info")
+	}
+}
+
+func TestReadTokenUsageForTurnRequiresBaselineForLaterTurn(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"turn-1"}}`,
+		`{"type":"turn_context","payload":{"turn_id":"turn-2"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15},"last_token_usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}}`,
+	)
+
+	_, ok, err := ReadTokenUsageForTurn(path, "turn-2")
+	if err != nil {
+		t.Fatalf("ReadTokenUsageForTurn: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no usage without a baseline for a later turn")
+	}
+}
+
+func TestReadTokenUsageForTurnRejectsNegativeDelta(t *testing.T) {
+	path := writeTranscript(t,
+		`{"type":"turn_context","payload":{"turn_id":"turn-1"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110},"last_token_usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110}}}}`,
+		`{"type":"turn_context","payload":{"turn_id":"turn-2"}}`,
+		`{"type":"response_item","payload":{"type":"reasoning"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":90,"output_tokens":10,"total_tokens":100},"last_token_usage":{"input_tokens":90,"output_tokens":10,"total_tokens":100}}}}`,
+	)
+
+	_, ok, err := ReadTokenUsageForTurn(path, "turn-2")
+	if err != nil {
+		t.Fatalf("ReadTokenUsageForTurn: %v", err)
+	}
+	if ok {
+		t.Fatal("expected no usage for negative cumulative delta")
+	}
+}
+
 func TestReadSessionMetaRejectsOversizedLine(t *testing.T) {
 	path := writeTranscript(t, strings.Repeat("x", maxLineBytes+1))
 

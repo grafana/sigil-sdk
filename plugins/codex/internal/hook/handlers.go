@@ -135,6 +135,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 	subagentLink := resolveSubagentLinkForStop(p, frag, logger)
+	tokenSnapshot := tokenSnapshotForStop(p, frag, logger)
 	ctx, cancel := context.WithTimeout(context.Background(), stopExportTimeout)
 	defer cancel()
 	providers := setupOTelIfConfigured(ctx, logger)
@@ -146,7 +147,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		}()
 	}
 	client := buildClient(cfg, providers, logger)
-	mapped := mapper.Map(mapper.Inputs{Fragment: frag, SubagentLink: subagentLink, ContentCapture: cfg.ContentCapture})
+	mapped := mapper.Map(mapper.Inputs{Fragment: frag, SubagentLink: subagentLink, TokenSnapshot: tokenSnapshot, ContentCapture: cfg.ContentCapture})
 	logger.Printf("stop: export id=%s conversation=%s agent=%s model=%s", mapped.Generation.ID, mapped.Generation.ConversationID, mapped.Generation.AgentName, mapped.Generation.Model.Name)
 	if err := emitGeneration(ctx, client, frag, mapped, cfg.ContentCapture, logger); err != nil {
 		logger.Printf("stop: emit: %v", err)
@@ -168,6 +169,23 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 	logger.Printf("stop: emitted session=%s turn=%s", p.SessionID, p.TurnID)
+}
+
+func tokenSnapshotForStop(p Payload, frag *fragment.Fragment, logger *log.Logger) *codexlog.TokenSnapshot {
+	path := firstNonEmpty(frag.TranscriptPath, p.TranscriptPath)
+	if path == "" || p.TurnID == "" {
+		return nil
+	}
+	snapshot, ok, err := codexlog.ReadTokenUsageForTurn(path, p.TurnID)
+	if err != nil {
+		logger.Printf("token usage: read %s: %v", path, err)
+		return nil
+	}
+	if !ok {
+		logger.Printf("token usage: no attributable snapshot for turn=%s", p.TurnID)
+		return nil
+	}
+	return &snapshot
 }
 
 func recordSubagentLink(sessionID, transcriptPath string, logger *log.Logger) *fragment.SubagentLink {

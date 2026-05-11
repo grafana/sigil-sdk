@@ -30,6 +30,30 @@ type SpawnLink struct {
 	AgentNickname      string
 }
 
+type TokenUsage struct {
+	InputTokens           int64 `json:"input_tokens"`
+	CachedInputTokens     int64 `json:"cached_input_tokens"`
+	OutputTokens          int64 `json:"output_tokens"`
+	ReasoningOutputTokens int64 `json:"reasoning_output_tokens"`
+	TotalTokens           int64 `json:"total_tokens"`
+}
+
+type TokenUsageInfo struct {
+	TotalTokenUsage    TokenUsage `json:"total_token_usage"`
+	LastTokenUsage     TokenUsage `json:"last_token_usage"`
+	ModelContextWindow int64      `json:"model_context_window"`
+}
+
+type TokenSnapshot struct {
+	TurnID             string
+	TurnUsage          TokenUsage
+	BaselineUsage      TokenUsage
+	LastUsage          TokenUsage
+	TotalUsage         TokenUsage
+	ModelContextWindow int64
+	Source             string
+}
+
 type line struct {
 	Type    string          `json:"type"`
 	Payload json.RawMessage `json:"payload"`
@@ -115,6 +139,108 @@ func ResolveSpawnLink(parentTranscriptPath, childSessionID string, generationID 
 	return found, ok, err
 }
 
+func ReadTokenUsageForTurn(path, turnID string) (TokenSnapshot, bool, error) {
+	if path == "" || turnID == "" {
+		return TokenSnapshot{}, false, nil
+	}
+
+	var (
+		activeTurnID      string
+		seenAnyTurn       bool
+		targetStarted     bool
+		targetIsFirstTurn bool
+		targetModelActive bool
+		haveBaseline      bool
+		baseline          TokenUsage
+		haveLastTotal     bool
+		lastTotal         TokenUsage
+		haveFinal         bool
+		finalInfo         TokenUsageInfo
+	)
+
+	err := scanJSONLines(path, func(raw []byte) (bool, error) {
+		var l line
+		if err := json.Unmarshal(raw, &l); err != nil {
+			return false, nil
+		}
+		switch l.Type {
+		case "turn_context":
+			nextTurnID := parseTurnID(l.Payload)
+			if nextTurnID == "" {
+				return false, nil
+			}
+			if !seenAnyTurn {
+				targetIsFirstTurn = nextTurnID == turnID
+			}
+			seenAnyTurn = true
+			activeTurnID = nextTurnID
+			if nextTurnID == turnID && !targetStarted {
+				targetStarted = true
+				targetModelActive = false
+				if haveLastTotal {
+					baseline = lastTotal
+					haveBaseline = true
+				}
+			}
+		case "response_item":
+			if activeTurnID != turnID || !targetStarted {
+				return false, nil
+			}
+			item, ok := parseResponseItem(l.Payload)
+			if !ok {
+				return false, nil
+			}
+			if isModelActivity(item) {
+				targetModelActive = true
+			}
+		case "event_msg":
+			info, ok := parseTokenUsageInfo(l.Payload)
+			if !ok {
+				return false, nil
+			}
+			if activeTurnID == turnID && targetStarted {
+				if !targetModelActive {
+					baseline = info.TotalTokenUsage
+					haveBaseline = true
+					lastTotal = info.TotalTokenUsage
+					haveLastTotal = true
+					return false, nil
+				}
+				finalInfo = info
+				haveFinal = true
+			}
+			lastTotal = info.TotalTokenUsage
+			haveLastTotal = true
+		}
+		return false, nil
+	})
+	if err != nil {
+		return TokenSnapshot{}, false, err
+	}
+	if !targetStarted || !haveFinal {
+		return TokenSnapshot{}, false, nil
+	}
+	if !haveBaseline {
+		if !targetIsFirstTurn {
+			return TokenSnapshot{}, false, nil
+		}
+		baseline = TokenUsage{}
+	}
+	turnUsage, ok := subtractUsage(finalInfo.TotalTokenUsage, baseline)
+	if !ok || !hasPositiveUsage(turnUsage) {
+		return TokenSnapshot{}, false, nil
+	}
+	return TokenSnapshot{
+		TurnID:             turnID,
+		TurnUsage:          turnUsage,
+		BaselineUsage:      baseline,
+		LastUsage:          finalInfo.LastTokenUsage,
+		TotalUsage:         finalInfo.TotalTokenUsage,
+		ModelContextWindow: finalInfo.ModelContextWindow,
+		Source:             "turn_context_delta",
+	}, true, nil
+}
+
 func scanJSONLines(path string, visit func(raw []byte) (bool, error)) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -192,11 +318,63 @@ func parseTurnID(raw json.RawMessage) string {
 	return p.TurnID
 }
 
+func parseTokenUsageInfo(raw json.RawMessage) (TokenUsageInfo, bool) {
+	var p struct {
+		Type string          `json:"type"`
+		Info *TokenUsageInfo `json:"info"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return TokenUsageInfo{}, false
+	}
+	if p.Type != "token_count" || p.Info == nil {
+		return TokenUsageInfo{}, false
+	}
+	return *p.Info, true
+}
+
+func subtractUsage(final, baseline TokenUsage) (TokenUsage, bool) {
+	out := TokenUsage{
+		InputTokens:           final.InputTokens - baseline.InputTokens,
+		CachedInputTokens:     final.CachedInputTokens - baseline.CachedInputTokens,
+		OutputTokens:          final.OutputTokens - baseline.OutputTokens,
+		ReasoningOutputTokens: final.ReasoningOutputTokens - baseline.ReasoningOutputTokens,
+		TotalTokens:           final.TotalTokens - baseline.TotalTokens,
+	}
+	if out.InputTokens < 0 ||
+		out.CachedInputTokens < 0 ||
+		out.OutputTokens < 0 ||
+		out.ReasoningOutputTokens < 0 ||
+		out.TotalTokens < 0 {
+		return TokenUsage{}, false
+	}
+	return out, true
+}
+
+func hasPositiveUsage(u TokenUsage) bool {
+	return u.InputTokens > 0 ||
+		u.CachedInputTokens > 0 ||
+		u.OutputTokens > 0 ||
+		u.ReasoningOutputTokens > 0 ||
+		u.TotalTokens > 0
+}
+
 type responseItem struct {
 	Type   string          `json:"type"`
+	Role   string          `json:"role"`
 	Name   string          `json:"name"`
 	CallID string          `json:"call_id"`
 	Output json.RawMessage `json:"output"`
+}
+
+func isModelActivity(item responseItem) bool {
+	switch item.Type {
+	case "reasoning", "function_call", "custom_tool_call", "local_shell_call":
+		return true
+	case "message":
+		return item.Role == "assistant"
+	default:
+		return false
+	}
 }
 
 func parseResponseItem(raw json.RawMessage) (responseItem, bool) {
