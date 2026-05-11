@@ -4,12 +4,22 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to tag (e.g. 0.2.0)'
+        description: 'Semver bump type (major / minor / patch)'
         required: true
-        type: string
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      dry-run:
+        description: 'Preview only, do not create or push tags'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   tag:
@@ -41,17 +51,19 @@ jobs:
         with:
           token: ${{ steps.generate-github-token.outputs.token }}
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup Git
         run: |
           git config user.name 'grafana-plugins-platform-bot[bot]'
           git config user.email '144369747+grafana-plugins-platform-bot[bot]@users.noreply.github.com'
 
-      - name: Tag all Go modules
+      - name: Compute next version and tag all Go modules
+        shell: bash
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          BUMP: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
         run: |
-          VERSION="v${INPUT_VERSION}"
           MODULES=(
             go
             go-providers/anthropic
@@ -59,8 +71,46 @@ jobs:
             go-providers/gemini
             go-frameworks/google-adk
           )
+
+          # Source of truth for "current" = latest tag on the core `go` module.
+          # All modules are released in lockstep, so this drives the next bump.
+          CURRENT=$(git tag -l 'go/v*' | sed 's|go/v||' | sort -V | tail -1)
+          CURRENT=${CURRENT:-0.0.0}
+
+          NEW=$(npx --yes semver@7 -i "$BUMP" "$CURRENT")
+          VERSION="v${NEW}"
+
+          # Sanity check: refuse to tag if NEW isn't strictly greater than CURRENT.
+          if ! npx --yes semver@7 -r ">${CURRENT}" "${NEW}" >/dev/null; then
+            echo "Refusing to tag: ${NEW} is not strictly greater than ${CURRENT}"
+            exit 1
+          fi
+
+          {
+            echo "## Go SDK release plan"
+            echo ""
+            echo "- bump type: \`${BUMP}\`"
+            echo "- current: \`v${CURRENT}\`"
+            echo "- new: \`${VERSION}\`"
+            echo "- dry-run: \`${DRY_RUN}\`"
+            echo ""
+            echo "Tags to create:"
+            for mod in "${MODULES[@]}"; do echo "- \`${mod}/${VERSION}\`"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Bumping Go SDK modules: ${CURRENT} -> ${NEW}"
+
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "Dry run: not creating or pushing tags."
+            exit 0
+          fi
+
           for mod in "${MODULES[@]}"; do
             TAG="${mod}/${VERSION}"
+            if git rev-parse "${TAG}" >/dev/null 2>&1; then
+              echo "Tag ${TAG} already exists, skipping"
+              continue
+            fi
             echo "Tagging ${TAG}"
             git tag -a "${TAG}" -m "${mod} ${VERSION}"
           done
