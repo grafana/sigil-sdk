@@ -59,6 +59,17 @@ export default function (pi: ExtensionAPI) {
   let telemetry: TelemetryProviders | null = null;
 
   let turnStartTime = 0;
+  // Earliest `message_update` event observed in the current turn. Pi emits
+  // `message_update` for streaming text/thinking/toolcall blocks coming back
+  // from the provider, so the first one is a faithful TTFT signal.
+  // 0 means: no streamed chunk seen yet for this turn.
+  let firstTokenTime = 0;
+  // Time the assistant `message_end` fired for this turn. Pi's agent loop
+  // emits message_end (assistant) immediately after the provider stream's
+  // `done`/`error` event, *before* any subsequent tool execution in the
+  // same turn, so this is the actual completion time of the model call.
+  // 0 means: no assistant message_end seen yet for this turn.
+  let assistantMessageEndTime = 0;
 
   function debugLog(msg: string, ...args: unknown[]) {
     if (config?.debug) console.error(`[sigil-pi] ${msg}`, ...args);
@@ -78,6 +89,8 @@ export default function (pi: ExtensionAPI) {
 
   function resetTurnState() {
     turnStartTime = 0;
+    firstTokenTime = 0;
+    assistantMessageEndTime = 0;
     toolStarts.clear();
     turnToolTimings.length = 0;
   }
@@ -157,12 +170,35 @@ export default function (pi: ExtensionAPI) {
     if (!sigil || !config) return;
     try {
       const message = (event as { message?: unknown }).message;
+      const role = (message as { role?: string } | null | undefined)?.role;
+      if (role === "assistant") {
+        // First write wins: pi emits exactly one assistant message_end per
+        // turn, but guard against stray duplicates from extensions so a
+        // later (post-tool) timestamp can't displace the real one.
+        if (assistantMessageEndTime === 0) {
+          assistantMessageEndTime = Date.now();
+        }
+        return;
+      }
       if (!isUserMessage(message)) return;
       const mapped = mapUserMessage(message, config.contentCapture);
       if (mapped) pendingInputMessages.push(mapped);
     } catch (err) {
       console.warn("[sigil-pi] message_end failed:", err);
     }
+  });
+
+  // Record the first streamed chunk of an assistant message as the TTFT
+  // signal. Pi only emits `message_update` for streamed assistant blocks
+  // (text/thinking/toolcall *_start, *_delta, *_end events from
+  // AssistantMessageEventStream), so any first occurrence reflects the
+  // moment the provider began producing output for this turn.
+  pi.on("message_update", async (event, _ctx) => {
+    if (!sigil) return;
+    if (firstTokenTime !== 0) return;
+    const role = (event as { message?: { role?: string } }).message?.role;
+    if (role !== "assistant") return;
+    firstTokenTime = Date.now();
   });
 
   pi.on("tool_execution_start", async (event, _ctx) => {
@@ -221,10 +257,15 @@ export default function (pi: ExtensionAPI) {
       // (session-manager.d.ts: ReadonlySessionManager).
       const conversationId = ctx.sessionManager.getSessionId() || undefined;
 
-      // Ensure startedAt <= completedAt (msg.timestamp). The provider sets
-      // msg.timestamp via Date.now() when creating the message object, which
-      // is normally after turn_start, but clock adjustments can invert them.
-      const completedAtMs = msg.timestamp;
+      // Prefer the assistant `message_end` timestamp captured above (fires
+      // right after the provider stream ends, before tools execute). Fall
+      // back to `msg.timestamp` only when no assistant message_end was
+      // observed — pi providers set `msg.timestamp` when constructing the
+      // assistant message object (before the HTTP request), so it sits near
+      // turnStartTime, not at stream completion. The Math.min clamp guards
+      // against clock adjustments inverting startedAt and completedAt.
+      const completedAtMs =
+        assistantMessageEndTime > 0 ? assistantMessageEndTime : msg.timestamp;
       const startedAtMs = Math.min(
         turnStartTime || completedAtMs,
         completedAtMs,
@@ -247,10 +288,18 @@ export default function (pi: ExtensionAPI) {
         toolResults,
         contentCapture,
         pendingInputMessages.slice(),
+        completedAtMs,
       );
 
       try {
-        await sigil.startGeneration(seed, async (recorder) => {
+        // Pi streams provider responses (see message_update handler above),
+        // so generations are exported with mode=STREAM. The SDK only records
+        // the gen_ai.client.time_to_first_token histogram when the operation
+        // is `streamText`, which `startStreamingGeneration` sets by default.
+        await sigil.startStreamingGeneration(seed, async (recorder) => {
+          if (firstTokenTime > 0) {
+            recorder.setFirstTokenAt(new Date(firstTokenTime));
+          }
           recorder.setResult(result);
           if (msg.errorMessage) {
             recorder.setCallError(new Error(msg.errorMessage));
