@@ -162,6 +162,31 @@ test('executeToolCalls empty messages', async () => {
   }
 });
 
+test('executeToolCalls serializes number/boolean results as contentJSON', async () => {
+  const { client } = newHarness();
+  try {
+    const out = await client.executeToolCalls(
+      [
+        {
+          role: 'assistant',
+          parts: [
+            { type: 'tool_call', toolCall: { id: 'n1', name: 'num', inputJSON: '{}' } },
+            { type: 'tool_call', toolCall: { id: 'b1', name: 'bool', inputJSON: '{}' } },
+          ],
+        },
+      ],
+      (name) => (name === 'num' ? 42 : true),
+    );
+    assert.equal(out.length, 2);
+    assert.equal(out[0].parts[0].toolResult.contentJSON, '42');
+    assert.equal(out[0].parts[0].toolResult.content, '');
+    assert.equal(out[1].parts[0].toolResult.contentJSON, 'true');
+    assert.equal(out[1].parts[0].toolResult.content, '');
+  } finally {
+    await client.shutdown();
+  }
+});
+
 test('executeToolCalls skips blank tool name', async () => {
   const { client, spanExporter } = newHarness();
   try {

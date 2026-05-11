@@ -167,9 +167,6 @@ function serializeToolResultPayload(value: unknown): { content: string; contentJ
   if (typeof value === 'string') {
     return { content: value };
   }
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return { content: String(value) };
-  }
   try {
     return { content: '', contentJSON: JSON.stringify(value) };
   } catch {
