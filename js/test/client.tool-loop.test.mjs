@@ -120,7 +120,10 @@ test('executeToolCalls propagates executor errors', async () => {
 test('executeToolCalls no tool parts', async () => {
   const { client, spanExporter } = newHarness();
   try {
-    const out = await client.executeToolCalls([{ role: 'assistant', parts: [{ type: 'text', text: 'hi' }] }], () => null);
+    const out = await client.executeToolCalls(
+      [{ role: 'assistant', parts: [{ type: 'text', text: 'hi' }] }],
+      () => null,
+    );
     assert.deepEqual(out, []);
     assert.deepEqual(toolSpanNames(spanExporter), []);
   } finally {
@@ -132,7 +135,12 @@ test('executeToolCalls single tool', async () => {
   const { client, spanExporter } = newHarness();
   try {
     const out = await client.executeToolCalls(
-      [{ role: 'assistant', parts: [{ type: 'tool_call', toolCall: { id: 'id1', name: 'echo', inputJSON: '{"x":1}' } }] }],
+      [
+        {
+          role: 'assistant',
+          parts: [{ type: 'tool_call', toolCall: { id: 'id1', name: 'echo', inputJSON: '{"x":1}' } }],
+        },
+      ],
       (_n, a) => a,
     );
     assert.equal(out.length, 1);

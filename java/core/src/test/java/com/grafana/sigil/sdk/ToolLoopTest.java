@@ -59,7 +59,11 @@ class ToolLoopTest {
                         if ("weather".equals(name)) {
                             return Map.of("temp_c", 18);
                         }
-                        return Json.MAPPER.readValue(bytes, Object.class);
+                        try {
+                            return Json.MAPPER.readValue(bytes, Object.class);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
                     },
                     opts);
 

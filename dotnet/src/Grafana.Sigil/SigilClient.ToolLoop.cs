@@ -16,7 +16,10 @@ public sealed partial class SigilClient
     )
     {
         EnsureNotShutdown();
-        ArgumentNullException.ThrowIfNull(executor);
+        if (executor is null)
+        {
+            throw new ArgumentNullException(nameof(executor));
+        }
 
         var opts = options ?? new ExecuteToolCallsOptions();
         var toolType = string.IsNullOrWhiteSpace(opts.ToolType) ? "function" : opts.ToolType.Trim();

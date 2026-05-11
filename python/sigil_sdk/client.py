@@ -64,8 +64,8 @@ from .models import (
     ToolExecutionStart,
     ToolResult,
     WorkflowStep,
-    tool_result_part,
     _metadata_key_content_capture_mode,
+    tool_result_part,
 )
 from .proto_mapping import generation_to_proto
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation
