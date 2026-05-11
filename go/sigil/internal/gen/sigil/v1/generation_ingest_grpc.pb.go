@@ -120,3 +120,106 @@ var GenerationIngestService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "sigil/v1/generation_ingest.proto",
 }
+
+const (
+	WorkflowStepIngestService_ExportWorkflowSteps_FullMethodName = "/sigil.v1.WorkflowStepIngestService/ExportWorkflowSteps"
+)
+
+// WorkflowStepIngestServiceClient is the client API for WorkflowStepIngestService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type WorkflowStepIngestServiceClient interface {
+	ExportWorkflowSteps(ctx context.Context, in *ExportWorkflowStepsRequest, opts ...grpc.CallOption) (*ExportWorkflowStepsResponse, error)
+}
+
+type workflowStepIngestServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewWorkflowStepIngestServiceClient(cc grpc.ClientConnInterface) WorkflowStepIngestServiceClient {
+	return &workflowStepIngestServiceClient{cc}
+}
+
+func (c *workflowStepIngestServiceClient) ExportWorkflowSteps(ctx context.Context, in *ExportWorkflowStepsRequest, opts ...grpc.CallOption) (*ExportWorkflowStepsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExportWorkflowStepsResponse)
+	err := c.cc.Invoke(ctx, WorkflowStepIngestService_ExportWorkflowSteps_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// WorkflowStepIngestServiceServer is the server API for WorkflowStepIngestService service.
+// All implementations must embed UnimplementedWorkflowStepIngestServiceServer
+// for forward compatibility.
+type WorkflowStepIngestServiceServer interface {
+	ExportWorkflowSteps(context.Context, *ExportWorkflowStepsRequest) (*ExportWorkflowStepsResponse, error)
+	mustEmbedUnimplementedWorkflowStepIngestServiceServer()
+}
+
+// UnimplementedWorkflowStepIngestServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedWorkflowStepIngestServiceServer struct{}
+
+func (UnimplementedWorkflowStepIngestServiceServer) ExportWorkflowSteps(context.Context, *ExportWorkflowStepsRequest) (*ExportWorkflowStepsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExportWorkflowSteps not implemented")
+}
+func (UnimplementedWorkflowStepIngestServiceServer) mustEmbedUnimplementedWorkflowStepIngestServiceServer() {
+}
+func (UnimplementedWorkflowStepIngestServiceServer) testEmbeddedByValue() {}
+
+// UnsafeWorkflowStepIngestServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to WorkflowStepIngestServiceServer will
+// result in compilation errors.
+type UnsafeWorkflowStepIngestServiceServer interface {
+	mustEmbedUnimplementedWorkflowStepIngestServiceServer()
+}
+
+func RegisterWorkflowStepIngestServiceServer(s grpc.ServiceRegistrar, srv WorkflowStepIngestServiceServer) {
+	// If the following call panics, it indicates UnimplementedWorkflowStepIngestServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&WorkflowStepIngestService_ServiceDesc, srv)
+}
+
+func _WorkflowStepIngestService_ExportWorkflowSteps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExportWorkflowStepsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkflowStepIngestServiceServer).ExportWorkflowSteps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkflowStepIngestService_ExportWorkflowSteps_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkflowStepIngestServiceServer).ExportWorkflowSteps(ctx, req.(*ExportWorkflowStepsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// WorkflowStepIngestService_ServiceDesc is the grpc.ServiceDesc for WorkflowStepIngestService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var WorkflowStepIngestService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "sigil.v1.WorkflowStepIngestService",
+	HandlerType: (*WorkflowStepIngestServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ExportWorkflowSteps",
+			Handler:    _WorkflowStepIngestService_ExportWorkflowSteps_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "sigil/v1/generation_ingest.proto",
+}
