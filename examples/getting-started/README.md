@@ -2,21 +2,27 @@
 
 Minimal, self-contained examples that make a real LLM call and record the generation to Grafana Cloud AI Observability. Pick your language and you should be up and running in under five minutes.
 
-| Language | Directory | LLM provider |
-|----------|-----------|--------------|
-| Python | [`python/`](python/) | OpenAI |
-| Python + Strands | [`python-strands/`](python-strands/) | OpenAI by default, Sigil Cloud |
-| TypeScript | [`typescript/`](typescript/) | OpenAI |
-| TypeScript + Strands | [`typescript-strands/`](typescript-strands/) | OpenAI by default, Sigil Cloud |
-| Go | [`go/`](go/) | OpenAI |
+### Single generation
 
-Each example:
 
-1. Configures OpenTelemetry (TracerProvider + MeterProvider) so SDK-emitted spans and metrics are exported.
-2. Creates an OpenAI client and sends a chat completion request.
-3. Creates an SDK client authenticated against Grafana Cloud.
-4. Records the generation (input, output, token usage, model metadata).
-5. Shuts down cleanly (Sigil client first, then OTel providers).
+| Language             | Directory                                    | LLM provider                   |
+| -------------------- | -------------------------------------------- | ------------------------------ |
+| Python               | `[python/](python/)`                         | OpenAI                         |
+| Python + Strands     | `[python-strands/](python-strands/)`         | OpenAI by default, Sigil Cloud |
+| TypeScript           | `[typescript/](typescript/)`                 | OpenAI                         |
+| TypeScript + Strands | `[typescript-strands/](typescript-strands/)` | OpenAI by default, Sigil Cloud |
+| Go                   | `[go/](go/)`                                 | OpenAI                         |
+
+
+### Multi-agent dependency graph
+
+
+| Language | Directory                                    | LLM provider      |
+| -------- | -------------------------------------------- | ----------------- |
+| Python   | `[python-multi-agent/](python-multi-agent/)` | OpenAI            |
+
+
+Each example configures OpenTelemetry, creates an SDK client, makes LLM calls, records generations, and shuts down cleanly.
 
 ## Credentials
 
@@ -46,4 +52,4 @@ After running an example, open the AI Observability plugin in your Grafana Cloud
 
 - **Provider wrappers** — reduce boilerplate by using pre-built wrappers for [OpenAI](../../go-providers/openai/), [Anthropic](../../python-providers/anthropic/), and [Gemini](../../go-providers/gemini/).
 - **Framework adapters** — instrument [LangChain](../../python-frameworks/langchain/), [Strands Agents for Python](../../python-frameworks/strands/), [Strands Agents for TypeScript](../../js/docs/frameworks/strands.md), [Vercel AI SDK](../../js/docs/frameworks/vercel-ai-sdk.md), [Google ADK](../../go-frameworks/google-adk/), and more with a single line.
-- **Full example app** — see [`examples/python-langchain/`](../python-langchain/) for a FastAPI service with LangChain agent + manual instrumentation side by side.
+- **Full example app** — see `[examples/python-langchain/](../python-langchain/)` for a FastAPI service with LangChain agent + manual instrumentation side by side.
