@@ -337,6 +337,21 @@ class ToolExecutionEnd:
 
 
 @dataclass(slots=True)
+class ExecuteToolCallsOptions:
+    """Options for :meth:`sigil_sdk.client.Client.execute_tool_calls`."""
+
+    conversation_id: str = ""
+    conversation_title: str = ""
+    agent_name: str = ""
+    agent_version: str = ""
+    content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT
+    request_model: str = ""
+    request_provider: str = ""
+    tool_type: str = "function"
+    tags: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class ExportGenerationResult:
     """Per-item generation ingest result."""
 

@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.function.BiFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -387,6 +388,71 @@ public final class SigilClient implements AutoCloseable {
                 throw new RuntimeException(throwable);
             }
         }
+    }
+
+    /**
+     * Walks assistant tool-call parts in {@code messages}, records {@code execute_tool} spans, and returns
+     * tool-role messages with tool-result parts for the next model turn.
+     *
+     * <p>The {@code executor} receives the tool name and raw {@code input_json} bytes (use {@code "{}"} when
+     * empty).</p>
+     */
+    public List<Message> executeToolCalls(
+            List<Message> messages, BiFunction<String, byte[], Object> executor, ExecuteToolCallsOptions options) {
+        assertOpen();
+        if (executor == null) {
+            throw new IllegalArgumentException("executor is required");
+        }
+        ExecuteToolCallsOptions opts = options == null ? new ExecuteToolCallsOptions() : options;
+        String toolType = opts.getToolType().isBlank() ? "function" : opts.getToolType().trim();
+        List<Message> out = new ArrayList<>();
+        if (messages == null) {
+            return out;
+        }
+        for (Message msg : messages) {
+            for (MessagePart part : msg.getParts()) {
+                if (part.getKind() != MessagePartKind.TOOL_CALL || part.getToolCall() == null) {
+                    continue;
+                }
+                ToolCall tc = part.getToolCall();
+                String name = tc.getName() == null ? "" : tc.getName().trim();
+                if (name.isEmpty()) {
+                    continue;
+                }
+                String callId = tc.getId() == null ? "" : tc.getId().trim();
+                byte[] rawArgs = tc.getInputJson();
+                if (rawArgs == null || rawArgs.length == 0) {
+                    rawArgs = "{}".getBytes(StandardCharsets.UTF_8);
+                }
+                Object argsObj = parseToolLoopArguments(rawArgs);
+
+                ToolExecutionRecorder recorder = startToolExecution(
+                        new ToolExecutionStart()
+                                .setToolName(name)
+                                .setToolCallId(callId)
+                                .setToolType(toolType)
+                                .setConversationId(opts.getConversationId())
+                                .setConversationTitle(opts.getConversationTitle())
+                                .setAgentName(opts.getAgentName())
+                                .setAgentVersion(opts.getAgentVersion())
+                                .setRequestModel(opts.getRequestModel())
+                                .setRequestProvider(opts.getRequestProvider())
+                                .setContentCapture(opts.getContentCapture()));
+                try {
+                    Object result = executor.apply(name, rawArgs);
+                    recorder.setResult(new ToolExecutionResult().setArguments(argsObj).setResult(result));
+                    out.add(buildToolLoopResultMessage(name, callId, result, false, ""));
+                } catch (Exception e) {
+                    recorder.setCallError(e);
+                    String em = e.getMessage();
+                    out.add(buildToolLoopResultMessage(
+                            name, callId, null, true, em == null || em.isBlank() ? e.toString() : em));
+                } finally {
+                    recorder.end();
+                }
+            }
+        }
+        return out;
     }
 
     /** Submits a user-facing conversation rating through Sigil HTTP API. */
@@ -1596,5 +1662,36 @@ public final class SigilClient implements AutoCloseable {
                 part.getToolResult().setContentJson(null);
             }
         }
+    }
+
+    private static Object parseToolLoopArguments(byte[] inputJson) {
+        try {
+            return Json.MAPPER.readValue(inputJson, Object.class);
+        } catch (Exception e) {
+            return new String(inputJson, StandardCharsets.UTF_8);
+        }
+    }
+
+    private static Message buildToolLoopResultMessage(
+            String toolName, String callId, Object result, boolean error, String errMsg) {
+        Message msg = new Message().setRole(MessageRole.TOOL).setName(toolName);
+        ToolResultPart tr = new ToolResultPart().setToolCallId(callId).setName(toolName);
+        if (error) {
+            tr.setContent(errMsg).setError(true);
+        } else if (result == null) {
+            // leave empty
+        } else if (result instanceof String s) {
+            tr.setContent(s);
+        } else if (result instanceof byte[] b) {
+            tr.setContentJson(b);
+        } else {
+            try {
+                tr.setContentJson(Json.MAPPER.writeValueAsBytes(result));
+            } catch (Exception e) {
+                tr.setContent(String.valueOf(result));
+            }
+        }
+        msg.getParts().add(MessagePart.toolResult(tr));
+        return msg;
     }
 }

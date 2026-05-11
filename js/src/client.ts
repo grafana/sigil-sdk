@@ -41,6 +41,7 @@ import type {
   GenerationRecorder,
   GenerationResult,
   GenerationStart,
+  ExecuteToolCallsOptions,
   HookEvaluateRequest,
   HookEvaluateResponse,
   HooksConfig,
@@ -158,6 +159,59 @@ const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
 const metadataUserIDKey = 'sigil.user.id';
 const metadataLegacyUserIDKey = 'user.id';
+
+function serializeToolResultPayload(value: unknown): { content: string; contentJSON?: string } {
+  if (value == null) {
+    return { content: '' };
+  }
+  if (typeof value === 'string') {
+    return { content: value };
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return { content: String(value) };
+  }
+  try {
+    return { content: '', contentJSON: JSON.stringify(value) };
+  } catch {
+    return { content: String(value) };
+  }
+}
+
+function buildToolResultMessage(
+  toolName: string,
+  toolCallId: string,
+  result: unknown,
+  isError: boolean,
+  errorText: string,
+): Message {
+  if (isError) {
+    return {
+      role: 'tool',
+      name: toolName,
+      parts: [
+        {
+          type: 'tool_result',
+          toolResult: {
+            toolCallId,
+            name: toolName,
+            content: errorText,
+            isError: true,
+          },
+        },
+      ],
+    };
+  }
+  const { content, contentJSON } = serializeToolResultPayload(result);
+  const toolResult =
+    contentJSON !== undefined
+      ? { toolCallId, name: toolName, content, contentJSON }
+      : { toolCallId, name: toolName, content };
+  return {
+    role: 'tool',
+    name: toolName,
+    parts: [{ type: 'tool_result', toolResult }],
+  };
+}
 
 export class SigilClient {
   private readonly config: SigilSdkConfig;
@@ -320,6 +374,72 @@ export class SigilClient {
       return recorder;
     }
     return runWithRecorder(recorder, callback);
+  }
+
+  /**
+   * Runs each `tool_call` part under `execute_tool` spans and returns tool messages.
+   *
+   * Walks `messages` (typically `GenerationResult.output`) and invokes `executor`
+   * for every tool-call part. Returns `tool` role messages with `tool_result` parts.
+   */
+  async executeToolCalls(
+    messages: Message[],
+    executor: (toolName: string, args: unknown) => unknown | Promise<unknown>,
+    options: ExecuteToolCallsOptions = {},
+  ): Promise<Message[]> {
+    this.assertOpen();
+    const opts = options;
+    const out: Message[] = [];
+    const list = messages ?? [];
+
+    for (const msg of list) {
+      for (const part of msg.parts ?? []) {
+        if (part.type !== 'tool_call') {
+          continue;
+        }
+        const tc = part.toolCall;
+        const name = (tc.name ?? '').trim();
+        if (name.length === 0) {
+          continue;
+        }
+        const callId = (tc.id ?? '').trim();
+        const raw = tc.inputJSON?.trim() ?? '';
+        let args: unknown = {};
+        if (raw.length > 0) {
+          try {
+            args = JSON.parse(raw) as unknown;
+          } catch {
+            args = raw;
+          }
+        }
+
+        const rec = this.startToolExecution({
+          toolName: name,
+          toolCallId: callId.length > 0 ? callId : undefined,
+          toolType: opts.toolType ?? 'function',
+          conversationId: opts.conversationId,
+          conversationTitle: opts.conversationTitle,
+          agentName: opts.agentName,
+          agentVersion: opts.agentVersion,
+          requestModel: opts.requestModel,
+          requestProvider: opts.requestProvider,
+          contentCapture: opts.contentCapture,
+        });
+        try {
+          const result = await executor(name, args);
+          rec.setResult({ arguments: args, result });
+          out.push(buildToolResultMessage(name, callId, result, false, ''));
+        } catch (err) {
+          rec.setCallError(err);
+          const msgText = err instanceof Error ? err.message : String(err);
+          out.push(buildToolResultMessage(name, callId, null, true, msgText));
+        } finally {
+          rec.end();
+        }
+      }
+    }
+
+    return out;
   }
 
   /** Submits a user-facing conversation rating through Sigil HTTP API. */

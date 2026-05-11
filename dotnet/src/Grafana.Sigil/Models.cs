@@ -337,6 +337,22 @@ public sealed class ToolExecutionEnd
     public DateTimeOffset? CompletedAt { get; set; }
 }
 
+/// <summary>Options for <see cref="SigilClient.ExecuteToolCalls"/>.</summary>
+public sealed class ExecuteToolCallsOptions
+{
+    public string ConversationId { get; set; } = string.Empty;
+    public string ConversationTitle { get; set; } = string.Empty;
+    public string AgentName { get; set; } = string.Empty;
+    public string AgentVersion { get; set; } = string.Empty;
+    public ContentCaptureMode ContentCapture { get; set; } = ContentCaptureMode.Default;
+    public string RequestModel { get; set; } = string.Empty;
+    public string RequestProvider { get; set; } = string.Empty;
+    public string ToolType { get; set; } = "function";
+
+    /// <summary>Reserved for forward compatibility; not applied to tool spans in this release.</summary>
+    public Dictionary<string, string> Tags { get; set; } = new(StringComparer.Ordinal);
+}
+
 public sealed class ExportGenerationResult
 {
     public string GenerationId { get; set; } = string.Empty;

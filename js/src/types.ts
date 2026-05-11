@@ -462,6 +462,20 @@ export interface ToolExecutionStart {
   startedAt?: Date;
 }
 
+/** Options for {@link SigilClient.executeToolCalls}. */
+export interface ExecuteToolCallsOptions {
+  conversationId?: string;
+  conversationTitle?: string;
+  agentName?: string;
+  agentVersion?: string;
+  contentCapture?: ContentCaptureMode;
+  requestModel?: string;
+  requestProvider?: string;
+  toolType?: string;
+  /** Reserved for forward compatibility; not applied to tool spans in this release. */
+  tags?: Record<string, string>;
+}
+
 /** Tool execution completion fields. */
 export interface ToolExecutionResult {
   arguments?: unknown;

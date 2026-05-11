@@ -8,7 +8,7 @@ import logging
 import re
 import secrets
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
@@ -50,17 +50,21 @@ from .models import (
     ConversationRatingValue,
     EmbeddingResult,
     EmbeddingStart,
+    ExecuteToolCallsOptions,
     ExportGenerationsRequest,
     ExportWorkflowStepsRequest,
     Generation,
     GenerationMode,
     GenerationStart,
     Message,
+    MessageRole,
     PartKind,
     SubmitConversationRatingResponse,
     ToolExecutionEnd,
     ToolExecutionStart,
+    ToolResult,
     WorkflowStep,
+    tool_result_part,
     _metadata_key_content_capture_mode,
 )
 from .proto_mapping import generation_to_proto
@@ -269,6 +273,46 @@ def _strip_message_content(message: Message) -> None:
             part.tool_result.content_json = b""
 
 
+def _serialize_tool_result_payload(value: Any) -> tuple[str, bytes]:
+    if value is None:
+        return "", b""
+    if isinstance(value, str):
+        return value, b""
+    if isinstance(value, (bytes, bytearray)):
+        b = bytes(value)
+        return "", b if b else b""
+    try:
+        return "", json.dumps(value, default=str).encode("utf-8")
+    except (TypeError, ValueError):
+        return str(value), b""
+
+
+def _build_tool_result_message(
+    tool_name: str,
+    tool_call_id: str,
+    result: Any,
+    *,
+    is_error: bool,
+    error_message: str = "",
+) -> Message:
+    if is_error:
+        tr = ToolResult(
+            tool_call_id=tool_call_id,
+            name=tool_name,
+            content=error_message,
+            is_error=True,
+        )
+    else:
+        content, content_json = _serialize_tool_result_payload(result)
+        tr = ToolResult(
+            tool_call_id=tool_call_id,
+            name=tool_name,
+            content=content,
+            content_json=content_json,
+        )
+    return Message(role=MessageRole.TOOL, name=tool_name, parts=[tool_result_part(tr)])
+
+
 class Client:
     """Sigil client that records generations, tool spans, and exports in background."""
 
@@ -444,6 +488,79 @@ class Client:
             started_at=started_at,
             include_content=include_content,
         )
+
+    def execute_tool_calls(
+        self,
+        messages: Sequence[Message],
+        executor: Callable[[str, Any], Any],
+        *,
+        options: ExecuteToolCallsOptions | None = None,
+    ) -> list[Message]:
+        """Run each ``tool_call`` part under ``execute_tool`` spans and return tool messages.
+
+        Walks *messages* (typically ``Generation.output``) and, for every
+        :class:`~sigil_sdk.models.Part` with ``kind=TOOL_CALL``, calls *executor*
+        as ``executor(tool_name, arguments)`` where *arguments* is JSON decoded
+        from ``ToolCall.input_json`` (or ``{}`` when empty).
+
+        Returns ``tool`` role :class:`~sigil_sdk.models.Message` values with
+        ``tool_result`` parts suitable to append as the next model turn input.
+
+        On executor failure, records :meth:`ToolExecutionRecorder.set_exec_error`
+        and emits a ``tool_result`` with ``is_error=True``.
+
+        ``ExecuteToolCallsOptions.tags`` is reserved for forward compatibility and
+        is not applied to tool spans in this release.
+        """
+
+        self._assert_open()
+        opts = options if options is not None else ExecuteToolCallsOptions()
+        out: list[Message] = []
+
+        for msg in messages or ():
+            for part in getattr(msg, "parts", None) or ():
+                if part.kind != PartKind.TOOL_CALL or part.tool_call is None:
+                    continue
+                tc = part.tool_call
+                name = (tc.name or "").strip()
+                if name == "":
+                    continue
+                call_id = (tc.id or "").strip()
+                raw_args = tc.input_json or b""
+                arguments: Any
+                if not raw_args.strip():
+                    arguments = {}
+                else:
+                    try:
+                        arguments = json.loads(raw_args.decode("utf-8"))
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        arguments = raw_args.decode("utf-8", errors="replace")
+
+                rec = self.start_tool_execution(
+                    ToolExecutionStart(
+                        tool_name=name,
+                        tool_call_id=call_id,
+                        tool_type=opts.tool_type,
+                        conversation_id=opts.conversation_id,
+                        conversation_title=opts.conversation_title,
+                        agent_name=opts.agent_name,
+                        agent_version=opts.agent_version,
+                        request_model=opts.request_model,
+                        request_provider=opts.request_provider,
+                        content_capture=opts.content_capture,
+                    )
+                )
+                try:
+                    result = executor(name, arguments)
+                    rec.set_result(arguments=arguments, result=result)
+                    out.append(_build_tool_result_message(name, call_id, result, is_error=False))
+                except Exception as exc:  # noqa: BLE001
+                    rec.set_exec_error(exc)
+                    out.append(_build_tool_result_message(name, call_id, None, is_error=True, error_message=str(exc)))
+                finally:
+                    rec.end()
+
+        return out
 
     def evaluate_hook(self, request: HookEvaluateRequest) -> HookEvaluateResponse:
         """Evaluates synchronous hook rules for the given request.
