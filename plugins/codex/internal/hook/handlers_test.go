@@ -130,6 +130,17 @@ func TestPostToolUseLeavesStatusUnknownWhenCodexDoesNotProvideOne(t *testing.T) 
 	}
 }
 
+func TestNormalizeStatusIgnoresFalsyErrorValues(t *testing.T) {
+	for _, raw := range []string{`null`, `false`, `0`, `""`, `[]`, `{}`} {
+		t.Run(raw, func(t *testing.T) {
+			got := normalizeStatus(Payload{Error: json.RawMessage(raw)}, nil)
+			if got != "" {
+				t.Fatalf("Status = %q, want unknown/empty", got)
+			}
+		})
+	}
+}
+
 func TestPostToolUseInfersKnownFailureShapes(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	logger := log.New(io.Discard, "", 0)
