@@ -5,6 +5,7 @@ import (
 	"log"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -112,8 +113,9 @@ func mergeAssistantGroup(lines []transcript.Line) transcript.Line {
 
 // agentCall holds the metadata captured from an Agent tool_use block.
 type agentCall struct {
-	parentGenID string           // generation that spawned this call
-	parentGen   sigil.Generation // copy for inheriting fields
+	parentGenID  string           // generation that spawned this call
+	parentGen    sigil.Generation // copy for inheriting fields
+	subagentType string           // lowercased subagent_type from tool input; empty falls back to "subagent"
 }
 
 // Process walks transcript lines and produces Generation records.
@@ -146,9 +148,14 @@ func Process(lines []transcript.Line, st *state.Session, opts Options, r *redact
 				for _, msg := range gen.Output {
 					for _, part := range msg.Parts {
 						if part.ToolCall != nil && part.ToolCall.Name == "Agent" {
+							var parsed struct {
+								SubagentType string `json:"subagent_type"`
+							}
+							_ = json.Unmarshal(part.ToolCall.InputJSON, &parsed)
 							agentCalls[part.ToolCall.ID] = agentCall{
-								parentGenID: gen.ID,
-								parentGen:   gen,
+								parentGenID:  gen.ID,
+								parentGen:    gen,
+								subagentType: strings.ToLower(parsed.SubagentType),
 							}
 						}
 					}
@@ -178,12 +185,17 @@ func synthesiseSubagentGens(line transcript.Line, uctx *userContext, calls map[s
 
 			completedAt, _ := time.Parse(time.RFC3339Nano, line.Timestamp)
 
+			suffix := ac.subagentType
+			if suffix == "" {
+				suffix = "subagent"
+			}
+
 			gen := sigil.Generation{
 				ID:                  subagentGenID(opts.SessionID, part.ToolResult.ToolCallID),
 				ConversationID:      opts.SessionID,
 				ConversationTitle:   opts.SessionID,
 				ParentGenerationIDs: []string{ac.parentGenID},
-				AgentName:           agentName + "/subagent",
+				AgentName:           agentName + "/" + suffix,
 				AgentVersion:        ac.parentGen.AgentVersion,
 				EffectiveVersion:    ac.parentGen.EffectiveVersion,
 				Mode:                sigil.GenerationModeSync,
