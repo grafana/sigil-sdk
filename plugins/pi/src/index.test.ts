@@ -34,6 +34,7 @@ import type {
 interface RecorderLike {
   setResult: (value: unknown) => void;
   setCallError: (error: Error) => void;
+  setFirstTokenAt?: (firstTokenAt: Date) => void;
 }
 
 interface ToolRecorderLike {
@@ -44,12 +45,40 @@ interface ToolRecorderLike {
 }
 
 interface SigilLike {
-  startGeneration: (
+  startStreamingGeneration: (
     seed: unknown,
     run: (recorder: RecorderLike) => Promise<void>,
   ) => Promise<void>;
   startToolExecution: ReturnType<typeof vi.fn>;
   shutdown: () => Promise<void>;
+}
+
+function assistantMessageUpdate(
+  overrides?: Partial<{ type: string; delta: string }>,
+) {
+  return {
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "h" }],
+      provider: "anthropic",
+      model: "claude-sonnet-4",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    },
+    assistantMessageEvent: {
+      type: overrides?.type ?? "text_delta",
+      contentIndex: 0,
+      delta: overrides?.delta ?? "h",
+      partial: {},
+    },
+  };
 }
 
 class FakePi {
@@ -119,6 +148,304 @@ describe("extension lifecycle", () => {
     createTelemetryProvidersMock.mockReset();
   });
 
+  it("uses assistant message_end timestamp as completedAt, not msg.timestamp", async () => {
+    // `msg.timestamp` is set by pi providers when constructing the
+    // AssistantMessage object — i.e. before the HTTP request — so it sits
+    // near turn_start, not at stream completion. The plugin must instead
+    // pick up Date.now() from the assistant `message_end` event, which
+    // fires immediately after the provider stream's done/error event.
+    let capturedSeed: { startedAt: Date } | undefined;
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
+        capturedSeed = seed as { startedAt: Date };
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    const msg = assistantMessage();
+    // Deliberately ancient timestamp; if the plugin still uses
+    // msg.timestamp, the assertion below will catch it.
+    msg.timestamp = 1700000000000;
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+
+    const beforeMessageEnd = Date.now();
+    await pi.emit("message_end", { message: { role: "assistant" } });
+    const afterMessageEnd = Date.now();
+
+    await pi.emit("turn_end", { message: msg, toolResults: [] });
+
+    expect(recorder.setResult).toHaveBeenCalledTimes(1);
+    const result = recorder.setResult.mock.calls[0]![0] as {
+      completedAt: Date;
+    };
+    const completedAt = result.completedAt.getTime();
+    expect(completedAt).toBeGreaterThanOrEqual(beforeMessageEnd);
+    expect(completedAt).toBeLessThanOrEqual(afterMessageEnd);
+    expect(completedAt).not.toBe(msg.timestamp);
+
+    // Sanity: startedAt is from turn_start and predates completedAt, so
+    // duration is positive (not the ~0 we got from msg.timestamp before).
+    expect(capturedSeed!.startedAt.getTime()).toBeLessThanOrEqual(completedAt);
+  });
+
+  it("falls back to msg.timestamp when no assistant message_end is observed", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    const msg = assistantMessage();
+    msg.timestamp = 1700000005000;
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    // No assistant message_end — simulates extension-stripped events or
+    // older pi versions. Plugin should fall back to msg.timestamp.
+    await pi.emit("turn_end", { message: msg, toolResults: [] });
+
+    const result = recorder.setResult.mock.calls[0]![0] as {
+      completedAt: Date;
+    };
+    expect(result.completedAt.getTime()).toBe(msg.timestamp);
+  });
+
+  it("keeps firstTokenAt within [startedAt, completedAt] when streaming", async () => {
+    // Smoke check that the TTFT, startedAt and completedAt timestamps are
+    // mutually consistent: with streaming + assistant message_end, TTFT
+    // must not exceed the generation duration.
+    let capturedSeed: { startedAt: Date } | undefined;
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
+        capturedSeed = seed as { startedAt: Date };
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    await pi.emit("message_update", assistantMessageUpdate());
+    await pi.emit("message_end", { message: { role: "assistant" } });
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    expect(recorder.setFirstTokenAt).toHaveBeenCalledTimes(1);
+    const firstTokenAt = (
+      recorder.setFirstTokenAt.mock.calls[0]![0] as Date
+    ).getTime();
+    const startedAt = capturedSeed!.startedAt.getTime();
+    const completedAt = (
+      recorder.setResult.mock.calls[0]![0] as { completedAt: Date }
+    ).completedAt.getTime();
+
+    expect(startedAt).toBeLessThanOrEqual(firstTokenAt);
+    expect(firstTokenAt).toBeLessThanOrEqual(completedAt);
+  });
+
+  it("records streaming generations and first-token time from message_update", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+
+    const sigil = {
+      startGeneration: vi.fn(),
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    // Pi emits message_update events for each streamed chunk; only the first
+    // one should be captured as the time-to-first-token.
+    await pi.emit("message_update", assistantMessageUpdate({ delta: "he" }));
+    await pi.emit("message_update", assistantMessageUpdate({ delta: "llo" }));
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    expect(sigil.startStreamingGeneration).toHaveBeenCalledTimes(1);
+    expect(sigil.startGeneration).not.toHaveBeenCalled();
+    expect(recorder.setFirstTokenAt).toHaveBeenCalledTimes(1);
+    const firstTokenAt = recorder.setFirstTokenAt.mock.calls[0]![0] as Date;
+    expect(firstTokenAt).toBeInstanceOf(Date);
+    expect(Number.isNaN(firstTokenAt.getTime())).toBe(false);
+  });
+
+  it("does not call setFirstTokenAt when no message_update fires", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    expect(sigil.startStreamingGeneration).toHaveBeenCalledTimes(1);
+    expect(recorder.setFirstTokenAt).not.toHaveBeenCalled();
+  });
+
+  it("ignores message_update for non-assistant roles", async () => {
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "metadata_only",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    // Defensive: pi only emits message_update for assistant streaming, but
+    // ignore any other roles regardless to avoid mis-attributing TTFT.
+    await pi.emit("message_update", {
+      message: { role: "user", content: "hey", timestamp: Date.now() },
+      assistantMessageEvent: { type: "text_delta", delta: "x" },
+    });
+    await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
+
+    expect(recorder.setFirstTokenAt).not.toHaveBeenCalled();
+  });
+
   it("handles the happy path and exports one generation with user input", async () => {
     const recorder = {
       setResult: vi.fn(),
@@ -126,7 +453,7 @@ describe("extension lifecycle", () => {
     };
 
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (_seed, run) => {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
         await run(recorder);
       }),
       startToolExecution: vi.fn(() => ({
@@ -161,7 +488,7 @@ describe("extension lifecycle", () => {
     await pi.emit("tool_execution_end", { toolCallId: "c1", isError: false });
     await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
 
-    expect(sigil.startGeneration).toHaveBeenCalledTimes(1);
+    expect(sigil.startStreamingGeneration).toHaveBeenCalledTimes(1);
     expect(recorder.setResult).toHaveBeenCalledTimes(1);
     expect(recorder.setCallError).not.toHaveBeenCalled();
 
@@ -187,7 +514,7 @@ describe("extension lifecycle", () => {
     };
 
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (_seed, run) => {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
         await run(recorder);
       }),
       startToolExecution: vi.fn(() => ({
@@ -243,7 +570,7 @@ describe("extension lifecycle", () => {
     };
 
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (_seed, run) => {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
         await run(recorder);
       }),
       startToolExecution: vi.fn(() => ({
@@ -304,7 +631,7 @@ describe("extension lifecycle", () => {
     };
 
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (_seed, run) => {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
         await run(recorder);
       }),
       startToolExecution: vi.fn(() => ({
@@ -340,7 +667,7 @@ describe("extension lifecycle", () => {
     await pi.emit("turn_start");
     await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
 
-    expect(sigil.startGeneration).toHaveBeenCalledTimes(2);
+    expect(sigil.startStreamingGeneration).toHaveBeenCalledTimes(2);
     expect(recorder.setResult).toHaveBeenCalledTimes(2);
 
     const turn1 = recorder.setResult.mock.calls[0]![0] as { input?: unknown[] };
@@ -358,7 +685,7 @@ describe("extension lifecycle", () => {
     };
 
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (seed, run) => {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
         capturedSeed = seed;
         await run(recorder);
       }),
@@ -392,7 +719,7 @@ describe("extension lifecycle", () => {
 
     await pi.emit("turn_end", { message: msg, toolResults: [] });
 
-    expect(sigil.startGeneration).toHaveBeenCalledTimes(1);
+    expect(sigil.startStreamingGeneration).toHaveBeenCalledTimes(1);
     // startedAt must be <= completedAt
     const startedAt = capturedSeed.startedAt.getTime();
     const completedAt = msg.timestamp;
@@ -407,7 +734,7 @@ describe("extension lifecycle", () => {
     };
 
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (_seed, run) => {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
         await run(recorder);
       }),
       startToolExecution: vi.fn(() => {
@@ -469,7 +796,7 @@ describe("extension lifecycle", () => {
 
   it("swallows sigil failures instead of throwing or printing by default", async () => {
     const sigil = {
-      startGeneration: vi.fn(async () => {
+      startStreamingGeneration: vi.fn(async () => {
         throw new Error("transport down");
       }),
       shutdown: vi.fn(async () => {}),
@@ -507,7 +834,7 @@ describe("extension lifecycle", () => {
 
   it("prints sigil failures in debug mode", async () => {
     const sigil = {
-      startGeneration: vi.fn(async () => {
+      startStreamingGeneration: vi.fn(async () => {
         throw new Error("transport down");
       }),
       shutdown: vi.fn(async () => {}),
@@ -552,7 +879,7 @@ describe("extension lifecycle", () => {
       setCallError: vi.fn(),
     };
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (_seed, run) => {
+      startStreamingGeneration: vi.fn(async (_seed, run) => {
         await run(recorder);
       }),
       startToolExecution: vi.fn(),
@@ -579,7 +906,7 @@ describe("extension lifecycle", () => {
       toolResults: [],
     });
 
-    expect(sigil.startGeneration).not.toHaveBeenCalled();
+    expect(sigil.startStreamingGeneration).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("did not validate"),
     );
@@ -593,7 +920,7 @@ describe("extension lifecycle", () => {
     const seeds: Array<{ conversationId?: string }> = [];
     const recorder = { setResult: vi.fn(), setCallError: vi.fn() };
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (seed, run) => {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
         seeds.push(seed as { conversationId?: string });
         await run(recorder);
       }),
@@ -667,7 +994,7 @@ describe("extension lifecycle", () => {
     const seeds: Array<{ conversationId?: string }> = [];
     const recorder = { setResult: vi.fn(), setCallError: vi.fn() };
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (seed, run) => {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
         seeds.push(seed as { conversationId?: string });
         await run(recorder);
       }),
@@ -733,7 +1060,7 @@ describe("extension lifecycle", () => {
     let capturedSeed: { conversationId?: string } | undefined;
     const recorder = { setResult: vi.fn(), setCallError: vi.fn() };
     const sigil: SigilLike = {
-      startGeneration: vi.fn(async (seed, run) => {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
         capturedSeed = seed as { conversationId?: string };
         await run(recorder);
       }),

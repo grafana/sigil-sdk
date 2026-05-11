@@ -105,12 +105,22 @@ export function mapGenerationStart(
   return start;
 }
 
-/** Build the GenerationResult from an assistant message. */
+/**
+ * Build the GenerationResult from an assistant message.
+ *
+ * `completedAtMs` should be the time the provider stream finished
+ * (assistant `message_end`). `msg.timestamp` is unreliable as a completion
+ * marker: pi providers set it via `Date.now()` when constructing the
+ * assistant message object — i.e. *before* the API request is sent — so
+ * it is closer to a start timestamp than an end timestamp. Falls back to
+ * `msg.timestamp` only when no end timestamp was observed.
+ */
 export function mapGenerationResult(
   msg: PiAssistantMessage,
   toolResults: PiToolResult[],
   contentCapture: ContentCaptureMode,
   input?: Message[],
+  completedAtMs?: number,
 ): GenerationResult {
   const result: GenerationResult = {
     responseId: msg.responseId,
@@ -123,7 +133,7 @@ export function mapGenerationResult(
       cacheCreationInputTokens: msg.usage.cacheWrite,
     },
     stopReason: mapStopReason(msg.stopReason),
-    completedAt: new Date(msg.timestamp),
+    completedAt: new Date(completedAtMs ?? msg.timestamp),
     metadata:
       msg.usage.cost !== undefined ? { cost_usd: msg.usage.cost.total } : {},
   };
