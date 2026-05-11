@@ -41,3 +41,20 @@ func TestRedactJSONCoversRepoStandardTokenCorpus(t *testing.T) {
 		t.Fatalf("missing sendgrid marker: %s", got)
 	}
 }
+
+func TestRedactJSONKeepsTokenCountFieldsVisible(t *testing.T) {
+	raw := json.RawMessage(`{"max_tokens":100,"input_tokens":20,"output_tokens":10,"total_tokens":30,"authToken":"secret"}`)
+
+	var got map[string]any
+	if err := json.Unmarshal(New().RedactJSON(raw), &got); err != nil {
+		t.Fatalf("unmarshal redacted json: %v", err)
+	}
+	for _, key := range []string{"max_tokens", "input_tokens", "output_tokens", "total_tokens"} {
+		if got[key] == "[REDACTED:json-secret-field]" {
+			t.Fatalf("%s was over-redacted: %#v", key, got)
+		}
+	}
+	if got["authToken"] != "[REDACTED:json-secret-field]" {
+		t.Fatalf("authToken was not redacted: %#v", got)
+	}
+}

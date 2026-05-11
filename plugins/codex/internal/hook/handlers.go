@@ -436,13 +436,26 @@ func normalizeStatus(p Payload, response json.RawMessage) string {
 	if status := normalizeStatusString(p.Status); status != "" {
 		return status
 	}
-	if len(p.Error) > 0 && string(p.Error) != "null" {
+	if hasErrorEvidence(p.Error) {
 		return "error"
 	}
 	if status := statusFromToolResponse(response); status != "" {
 		return status
 	}
 	return ""
+}
+
+func hasErrorEvidence(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var v any
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
+		return true
+	}
+	return !emptyJSONValue(v)
 }
 
 func normalizeStatusString(raw string) string {
@@ -518,8 +531,15 @@ func emptyJSONValue(v any) bool {
 	switch x := v.(type) {
 	case nil:
 		return true
+	case bool:
+		return !x
 	case string:
 		return strings.TrimSpace(x) == ""
+	case json.Number:
+		f, err := x.Float64()
+		return err == nil && f == 0
+	case float64:
+		return x == 0
 	case []any:
 		return len(x) == 0
 	case map[string]any:

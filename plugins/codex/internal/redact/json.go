@@ -75,13 +75,16 @@ func isSensitiveJSONKey(key string) bool {
 		"password",
 		"passwd",
 		"secret",
-		"token",
 		"credential",
 		"apikey",
 		"privatekey",
 		"accesskey",
+		"accesstoken",
+		"apitoken",
 		"clientsecret",
 		"authtoken",
+		"refreshtoken",
+		"sessiontoken",
 		"secretkey",
 	} {
 		if strings.Contains(compact, needle) {
