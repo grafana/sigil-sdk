@@ -72,16 +72,30 @@ function parseExportGenerationsResponse(
   return { results };
 }
 
-function normalizeHTTPGenerationEndpoint(endpoint: string): string {
+const HTTP_GENERATION_EXPORT_PATH = '/api/v1/generations:export';
+
+/** @internal Exported for tests; not part of the public API. */
+export function normalizeHTTPGenerationEndpoint(endpoint: string): string {
   const trimmed = endpoint.trim();
   if (trimmed.length === 0) {
     throw new Error('generation export endpoint is required');
   }
 
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
+  const lowerPrefix = trimmed.slice(0, 8).toLowerCase();
+  const hasScheme = lowerPrefix.startsWith('http://') || lowerPrefix.startsWith('https://');
+  const withScheme = hasScheme ? trimmed : `http://${trimmed}`;
+
+  let url: URL;
+  try {
+    url = new URL(withScheme);
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
+    throw new Error(`parse generation export endpoint "${endpoint}": ${detail}`);
   }
-  return `http://${trimmed}`;
+  if (url.pathname === '' || url.pathname === '/') {
+    url.pathname = HTTP_GENERATION_EXPORT_PATH;
+  }
+  return url.toString();
 }
 
 function mapGenerationToProtoJSON(generation: Generation): Record<string, unknown> {

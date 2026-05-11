@@ -10,11 +10,11 @@ npm install
 cp .env.example .env
 ```
 
-Configure Sigil, OpenTelemetry, and OpenAI from your Grafana Cloud stack:
+Configure Sigil, OpenTelemetry, and OpenAI from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find the Sigil API URL:
 
 ```bash
 SIGIL_EXPORT_PROTOCOL=http
-SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net/api/v1/generations:export
+SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
 GRAFANA_INSTANCE_ID=...
 GRAFANA_CLOUD_TOKEN=...
 SIGIL_CONVERSATION_ID=sigil-strands-demo

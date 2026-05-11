@@ -145,7 +145,7 @@ public final class SigilEnvConfig {
             export.setProtocol(GenerationExportProtocol.HTTP);
         }
         if (export.getEndpoint().isEmpty()) {
-            export.setEndpoint("http://localhost:8080/api/v1/generations:export");
+            export.setEndpoint("http://localhost:8080");
         }
         if (auth.getMode() == null) {
             auth.setMode(AuthMode.NONE);

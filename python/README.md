@@ -137,6 +137,7 @@ Full framework examples:
 from sigil_sdk import (
     Client,
     ClientConfig,
+    GenerationExportConfig,
     GenerationStart,
     ModelRef,
     assistant_text_message,
@@ -145,7 +146,10 @@ from sigil_sdk import (
 
 client = Client(
     ClientConfig(
-        generation_export_endpoint="http://localhost:8080/api/v1/generations:export",
+        generation_export=GenerationExportConfig(
+            protocol="http",
+            endpoint="http://localhost:8080",
+        ),
     )
 )
 
@@ -420,7 +424,7 @@ from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfi
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
-        endpoint="http://localhost:8080/api/v1/generations:export",
+        endpoint="http://localhost:8080",
         auth=AuthConfig(mode="tenant", tenant_id="dev-tenant"),
     ),
     api=ApiConfig(endpoint="http://localhost:8080"),
@@ -460,7 +464,7 @@ from sigil_sdk import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfi
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
-        endpoint="http://localhost:8080/api/v1/generations:export",
+        endpoint="http://localhost:8080",
         auth=AuthConfig(mode="tenant", tenant_id="prod-tenant"),
     ),
     api=ApiConfig(endpoint="http://localhost:8080"),
@@ -469,7 +473,7 @@ cfg = ClientConfig(
 
 ### Grafana Cloud auth (basic)
 
-For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key:
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for full setup steps; for this SDK endpoint, copy the **API URL** from **Observability → AI Observability → Configuration**. It looks like `https://sigil-prod-<region>.grafana.net`.
 
 ```python
 import os
@@ -478,7 +482,7 @@ from sigil_sdk import AuthConfig, ClientConfig, GenerationExportConfig
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
-        endpoint="https://<your-stack>.grafana.net/api/v1/generations:export",
+        endpoint="https://sigil-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
             tenant_id=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],

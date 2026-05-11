@@ -253,6 +253,42 @@ func TestNewHTTPGenerationExporterUsesEndpointScheme(t *testing.T) {
 			insecure: true,
 			wantURL:  "http://localhost:8080/api/v1/generations:export",
 		},
+		{
+			name:     "missing path appends default ingest path",
+			endpoint: "http://localhost:8080",
+			insecure: true,
+			wantURL:  "http://localhost:8080/api/v1/generations:export",
+		},
+		{
+			name:     "trailing slash treated as missing path",
+			endpoint: "http://localhost:8080/",
+			insecure: true,
+			wantURL:  "http://localhost:8080/api/v1/generations:export",
+		},
+		{
+			name:     "https with no path appends default ingest path",
+			endpoint: "https://stack.grafana.net",
+			insecure: false,
+			wantURL:  "https://stack.grafana.net/api/v1/generations:export",
+		},
+		{
+			name:     "custom path is preserved",
+			endpoint: "http://localhost:8080/custom/ingest",
+			insecure: true,
+			wantURL:  "http://localhost:8080/custom/ingest",
+		},
+		{
+			name:     "uppercase scheme normalized to lowercase",
+			endpoint: "HTTPS://stack.grafana.net",
+			insecure: false,
+			wantURL:  "https://stack.grafana.net/api/v1/generations:export",
+		},
+		{
+			name:     "query string preserved when path appended",
+			endpoint: "http://localhost:8080?token=abc",
+			insecure: true,
+			wantURL:  "http://localhost:8080/api/v1/generations:export?token=abc",
+		},
 	}
 
 	for _, testCase := range testCases {

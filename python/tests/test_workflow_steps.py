@@ -116,13 +116,16 @@ def test_normalize_endpoint_appends_workflow_steps_path() -> None:
         _normalize_endpoint("http://host:8080", "/api/v1/workflow-steps:export")
         == "http://host:8080/api/v1/workflow-steps:export"
     )
-    # base may already carry the generation path; we strip and re-append correctly
     assert (
         _normalize_endpoint(
             "http://host:8080/api/v1/generations:export",
             "/api/v1/workflow-steps:export",
         )
         == "http://host:8080/api/v1/workflow-steps:export"
+    )
+    assert (
+        _normalize_endpoint("http://host:8080/custom/ingest", "/api/v1/workflow-steps:export")
+        == "http://host:8080/custom/ingest"
     )
 
 

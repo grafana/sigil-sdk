@@ -78,7 +78,7 @@ cfg := sigil.DefaultConfig()
 
 // Generation export (custom ingest)
 cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default; or sigil.GenerationExportProtocolHTTP / sigil.GenerationExportProtocolNone
-cfg.GenerationExport.Endpoint = "localhost:4317"                  // HTTP parity: "http://localhost:8080/api/v1/generations:export"
+cfg.GenerationExport.Endpoint = "localhost:4317"                  // HTTP parity: "http://localhost:8080" (SDK auto-appends /api/v1/generations:export)
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:     sigil.ExportAuthModeTenant,
 	TenantID: "dev-tenant",

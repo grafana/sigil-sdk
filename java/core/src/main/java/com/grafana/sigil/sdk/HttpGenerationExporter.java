@@ -3,12 +3,14 @@ package com.grafana.sigil.sdk;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.protobuf.util.JsonFormat;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /** HTTP exporter for generation ingest parity endpoint. */
@@ -65,15 +67,49 @@ public final class HttpGenerationExporter implements GenerationExporter {
         return new ExportGenerationsResponse().setResults(results);
     }
 
-    private static String normalizeEndpoint(String endpoint) {
+    private static final String HTTP_GENERATION_EXPORT_PATH = "/api/v1/generations:export";
+
+    static String normalizeEndpoint(String endpoint) {
         String trimmed = endpoint == null ? "" : endpoint.trim();
         if (trimmed.isEmpty()) {
             throw new IllegalArgumentException("generation export endpoint is required");
         }
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            return trimmed;
+        boolean hasScheme = trimmed.regionMatches(true, 0, "http://", 0, 7)
+                || trimmed.regionMatches(true, 0, "https://", 0, 8);
+        String withScheme = hasScheme ? trimmed : "http://" + trimmed;
+        URI uri;
+        try {
+            uri = new URI(withScheme);
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException(
+                    "parse generation export endpoint \"" + endpoint + "\": " + e.getMessage(), e);
         }
-        return "http://" + trimmed;
+        if (uri.getHost() == null || uri.getHost().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "generation export endpoint \"" + endpoint + "\" has empty host");
+        }
+        String path = uri.getRawPath();
+        if (path != null && !path.isEmpty() && !path.equals("/")) {
+            return withLowercaseScheme(uri);
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append(uri.getScheme().toLowerCase(Locale.ROOT))
+                .append("://")
+                .append(uri.getRawAuthority())
+                .append(HTTP_GENERATION_EXPORT_PATH);
+        if (uri.getRawQuery() != null) {
+            builder.append('?').append(uri.getRawQuery());
+        }
+        if (uri.getRawFragment() != null) {
+            builder.append('#').append(uri.getRawFragment());
+        }
+        return builder.toString();
+    }
+
+    private static String withLowercaseScheme(URI uri) {
+        String ascii = uri.toASCIIString();
+        return uri.getScheme().toLowerCase(Locale.ROOT) + ascii.substring(uri.getScheme().length());
     }
 
     private static String firstNonBlank(String... values) {

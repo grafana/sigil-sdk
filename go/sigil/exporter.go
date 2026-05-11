@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	tenantHeaderName        = "X-Scope-OrgID"
-	authorizationHeaderName = "Authorization"
+	tenantHeaderName         = "X-Scope-OrgID"
+	authorizationHeaderName  = "Authorization"
+	httpGenerationExportPath = "/api/v1/generations:export"
 )
 
 type queuedGeneration struct {
@@ -134,22 +135,31 @@ type httpGenerationExporter struct {
 }
 
 func newHTTPGenerationExporter(cfg GenerationExportConfig) (generationExporter, error) {
-	endpoint, path, insecureEndpoint, err := splitEndpoint(cfg.Endpoint)
-	if err != nil {
-		return nil, err
+	trimmed := strings.TrimSpace(cfg.Endpoint)
+	if trimmed == "" {
+		return nil, errors.New("endpoint is required")
 	}
 
-	urlString := endpoint
-	if !strings.HasPrefix(urlString, "http://") && !strings.HasPrefix(urlString, "https://") {
+	urlString := trimmed
+	lowerPrefix := strings.ToLower(trimmed)
+	if !strings.HasPrefix(lowerPrefix, "http://") && !strings.HasPrefix(lowerPrefix, "https://") {
 		scheme := "https://"
-		if insecureValue(cfg.Insecure) || insecureEndpoint {
+		if insecureValue(cfg.Insecure) {
 			scheme = "http://"
 		}
-		urlString = scheme + endpoint
+		urlString = scheme + trimmed
 	}
-	if path != "" {
-		urlString = strings.TrimRight(urlString, "/") + path
+	parsed, err := url.Parse(urlString)
+	if err != nil {
+		return nil, fmt.Errorf("parse generation export endpoint %q: %w", cfg.Endpoint, err)
 	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("endpoint %q has empty host", cfg.Endpoint)
+	}
+	if parsed.Path == "" || parsed.Path == "/" {
+		parsed.Path = httpGenerationExportPath
+	}
+	urlString = parsed.String()
 
 	return &httpGenerationExporter{
 		endpoint: urlString,
