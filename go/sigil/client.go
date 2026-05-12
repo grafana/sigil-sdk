@@ -48,6 +48,18 @@ type Config struct {
 	// Panics are recovered and treated as ContentCaptureModeMetadataOnly
 	// (fail-closed).
 	ContentCaptureResolver func(ctx context.Context, metadata map[string]any) ContentCaptureMode
+	// GenerationSanitizer, when set, is invoked on each generation in
+	// GenerationRecorder.End after normalization and trace-context application,
+	// but before content-capture stripping and metadata stamping. The sanitizer
+	// may mutate strings or payloads (e.g. redact secrets) but must preserve
+	// message and part structure.
+	//
+	// If the sanitizer panics the SDK downgrades the generation's content
+	// capture mode to ContentCaptureModeMetadataOnly so that no partially
+	// redacted payload is shipped, and logs a warning via Config.Logger.
+	//
+	// Use NewSecretRedactionSanitizer for the built-in regex-based redactor.
+	GenerationSanitizer GenerationSanitizer
 	// Tracer is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry tracer.
 	Tracer trace.Tracer
 	// Meter is optional and mainly used for tests. If nil, the client uses the global OpenTelemetry meter.
@@ -810,6 +822,22 @@ func (r *GenerationRecorder) End() {
 	normalized := r.normalizeGeneration(generation, completedAt, callErr)
 	applyTraceContextFromSpan(r.span, &normalized)
 
+	sanitizerRan := false
+	if r.client.config.GenerationSanitizer != nil && r.contentCaptureMode != ContentCaptureModeMetadataOnly {
+		sanitizerRan = true
+		sanitized, panicked := r.applyGenerationSanitizer(normalized)
+		if panicked {
+			r.contentCaptureMode = ContentCaptureModeMetadataOnly
+		} else {
+			normalized = sanitized
+		}
+	}
+
+	// Mirror the (possibly redacted) canonical fields back into the metadata
+	// keys that downstream readers and the span attribute layer consume, so a
+	// successful sanitizer pass cannot leak via Metadata.
+	syncCanonicalMetadataMirrors(&normalized)
+
 	stampContentCaptureMetadata(&normalized, r.contentCaptureMode)
 	if r.contentCaptureMode == ContentCaptureModeMetadataOnly {
 		stripContent(&normalized, classifyErrorCategory(callErr, false))
@@ -817,6 +845,12 @@ func (r *GenerationRecorder) End() {
 
 	r.span.SetName(generationSpanName(normalized))
 	r.span.SetAttributes(generationSpanAttributes(normalized)...)
+	if sanitizerRan {
+		// The start span published the raw seed title; overwrite with the
+		// post-sanitizer/strip value so a sanitizer that empties or rewrites
+		// the title doesn't leave the raw value on the span.
+		r.span.SetAttributes(attribute.String(spanAttrConversationTitle, normalized.ConversationTitle))
+	}
 
 	r.mu.Lock()
 	r.lastGeneration = cloneGeneration(normalized)
@@ -824,9 +858,15 @@ func (r *GenerationRecorder) End() {
 
 	enqueueErr := r.client.persistGeneration(normalized)
 
-	// Record errors on span.
+	// Record errors on span. Use normalized.CallError (post-sanitization, post-
+	// strip) for the provider call error so secrets the sanitizer redacted, or
+	// strip replaced with a category, don't leak via exception events.
 	if callErr != nil {
-		r.span.RecordError(callErr)
+		spanErr := callErr
+		if normalized.CallError != callErr.Error() {
+			spanErr = errors.New(normalized.CallError)
+		}
+		r.span.RecordError(spanErr)
 	}
 	if mapErr != nil {
 		r.span.RecordError(mapErr)
@@ -846,7 +886,7 @@ func (r *GenerationRecorder) End() {
 
 	switch {
 	case callErr != nil:
-		r.span.SetStatus(codes.Error, callErr.Error())
+		r.span.SetStatus(codes.Error, normalized.CallError)
 	case mapErr != nil:
 		r.span.SetStatus(codes.Error, mapErr.Error())
 	case enqueueErr != nil:
@@ -872,6 +912,41 @@ func (r *GenerationRecorder) Err() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.finalErr
+}
+
+// applyGenerationSanitizer invokes Config.GenerationSanitizer with panic
+// recovery. On panic it logs a warning and returns panicked=true so the caller
+// can downgrade content capture mode.
+func (r *GenerationRecorder) applyGenerationSanitizer(g Generation) (sanitized Generation, panicked bool) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			panicked = true
+			if r.client.config.Logger != nil {
+				r.client.config.Logger.Printf("sigil: generation sanitization failed, falling back to metadata_only: %v", rec)
+			}
+		}
+	}()
+	return r.client.config.GenerationSanitizer(g), false
+}
+
+// syncCanonicalMetadataMirrors propagates the canonical ConversationTitle and
+// CallError values into the metadata keys that span attribute extraction and
+// downstream readers consume. Run after the sanitizer so redactions on the
+// canonical fields are reflected in the mirrors before export.
+func syncCanonicalMetadataMirrors(g *Generation) {
+	if g.Metadata == nil {
+		return
+	}
+	if g.ConversationTitle != "" {
+		g.Metadata[spanAttrConversationTitle] = g.ConversationTitle
+	} else {
+		delete(g.Metadata, spanAttrConversationTitle)
+	}
+	if g.CallError != "" {
+		g.Metadata["call_error"] = g.CallError
+	} else {
+		delete(g.Metadata, "call_error")
+	}
 }
 
 // SetCallError records a provider/network call error.

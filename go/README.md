@@ -190,6 +190,40 @@ Common topology:
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
+## Pre-Ingest Redaction
+
+Use `GenerationSanitizer` when you want to redact substrings from normalized generations before validation, span sync, and export.
+
+```go
+redactEmails := true
+cfg := sigil.DefaultConfig()
+cfg.GenerationSanitizer = sigil.NewSecretRedactionSanitizer(sigil.SecretRedactionOptions{
+    RedactInputMessages:  false,         // also redact user messages in Generation.Input
+    RedactEmailAddresses: &redactEmails, // nil defaults to true; point to false to preserve
+})
+
+client := sigil.NewClient(cfg)
+```
+
+The built-in sanitizer:
+
+- redacts high-confidence secret formats in assistant text and thinking
+- redacts secret formats plus env-style secret values in tool call inputs and tool results
+- redacts email addresses by default
+- redacts historic assistant turns and tool messages in `Generation.Input`
+- leaves user messages in `Generation.Input` unchanged unless `RedactInputMessages: true` is set
+
+To preserve email addresses, opt out explicitly:
+
+```go
+preserveEmails := false
+cfg.GenerationSanitizer = sigil.NewSecretRedactionSanitizer(sigil.SecretRedactionOptions{
+    RedactEmailAddresses: &preserveEmails,
+})
+```
+
+If a sanitizer panics during `Recorder.End`, the SDK falls back to `ContentCaptureModeMetadataOnly` for that generation and logs a warning via `Config.Logger`, so a partially redacted payload is never shipped.
+
 ## Conversation Ratings
 
 Use the SDK helper to submit user-facing ratings:
