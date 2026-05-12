@@ -11,6 +11,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createSigilClient } from "./client.js";
 import type { SigilPiConfig } from "./config.js";
 import { loadConfig } from "./config.js";
+import { resolveGitBranch } from "./git.js";
 import {
   mapGenerationResult,
   mapGenerationStart,
@@ -275,6 +276,16 @@ export default function (pi: ExtensionAPI) {
         completedAtMs,
       );
 
+      // Resolved per turn so mid-session checkouts land on the next
+      // generation. Gated on contentCapture=full because branch names
+      // can leak project context (diverges from claude-code/cursor,
+      // which always send it).
+      const gitBranch =
+        config.contentCapture === "full"
+          ? resolveGitBranch(process.cwd())
+          : undefined;
+      const builtinTags = gitBranch ? { "git.branch": gitBranch } : undefined;
+
       const seed = mapGenerationStart(
         msg,
         conversationId,
@@ -282,6 +293,7 @@ export default function (pi: ExtensionAPI) {
         config.agentVersion,
         startedAtMs,
         toolDefs.length > 0 ? toolDefs : undefined,
+        builtinTags,
       );
 
       const toolResults = (event.toolResults ?? []) as PiToolResult[];

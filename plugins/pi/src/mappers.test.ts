@@ -152,6 +152,34 @@ describe("mapGenerationStart", () => {
     );
     expect(start.effectiveVersion).toBeUndefined();
   });
+
+  it("attaches tags when provided", () => {
+    const start = mapGenerationStart(
+      makeMsg(),
+      "s",
+      "pi",
+      undefined,
+      0,
+      undefined,
+      { "git.branch": "main" },
+    );
+    expect(start.tags).toEqual({ "git.branch": "main" });
+  });
+
+  it("omits tags when empty or undefined", () => {
+    const a = mapGenerationStart(
+      makeMsg(),
+      "s",
+      "pi",
+      undefined,
+      0,
+      undefined,
+      {},
+    );
+    const b = mapGenerationStart(makeMsg(), "s", "pi", undefined, 0, undefined);
+    expect(a.tags).toBeUndefined();
+    expect(b.tags).toBeUndefined();
+  });
 });
 
 describe("mapGenerationResult", () => {

@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loadConfigMock, createSigilClientMock, createTelemetryProvidersMock } =
-  vi.hoisted(() => ({
-    loadConfigMock: vi.fn(),
-    createSigilClientMock: vi.fn(),
-    createTelemetryProvidersMock: vi.fn(),
-  }));
+const {
+  loadConfigMock,
+  createSigilClientMock,
+  createTelemetryProvidersMock,
+  resolveGitBranchMock,
+} = vi.hoisted(() => ({
+  loadConfigMock: vi.fn(),
+  createSigilClientMock: vi.fn(),
+  createTelemetryProvidersMock: vi.fn(),
+  resolveGitBranchMock: vi.fn(),
+}));
 
 vi.mock("./config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./config.js")>();
@@ -21,6 +26,10 @@ vi.mock("./client.js", () => ({
 
 vi.mock("./telemetry.js", () => ({
   createTelemetryProviders: createTelemetryProvidersMock,
+}));
+
+vi.mock("./git.js", () => ({
+  resolveGitBranch: resolveGitBranchMock,
 }));
 
 import type { SigilClient } from "@grafana/sigil-sdk-js";
@@ -146,6 +155,9 @@ describe("extension lifecycle", () => {
     loadConfigMock.mockReset();
     createSigilClientMock.mockReset();
     createTelemetryProvidersMock.mockReset();
+    // Default: no git repo. Individual tests opt into a branch by overriding.
+    resolveGitBranchMock.mockReset();
+    resolveGitBranchMock.mockReturnValue(undefined);
   });
 
   it("uses assistant message_end timestamp as completedAt, not msg.timestamp", async () => {
@@ -1102,6 +1114,145 @@ describe("extension lifecycle", () => {
 
     expect(capturedSeed).toBeDefined();
     expect(capturedSeed!.conversationId).toBeUndefined();
+  });
+
+  it("emits git.branch tag when contentCapture=full", async () => {
+    resolveGitBranchMock.mockReturnValue("feature-x");
+
+    let capturedSeed: { tags?: Record<string, string> } | undefined;
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
+        capturedSeed = seed as { tags?: Record<string, string> };
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "full",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    await pi.emit("turn_end", {
+      message: assistantMessage(),
+      toolResults: [],
+    });
+
+    expect(resolveGitBranchMock).toHaveBeenCalledTimes(1);
+    expect(capturedSeed!.tags).toEqual({ "git.branch": "feature-x" });
+  });
+
+  it("omits git.branch tag (and skips the subprocess) when contentCapture is not full", async () => {
+    resolveGitBranchMock.mockReturnValue("feature-x");
+
+    for (const mode of ["metadata_only", "no_tool_content"] as const) {
+      resolveGitBranchMock.mockClear();
+
+      let capturedSeed: { tags?: Record<string, string> } | undefined;
+      const recorder = {
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        setFirstTokenAt: vi.fn(),
+      };
+      const sigil: SigilLike = {
+        startStreamingGeneration: vi.fn(async (seed, run) => {
+          capturedSeed = seed as { tags?: Record<string, string> };
+          await run(recorder);
+        }),
+        startToolExecution: vi.fn(() => ({
+          setResult: vi.fn(),
+          setCallError: vi.fn(),
+          end: vi.fn(),
+          getError: vi.fn(),
+        })),
+        shutdown: vi.fn(async () => {}),
+      };
+
+      loadConfigMock.mockResolvedValue({
+        endpoint: "http://localhost:8080/api/v1/generations:export",
+        auth: { mode: "none" },
+        agentName: "pi",
+        contentCapture: mode,
+      });
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const pi = new FakePi();
+      registerExtension(pi as any);
+
+      await pi.emit("session_start");
+      await pi.emit("turn_start");
+      await pi.emit("turn_end", {
+        message: assistantMessage(),
+        toolResults: [],
+      });
+
+      expect(resolveGitBranchMock, `mode=${mode}`).not.toHaveBeenCalled();
+      expect(capturedSeed!.tags, `mode=${mode}`).toBeUndefined();
+    }
+  });
+
+  it("omits git.branch tag when not in a git repo even with contentCapture=full", async () => {
+    resolveGitBranchMock.mockReturnValue(undefined);
+
+    let capturedSeed: { tags?: Record<string, string> } | undefined;
+    const recorder = {
+      setResult: vi.fn(),
+      setCallError: vi.fn(),
+      setFirstTokenAt: vi.fn(),
+    };
+    const sigil: SigilLike = {
+      startStreamingGeneration: vi.fn(async (seed, run) => {
+        capturedSeed = seed as { tags?: Record<string, string> };
+        await run(recorder);
+      }),
+      startToolExecution: vi.fn(() => ({
+        setResult: vi.fn(),
+        setCallError: vi.fn(),
+        end: vi.fn(),
+        getError: vi.fn(),
+      })),
+      shutdown: vi.fn(async () => {}),
+    };
+
+    loadConfigMock.mockResolvedValue({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      auth: { mode: "none" },
+      agentName: "pi",
+      contentCapture: "full",
+    });
+    createSigilClientMock.mockReturnValue(sigil);
+
+    const pi = new FakePi();
+    registerExtension(pi as any);
+
+    await pi.emit("session_start");
+    await pi.emit("turn_start");
+    await pi.emit("turn_end", {
+      message: assistantMessage(),
+      toolResults: [],
+    });
+
+    expect(resolveGitBranchMock).toHaveBeenCalledTimes(1);
+    expect(capturedSeed!.tags).toBeUndefined();
   });
 });
 

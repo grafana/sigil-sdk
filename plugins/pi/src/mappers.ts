@@ -89,7 +89,10 @@ export function mapGenerationStart(
   agentVersion: string | undefined,
   turnStartTime: number,
   tools: ToolDefinition[] | undefined,
+  tags?: Record<string, string>,
 ): GenerationStart {
+  // Tags on the seed override client-level SIGIL_TAGS (the SDK merges
+  // `{...clientTags, ...seedTags}`), matching claude-code/cursor.
   const start: GenerationStart = {
     conversationId,
     agentName,
@@ -98,6 +101,7 @@ export function mapGenerationStart(
     model: { provider: msg.provider, name: msg.model },
     startedAt: new Date(turnStartTime),
     ...(tools && tools.length > 0 ? { tools } : {}),
+    ...(tags && Object.keys(tags).length > 0 ? { tags } : {}),
   };
   if (msg.content.some((b) => b.type === "thinking")) {
     start.thinkingEnabled = true;
