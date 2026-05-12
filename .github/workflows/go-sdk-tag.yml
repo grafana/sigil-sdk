@@ -77,14 +77,8 @@ jobs:
           CURRENT=$(git tag -l 'go/v*' | sed 's|go/v||' | sort -V | tail -1)
           CURRENT=${CURRENT:-0.0.0}
 
-          NEW=$(npx --yes semver@7 -i "$BUMP" "$CURRENT")
+          NEW=$(./.github/scripts/bump-version.sh "$BUMP" "$CURRENT")
           VERSION="v${NEW}"
-
-          # Sanity check: refuse to tag if NEW isn't strictly greater than CURRENT.
-          if ! npx --yes semver@7 -r ">${CURRENT}" "${NEW}" >/dev/null; then
-            echo "Refusing to tag: ${NEW} is not strictly greater than ${CURRENT}"
-            exit 1
-          fi
 
           {
             echo "## Go SDK release plan"

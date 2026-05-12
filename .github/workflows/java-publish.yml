@@ -4,16 +4,77 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version (e.g. 0.2.0)'
+        description: 'Semver bump type (major / minor / patch)'
         required: true
-        type: string
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      dry-run:
+        description: 'Preview only, do not publish or push tags'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
-  publish:
+  build:
     if: github.repository == 'grafana/sigil-sdk' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      new-version: ${{ steps.bump.outputs.new-version }}
+      tag: ${{ steps.bump.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: bump
+        shell: bash
+        env:
+          BUMP: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          CURRENT=$(git tag -l 'sdk-java/v*' | sed 's|sdk-java/v||' | sort -V | tail -1)
+          CURRENT=${CURRENT:-0.0.0}
+          NEW=$(./.github/scripts/bump-version.sh "$BUMP" "$CURRENT")
+
+          echo "new-version=${NEW}" >> "$GITHUB_OUTPUT"
+          echo "tag=sdk-java/v${NEW}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Java SDK release plan"
+            echo ""
+            echo "- bump type: \`${BUMP}\`"
+            echo "- current: \`${CURRENT}\`"
+            echo "- new: \`${NEW}\`"
+            echo "- tag: \`sdk-java/v${NEW}\`"
+            echo "- dry-run: \`${DRY_RUN}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build (dry-run preview)
+        working-directory: java
+        env:
+          PKG_VERSION: ${{ steps.bump.outputs.new-version }}
+        run: |
+          ./gradlew --no-daemon build -Pversion="${PKG_VERSION}"
+
+  publish:
+    if: ${{ !inputs.dry-run }}
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,7 +107,56 @@ jobs:
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ fromJSON(steps.get-secrets.outputs.secrets).CENTRAL_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PRIVATE_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ fromJSON(steps.get-secrets.outputs.secrets).GPG_PASSPHRASE }}
-          PKG_VERSION: ${{ inputs.version }}
+          PKG_VERSION: ${{ needs.build.outputs.new-version }}
         run: |
           ./gradlew --no-daemon publishAllPublicationsToMavenCentralRepository \
             -Pversion="${PKG_VERSION}"
+
+  tag:
+    if: ${{ !inputs.dry-run }}
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Get secrets from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@f1614b210386ac420af6807a997ac7f6d96e477a # get-vault-secrets/v1.3.1
+        env:
+          VAULT_INSTANCE: ops
+        with:
+          vault_instance: ${{ env.VAULT_INSTANCE }}
+          common_secrets: |
+            GITHUB_APP_ID=plugins-platform-bot-app:app-id
+            GITHUB_APP_PRIVATE_KEY=plugins-platform-bot-app:private-key
+          export_env: false
+
+      - name: Generate GitHub token
+        id: generate-github-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          app-id: ${{ fromJSON(steps.get-secrets.outputs.secrets).GITHUB_APP_ID }}
+          private-key: ${{ fromJSON(steps.get-secrets.outputs.secrets).GITHUB_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          token: ${{ steps.generate-github-token.outputs.token }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Setup Git
+        run: |
+          git config user.name 'grafana-plugins-platform-bot[bot]'
+          git config user.email '144369747+grafana-plugins-platform-bot[bot]@users.noreply.github.com'
+
+      - name: Push tag
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.new-version }}
+        run: |
+          git push origin ":refs/tags/${TAG}" 2>/dev/null || true
+          git tag -f -a "${TAG}" -m "Java SDK ${VERSION}"
+          git push origin "${TAG}"
