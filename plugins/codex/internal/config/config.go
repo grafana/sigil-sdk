@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
+
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/util"
 )
 
 type Config struct {
@@ -52,16 +54,8 @@ func ApplyEnv(logger *log.Logger) map[string]string {
 func Load(logger *log.Logger) Config {
 	return Config{
 		ContentCapture: resolveContentCapture(os.Getenv("SIGIL_CONTENT_CAPTURE_MODE"), logger),
-		Debug:          parseBool(os.Getenv("SIGIL_DEBUG")),
+		Debug:          util.ParseBool(os.Getenv("SIGIL_DEBUG")),
 	}
-}
-
-func parseBool(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }
 
 func resolveContentCapture(raw string, logger *log.Logger) sigil.ContentCaptureMode {

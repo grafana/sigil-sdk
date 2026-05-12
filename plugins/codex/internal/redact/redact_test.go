@@ -43,18 +43,58 @@ func TestRedactJSONCoversRepoStandardTokenCorpus(t *testing.T) {
 }
 
 func TestRedactJSONKeepsTokenCountFieldsVisible(t *testing.T) {
-	raw := json.RawMessage(`{"max_tokens":100,"input_tokens":20,"output_tokens":10,"total_tokens":30,"authToken":"secret"}`)
+	raw := json.RawMessage(`{
+		"max_tokens": 100,
+		"input_tokens": 20,
+		"output_tokens": 10,
+		"total_tokens": 30,
+		"promptTokenCount": 40,
+		"token_count": 50,
+		"tokenCount": 60,
+		"tokenUsage": {"input_tokens": 20},
+		"authToken": "secret",
+		"idToken": "id-secret",
+		"id_token": "snake-secret"
+	}`)
 
 	var got map[string]any
 	if err := json.Unmarshal(New().RedactJSON(raw), &got); err != nil {
 		t.Fatalf("unmarshal redacted json: %v", err)
 	}
-	for _, key := range []string{"max_tokens", "input_tokens", "output_tokens", "total_tokens"} {
+	for _, key := range []string{"max_tokens", "input_tokens", "output_tokens", "total_tokens", "promptTokenCount", "token_count", "tokenCount"} {
 		if got[key] == "[REDACTED:json-secret-field]" {
 			t.Fatalf("%s was over-redacted: %#v", key, got)
 		}
 	}
+	if _, ok := got["tokenUsage"].(map[string]any); !ok {
+		t.Fatalf("tokenUsage was over-redacted: %#v", got)
+	}
 	if got["authToken"] != "[REDACTED:json-secret-field]" {
 		t.Fatalf("authToken was not redacted: %#v", got)
+	}
+	if got["idToken"] != "[REDACTED:json-secret-field]" {
+		t.Fatalf("idToken was not redacted: %#v", got)
+	}
+	if got["id_token"] != "[REDACTED:json-secret-field]" {
+		t.Fatalf("id_token was not redacted: %#v", got)
+	}
+}
+
+func TestRedactJSONRedactsServiceTokenKeys(t *testing.T) {
+	raw := json.RawMessage(`{
+		"github_token": "short-github-token",
+		"grafanaToken": "short-grafana-token",
+		"slack_token": "short-slack-token",
+		"serviceToken": "short-service-token"
+	}`)
+
+	var got map[string]any
+	if err := json.Unmarshal(New().RedactJSON(raw), &got); err != nil {
+		t.Fatalf("unmarshal redacted json: %v", err)
+	}
+	for _, key := range []string{"github_token", "grafanaToken", "slack_token", "serviceToken"} {
+		if got[key] != "[REDACTED:json-secret-field]" {
+			t.Fatalf("%s was not redacted: %#v", key, got)
+		}
 	}
 }

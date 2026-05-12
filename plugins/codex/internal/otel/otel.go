@@ -13,6 +13,8 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/util"
 )
 
 type Providers struct {
@@ -106,7 +108,7 @@ func exporterConfigFromEnv(endpoint string) exporterConfig {
 	return exporterConfig{
 		endpoint: endpoint,
 		headers:  headers,
-		insecure: parseBool(envOr("SIGIL_OTEL_EXPORTER_OTLP_INSECURE", os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))),
+		insecure: util.ParseBool(envOr("SIGIL_OTEL_EXPORTER_OTLP_INSECURE", os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))),
 	}
 }
 
@@ -182,13 +184,4 @@ func hasAuthorizationHeader(headers map[string]string) bool {
 		}
 	}
 	return false
-}
-
-func parseBool(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }

@@ -3,6 +3,7 @@ package redact
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
 )
 
 func (r *Redactor) RedactJSON(raw json.RawMessage) json.RawMessage {
@@ -55,22 +56,25 @@ func (r *Redactor) redactJSONValue(key string, v any) any {
 }
 
 func isSensitiveJSONKey(key string) bool {
-	k := strings.ToLower(strings.TrimSpace(key))
-	k = strings.ReplaceAll(k, "-", "_")
+	parts := jsonKeyParts(key)
+	if len(parts) == 0 {
+		return false
+	}
+	k := strings.Join(parts, "_")
 	switch k {
 	case "authorization", "proxy_authorization", "cookie", "set_cookie":
 		return true
 	}
-	parts := strings.FieldsFunc(k, func(r rune) bool {
-		return r == '_' || r == '.' || r == ' '
-	})
 	for _, p := range parts {
 		switch p {
-		case "password", "passwd", "pwd", "secret", "token", "credential":
+		case "password", "passwd", "pwd", "secret", "credential":
 			return true
 		}
 	}
-	compact := strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(k)
+	if isSensitiveTokenKey(parts) {
+		return true
+	}
+	compact := strings.Join(parts, "")
 	for _, needle := range []string{
 		"password",
 		"passwd",
@@ -83,11 +87,87 @@ func isSensitiveJSONKey(key string) bool {
 		"apitoken",
 		"clientsecret",
 		"authtoken",
+		"bearertoken",
+		"idtoken",
+		"jwttoken",
 		"refreshtoken",
 		"sessiontoken",
 		"secretkey",
 	} {
 		if strings.Contains(compact, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func jsonKeyParts(key string) []string {
+	var parts []string
+	var current []rune
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		parts = append(parts, strings.ToLower(string(current)))
+		current = current[:0]
+	}
+	runes := []rune(strings.TrimSpace(key))
+	for i, r := range runes {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			flush()
+			continue
+		}
+		if len(current) > 0 && startsJSONKeyWord(runes, i) {
+			flush()
+		}
+		current = append(current, r)
+	}
+	flush()
+	return parts
+}
+
+func startsJSONKeyWord(runes []rune, i int) bool {
+	if i == 0 || !unicode.IsUpper(runes[i]) {
+		return false
+	}
+	prev := runes[i-1]
+	if unicode.IsLower(prev) || unicode.IsDigit(prev) {
+		return true
+	}
+	if !unicode.IsUpper(prev) || i+1 >= len(runes) {
+		return false
+	}
+	return unicode.IsLower(runes[i+1])
+}
+
+func isSensitiveTokenKey(parts []string) bool {
+	for _, part := range parts {
+		if part != "token" && part != "tokens" {
+			continue
+		}
+		if !isTokenMetricKey(parts) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTokenMetricKey(parts []string) bool {
+	hasPluralToken := false
+	for _, part := range parts {
+		switch part {
+		case "count", "counts", "usage", "used", "limit", "budget", "remaining":
+			return true
+		case "tokens":
+			hasPluralToken = true
+		}
+	}
+	if !hasPluralToken {
+		return false
+	}
+	for _, part := range parts {
+		switch part {
+		case "cache", "cached", "candidate", "candidates", "completion", "content", "input", "max", "output", "prompt", "reasoning", "thought", "thoughts", "total":
 			return true
 		}
 	}

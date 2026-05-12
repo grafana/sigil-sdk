@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/codexlog"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/fragment"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/redact"
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/util"
 )
 
 const (
@@ -39,8 +40,8 @@ func Map(in Inputs) Mapped {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	completedAt := parseTimestamp(frag.CompletedAt, parseTimestamp(frag.LastEventAt, now))
-	startedAt := parseTimestamp(frag.StartedAt, completedAt)
+	completedAt := util.ParseTimestamp(frag.CompletedAt, util.ParseTimestamp(frag.LastEventAt, now))
+	startedAt := util.ParseTimestamp(frag.StartedAt, completedAt)
 	mode := in.ContentCapture
 	if mode == sigil.ContentCaptureModeDefault {
 		mode = sigil.ContentCaptureModeMetadataOnly
@@ -79,8 +80,8 @@ func Map(in Inputs) Mapped {
 		Model:               model,
 		Tools:               tools,
 		ParentGenerationIDs: parentIDs,
-		Tags:                tags,
-		Metadata:            metadata,
+		Tags:                cloneStringMap(tags),
+		Metadata:            cloneAnyMap(metadata),
 		StartedAt:           startedAt,
 		ContentCapture:      mode,
 	}
@@ -100,8 +101,8 @@ func Map(in Inputs) Mapped {
 		StopReason:          "completed",
 		StartedAt:           startedAt,
 		CompletedAt:         completedAt,
-		Tags:                tags,
-		Metadata:            metadata,
+		Tags:                cloneStringMap(tags),
+		Metadata:            cloneAnyMap(metadata),
 	}
 	return Mapped{Start: start, Generation: gen}
 }
@@ -190,6 +191,28 @@ func hasPositiveCodexUsage(u codexlog.TokenUsage) bool {
 		u.TotalTokens > 0
 }
 
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (input, output []sigil.Message) {
 	if mode == sigil.ContentCaptureModeDefault {
 		mode = sigil.ContentCaptureModeMetadataOnly
@@ -267,17 +290,4 @@ func inferProviderFromModel(model string) string {
 		return "google"
 	}
 	return ""
-}
-
-func parseTimestamp(s string, def time.Time) time.Time {
-	if s == "" {
-		return def
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	return def
 }

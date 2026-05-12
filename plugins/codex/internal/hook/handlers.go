@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/mapper"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/otel"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/redact"
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/util"
 )
 
 const (
@@ -411,25 +412,12 @@ func redactSpanContent(red *redact.Redactor, raw json.RawMessage) string {
 }
 
 func toolSpanWindow(t fragment.ToolRecord, genCompletedAt time.Time) (time.Time, time.Time) {
-	completedAt := parseTimestamp(t.CompletedAt, genCompletedAt)
+	completedAt := util.ParseTimestamp(t.CompletedAt, genCompletedAt)
 	startedAt := completedAt
 	if t.DurationMs != nil && !completedAt.IsZero() {
 		startedAt = completedAt.Add(-time.Duration(*t.DurationMs) * time.Millisecond)
 	}
 	return startedAt, completedAt
-}
-
-func parseTimestamp(s string, def time.Time) time.Time {
-	if s == "" {
-		return def
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	return def
 }
 
 func normalizeStatus(p Payload, response json.RawMessage) string {

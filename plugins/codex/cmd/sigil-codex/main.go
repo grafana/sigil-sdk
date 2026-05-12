@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/config"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/fragment"
 	"github.com/grafana/sigil-sdk/plugins/codex/internal/hook"
+	"github.com/grafana/sigil-sdk/plugins/codex/internal/util"
 )
 
 func main() {
@@ -61,7 +62,7 @@ func run(logger *log.Logger, stdin io.Reader) {
 
 func initLogger() *log.Logger {
 	logger := log.New(io.Discard, "sigil-codex: ", log.Ltime)
-	if !parseBool(os.Getenv("SIGIL_DEBUG")) {
+	if !util.ParseBool(os.Getenv("SIGIL_DEBUG")) {
 		return logger
 	}
 	path := fragment.LogFilePath()
@@ -73,14 +74,6 @@ func initLogger() *log.Logger {
 		return logger
 	}
 	return log.New(f, "sigil-codex: ", log.Ldate|log.Ltime|log.Lmicroseconds)
-}
-
-func parseBool(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }
 
 func recoverAndLog(logger *log.Logger) {

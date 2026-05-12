@@ -143,6 +143,30 @@ func TestMapAddsStopHookActiveTag(t *testing.T) {
 	}
 }
 
+func TestMapDoesNotShareTagOrMetadataMaps(t *testing.T) {
+	f := &fragment.Fragment{
+		SessionID: "child",
+		TurnID:    "child-turn",
+		Model:     "gpt-5.5",
+	}
+	link := &fragment.SubagentLink{
+		ChildSessionID:     "child",
+		ParentSessionID:    "parent",
+		ParentGenerationID: "parent-gen",
+	}
+
+	got := Map(Inputs{Fragment: f, SubagentLink: link, ContentCapture: sigil.ContentCaptureModeMetadataOnly, Now: time.Unix(1, 0)})
+	got.Start.Tags["start-only"] = "true"
+	got.Start.Metadata["start-only"] = "true"
+
+	if _, ok := got.Generation.Tags["start-only"]; ok {
+		t.Fatalf("Generation.Tags shares Start.Tags: %+v", got.Generation.Tags)
+	}
+	if _, ok := got.Generation.Metadata["start-only"]; ok {
+		t.Fatalf("Generation.Metadata shares Start.Metadata: %+v", got.Generation.Metadata)
+	}
+}
+
 func TestMapResolvedSubagentLink(t *testing.T) {
 	f := &fragment.Fragment{
 		SessionID: "child",
