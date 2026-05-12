@@ -549,10 +549,13 @@ describe("extension lifecycle", () => {
     await pi.emit("turn_start");
     await pi.emit("turn_end", { message: assistantMessage(), toolResults: [] });
 
-    expect(createTelemetryProvidersMock).toHaveBeenCalledWith({
-      endpoint: "http://localhost:4318",
-      headers: {},
-    });
+    expect(createTelemetryProvidersMock).toHaveBeenCalledWith(
+      {
+        endpoint: "http://localhost:4318",
+        headers: {},
+      },
+      "sess-default-id",
+    );
     expect(createSigilClientMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
