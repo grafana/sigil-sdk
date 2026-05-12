@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -109,7 +110,7 @@ export default function (pi: ExtensionAPI) {
     pendingInputMessages.length = 0;
   }
 
-  pi.on("session_start", async (_event, _ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
     try {
       if (sigil) {
         try {
@@ -134,10 +135,13 @@ export default function (pi: ExtensionAPI) {
       // (session-manager.js:927,961) are reflected without restarting
       // the plugin. We intentionally do NOT cache it here.
 
-      // Set up OTel providers if OTLP is configured
+      // Set up OTel providers if OTLP is configured.
+      // Pass the pi session id as service.instance.id so concurrent pi
+      // sessions on the same machine emit distinct OTel metric series.
       if (config.otlp) {
         try {
-          telemetry = createTelemetryProviders(config.otlp);
+          const instanceId = ctx.sessionManager.getSessionId() || randomUUID();
+          telemetry = createTelemetryProviders(config.otlp, instanceId);
         } catch (err) {
           console.warn("[sigil-pi] failed to create OTel providers:", err);
         }

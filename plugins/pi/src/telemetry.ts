@@ -31,10 +31,17 @@ export interface TelemetryProviders {
   shutdown: () => Promise<void>;
 }
 
-export function createTelemetryProviders(otlp: OtlpConfig): TelemetryProviders {
+export function createTelemetryProviders(
+  otlp: OtlpConfig,
+  instanceId: string,
+): TelemetryProviders {
   const base = otlp.endpoint.replace(/\/+$/, "");
+  // service.instance.id MUST disambiguate concurrent pi sessions on the same host.
   const resource = defaultResource().merge(
-    resourceFromAttributes({ "service.name": SERVICE_NAME }),
+    resourceFromAttributes({
+      "service.name": SERVICE_NAME,
+      "service.instance.id": instanceId,
+    }),
   );
 
   const metricExporter = new OTLPMetricExporter({

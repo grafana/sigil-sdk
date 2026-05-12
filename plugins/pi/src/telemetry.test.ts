@@ -79,10 +79,13 @@ describe("createTelemetryProviders", () => {
   it("exports metrics with sigil-pi resource and cumulative temporality", async () => {
     const server = await startOtlpServer();
     try {
-      const providers = createTelemetryProviders({
-        endpoint: server.endpoint,
-        headers: { "X-Test-Header": "present" },
-      });
+      const providers = createTelemetryProviders(
+        {
+          endpoint: server.endpoint,
+          headers: { "X-Test-Header": "present" },
+        },
+        "session-abc",
+      );
 
       providers.meter
         .createHistogram("sigil_pi.test.duration", { unit: "s" })
@@ -105,11 +108,66 @@ describe("createTelemetryProviders", () => {
         ]),
       );
       expect(resourceAttributes["service.name"]).toBe("sigil-pi");
+      expect(resourceAttributes["service.instance.id"]).toBe("session-abc");
       expect(resourceAttributes["telemetry.sdk.language"]).toBe("nodejs");
 
       expect(metric.histogram?.aggregationTemporality).toBe(
         OTLP_AGGREGATION_TEMPORALITY_CUMULATIVE,
       );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("tags each session's metrics with a distinct service.instance.id", async () => {
+    const server = await startOtlpServer();
+    try {
+      const a = createTelemetryProviders(
+        { endpoint: server.endpoint, headers: {} },
+        "session-a",
+      );
+      const b = createTelemetryProviders(
+        { endpoint: server.endpoint, headers: {} },
+        "session-b",
+      );
+
+      a.meter
+        .createHistogram("sigil_pi.test.duration", { unit: "s" })
+        .record(0.5);
+      b.meter
+        .createHistogram("sigil_pi.test.duration", { unit: "s" })
+        .record(0.5);
+
+      await a.forceFlush();
+      await b.forceFlush();
+      await a.shutdown();
+      await b.shutdown();
+
+      const instanceIds = new Set<string | undefined>();
+      for (const request of server.requests.filter(
+        (r) => r.url === "/otlp/v1/metrics",
+      )) {
+        const payload = JSON.parse(request.body) as {
+          resourceMetrics?: Array<{
+            resource?: {
+              attributes?: Array<{
+                key: string;
+                value: { stringValue?: string };
+              }>;
+            };
+          }>;
+        };
+        for (const rm of payload.resourceMetrics ?? []) {
+          for (const attr of rm.resource?.attributes ?? []) {
+            if (attr.key === "service.instance.id") {
+              instanceIds.add(attr.value.stringValue);
+            }
+          }
+        }
+      }
+
+      expect(instanceIds.has("session-a")).toBe(true);
+      expect(instanceIds.has("session-b")).toBe(true);
     } finally {
       await server.close();
     }
