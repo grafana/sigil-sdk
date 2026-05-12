@@ -21,6 +21,7 @@ python-frameworks/*/build/
 *.db
 coverage.out
 plugins/claude-code/sigil-cc
+plugins/codex/sigil-codex
 
 # dotnet artifacts
 dotnet/**/artifacts/
