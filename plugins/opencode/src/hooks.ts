@@ -1,3 +1,6 @@
+import { mkdir, open, unlink } from "fs/promises";
+import { homedir } from "os";
+import { join } from "path";
 import type { SigilClient } from "@grafana/sigil-sdk-js";
 import type { AssistantMessage, UserMessage, Part } from "@opencode-ai/sdk";
 import type { PluginInput } from "@opencode-ai/plugin";
@@ -18,10 +21,59 @@ type PendingGeneration = {
   tools: Record<string, boolean> | undefined;
 };
 const pendingGenerations = new Map<string, PendingGeneration>();
+const sessionPendingMessages = new Map<string, Set<string>>();
+const latestSystemPrompts = new Map<string, string>();
+
+function dedupDir(): string {
+  return process.env.SIGIL_OPENCODE_DEDUP_DIR ??
+    join(homedir(), ".cache", "opencode", "sigil-recorded");
+}
 
 function buildAgentName(prefix: string | undefined, mode: string | undefined): string {
   const base = prefix || "opencode";
   return mode ? `${base}:${mode}` : base;
+}
+
+function safePathPart(value: string): string {
+  return value.replace(/[^A-Za-z0-9_.-]/g, "_");
+}
+
+function dedupMarkerPath(sessionID: string, messageID: string): string {
+  return join(dedupDir(), `${safePathPart(sessionID)}-${safePathPart(messageID)}.lock`);
+}
+
+async function claimRecordedMessage(sessionID: string, messageID: string): Promise<boolean> {
+  const sessionSet = recordedMessages.get(sessionID) ?? new Set<string>();
+  if (sessionSet.has(messageID)) return false;
+
+  try {
+    await mkdir(dedupDir(), { recursive: true });
+    const marker = await open(dedupMarkerPath(sessionID, messageID), "wx");
+    await marker.close();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return false;
+    }
+    // If filesystem dedup is unavailable, keep the existing in-process guard.
+  }
+
+  sessionSet.add(messageID);
+  recordedMessages.set(sessionID, sessionSet);
+  return true;
+}
+
+async function releaseRecordedMessage(sessionID: string, messageID: string): Promise<void> {
+  recordedMessages.get(sessionID)?.delete(messageID);
+  try {
+    await unlink(dedupMarkerPath(sessionID, messageID));
+  } catch {
+    // Best effort cleanup; a stale marker is preferable to duplicate exports.
+  }
+}
+
+function joinSystemPrompt(system: string[] | undefined): string | undefined {
+  const prompt = system?.filter((part) => part.trim().length > 0).join("\n\n");
+  return prompt && prompt.length > 0 ? prompt : undefined;
 }
 
 /**
@@ -32,11 +84,48 @@ function handleChatMessage(
   input: { sessionID: string },
   output: { message: UserMessage; parts: Part[] },
 ): void {
-  pendingGenerations.set(input.sessionID, {
-    systemPrompt: output.message.system,
+  const messageID = output.message.id;
+  pendingGenerations.set(messageID, {
+    systemPrompt: output.message.system ?? latestSystemPrompts.get(input.sessionID),
     userParts: output.parts,
     tools: output.message.tools,
   });
+  const sessionSet = sessionPendingMessages.get(input.sessionID) ?? new Set<string>();
+  sessionSet.add(messageID);
+  sessionPendingMessages.set(input.sessionID, sessionSet);
+}
+
+function handleSystemTransform(
+  input: { sessionID?: string },
+  output: { system: string[] },
+): void {
+  if (!input.sessionID) return;
+  const systemPrompt = joinSystemPrompt(output.system);
+  if (!systemPrompt) return;
+
+  latestSystemPrompts.set(input.sessionID, systemPrompt);
+  for (const messageID of sessionPendingMessages.get(input.sessionID) ?? []) {
+    const pending = pendingGenerations.get(messageID);
+    if (pending) {
+      pending.systemPrompt = systemPrompt;
+    }
+  }
+}
+
+function shouldClearPendingGeneration(msg: AssistantMessage): boolean {
+  if (msg.error) return true;
+  return msg.finish !== "tool-calls";
+}
+
+function clearPendingGeneration(sessionID: string, messageID: string | undefined): void {
+  if (!messageID) return;
+  pendingGenerations.delete(messageID);
+  const sessionSet = sessionPendingMessages.get(sessionID);
+  if (!sessionSet) return;
+  sessionSet.delete(messageID);
+  if (sessionSet.size === 0) {
+    sessionPendingMessages.delete(sessionID);
+  }
 }
 
 async function handleEvent(
@@ -58,14 +147,11 @@ async function handleEvent(
   const isTerminal = assistantMsg.finish || assistantMsg.error || assistantMsg.time.completed;
   if (!isTerminal) return;
 
-  // Dedup
-  const sessionSet = recordedMessages.get(assistantMsg.sessionID) ?? new Set<string>();
-  if (sessionSet.has(assistantMsg.id)) return;
-  sessionSet.add(assistantMsg.id);
-  recordedMessages.set(assistantMsg.sessionID, sessionSet);
+  // Dedup across repeated events and multiple live opencode processes.
+  if (!(await claimRecordedMessage(assistantMsg.sessionID, assistantMsg.id))) return;
 
   // Look up pending generation (user-side data)
-  const pending = pendingGenerations.get(assistantMsg.sessionID);
+  const pending = pendingGenerations.get(assistantMsg.parentID);
 
   // Fetch assistant parts via REST
   let assistantParts: Part[] = [];
@@ -81,6 +167,7 @@ async function handleEvent(
   const contentCapture = config.contentCapture ?? true;
 
   const seed = {
+    id: assistantMsg.id,
     conversationId: assistantMsg.sessionID,
     agentName: buildAgentName(config.agentName, assistantMsg.mode),
     agentVersion: config.agentVersion,
@@ -111,11 +198,14 @@ async function handleEvent(
       });
     }
   } catch {
+    await releaseRecordedMessage(assistantMsg.sessionID, assistantMsg.id);
     // Sigil recording failure should never break the plugin
   }
 
-  // Clean up pending generation
-  pendingGenerations.delete(assistantMsg.sessionID);
+  // Keep user-side context through intermediate tool-call assistant messages.
+  if (shouldClearPendingGeneration(assistantMsg)) {
+    clearPendingGeneration(assistantMsg.sessionID, assistantMsg.parentID);
+  }
 }
 
 async function handleLifecycle(
@@ -137,7 +227,11 @@ async function handleLifecycle(
     const sessionId = properties?.info?.id;
     if (sessionId) {
       recordedMessages.delete(sessionId);
-      pendingGenerations.delete(sessionId);
+      for (const messageID of sessionPendingMessages.get(sessionId) ?? []) {
+        pendingGenerations.delete(messageID);
+      }
+      sessionPendingMessages.delete(sessionId);
+      latestSystemPrompts.delete(sessionId);
     }
   }
 
@@ -155,6 +249,10 @@ export type SigilHooks = {
   chatMessage: (
     input: { sessionID: string },
     output: { message: UserMessage; parts: Part[] },
+  ) => void;
+  systemTransform: (
+    input: { sessionID?: string },
+    output: { system: string[] },
   ) => void;
 };
 
@@ -185,6 +283,9 @@ export async function createSigilHooks(
     },
     chatMessage: (input, output) => {
       handleChatMessage(input, output);
+    },
+    systemTransform: (input, output) => {
+      handleSystemTransform(input, output);
     },
   };
 }
