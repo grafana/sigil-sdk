@@ -741,6 +741,90 @@ func TestProcess_ParentGenerationIDs(t *testing.T) {
 			wantGenCount: 2,
 			wantParents:  nil,
 		},
+		{
+			name: "subagent_type lowercase",
+			lines: []transcript.Line{
+				makeUserLine("explore"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_gp", Name: "Agent", Input: json.RawMessage(`{"subagent_type":"general-purpose","description":"test"}`)},
+				}, "tool_use"),
+				makeToolResultLine("agent_gp", "result"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn"),
+			},
+			wantGenCount:   3,
+			wantParents:    map[int][]int{1: {0}},
+			wantAgentNames: map[int]string{1: "claude-code/general-purpose"},
+		},
+		{
+			name: "subagent_type PascalCase lowercased",
+			lines: []transcript.Line{
+				makeUserLine("explore"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_ex", Name: "Agent", Input: json.RawMessage(`{"subagent_type":"Explore","description":"…"}`)},
+				}, "tool_use"),
+				makeToolResultLine("agent_ex", "result"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn"),
+			},
+			wantGenCount:   3,
+			wantParents:    map[int][]int{1: {0}},
+			wantAgentNames: map[int]string{1: "claude-code/explore"},
+		},
+		{
+			name: "plugin-namespaced subagent_type preserved verbatim",
+			lines: []transcript.Line{
+				makeUserLine("create agent"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_plug", Name: "Agent", Input: json.RawMessage(`{"subagent_type":"plugin-dev:agent-creator","description":"…"}`)},
+				}, "tool_use"),
+				makeToolResultLine("agent_plug", "result"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn"),
+			},
+			wantGenCount:   3,
+			wantParents:    map[int][]int{1: {0}},
+			wantAgentNames: map[int]string{1: "claude-code/plugin-dev:agent-creator"},
+		},
+		{
+			name: "empty subagent_type falls back",
+			lines: []transcript.Line{
+				makeUserLine("call agent"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_empty", Name: "Agent", Input: json.RawMessage(`{"subagent_type":"","description":"test"}`)},
+				}, "tool_use"),
+				makeToolResultLine("agent_empty", "result"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn"),
+			},
+			wantGenCount:   3,
+			wantParents:    map[int][]int{1: {0}},
+			wantAgentNames: map[int]string{1: "claude-code/subagent"},
+		},
+		{
+			// json.Marshal validates RawMessage syntactically, so genuinely
+			// malformed bytes can't survive the assistant-message round-trip.
+			// Use a valid-JSON-but-wrong-shape input (array) to exercise the
+			// json.Unmarshal error fallback in mapper.go.
+			name: "unparseable subagent_type input falls back",
+			lines: []transcript.Line{
+				makeUserLine("call agent"),
+				makeAssistantLine("claude-sonnet-4-20250514", 30, []transcript.ContentBlock{
+					{Type: "tool_use", ID: "agent_bad", Name: "Agent", Input: json.RawMessage(`[]`)},
+				}, "tool_use"),
+				makeToolResultLine("agent_bad", "result"),
+				makeAssistantLine("claude-sonnet-4-20250514", 40, []transcript.ContentBlock{
+					{Type: "text", Text: "done"},
+				}, "end_turn"),
+			},
+			wantGenCount:   3,
+			wantParents:    map[int][]int{1: {0}},
+			wantAgentNames: map[int]string{1: "claude-code/subagent"},
+		},
 	}
 
 	for _, tt := range tests {
