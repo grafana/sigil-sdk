@@ -84,15 +84,16 @@ app/
 See `[.env.example](./.env.example)`.
 
 
-| Variable                           | Purpose                                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`                | Required. Used by both the agent and the classifier.                                    |
-| `SIGIL_GENERATION_EXPORT_ENDPOINT` | HTTP generation-ingest URL. Default `http://localhost:8080/api/v1/generations:export`.  |
-| `SIGIL_API_ENDPOINT`               | Sigil REST API base (ratings, etc.). Default `http://localhost:8080`.                   |
-| `SIGIL_TENANT_ID`                  | Sent as `X-Scope-OrgID`. Any value works when `SIGIL_AUTH_ENABLED=false` on the server. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`      | OTLP gRPC target for traces + metrics. Default `http://localhost:4317`.                 |
-| `OTEL_EXPORTER_OTLP_INSECURE`      | `true` for plaintext gRPC (local dev).                                                  |
-| `OTEL_SERVICE_NAME`                | Service name tag on spans / metrics.                                                    |
-| `AGENT_MODEL` / `CLASSIFIER_MODEL` | Anthropic model IDs.                                                                    |
+| Variable                           | Purpose                                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`                | Required. Used by both the agent and the classifier.                                                                                  |
+| `SIGIL_ENDPOINT`                   | API URL from AI Observability → Configuration. Default `http://localhost:8080`.                                                       |
+| `SIGIL_API_ENDPOINT`               | Sigil REST API base used by helper endpoints such as ratings. Default `http://localhost:8080`.                                        |
+| `SIGIL_AUTH_TENANT_ID`             | Numeric instance ID. Sent as `X-Scope-OrgID` and used as basic-auth user.                                                             |
+| `SIGIL_AUTH_TOKEN`                 | Cloud Access Policy Token (`glc_…`) with `sigil:write` scope. Required for Cloud.                                                     |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`      | OTLP gRPC target for traces + metrics. Default `http://localhost:4317`.                                                               |
+| `OTEL_EXPORTER_OTLP_INSECURE`      | `true` for plaintext gRPC (local dev).                                                                                                |
+| `OTEL_SERVICE_NAME`                | Service name tag on spans / metrics.                                                                                                  |
+| `AGENT_MODEL` / `CLASSIFIER_MODEL` | Anthropic model IDs.                                                                                                                  |
 
 

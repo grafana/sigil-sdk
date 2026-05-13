@@ -130,7 +130,7 @@ If nothing appears, the most common causes are: `sigil-cc` not on `$PATH`, missi
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `SIGIL_ENDPOINT` | yes | Sigil API URL from AI Observability → Configuration. The `/api/v1/generations:export` path is appended automatically. |
+| `SIGIL_ENDPOINT` | yes | Sigil API URL from AI Observability → Configuration. |
 | `SIGIL_AUTH_TENANT_ID` | yes | Grafana Cloud stack/instance ID. Sent as Basic-auth username and `X-Scope-OrgID` header. |
 | `SIGIL_AUTH_TOKEN` | yes | `glc_…` access policy token with `sigil:write` (and `metrics:write` / `traces:write` if using OTel). [Access Policies docs](https://grafana.com/docs/grafana-cloud/account-management/authentication-and-permissions/access-policies/). |
 | `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | yes | OTLP HTTP endpoint for metrics and traces (e.g. `https://otlp-gateway-prod-<region>.grafana.net/otlp`). Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. The plugin runs without it, but the AI Observability UI depends on these signals — half the panels are empty. |

@@ -8,6 +8,8 @@ Sigil records normalized LLM generation and tool-execution telemetry using your 
 pnpm add @grafana/sigil-sdk-js
 ```
 
+For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance ID, and API token), refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/).
+
 ## Validation
 
 Run the shared core conformance suite for the JavaScript SDK from the repo root:
@@ -23,6 +25,8 @@ mise run sdk:conformance
 ```
 
 ## Quick Start
+
+The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
 
 ```ts
 import { SigilClient } from "@grafana/sigil-sdk-js";
@@ -316,7 +320,7 @@ Auth is configured for `generationExport`.
 - `mode: "none"`
 - `mode: "tenant"` (requires `tenantId`, injects `X-Scope-OrgID`)
 - `mode: "bearer"` (requires `bearerToken`, injects `Authorization: Bearer <token>`)
-- `mode: "basic"` (requires `basicPassword` + `basicUser` or `tenantId`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenantId` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
+- `mode: "basic"` (requires `basicPassword` + `basicUser` or `tenantId`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenantId` is set — for multi-tenant deployments only, not needed for Grafana Cloud)
 
 Invalid mode/field combinations throw during client config resolution.
 
@@ -346,8 +350,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.GRAFANA_CLOUD_INSTANCE_ID,
-      basicPassword: process.env.GRAFANA_CLOUD_API_KEY,
+      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
+      basicPassword: process.env.SIGIL_AUTH_TOKEN,
     },
   },
 });
@@ -358,9 +362,9 @@ If your deployment requires a distinct username, set `basicUser` explicitly:
 ```ts
 auth: {
   mode: "basic",
-  tenantId: process.env.GRAFANA_CLOUD_INSTANCE_ID,
-  basicUser: process.env.GRAFANA_CLOUD_INSTANCE_ID,
-  basicPassword: process.env.GRAFANA_CLOUD_API_KEY,
+  tenantId: process.env.SIGIL_AUTH_TENANT_ID,
+  basicUser: process.env.SIGIL_AUTH_TENANT_ID,
+  basicPassword: process.env.SIGIL_AUTH_TOKEN,
 },
 ```
 

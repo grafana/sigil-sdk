@@ -62,16 +62,16 @@ const addNumbers = tool({
   callback: ({ left, right }) => left + right,
 });
 
-const grafanaInstanceId = requiredEnv('GRAFANA_INSTANCE_ID');
+const tenantId = requiredEnv('SIGIL_AUTH_TENANT_ID');
 const sigil = createSigilClient({
   generationExport: {
-    protocol: env('SIGIL_EXPORT_PROTOCOL', 'http') as 'http' | 'grpc' | 'none',
+    protocol: env('SIGIL_PROTOCOL', 'http') as 'http' | 'grpc' | 'none',
     endpoint: requiredEnv('SIGIL_ENDPOINT'),
     auth: {
       mode: 'basic',
-      tenantId: grafanaInstanceId,
-      basicUser: grafanaInstanceId,
-      basicPassword: requiredEnv('GRAFANA_CLOUD_TOKEN'),
+      tenantId,
+      basicUser: tenantId,
+      basicPassword: requiredEnv('SIGIL_AUTH_TOKEN'),
     },
   },
   meter: meterProvider.getMeter('sigil-strands-typescript-example'),

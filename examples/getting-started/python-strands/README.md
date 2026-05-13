@@ -12,17 +12,18 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Configure Sigil and OTel endpoints from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find the Sigil API URL:
+Configure Sigil and OTel endpoints from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find each value:
 
 ```bash
-SIGIL_EXPORT_PROTOCOL=http
+SIGIL_PROTOCOL=http
+SIGIL_AUTH_MODE=basic
 SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-GRAFANA_INSTANCE_ID=...
-GRAFANA_CLOUD_TOKEN=...
+SIGIL_AUTH_TENANT_ID=...
+SIGIL_AUTH_TOKEN=...
 SIGIL_CONVERSATION_ID=sigil-strands-demo
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=
-OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64 of GRAFANA_INSTANCE_ID:GRAFANA_CLOUD_TOKEN>"
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64 of OTLP_INSTANCE_ID:SIGIL_AUTH_TOKEN>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_METRIC_EXPORT_INTERVAL_MILLIS=1000
 OTEL_SERVICE_NAME=sigil-strands-example
@@ -44,4 +45,4 @@ Strands itself defaults to Amazon Bedrock when no model is provided. This exampl
 python main.py
 ```
 
-You should see the agent response printed, followed by `Done`. Open Sigil in your Grafana Cloud stack to inspect the recorded generation.
+When the agent response prints, followed by `Done`, open Sigil in your Grafana Cloud stack to inspect the recorded generation.

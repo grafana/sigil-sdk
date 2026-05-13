@@ -9,8 +9,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SIGIL_ENDPOINT: ${SIGIL_ENDPOINT}
-      SIGIL_TENANT_ID: ${SIGIL_TENANT_ID}
-      SIGIL_API_KEY: ${SIGIL_API_KEY}
+      SIGIL_AUTH_TENANT_ID: ${SIGIL_AUTH_TENANT_ID}
+      SIGIL_AUTH_TOKEN: ${SIGIL_AUTH_TOKEN}
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./sigil_callback.py:/app/sigil_callback.py

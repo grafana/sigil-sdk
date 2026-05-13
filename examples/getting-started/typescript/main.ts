@@ -40,8 +40,8 @@ const sigil = createSigilClient({
     endpoint: process.env.SIGIL_ENDPOINT!,
     auth: {
       mode: "basic",
-      tenantId: process.env.GRAFANA_INSTANCE_ID!,
-      basicPassword: process.env.GRAFANA_CLOUD_TOKEN!,
+      tenantId: process.env.SIGIL_AUTH_TENANT_ID!,
+      basicPassword: process.env.SIGIL_AUTH_TOKEN!,
     },
   },
 });

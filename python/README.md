@@ -14,6 +14,8 @@ Use this package when you want:
 pip install sigil-sdk
 ```
 
+For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance ID, and API token), refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/).
+
 ## Validation
 
 Run the shared core conformance suite for the Python SDK from the repo root:
@@ -133,8 +135,11 @@ Full framework examples:
 
 ## Quick Start (Sync Generation)
 
+The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `Client()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+
 ```python
 from sigil_sdk import (
+    AuthConfig,
     Client,
     ClientConfig,
     GenerationExportConfig,
@@ -149,6 +154,7 @@ client = Client(
         generation_export=GenerationExportConfig(
             protocol="http",
             endpoint="http://localhost:8080",
+            auth=AuthConfig(mode="tenant", tenant_id="dev-tenant"),
         ),
     )
 )
@@ -452,7 +458,7 @@ Auth is resolved for `generation_export`.
 - `mode="none"`
 - `mode="tenant"` (requires `tenant_id`, injects `X-Scope-OrgID`)
 - `mode="bearer"` (requires `bearer_token`, injects `Authorization: Bearer <token>`)
-- `mode="basic"` (requires `basic_password` + `basic_user` or `tenant_id`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenant_id` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
+- `mode="basic"` (requires `basic_password` + `basic_user` or `tenant_id`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenant_id` is set — for multi-tenant deployments only, not needed for Grafana Cloud)
 
 Invalid mode/field combinations fail fast in `resolve_config(...)`.
 
@@ -485,8 +491,8 @@ cfg = ClientConfig(
         endpoint="https://sigil-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
-            tenant_id=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],
-            basic_password=os.environ["GRAFANA_CLOUD_API_KEY"],
+            tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
+            basic_password=os.environ["SIGIL_AUTH_TOKEN"],
         ),
     ),
 )
@@ -497,9 +503,9 @@ If your deployment requires a distinct username, set `basic_user` explicitly:
 ```python
 auth=AuthConfig(
     mode="basic",
-    tenant_id=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],
-    basic_user=os.environ["GRAFANA_CLOUD_INSTANCE_ID"],
-    basic_password=os.environ["GRAFANA_CLOUD_API_KEY"],
+    tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
+    basic_user=os.environ["SIGIL_AUTH_TENANT_ID"],
+    basic_password=os.environ["SIGIL_AUTH_TOKEN"],
 )
 ```
 

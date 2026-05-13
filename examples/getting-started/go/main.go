@@ -54,8 +54,8 @@ func main() {
 	cfg.GenerationExport.Endpoint = os.Getenv("SIGIL_ENDPOINT")
 	cfg.GenerationExport.Auth = sigil.AuthConfig{
 		Mode:          sigil.ExportAuthModeBasic,
-		TenantID:      os.Getenv("GRAFANA_INSTANCE_ID"),
-		BasicPassword: os.Getenv("GRAFANA_CLOUD_TOKEN"),
+		TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
+		BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
 	}
 	sigilClient := sigil.NewClient(cfg)
 	defer func() { _ = sigilClient.Shutdown(ctx) }()

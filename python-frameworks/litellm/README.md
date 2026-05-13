@@ -115,8 +115,8 @@ client = Client(ClientConfig(
         endpoint=os.environ["SIGIL_ENDPOINT"],
         auth=AuthConfig(
             mode="basic",
-            tenant_id=os.environ.get("SIGIL_TENANT_ID", ""),
-            basic_password=os.environ.get("SIGIL_API_KEY", ""),
+            tenant_id=os.environ.get("SIGIL_AUTH_TENANT_ID", ""),
+            basic_password=os.environ.get("SIGIL_AUTH_TOKEN", ""),
         ),
     ),
 ))
@@ -147,8 +147,8 @@ docker run -d \
   -v $(pwd)/config.yaml:/app/config.yaml \
   -v $(pwd)/sigil_callback.py:/app/sigil_callback.py \
   -e SIGIL_ENDPOINT=https://your-sigil-endpoint \
-  -e SIGIL_TENANT_ID=your-tenant \
-  -e SIGIL_API_KEY=your-key \
+  -e SIGIL_AUTH_TENANT_ID=your-tenant \
+  -e SIGIL_AUTH_TOKEN=your-key \
   -p 4000:4000 \
   your-litellm-image \
   --config /app/config.yaml

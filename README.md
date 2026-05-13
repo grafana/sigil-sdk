@@ -55,6 +55,8 @@ Instrument once with a thin OpenTelemetry-native SDK, then use it to see what yo
 
 ## Quick Examples
 
+The snippets below configure the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and construct the client with no config — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+
 ### TypeScript
 
 ```ts

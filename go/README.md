@@ -68,6 +68,15 @@ Framework modules:
 
 ## Configuration
 
+The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and pass an empty `sigil.Config{}` — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+
+```go
+client := sigil.NewClient(sigil.Config{})
+defer func() { _ = client.Shutdown(context.Background()) }()
+```
+
+For explicit configuration with custom auth or batch tuning:
+
 ```go
 cfg := sigil.DefaultConfig()
 
@@ -78,7 +87,7 @@ cfg := sigil.DefaultConfig()
 
 // Generation export (custom ingest)
 cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default; or sigil.GenerationExportProtocolHTTP / sigil.GenerationExportProtocolNone
-cfg.GenerationExport.Endpoint = "localhost:4317"                  // HTTP parity: "http://localhost:8080" (SDK auto-appends /api/v1/generations:export)
+cfg.GenerationExport.Endpoint = "localhost:4317" // HTTP parity: "http://localhost:8080" (SDK auto-appends /api/v1/generations:export)
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:     sigil.ExportAuthModeTenant,
 	TenantID: "dev-tenant",
@@ -133,7 +142,7 @@ Auth is configured for generation export.
 - `none`
 - `tenant` (requires `TenantID`, injects `X-Scope-OrgID`)
 - `bearer` (requires `BearerToken`, injects `Authorization: Bearer <token>`)
-- `basic` (requires `BasicPassword` + `BasicUser` or `TenantID`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `TenantID` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
+- `basic` (requires `BasicPassword` + `BasicUser` or `TenantID`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `TenantID` is set — for multi-tenant deployments only, not needed for Grafana Cloud)
 
 Invalid combinations fail fast during `NewClient(...)`.
 
@@ -153,8 +162,8 @@ For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud ins
 ```go
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:          sigil.ExportAuthModeBasic,
-	TenantID:      os.Getenv("GRAFANA_CLOUD_INSTANCE_ID"),
-	BasicPassword: os.Getenv("GRAFANA_CLOUD_API_KEY"),
+	TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
+	BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
 }
 ```
 
@@ -163,9 +172,9 @@ If your deployment requires a distinct username (different from the tenant ID), 
 ```go
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:          sigil.ExportAuthModeBasic,
-	TenantID:      os.Getenv("GRAFANA_CLOUD_INSTANCE_ID"),
-	BasicUser:     os.Getenv("GRAFANA_CLOUD_INSTANCE_ID"),
-	BasicPassword: os.Getenv("GRAFANA_CLOUD_API_KEY"),
+	TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
+	BasicUser:     os.Getenv("SIGIL_AUTH_TENANT_ID"),
+	BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
 }
 ```
 

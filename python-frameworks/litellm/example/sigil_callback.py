@@ -15,8 +15,8 @@ client = Client(
             endpoint=_endpoint,
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ.get("SIGIL_TENANT_ID", ""),
-                basic_password=os.environ.get("SIGIL_API_KEY", ""),
+                tenant_id=os.environ.get("SIGIL_AUTH_TENANT_ID", ""),
+                basic_password=os.environ.get("SIGIL_AUTH_TOKEN", ""),
             ),
         ),
     )

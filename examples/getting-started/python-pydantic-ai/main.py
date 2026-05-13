@@ -54,8 +54,8 @@ sigil = Client(
             endpoint=os.environ["SIGIL_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ["GRAFANA_INSTANCE_ID"],
-                basic_password=os.environ["GRAFANA_CLOUD_TOKEN"],
+                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
+                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
             ),
         ),
     )

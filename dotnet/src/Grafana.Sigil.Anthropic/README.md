@@ -27,7 +27,7 @@ var sigilConfig = new SigilClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "http://localhost:8080/api/v1/generations:export",
+        Endpoint = "http://localhost:8080",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Tenant,

@@ -9,6 +9,8 @@ The Java SDK records normalized generation payloads, correlates them with traces
 - Java 17+
 - OpenTelemetry SDK already in your app (optional but recommended)
 
+For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance ID, and API token), refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/).
+
 ## Modules
 
 - `:core`: runtime client, models, validation, generation exporters
@@ -47,6 +49,8 @@ The Java SDK records normalized generation payloads, correlates them with traces
 - If caller metadata provides a conflicting value for this key, the SDK overwrites it.
 
 ## Quick Start (sync)
+
+The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
 
 ```java
 SigilClient client = new SigilClient(new SigilClientConfig()
@@ -170,7 +174,7 @@ Auth is configured for generation export:
 - `NONE`
 - `TENANT` (injects `X-Scope-OrgID`)
 - `BEARER` (injects `Authorization: Bearer <token>`)
-- `BASIC` (requires `basicPassword` + `basicUser` or `tenantId`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenantId` is set — for self-hosted multi-tenancy only, not needed for Grafana Cloud)
+- `BASIC` (requires `basicPassword` + `basicUser` or `tenantId`, injects `Authorization: Basic <base64(user:password)>`; also injects `X-Scope-OrgID` when `tenantId` is set — for multi-tenant deployments only, not needed for Grafana Cloud)
 
 Invalid combinations fail fast at client construction. If explicit headers already contain `Authorization` or `X-Scope-OrgID`, explicit headers win.
 
@@ -181,8 +185,8 @@ For Grafana Cloud, use `BASIC` auth mode. The username is your Grafana Cloud ins
 ```java
 .setAuth(new AuthConfig()
     .setMode(AuthMode.BASIC)
-    .setTenantId(System.getenv("GRAFANA_CLOUD_INSTANCE_ID"))
-    .setBasicPassword(System.getenv("GRAFANA_CLOUD_API_KEY")))
+    .setTenantId(System.getenv("SIGIL_AUTH_TENANT_ID"))
+    .setBasicPassword(System.getenv("SIGIL_AUTH_TOKEN")))
 ```
 
 If your deployment requires a distinct username, set `basicUser` explicitly:
@@ -190,9 +194,9 @@ If your deployment requires a distinct username, set `basicUser` explicitly:
 ```java
 .setAuth(new AuthConfig()
     .setMode(AuthMode.BASIC)
-    .setTenantId(System.getenv("GRAFANA_CLOUD_INSTANCE_ID"))
-    .setBasicUser(System.getenv("GRAFANA_CLOUD_INSTANCE_ID"))
-    .setBasicPassword(System.getenv("GRAFANA_CLOUD_API_KEY")))
+    .setTenantId(System.getenv("SIGIL_AUTH_TENANT_ID"))
+    .setBasicUser(System.getenv("SIGIL_AUTH_TENANT_ID"))
+    .setBasicPassword(System.getenv("SIGIL_AUTH_TOKEN")))
 ```
 
 Generation export transport protocols:
@@ -276,7 +280,7 @@ Framework helpers:
 
 ## Environment variables
 
-The SDK reads canonical `SIGIL_*` env vars at client construction. Caller-supplied
+The SDK reads `SIGIL_*` environment variables at client construction. Caller-supplied
 fields on `SigilClientConfig` win; env vars fill anything left at the default;
 SDK schema defaults fill the rest.
 
