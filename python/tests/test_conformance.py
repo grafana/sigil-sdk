@@ -279,7 +279,6 @@ def test_conformance_sync_roundtrip_semantics() -> None:
                     total_tokens=19,
                     cache_read_input_tokens=2,
                     cache_write_input_tokens=1,
-                    cache_creation_input_tokens=3,
                     reasoning_tokens=4,
                 ),
                 stop_reason="stop",
@@ -317,7 +316,6 @@ def test_conformance_sync_roundtrip_semantics() -> None:
         assert generation.usage.total_tokens == 19
         assert generation.usage.cache_read_input_tokens == 2
         assert generation.usage.cache_write_input_tokens == 1
-        assert generation.usage.cache_creation_input_tokens == 3
         assert generation.usage.reasoning_tokens == 4
         assert generation.stop_reason == "stop"
         assert generation.tags["tenant"] == "dev"

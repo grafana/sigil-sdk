@@ -75,8 +75,8 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Usage.CacheReadInputTokens != 30 {
 		t.Fatalf("expected cache read input tokens 30, got %d", generation.Usage.CacheReadInputTokens)
 	}
-	if generation.Usage.CacheCreationInputTokens != 10 {
-		t.Fatalf("expected cache creation tokens 10, got %d", generation.Usage.CacheCreationInputTokens)
+	if generation.Usage.CacheWriteInputTokens != 10 {
+		t.Fatalf("expected cache write tokens 10, got %d", generation.Usage.CacheWriteInputTokens)
 	}
 	if generation.MaxTokens == nil || *generation.MaxTokens != 512 {
 		t.Fatalf("expected max tokens 512, got %v", generation.MaxTokens)

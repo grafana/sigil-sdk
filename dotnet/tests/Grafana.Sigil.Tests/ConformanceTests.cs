@@ -94,7 +94,6 @@ public sealed class ConformanceTests
                 TotalTokens = 19,
                 CacheReadInputTokens = 2,
                 CacheWriteInputTokens = 1,
-                CacheCreationInputTokens = 3,
                 ReasoningTokens = 4,
             },
             StopReason = "stop",

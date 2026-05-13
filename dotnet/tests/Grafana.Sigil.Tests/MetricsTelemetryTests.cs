@@ -44,7 +44,7 @@ public sealed class MetricsTelemetryTests
         var result = TestHelpers.CreateSeedResult("gen-metrics");
         result.Mode = GenerationMode.Stream;
         result.OperationName = "streamText";
-        result.Usage.CacheCreationInputTokens = 3;
+        result.Usage.CacheWriteInputTokens = 3;
         result.Usage.ReasoningTokens = 7;
         recorder.SetResult(result);
         recorder.End();
@@ -63,7 +63,8 @@ public sealed class MetricsTelemetryTests
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .ToHashSet(StringComparer.Ordinal);
 
-        Assert.Contains("cache_creation", tokenTypes);
+        Assert.Contains("cache_write", tokenTypes);
         Assert.Contains("reasoning", tokenTypes);
+        Assert.DoesNotContain("cache_creation", tokenTypes);
     }
 }

@@ -164,7 +164,7 @@ describe("mapGenerationResult", () => {
       outputTokens: 50,
       totalTokens: 165,
       cacheReadInputTokens: 10,
-      cacheCreationInputTokens: 5,
+      cacheWriteInputTokens: 5,
     });
     expect(result.responseModel).toBe("claude-sonnet-4-20250514");
     expect(result.stopReason).toBe("end_turn");

@@ -8,7 +8,6 @@ public final class TokenUsage {
     private long cacheReadInputTokens;
     private long cacheWriteInputTokens;
     private long reasoningTokens;
-    private long cacheCreationInputTokens;
 
     public long getInputTokens() {
         return inputTokens;
@@ -64,15 +63,6 @@ public final class TokenUsage {
         return this;
     }
 
-    public long getCacheCreationInputTokens() {
-        return cacheCreationInputTokens;
-    }
-
-    public TokenUsage setCacheCreationInputTokens(long cacheCreationInputTokens) {
-        this.cacheCreationInputTokens = cacheCreationInputTokens;
-        return this;
-    }
-
     public TokenUsage normalized() {
         TokenUsage out = copy();
         if (out.totalTokens == 0) {
@@ -88,7 +78,6 @@ public final class TokenUsage {
                 .setTotalTokens(totalTokens)
                 .setCacheReadInputTokens(cacheReadInputTokens)
                 .setCacheWriteInputTokens(cacheWriteInputTokens)
-                .setReasoningTokens(reasoningTokens)
-                .setCacheCreationInputTokens(cacheCreationInputTokens);
+                .setReasoningTokens(reasoningTokens);
     }
 }

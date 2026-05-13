@@ -309,7 +309,7 @@ def test_sigil_sdk_pydantic_ai_capability_wrap_model_request() -> None:
         assert generation.usage.input_tokens == 10
         assert generation.usage.output_tokens == 5
         assert generation.usage.cache_read_input_tokens == 3
-        assert generation.usage.cache_creation_input_tokens == 2
+        assert generation.usage.cache_write_input_tokens == 2
         assert generation.usage.total_tokens == 15
     finally:
         client.shutdown()

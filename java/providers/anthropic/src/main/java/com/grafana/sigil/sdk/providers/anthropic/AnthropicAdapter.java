@@ -430,18 +430,13 @@ public final class AnthropicAdapter {
         long total = input + output;
         long cacheRead = usage.cacheReadInputTokens().orElse(0L);
         long cacheWrite = usage.cacheCreationInputTokens().orElse(0L);
-        long cacheCreation = usage.cacheCreationInputTokens().orElse(0L);
-        if (cacheWrite == 0 && cacheCreation > 0) {
-            cacheWrite = cacheCreation;
-        }
 
         return new TokenUsage()
                 .setInputTokens(input)
                 .setOutputTokens(output)
                 .setTotalTokens(total == 0 ? input + output : total)
                 .setCacheReadInputTokens(cacheRead)
-                .setCacheWriteInputTokens(cacheWrite)
-                .setCacheCreationInputTokens(cacheCreation);
+                .setCacheWriteInputTokens(cacheWrite);
     }
 
     private static String extractDeltaText(RawMessageStreamEvent event) {

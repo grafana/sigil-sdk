@@ -288,7 +288,7 @@ def _extract_detailed_usage(response_obj: Any, slo: dict[str, Any]) -> TokenUsag
 
     detail = from_openai_chat(resp_usage)
     usage.cache_read_input_tokens = detail.cache_read_input_tokens
-    usage.cache_creation_input_tokens = detail.cache_creation_input_tokens
+    usage.cache_write_input_tokens = detail.cache_write_input_tokens
     usage.reasoning_tokens = detail.reasoning_tokens
     return usage
 

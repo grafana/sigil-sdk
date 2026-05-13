@@ -939,7 +939,7 @@ def test_detailed_token_usage() -> None:
         assert gen.usage.output_tokens == 50
         assert gen.usage.total_tokens == 150
         assert gen.usage.cache_read_input_tokens == 30
-        assert gen.usage.cache_creation_input_tokens == 20
+        assert gen.usage.cache_write_input_tokens == 20
         assert gen.usage.reasoning_tokens == 15
     finally:
         client.shutdown()
@@ -976,7 +976,7 @@ def test_zero_token_counts_preserved() -> None:
 
         gen = exporter.requests[0].generations[0]
         assert gen.usage.cache_read_input_tokens == 0
-        assert gen.usage.cache_creation_input_tokens == 0
+        assert gen.usage.cache_write_input_tokens == 0
         assert gen.usage.reasoning_tokens == 0
     finally:
         client.shutdown()

@@ -286,10 +286,10 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 	completedAt, _ := time.Parse(time.RFC3339Nano, line.Timestamp)
 
 	usage := sigil.TokenUsage{
-		InputTokens:              msg.Usage.InputTokens,
-		OutputTokens:             msg.Usage.OutputTokens,
-		CacheReadInputTokens:     msg.Usage.CacheReadInputTokens,
-		CacheCreationInputTokens: msg.Usage.CacheCreationInputTokens,
+		InputTokens:           msg.Usage.InputTokens,
+		OutputTokens:          msg.Usage.OutputTokens,
+		CacheReadInputTokens:  msg.Usage.CacheReadInputTokens,
+		CacheWriteInputTokens: msg.Usage.CacheCreationInputTokens,
 	}
 	usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 

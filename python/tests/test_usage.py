@@ -31,9 +31,28 @@ class TestFromAnthropic:
         assert usage.output_tokens == 50
         assert usage.total_tokens == 150  # normalized
         assert usage.cache_read_input_tokens == 10
+        # When both upstream fields are present, prefer cache_write_input_tokens.
         assert usage.cache_write_input_tokens == 5
-        assert usage.cache_creation_input_tokens == 3
         assert usage.reasoning_tokens == 0
+
+    def test_cache_creation_only_maps_to_cache_write(self):
+        raw = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 7,
+        }
+        usage = from_anthropic(raw)
+        assert usage.cache_write_input_tokens == 7
+
+    def test_explicit_zero_cache_write_not_overridden(self):
+        raw = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_write_input_tokens": 0,
+            "cache_creation_input_tokens": 7,
+        }
+        usage = from_anthropic(raw)
+        assert usage.cache_write_input_tokens == 0
 
     def test_partial(self):
         raw = {"input_tokens": 40, "output_tokens": 20}
@@ -69,7 +88,7 @@ class TestFromAnthropic:
         assert usage.output_tokens == 40
         assert usage.total_tokens == 120
         assert usage.cache_read_input_tokens == 15
-        assert usage.cache_creation_input_tokens == 7
+        assert usage.cache_write_input_tokens == 7
 
 
 class TestFromOpenAIChat:
@@ -91,7 +110,7 @@ class TestFromOpenAIChat:
         assert usage.output_tokens == 100
         assert usage.total_tokens == 300
         assert usage.cache_read_input_tokens == 50
-        assert usage.cache_creation_input_tokens == 20
+        assert usage.cache_write_input_tokens == 20
         assert usage.reasoning_tokens == 30
 
     def test_missing_detail_objects(self):
@@ -134,7 +153,7 @@ class TestFromOpenAIChat:
         )
         usage = from_openai_chat(raw)
         assert usage.cache_read_input_tokens == 50
-        assert usage.cache_creation_input_tokens == 10
+        assert usage.cache_write_input_tokens == 10
         assert usage.reasoning_tokens == 25
 
 
@@ -190,8 +209,8 @@ class TestFromGemini:
         assert usage.output_tokens == 250
         assert usage.total_tokens == 800
         assert usage.cache_read_input_tokens == 60
+        # When both upstream fields are present, prefer cache_write_input_token_count.
         assert usage.cache_write_input_tokens == 20
-        assert usage.cache_creation_input_tokens == 10
         assert usage.reasoning_tokens == 35
 
     def test_total_autofill_includes_tool_use_and_thoughts(self):
@@ -213,6 +232,16 @@ class TestFromGemini:
         usage = from_gemini(raw)
         assert usage.total_tokens == 150
         assert usage.cache_read_input_tokens == 0
+
+    def test_explicit_zero_cache_write_not_overridden(self):
+        raw = {
+            "prompt_token_count": 100,
+            "candidates_token_count": 50,
+            "cache_write_input_token_count": 0,
+            "cache_creation_input_token_count": 7,
+        }
+        usage = from_gemini(raw)
+        assert usage.cache_write_input_tokens == 0
 
     def test_none(self):
         assert from_gemini(None) == TokenUsage()
@@ -347,6 +376,16 @@ class TestFromGeneric:
         raw = {"completion_tokens": 0, "output_tokens": 50}
         usage = from_generic(raw)
         assert usage.output_tokens == 0
+
+    def test_explicit_zero_cache_write_not_overridden(self):
+        raw = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_write_input_tokens": 0,
+            "cache_creation_input_tokens": 7,
+        }
+        usage = from_generic(raw)
+        assert usage.cache_write_input_tokens == 0
 
     def test_flat_reasoning_tokens(self):
         raw = {"input_tokens": 100, "reasoning_tokens": 25}

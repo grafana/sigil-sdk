@@ -141,8 +141,9 @@ export function mapUsageFromStepFinish(event: StepFinishEvent): TokenUsage | und
   const inputDetails = asRecord(usage.inputTokenDetails);
   const outputDetails = asRecord(usage.outputTokenDetails);
   const cacheReadTokens = numberFromCandidates([inputDetails?.cacheReadTokens]);
-  const cacheWriteTokens = numberFromCandidates([inputDetails?.cacheWriteTokens]);
-  const cacheCreationTokens = numberFromCandidates([inputDetails?.cacheCreationTokens]);
+  const cacheWriteFromUpstream = numberFromCandidates([inputDetails?.cacheWriteTokens]);
+  const cacheCreationFromUpstream = numberFromCandidates([inputDetails?.cacheCreationTokens]);
+  const cacheWriteTokens = cacheWriteFromUpstream ?? cacheCreationFromUpstream;
   const reasoningTokens = numberFromCandidates([outputDetails?.reasoningTokens]);
 
   const hasUsagePayload =
@@ -165,7 +166,6 @@ export function mapUsageFromStepFinish(event: StepFinishEvent): TokenUsage | und
     totalTokens: resolvedTotal,
     cacheReadInputTokens: cacheReadTokens ?? 0,
     cacheWriteInputTokens: cacheWriteTokens ?? 0,
-    cacheCreationInputTokens: cacheCreationTokens ?? 0,
     reasoningTokens: reasoningTokens ?? 0,
   };
 }

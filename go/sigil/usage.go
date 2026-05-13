@@ -1,13 +1,12 @@
 package sigil
 
 type TokenUsage struct {
-	InputTokens              int64 `json:"input_tokens,omitempty"`
-	OutputTokens             int64 `json:"output_tokens,omitempty"`
-	TotalTokens              int64 `json:"total_tokens,omitempty"`
-	CacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`
-	CacheWriteInputTokens    int64 `json:"cache_write_input_tokens,omitempty"`
-	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens,omitempty"`
-	ReasoningTokens          int64 `json:"reasoning_tokens,omitempty"`
+	InputTokens           int64 `json:"input_tokens,omitempty"`
+	OutputTokens          int64 `json:"output_tokens,omitempty"`
+	TotalTokens           int64 `json:"total_tokens,omitempty"`
+	CacheReadInputTokens  int64 `json:"cache_read_input_tokens,omitempty"`
+	CacheWriteInputTokens int64 `json:"cache_write_input_tokens,omitempty"`
+	ReasoningTokens       int64 `json:"reasoning_tokens,omitempty"`
 }
 
 func (u TokenUsage) Normalize() TokenUsage {

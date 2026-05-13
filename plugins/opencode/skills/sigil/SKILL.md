@@ -163,7 +163,7 @@ On generation and tool spans, capture or preserve these when available:
   - `gen_ai.usage.input_tokens`
   - `gen_ai.usage.output_tokens`
   - `gen_ai.usage.cache_read_input_tokens`
-  - `gen_ai.usage.cache_creation_input_tokens`
+  - `gen_ai.usage.cache_write_input_tokens`
   - `gen_ai.usage.reasoning_tokens`
   - `gen_ai.response.finish_reasons`
   - error classification fields (`error.type`, `error.category`)
@@ -237,7 +237,7 @@ Provider wrappers and framework adapters already exist; reuse them where possibl
   - `response_id` (provider correlation, maps to `gen_ai.response.id`)
   - `response_model` (actual model used)
   - `stop_reason` / `finish_reason`
-  - Full token usage including `cache_read_input_tokens`, `cache_creation_input_tokens`, and `reasoning_tokens` when the provider returns them
+  - Full token usage including `cache_read_input_tokens`, `cache_write_input_tokens`, and `reasoning_tokens` when the provider returns them
 - Always check `rec.err()` / `Err()` after the generation recorder closes — SDK validation or enqueue errors are otherwise silent.
 - Use `tags` on `GenerationStart` for filtering in the Sigil UI (e.g. pipeline name, layer, agent role).
 

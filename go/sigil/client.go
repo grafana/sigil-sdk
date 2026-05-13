@@ -190,7 +190,6 @@ const (
 	spanAttrRequestEncodingFormats = "gen_ai.request.encoding_formats"
 	spanAttrCacheReadTokens        = "gen_ai.usage.cache_read_input_tokens"
 	spanAttrCacheWriteTokens       = "gen_ai.usage.cache_write_input_tokens"
-	spanAttrCacheCreationTokens    = "gen_ai.usage.cache_creation_input_tokens"
 	spanAttrReasoningTokens        = "gen_ai.usage.reasoning_tokens"
 	spanAttrToolName               = "gen_ai.tool.name"
 	spanAttrToolCallID             = "gen_ai.tool.call.id"
@@ -208,7 +207,6 @@ const (
 	metricTokenTypeOutput        = "output"
 	metricTokenTypeCacheRead     = "cache_read"
 	metricTokenTypeCacheWrite    = "cache_write"
-	metricTokenTypeCacheCreation = "cache_creation"
 	metricTokenTypeReasoning     = "reasoning"
 )
 
@@ -1489,9 +1487,6 @@ func generationSpanAttributes(g Generation) []attribute.KeyValue {
 	if g.Usage.CacheWriteInputTokens != 0 {
 		attrs = append(attrs, attribute.Int64(spanAttrCacheWriteTokens, g.Usage.CacheWriteInputTokens))
 	}
-	if g.Usage.CacheCreationInputTokens != 0 {
-		attrs = append(attrs, attribute.Int64(spanAttrCacheCreationTokens, g.Usage.CacheCreationInputTokens))
-	}
 	if g.Usage.ReasoningTokens != 0 {
 		attrs = append(attrs, attribute.Int64(spanAttrReasoningTokens, g.Usage.ReasoningTokens))
 	}
@@ -1801,7 +1796,6 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 	recordToken(metricTokenTypeOutput, generation.Usage.OutputTokens)
 	recordToken(metricTokenTypeCacheRead, generation.Usage.CacheReadInputTokens)
 	recordToken(metricTokenTypeCacheWrite, generation.Usage.CacheWriteInputTokens)
-	recordToken(metricTokenTypeCacheCreation, generation.Usage.CacheCreationInputTokens)
 	recordToken(metricTokenTypeReasoning, generation.Usage.ReasoningTokens)
 
 	toolCalls := countToolCalls(generation.Output)

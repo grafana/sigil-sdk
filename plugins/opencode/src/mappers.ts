@@ -134,7 +134,7 @@ export function mapGeneration(
       outputTokens: msg.tokens.output,
       reasoningTokens: msg.tokens.reasoning,
       cacheReadInputTokens: msg.tokens.cache.read,
-      cacheCreationInputTokens: msg.tokens.cache.write,
+      cacheWriteInputTokens: msg.tokens.cache.write,
     },
     responseModel: msg.modelID,
     stopReason: msg.finish,

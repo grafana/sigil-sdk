@@ -140,13 +140,12 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 			},
 		},
 		Usage: sigil.TokenUsage{
-			InputTokens:              120,
-			OutputTokens:             42,
-			TotalTokens:              162,
-			CacheReadInputTokens:     30,
-			CacheWriteInputTokens:    4,
-			CacheCreationInputTokens: 6,
-			ReasoningTokens:          9,
+			InputTokens:           120,
+			OutputTokens:          42,
+			TotalTokens:           162,
+			CacheReadInputTokens:  30,
+			CacheWriteInputTokens: 4,
+			ReasoningTokens:       9,
 		},
 		StopReason: "end_turn",
 		Tags: map[string]string{
@@ -203,7 +202,6 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	requireSpanInt64Attr(t, attrs, spanAttrOutputTokens, 42)
 	requireSpanInt64Attr(t, attrs, spanAttrCacheReadTokens, 30)
 	requireSpanInt64Attr(t, attrs, spanAttrCacheWriteTokens, 4)
-	requireSpanInt64Attr(t, attrs, spanAttrCacheCreationTokens, 6)
 	requireSpanInt64Attr(t, attrs, spanAttrReasoningTokens, 9)
 
 	duration := findHistogram[float64](t, metrics, metricOperationDuration)
@@ -224,12 +222,11 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 
 	tokenUsage := findHistogram[int64](t, metrics, metricTokenUsage)
 	for tokenType, want := range map[string]int64{
-		metricTokenTypeInput:         120,
-		metricTokenTypeOutput:        42,
-		metricTokenTypeCacheRead:     30,
-		metricTokenTypeCacheWrite:    4,
-		metricTokenTypeCacheCreation: 6,
-		metricTokenTypeReasoning:     9,
+		metricTokenTypeInput:      120,
+		metricTokenTypeOutput:     42,
+		metricTokenTypeCacheRead:  30,
+		metricTokenTypeCacheWrite: 4,
+		metricTokenTypeReasoning:  9,
 	} {
 		point := findHistogramPoint(t, tokenUsage, map[string]string{
 			spanAttrOperationName: conformanceOperationName,
@@ -402,7 +399,7 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	}
 
 	usage := generation.GetUsage()
-	if usage.GetInputTokens() != 120 || usage.GetOutputTokens() != 42 || usage.GetTotalTokens() != 162 || usage.GetCacheReadInputTokens() != 30 || usage.GetCacheWriteInputTokens() != 4 || usage.GetReasoningTokens() != 9 || usage.GetCacheCreationInputTokens() != 6 {
+	if usage.GetInputTokens() != 120 || usage.GetOutputTokens() != 42 || usage.GetTotalTokens() != 162 || usage.GetCacheReadInputTokens() != 30 || usage.GetCacheWriteInputTokens() != 4 || usage.GetReasoningTokens() != 9 {
 		t.Fatalf("unexpected proto usage: %#v", usage)
 	}
 

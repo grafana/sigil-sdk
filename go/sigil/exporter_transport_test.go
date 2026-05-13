@@ -133,6 +133,24 @@ func TestSDKExportRoundTripProperties(t *testing.T) {
 	}
 }
 
+func TestSDKExportsCacheWriteTokensOnlyOnProtoField5(t *testing.T) {
+	start, result := payloadFromSeed(7)
+	result.Usage = TokenUsage{
+		InputTokens:           100,
+		OutputTokens:          50,
+		CacheReadInputTokens:  10,
+		CacheWriteInputTokens: 42,
+	}
+
+	for _, transport := range []exportTransport{exportTransportHTTP, exportTransportGRPC} {
+		_, received := runSDKRoundTrip(t, transport, start, result)
+		usage := received.GetUsage()
+		if usage.GetCacheWriteInputTokens() != 42 {
+			t.Fatalf("expected cache_write_input_tokens=42, got %d", usage.GetCacheWriteInputTokens())
+		}
+	}
+}
+
 func TestSDKExportsGenerationOverNone_NoSend(t *testing.T) {
 	client := NewClient(Config{
 		Tracer: noop.NewTracerProvider().Tracer("test"),
@@ -359,13 +377,12 @@ func payloadFromSeed(seed uint64) (GenerationStart, Generation) {
 		ToolChoice:      stringPtr(*start.ToolChoice),
 		ThinkingEnabled: boolPtr(*start.ThinkingEnabled),
 		Usage: TokenUsage{
-			InputTokens:              int64(rnd.Intn(1000)),
-			OutputTokens:             int64(rnd.Intn(1000)),
-			TotalTokens:              int64(rnd.Intn(2000) + 1),
-			CacheReadInputTokens:     int64(rnd.Intn(100)),
-			CacheWriteInputTokens:    int64(rnd.Intn(100)),
-			CacheCreationInputTokens: int64(rnd.Intn(100)),
-			ReasoningTokens:          int64(rnd.Intn(100)),
+			InputTokens:           int64(rnd.Intn(1000)),
+			OutputTokens:          int64(rnd.Intn(1000)),
+			TotalTokens:           int64(rnd.Intn(2000) + 1),
+			CacheReadInputTokens:  int64(rnd.Intn(100)),
+			CacheWriteInputTokens: int64(rnd.Intn(100)),
+			ReasoningTokens:       int64(rnd.Intn(100)),
 		},
 		StopReason:  "stop-" + randomASCII(rnd, 4),
 		StartedAt:   startedAt,

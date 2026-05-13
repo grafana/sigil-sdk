@@ -8,12 +8,11 @@ import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 service GenerationIngestService {
-  rpc ExportGenerations(ExportGenerationsRequest) returns (ExportGenerationsResponse);
+  rpc ExportGenerations(ExportGenerationsRequest)
+      returns (ExportGenerationsResponse);
 }
 
-message ExportGenerationsRequest {
-  repeated Generation generations = 1;
-}
+message ExportGenerationsRequest { repeated Generation generations = 1; }
 
 message ExportGenerationsResponse {
   repeated ExportGenerationResult results = 1;
@@ -31,7 +30,6 @@ enum GenerationMode {
   GENERATION_MODE_STREAM = 2;
 }
 
-
 message ModelRef {
   string provider = 1;
   string name = 2;
@@ -44,9 +42,7 @@ enum MessageRole {
   MESSAGE_ROLE_TOOL = 3;
 }
 
-message PartMetadata {
-  string provider_type = 1;
-}
+message PartMetadata { string provider_type = 1; }
 
 message ToolCall {
   string id = 1;
@@ -94,7 +90,8 @@ message TokenUsage {
   int64 cache_read_input_tokens = 4;
   int64 cache_write_input_tokens = 5;
   int64 reasoning_tokens = 6;
-  int64 cache_creation_input_tokens = 7;
+  reserved 7;
+  reserved "cache_creation_input_tokens";
 }
 
 enum ArtifactKind {
@@ -153,12 +150,11 @@ message Generation {
 // --- Workflow Step ingest (separate schema from Generation) ---
 
 service WorkflowStepIngestService {
-  rpc ExportWorkflowSteps(ExportWorkflowStepsRequest) returns (ExportWorkflowStepsResponse);
+  rpc ExportWorkflowSteps(ExportWorkflowStepsRequest)
+      returns (ExportWorkflowStepsResponse);
 }
 
-message ExportWorkflowStepsRequest {
-  repeated WorkflowStep workflow_steps = 1;
-}
+message ExportWorkflowStepsRequest { repeated WorkflowStep workflow_steps = 1; }
 
 message ExportWorkflowStepsResponse {
   repeated ExportWorkflowStepResult results = 1;

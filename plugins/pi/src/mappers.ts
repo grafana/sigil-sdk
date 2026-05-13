@@ -130,7 +130,7 @@ export function mapGenerationResult(
       outputTokens: msg.usage.output,
       totalTokens: msg.usage.totalTokens,
       cacheReadInputTokens: msg.usage.cacheRead,
-      cacheCreationInputTokens: msg.usage.cacheWrite,
+      cacheWriteInputTokens: msg.usage.cacheWrite,
     },
     stopReason: mapStopReason(msg.stopReason),
     completedAt: new Date(completedAtMs ?? msg.timestamp),
