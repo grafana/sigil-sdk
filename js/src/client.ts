@@ -82,6 +82,11 @@ import {
   validateGeneration,
   validateToolExecution,
 } from './utils.js';
+import {
+  CACHE_DIAGNOSTICS_MISSED_INPUT_TOKENS_KEY,
+  CACHE_DIAGNOSTICS_MISS_REASON_KEY,
+  CACHE_DIAGNOSTICS_PREVIOUS_MESSAGE_ID_KEY,
+} from './cache-diagnostics.js';
 
 const spanAttrGenerationID = 'sigil.generation.id';
 const spanAttrSDKName = 'sigil.sdk.name';
@@ -1107,6 +1112,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
   private callError?: string;
   private localError?: Error;
   private firstTokenAt?: Date;
+  private extraMetadata?: Record<string, unknown>;
 
   constructor(
     private readonly client: SigilClient,
@@ -1184,6 +1190,32 @@ class GenerationRecorderImpl implements GenerationRecorder {
     this.firstTokenAt = new Date(firstTokenAt);
   }
 
+  setCacheDiagnostics(
+    missReason: string,
+    opts?: { missedInputTokens?: number; previousMessageId?: string },
+  ): void {
+    if (this.ended) {
+      return;
+    }
+    const trimmed = missReason.trim();
+    if (trimmed.length === 0) {
+      return;
+    }
+    if (this.extraMetadata === undefined) {
+      this.extraMetadata = {};
+    }
+    delete this.extraMetadata[CACHE_DIAGNOSTICS_MISSED_INPUT_TOKENS_KEY];
+    delete this.extraMetadata[CACHE_DIAGNOSTICS_PREVIOUS_MESSAGE_ID_KEY];
+    this.extraMetadata[CACHE_DIAGNOSTICS_MISS_REASON_KEY] = trimmed;
+    if (opts?.missedInputTokens !== undefined) {
+      this.extraMetadata[CACHE_DIAGNOSTICS_MISSED_INPUT_TOKENS_KEY] = String(opts.missedInputTokens);
+    }
+    const prev = opts?.previousMessageId?.trim();
+    if (prev !== undefined && prev.length > 0) {
+      this.extraMetadata[CACHE_DIAGNOSTICS_PREVIOUS_MESSAGE_ID_KEY] = prev;
+    }
+  }
+
   end(): void {
     if (this.ended) {
       return;
@@ -1222,7 +1254,10 @@ class GenerationRecorderImpl implements GenerationRecorder {
       startedAt: new Date(this.startedAt),
       completedAt: new Date(this.result?.completedAt ?? this.client.internalNow()),
       tags: mergeStringRecords(this.seed.tags, this.result?.tags),
-      metadata: mergeUnknownRecords(this.seed.metadata, this.result?.metadata),
+      metadata: mergeUnknownRecords(
+        mergeUnknownRecords(this.seed.metadata, this.result?.metadata),
+        this.extraMetadata,
+      ),
       artifacts: this.result?.artifacts?.map(cloneArtifact),
       callError: this.callError,
     };
