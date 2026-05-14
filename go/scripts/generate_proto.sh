@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT_DIR="${ROOT_DIR}/go/sigil/internal/gen"
+OUT_DIR="${1:-${ROOT_DIR}/go/sigil/internal/gen}"
 GO_PKG="github.com/grafana/sigil-sdk/go/sigil/internal/gen/sigil/v1"
 
 GOPATH_BIN="$(go env GOPATH 2>/dev/null || echo "${HOME}/go")/bin"
@@ -16,10 +16,14 @@ done
 if [[ ${#missing[@]} -gt 0 ]]; then
   cat >&2 <<EOF
 Missing required tools: ${missing[*]}
-Install:
-  protoc:             https://protobuf.dev/installation/
-  protoc-gen-go:      go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-  protoc-gen-go-grpc: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+The pinned versions live in mise.toml. Install them with:
+  mise install
+
+Or install manually:
+  protoc:             https://protobuf.dev/installation/  (pinned to 34.1)
+  protoc-gen-go:      go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+  protoc-gen-go-grpc: go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
 EOF
   exit 1
 fi

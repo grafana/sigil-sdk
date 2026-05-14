@@ -1,9 +1,18 @@
 [tools]
 biome = "2.4.11"
 ruff = "0.15.12"
+go = "1.25.6"
+protoc = "34.1"
+"go:google.golang.org/protobuf/cmd/protoc-gen-go" = "v1.36.11"
+"go:google.golang.org/grpc/cmd/protoc-gen-go-grpc" = "v1.6.1"
 
 [env]
 PYTHON_BIN = "python3"
+# Pin the Python protobuf toolchain so generated stubs are reproducible across
+# machines and CI. Bumping these requires regenerating stubs via
+# `mise run generate:proto:python`.
+SIGIL_GRPCIO_TOOLS_VERSION = "1.80.0"
+SIGIL_PROTOBUF_VERSION = "6.31.1"
 
 # --- Dependencies ---
 
@@ -486,6 +495,51 @@ run = "pnpm --filter @grafana/sigil-sdk-js run sync-proto"
 description = "Regenerate protobuf stubs for all SDKs"
 depends = ["generate:proto:go", "generate:proto:python", "generate:proto:js"]
 
+[tasks."check:proto"]
+description = "Fail if generated protobuf stubs drift from proto/sigil/v1/*.proto"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+fail=0
+
+echo "==> check:proto go"
+bash go/scripts/generate_proto.sh "$tmp/go"
+if ! diff -ruN go/sigil/internal/gen "$tmp/go"; then
+  echo >&2 "::error::Go protobuf stubs are out of sync with proto/sigil/v1/*.proto"
+  fail=1
+fi
+
+echo "==> check:proto python"
+bash python/scripts/generate_proto.sh "$tmp/python"
+if ! diff -ruN python/sigil_sdk/internal/gen "$tmp/python"; then
+  echo >&2 "::error::Python protobuf stubs are out of sync with proto/sigil/v1/*.proto"
+  fail=1
+fi
+
+echo "==> check:proto js"
+mkdir -p "$tmp/js"
+node js/scripts/sync-proto.mjs "$tmp/js"
+if ! diff -ruN js/proto/sigil "$tmp/js/sigil"; then
+  echo >&2 "::error::JS proto copy in js/proto/sigil is out of sync with proto/sigil/v1/*.proto"
+  fail=1
+fi
+
+if [[ $fail -ne 0 ]]; then
+  cat >&2 <<'EOF'
+
+Generated protobuf code drifted from proto/sigil/v1/*.proto.
+Run `mise run generate:proto` and commit the regenerated files.
+EOF
+  exit 1
+fi
+
+echo "==> check:proto: stubs in sync"
+"""
+
 # --- Mock generation (stubs) ---
 
 [tasks."generate:mocks:sdk-go"]
@@ -521,5 +575,5 @@ depends = ["generate:mocks:sdk-go", "generate:mocks:sdk-go-providers", "generate
 
 [tasks.check]
 description = "Run lint + typecheck + tests"
-depends = ["lint", "typecheck"]
+depends = ["lint", "typecheck", "check:proto"]
 run = "mise run test:sdk:all"

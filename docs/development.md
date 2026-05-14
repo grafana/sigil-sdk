@@ -20,17 +20,45 @@ This runs three subtasks:
 
 Java and .NET compile the proto on build (gradle protobuf plugin and `Grpc.Tools` respectively), so they pick up changes automatically once the canonical `.proto` is updated.
 
-### Go tooling
+### Pinned tool versions
 
-If `protoc-gen-go` or `protoc-gen-go-grpc` are missing, install them:
+All codegen tools are pinned in [`mise.toml`](../mise.toml) so regenerated stubs are byte-identical across machines and CI:
+
+| Tool | Version | Where it's pinned |
+| --- | --- | --- |
+| `protoc` | `34.1` | `[tools]` |
+| `protoc-gen-go` | `v1.36.11` | `[tools]` (go install) |
+| `protoc-gen-go-grpc` | `v1.6.1` | `[tools]` (go install) |
+| `grpcio-tools` (Python) | `1.80.0` | `SIGIL_GRPCIO_TOOLS_VERSION` env |
+| `protobuf` (Python) | `6.31.1` | `SIGIL_PROTOBUF_VERSION` env |
+
+Install everything with:
 
 ```bash
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+mise install
 ```
 
-`protoc` itself comes from your package manager (`brew install protobuf`, `apt install protobuf-compiler`, etc.).
+Go and Python pins match the runtime deps in `go/go.mod` and `python/pyproject.toml`. Bumping a generator version means regenerating the stubs and committing the diff.
 
-### Python tooling
+### Drift check
 
-The script prefers an existing Python that has `grpcio-tools` installed (`PYTHON_BIN`, defaults to `python3`); if that's unavailable it falls back to `uv run --with grpcio-tools`. Install [uv](https://docs.astral.sh/uv/) and you don't need to install `grpcio-tools` globally.
+`mise run check:proto` regenerates the Go, Python, and JS stubs into a temporary directory and diffs them against the committed tree. It runs in CI as the `Protobuf drift` job and fails the build if anyone edits the proto without running `mise run generate:proto`, or if the local tool versions don't match the pins above.
+
+### Manual installs (no mise)
+
+If you prefer not to use `mise`:
+
+```bash
+# Go tools
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1
+
+# protoc — install 34.1 via your package manager:
+#   brew install protobuf            # macOS
+#   apt install protobuf-compiler    # Debian/Ubuntu (version varies)
+
+# Python tools
+python3 -m pip install grpcio-tools==1.80.0 protobuf==6.31.1
+```
+
+The Python script prefers an existing Python that already has `grpcio-tools` installed (`PYTHON_BIN`, defaults to `python3`); otherwise it falls back to `uv run --with grpcio-tools==<pinned> --with protobuf==<pinned>`. Install [uv](https://docs.astral.sh/uv/) and you don't need to install the Python tools globally.
