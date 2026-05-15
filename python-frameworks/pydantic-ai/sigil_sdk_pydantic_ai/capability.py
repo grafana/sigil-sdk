@@ -429,7 +429,7 @@ def _map_pydantic_usage(usage: Any) -> TokenUsage | None:
         input_tokens=input_tokens or 0,
         output_tokens=output_tokens or 0,
         cache_read_input_tokens=cache_read or 0,
-        cache_creation_input_tokens=cache_write or 0,
+        cache_write_input_tokens=cache_write or 0,
     ).normalize()
 
 

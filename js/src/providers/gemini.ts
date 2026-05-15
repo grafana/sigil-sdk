@@ -507,7 +507,7 @@ function mapGeminiUsage(rawUsage: unknown): TokenUsage | undefined {
   const outputTokens = readIntFromAny(rawUsage.candidatesTokenCount);
   const totalTokens = readIntFromAny(rawUsage.totalTokenCount);
   const cacheReadInputTokens = readIntFromAny(rawUsage.cachedContentTokenCount);
-  const cacheCreationInputTokens = readIntFromAny(rawUsage.cacheCreationInputTokenCount);
+  const cacheWriteInputTokens = readIntFromAny(rawUsage.cacheCreationInputTokenCount);
   const toolUsePromptTokens = readIntFromAny(rawUsage.toolUsePromptTokenCount);
   const reasoningTokens = readIntFromAny(rawUsage.thoughtsTokenCount);
 
@@ -526,8 +526,8 @@ function mapGeminiUsage(rawUsage: unknown): TokenUsage | undefined {
   if (cacheReadInputTokens !== undefined) {
     out.cacheReadInputTokens = cacheReadInputTokens;
   }
-  if (cacheCreationInputTokens !== undefined) {
-    out.cacheCreationInputTokens = cacheCreationInputTokens;
+  if (cacheWriteInputTokens !== undefined) {
+    out.cacheWriteInputTokens = cacheWriteInputTokens;
   }
   if (reasoningTokens !== undefined) {
     out.reasoningTokens = reasoningTokens;

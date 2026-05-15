@@ -606,7 +606,7 @@ public static class AnthropicGenerationMapper
             OutputTokens = output,
             TotalTokens = total,
             CacheReadInputTokens = ReadLong(usage, "cache_read_input_tokens"),
-            CacheCreationInputTokens = ReadLong(usage, "cache_creation_input_tokens"),
+            CacheWriteInputTokens = ReadLong(usage, "cache_creation_input_tokens"),
         };
     }
 

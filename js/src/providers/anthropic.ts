@@ -406,7 +406,7 @@ function mapAnthropicUsage(rawUsage: unknown): TokenUsage | undefined {
   const outputTokens = readIntFromAny(rawUsage.output_tokens);
   const totalTokens = readIntFromAny(rawUsage.total_tokens);
   const cacheReadInputTokens = readIntFromAny(rawUsage.cache_read_input_tokens);
-  const cacheCreationInputTokens = readIntFromAny(rawUsage.cache_creation_input_tokens);
+  const cacheWriteInputTokens = readIntFromAny(rawUsage.cache_creation_input_tokens);
 
   const out: TokenUsage = {};
   if (inputTokens !== undefined) {
@@ -423,8 +423,8 @@ function mapAnthropicUsage(rawUsage: unknown): TokenUsage | undefined {
   if (cacheReadInputTokens !== undefined) {
     out.cacheReadInputTokens = cacheReadInputTokens;
   }
-  if (cacheCreationInputTokens !== undefined) {
-    out.cacheCreationInputTokens = cacheCreationInputTokens;
+  if (cacheWriteInputTokens !== undefined) {
+    out.cacheWriteInputTokens = cacheWriteInputTokens;
   }
 
   return Object.keys(out).length > 0 ? out : undefined;

@@ -93,7 +93,6 @@ class TokenUsage:
     cache_read_input_tokens: int = 0
     cache_write_input_tokens: int = 0
     reasoning_tokens: int = 0
-    cache_creation_input_tokens: int = 0
 
     def normalize(self) -> TokenUsage:
         """Returns a copy with `total_tokens` auto-filled when missing."""
@@ -105,7 +104,6 @@ class TokenUsage:
             cache_read_input_tokens=self.cache_read_input_tokens,
             cache_write_input_tokens=self.cache_write_input_tokens,
             reasoning_tokens=self.reasoning_tokens,
-            cache_creation_input_tokens=self.cache_creation_input_tokens,
         )
         if normalized.total_tokens == 0:
             normalized.total_tokens = normalized.input_tokens + normalized.output_tokens

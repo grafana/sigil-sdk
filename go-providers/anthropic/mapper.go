@@ -452,26 +452,22 @@ func mapSystemPrompt(system []asdk.BetaTextBlockParam) string {
 }
 
 func mapUsage(usage asdk.BetaUsage) sigil.TokenUsage {
-	cacheCreation := usage.CacheCreationInputTokens
 	return sigil.TokenUsage{
-		InputTokens:              usage.InputTokens,
-		OutputTokens:             usage.OutputTokens,
-		TotalTokens:              usage.InputTokens + usage.OutputTokens,
-		CacheReadInputTokens:     usage.CacheReadInputTokens,
-		CacheWriteInputTokens:    cacheCreation,
-		CacheCreationInputTokens: cacheCreation,
+		InputTokens:           usage.InputTokens,
+		OutputTokens:          usage.OutputTokens,
+		TotalTokens:           usage.InputTokens + usage.OutputTokens,
+		CacheReadInputTokens:  usage.CacheReadInputTokens,
+		CacheWriteInputTokens: usage.CacheCreationInputTokens,
 	}
 }
 
 func mapDeltaUsage(usage asdk.BetaMessageDeltaUsage) sigil.TokenUsage {
-	cacheCreation := usage.CacheCreationInputTokens
 	return sigil.TokenUsage{
-		InputTokens:              usage.InputTokens,
-		OutputTokens:             usage.OutputTokens,
-		TotalTokens:              usage.InputTokens + usage.OutputTokens,
-		CacheReadInputTokens:     usage.CacheReadInputTokens,
-		CacheWriteInputTokens:    cacheCreation,
-		CacheCreationInputTokens: cacheCreation,
+		InputTokens:           usage.InputTokens,
+		OutputTokens:          usage.OutputTokens,
+		TotalTokens:           usage.InputTokens + usage.OutputTokens,
+		CacheReadInputTokens:  usage.CacheReadInputTokens,
+		CacheWriteInputTokens: usage.CacheCreationInputTokens,
 	}
 }
 

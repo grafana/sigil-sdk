@@ -12,13 +12,20 @@ def from_anthropic(raw: Any) -> TokenUsage:
     """Extract usage from Anthropic's flat field layout."""
     if raw is None:
         return TokenUsage()
+    cache_write_raw = _read(raw, "cache_write_input_tokens")
+    cache_write = (
+        _as_int(cache_write_raw)
+        if cache_write_raw is not None
+        else _as_int(
+            _read(raw, "cache_creation_input_tokens"),
+        )
+    )
     return TokenUsage(
         input_tokens=_as_int(_read(raw, "input_tokens")),
         output_tokens=_as_int(_read(raw, "output_tokens")),
         total_tokens=_as_int(_read(raw, "total_tokens")),
         cache_read_input_tokens=_as_int(_read(raw, "cache_read_input_tokens")),
-        cache_write_input_tokens=_as_int(_read(raw, "cache_write_input_tokens")),
-        cache_creation_input_tokens=_as_int(_read(raw, "cache_creation_input_tokens")),
+        cache_write_input_tokens=cache_write,
     ).normalize()
 
 
@@ -33,7 +40,7 @@ def from_openai_chat(raw: Any) -> TokenUsage:
         cache_read_input_tokens=_as_int(
             _read(_read(raw, "prompt_tokens_details"), "cached_tokens"),
         ),
-        cache_creation_input_tokens=_as_int(
+        cache_write_input_tokens=_as_int(
             _read(_read(raw, "prompt_tokens_details"), "cache_creation_tokens"),
         ),
         reasoning_tokens=_as_int(
@@ -73,13 +80,20 @@ def from_gemini(raw: Any) -> TokenUsage:
     if total_tokens == 0:
         total_tokens = input_tokens + output_tokens + tool_use_prompt_tokens + reasoning_tokens
 
+    cache_write_raw = _read(raw, "cache_write_input_token_count")
+    cache_write = (
+        _as_int(cache_write_raw)
+        if cache_write_raw is not None
+        else _as_int(
+            _read(raw, "cache_creation_input_token_count"),
+        )
+    )
     return TokenUsage(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         cache_read_input_tokens=_as_int(_read(raw, "cached_content_token_count")),
-        cache_write_input_tokens=_as_int(_read(raw, "cache_write_input_token_count")),
-        cache_creation_input_tokens=_as_int(_read(raw, "cache_creation_input_token_count")),
+        cache_write_input_tokens=cache_write,
         reasoning_tokens=reasoning_tokens,
     )
 
@@ -102,13 +116,20 @@ def from_generic(raw: Any) -> TokenUsage:
     if total_tokens == 0:
         total_tokens = input_tokens + output_tokens
 
+    cache_write_raw = _read(raw, "cache_write_input_tokens")
+    cache_write = (
+        _as_int(cache_write_raw)
+        if cache_write_raw is not None
+        else _as_int(
+            _read(raw, "cache_creation_input_tokens"),
+        )
+    )
     return TokenUsage(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
         cache_read_input_tokens=_as_int(_read(raw, "cache_read_input_tokens")),
-        cache_write_input_tokens=_as_int(_read(raw, "cache_write_input_tokens")),
-        cache_creation_input_tokens=_as_int(_read(raw, "cache_creation_input_tokens")),
+        cache_write_input_tokens=cache_write,
         reasoning_tokens=_as_int(_read(raw, "reasoning_tokens")),
     )
 

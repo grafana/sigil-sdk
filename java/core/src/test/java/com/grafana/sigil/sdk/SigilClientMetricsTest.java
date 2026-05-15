@@ -44,7 +44,7 @@ class SigilClientMetricsTest {
             result.setMode(GenerationMode.STREAM);
             result.setOperationName("streamText");
             result.getUsage().setReasoningTokens(5);
-            result.getUsage().setCacheCreationInputTokens(3);
+            result.getUsage().setCacheWriteInputTokens(3);
             recorder.setResult(result);
             recorder.end();
         }

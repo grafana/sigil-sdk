@@ -451,8 +451,8 @@ def _assert_generation_json_payload(generation: dict[str, Any]) -> None:
     assert _proto_json_int(usage["total_tokens"]) == 162
     assert _proto_json_int(usage["cache_read_input_tokens"]) == 8
     assert _proto_json_int(usage["cache_write_input_tokens"]) == 4
-    assert _proto_json_int(usage["cache_creation_input_tokens"]) == 6
     assert _proto_json_int(usage["reasoning_tokens"]) == 5
+    assert _proto_json_int(usage.get("cache_creation_input_tokens", 0)) == 0
 
     assert generation["stop_reason"] == "end_turn"
     assert generation["started_at"] == "2026-02-11T12:00:00Z"
@@ -539,7 +539,6 @@ def _assert_generation_proto_payload(generation: sigil_pb2.Generation) -> None:
     assert generation.usage.total_tokens == 162
     assert generation.usage.cache_read_input_tokens == 8
     assert generation.usage.cache_write_input_tokens == 4
-    assert generation.usage.cache_creation_input_tokens == 6
     assert generation.usage.reasoning_tokens == 5
 
     assert generation.stop_reason == "end_turn"
@@ -687,7 +686,6 @@ def _payload_fixture() -> tuple[GenerationStart, Generation]:
             total_tokens=162,
             cache_read_input_tokens=8,
             cache_write_input_tokens=4,
-            cache_creation_input_tokens=6,
             reasoning_tokens=5,
         ),
         stop_reason="end_turn",

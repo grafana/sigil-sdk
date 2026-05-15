@@ -94,7 +94,6 @@ test('conformance sync roundtrip semantics', async () => {
         totalTokens: 19,
         cacheReadInputTokens: 2,
         cacheWriteInputTokens: 1,
-        cacheCreationInputTokens: 3,
         reasoningTokens: 4,
       },
       stopReason: 'stop',
@@ -137,6 +136,7 @@ test('conformance sync roundtrip semantics', async () => {
     assert.equal(Number(generation.usage?.cacheReadInputTokens ?? 0), 2);
     assert.equal(Number(generation.usage?.cacheWriteInputTokens ?? 0), 1);
     assert.equal(Number(generation.usage?.reasoningTokens ?? 0), 4);
+    assert.equal(Number(generation.usage?.cacheCreationInputTokens ?? 0), 0);
     assert.equal(generation.stopReason, 'stop');
     assert.equal(generation.tags?.tenant, 'dev');
     assert.equal(generation.tags?.region, 'eu');

@@ -200,7 +200,7 @@ def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> No
     assert mapped_default.tool_choice == '{"name":"weather","type":"tool"}'
     assert mapped_default.thinking_enabled is True
     assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
-    assert mapped_default.usage.cache_creation_input_tokens == 4
+    assert mapped_default.usage.cache_write_input_tokens == 4
     assert mapped_default.usage.cache_read_input_tokens == 12
     assert mapped_default.artifacts == []
 

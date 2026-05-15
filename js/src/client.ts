@@ -120,7 +120,6 @@ const spanAttrEmbeddingDimCount = 'gen_ai.embeddings.dimension.count';
 const spanAttrRequestEncodingFormats = 'gen_ai.request.encoding_formats';
 const spanAttrCacheReadTokens = 'gen_ai.usage.cache_read_input_tokens';
 const spanAttrCacheWriteTokens = 'gen_ai.usage.cache_write_input_tokens';
-const spanAttrCacheCreationTokens = 'gen_ai.usage.cache_creation_input_tokens';
 const spanAttrReasoningTokens = 'gen_ai.usage.reasoning_tokens';
 const spanAttrToolName = 'gen_ai.tool.name';
 const spanAttrToolCallID = 'gen_ai.tool.call.id';
@@ -145,7 +144,6 @@ const metricTokenTypeInput = 'input';
 const metricTokenTypeOutput = 'output';
 const metricTokenTypeCacheRead = 'cache_read';
 const metricTokenTypeCacheWrite = 'cache_write';
-const metricTokenTypeCacheCreation = 'cache_creation';
 const metricTokenTypeReasoning = 'reasoning';
 
 const durationBucketsSeconds: number[] = [
@@ -909,7 +907,6 @@ export class SigilClient {
       this.recordTokenUsage(generation, metricTokenTypeOutput, usage.outputTokens);
       this.recordTokenUsage(generation, metricTokenTypeCacheRead, usage.cacheReadInputTokens);
       this.recordTokenUsage(generation, metricTokenTypeCacheWrite, usage.cacheWriteInputTokens);
-      this.recordTokenUsage(generation, metricTokenTypeCacheCreation, usage.cacheCreationInputTokens);
       this.recordTokenUsage(generation, metricTokenTypeReasoning, usage.reasoningTokens);
     }
 
@@ -1568,7 +1565,6 @@ function setGenerationSpanAttributes(
       outputTokens?: number;
       cacheReadInputTokens?: number;
       cacheWriteInputTokens?: number;
-      cacheCreationInputTokens?: number;
       reasoningTokens?: number;
     };
   },
@@ -1676,9 +1672,6 @@ function setGenerationSpanAttributes(
   }
   if ((usage.cacheWriteInputTokens ?? 0) !== 0) {
     span.setAttribute(spanAttrCacheWriteTokens, usage.cacheWriteInputTokens ?? 0);
-  }
-  if ((usage.cacheCreationInputTokens ?? 0) !== 0) {
-    span.setAttribute(spanAttrCacheCreationTokens, usage.cacheCreationInputTokens ?? 0);
   }
   if ((usage.reasoningTokens ?? 0) !== 0) {
     span.setAttribute(spanAttrReasoningTokens, usage.reasoningTokens ?? 0);

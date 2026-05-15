@@ -66,7 +66,6 @@ const (
 	spanAttrOutputTokens           = "gen_ai.usage.output_tokens"
 	spanAttrCacheReadTokens        = "gen_ai.usage.cache_read_input_tokens"
 	spanAttrCacheWriteTokens       = "gen_ai.usage.cache_write_input_tokens"
-	spanAttrCacheCreationTokens    = "gen_ai.usage.cache_creation_input_tokens"
 	spanAttrReasoningTokens        = "gen_ai.usage.reasoning_tokens"
 	metricOperationDuration        = "gen_ai.client.operation.duration"
 	metricTokenUsage               = "gen_ai.client.token.usage"
@@ -77,7 +76,6 @@ const (
 	metricTokenTypeOutput          = "output"
 	metricTokenTypeCacheRead       = "cache_read"
 	metricTokenTypeCacheWrite      = "cache_write"
-	metricTokenTypeCacheCreation   = "cache_creation"
 	metricTokenTypeReasoning       = "reasoning"
 )
 

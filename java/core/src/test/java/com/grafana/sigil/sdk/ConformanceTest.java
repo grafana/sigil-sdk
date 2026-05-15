@@ -70,7 +70,6 @@ class ConformanceTest {
                             .setTotalTokens(19)
                             .setCacheReadInputTokens(2)
                             .setCacheWriteInputTokens(1)
-                            .setCacheCreationInputTokens(3)
                             .setReasoningTokens(4))
                     .setStopReason("stop");
             result.getTags().put("region", "eu");

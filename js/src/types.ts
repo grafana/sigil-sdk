@@ -269,7 +269,6 @@ export interface TokenUsage {
   totalTokens?: number;
   cacheReadInputTokens?: number;
   cacheWriteInputTokens?: number;
-  cacheCreationInputTokens?: number;
   reasoningTokens?: number;
 }
 

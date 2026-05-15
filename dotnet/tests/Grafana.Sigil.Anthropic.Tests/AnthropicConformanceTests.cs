@@ -42,7 +42,7 @@ public sealed class AnthropicConformanceTests
         Assert.Equal(2L + webFetchRequests, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.total_requests"));
         Assert.Equal(162, generation.Usage.TotalTokens);
         Assert.Equal(30, generation.Usage.CacheReadInputTokens);
-        Assert.Equal(10, generation.Usage.CacheCreationInputTokens);
+        Assert.Equal(10, generation.Usage.CacheWriteInputTokens);
         Assert.Empty(generation.Artifacts);
     }
 

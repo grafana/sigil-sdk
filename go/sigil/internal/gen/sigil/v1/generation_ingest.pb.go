@@ -818,16 +818,15 @@ func (x *ToolDefinition) GetDeferred() bool {
 }
 
 type TokenUsage struct {
-	state                    protoimpl.MessageState `protogen:"open.v1"`
-	InputTokens              int64                  `protobuf:"varint,1,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
-	OutputTokens             int64                  `protobuf:"varint,2,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
-	TotalTokens              int64                  `protobuf:"varint,3,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
-	CacheReadInputTokens     int64                  `protobuf:"varint,4,opt,name=cache_read_input_tokens,json=cacheReadInputTokens,proto3" json:"cache_read_input_tokens,omitempty"`
-	CacheWriteInputTokens    int64                  `protobuf:"varint,5,opt,name=cache_write_input_tokens,json=cacheWriteInputTokens,proto3" json:"cache_write_input_tokens,omitempty"`
-	ReasoningTokens          int64                  `protobuf:"varint,6,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
-	CacheCreationInputTokens int64                  `protobuf:"varint,7,opt,name=cache_creation_input_tokens,json=cacheCreationInputTokens,proto3" json:"cache_creation_input_tokens,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	InputTokens           int64                  `protobuf:"varint,1,opt,name=input_tokens,json=inputTokens,proto3" json:"input_tokens,omitempty"`
+	OutputTokens          int64                  `protobuf:"varint,2,opt,name=output_tokens,json=outputTokens,proto3" json:"output_tokens,omitempty"`
+	TotalTokens           int64                  `protobuf:"varint,3,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
+	CacheReadInputTokens  int64                  `protobuf:"varint,4,opt,name=cache_read_input_tokens,json=cacheReadInputTokens,proto3" json:"cache_read_input_tokens,omitempty"`
+	CacheWriteInputTokens int64                  `protobuf:"varint,5,opt,name=cache_write_input_tokens,json=cacheWriteInputTokens,proto3" json:"cache_write_input_tokens,omitempty"`
+	ReasoningTokens       int64                  `protobuf:"varint,6,opt,name=reasoning_tokens,json=reasoningTokens,proto3" json:"reasoning_tokens,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *TokenUsage) Reset() {
@@ -898,13 +897,6 @@ func (x *TokenUsage) GetCacheWriteInputTokens() int64 {
 func (x *TokenUsage) GetReasoningTokens() int64 {
 	if x != nil {
 		return x.ReasoningTokens
-	}
-	return 0
-}
-
-func (x *TokenUsage) GetCacheCreationInputTokens() int64 {
-	if x != nil {
-		return x.CacheCreationInputTokens
 	}
 	return 0
 }
@@ -1640,7 +1632,7 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12*\n" +
 	"\x11input_schema_json\x18\x04 \x01(\fR\x0finputSchemaJson\x12\x1a\n" +
-	"\bdeferred\x18\x05 \x01(\bR\bdeferred\"\xd1\x02\n" +
+	"\bdeferred\x18\x05 \x01(\bR\bdeferred\"\xb5\x02\n" +
 	"\n" +
 	"TokenUsage\x12!\n" +
 	"\finput_tokens\x18\x01 \x01(\x03R\vinputTokens\x12#\n" +
@@ -1648,8 +1640,7 @@ const file_sigil_v1_generation_ingest_proto_rawDesc = "" +
 	"\ftotal_tokens\x18\x03 \x01(\x03R\vtotalTokens\x125\n" +
 	"\x17cache_read_input_tokens\x18\x04 \x01(\x03R\x14cacheReadInputTokens\x127\n" +
 	"\x18cache_write_input_tokens\x18\x05 \x01(\x03R\x15cacheWriteInputTokens\x12)\n" +
-	"\x10reasoning_tokens\x18\x06 \x01(\x03R\x0freasoningTokens\x12=\n" +
-	"\x1bcache_creation_input_tokens\x18\a \x01(\x03R\x18cacheCreationInputTokens\"\xb6\x01\n" +
+	"\x10reasoning_tokens\x18\x06 \x01(\x03R\x0freasoningTokensJ\x04\b\a\x10\bR\x1bcache_creation_input_tokens\"\xb6\x01\n" +
 	"\bArtifact\x12*\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x16.sigil.v1.ArtifactKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +

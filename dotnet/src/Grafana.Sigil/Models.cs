@@ -85,7 +85,6 @@ public sealed class TokenUsage
     public long CacheReadInputTokens { get; set; }
     public long CacheWriteInputTokens { get; set; }
     public long ReasoningTokens { get; set; }
-    public long CacheCreationInputTokens { get; set; }
 
     public TokenUsage Normalize()
     {
@@ -109,7 +108,6 @@ public sealed class TokenUsage
             CacheReadInputTokens = CacheReadInputTokens,
             CacheWriteInputTokens = CacheWriteInputTokens,
             ReasoningTokens = ReasoningTokens,
-            CacheCreationInputTokens = CacheCreationInputTokens,
         };
     }
 }
