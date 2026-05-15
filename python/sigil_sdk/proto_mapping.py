@@ -224,6 +224,7 @@ def _map_tool(tool: object) -> sigil_pb2.ToolDefinition:
         description=tool.description,
         type=tool.type,
         input_schema_json=bytes(tool.input_schema_json),
+        deferred=bool(tool.deferred),
     )
 
 

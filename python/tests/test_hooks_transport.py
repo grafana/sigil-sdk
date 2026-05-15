@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import threading
+from collections.abc import Iterator
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any
 
 import pytest
 from opentelemetry import trace
@@ -24,6 +27,7 @@ from sigil_sdk import (
     HooksConfig,
     HookTransportError,
     MessageRole,
+    ToolDefinition,
     hook_denied_from_response,
     user_text_message,
 )
@@ -321,6 +325,62 @@ def test_evaluate_hook_skips_mismatched_phase() -> None:
         assert response.action == "allow"
     finally:
         client.shutdown()
+        server.shutdown()
+        server.server_close()
+
+
+def test_evaluate_hook_serializes_tool_definitions_including_deferred() -> None:
+    with _capturing_hook_server({"action": "allow", "evaluations": []}) as (captured, base_url):
+        client = _new_client(base_url, hooks=HooksConfig(enabled=True, phases=["preflight"]))
+        try:
+            response = client.evaluate_hook(
+                HookEvaluateRequest(
+                    phase=HookPhase.PREFLIGHT.value,
+                    context=HookContext(model=HookModel(provider="openai", name="gpt-4o")),
+                    input=HookInput(
+                        tools=[
+                            ToolDefinition(name="search", description="search the web", type="function"),
+                            ToolDefinition(name="approve_refund", type="function", deferred=True),
+                        ],
+                    ),
+                )
+            )
+        finally:
+            client.shutdown()
+
+    assert response.action == "allow"
+    tools = captured["payload"]["input"]["tools"]
+    assert [t["name"] for t in tools] == ["search", "approve_refund"]
+    assert "deferred" not in tools[0]
+    assert tools[1]["deferred"] is True
+
+
+@contextlib.contextmanager
+def _capturing_hook_server(response: dict[str, Any]) -> Iterator[tuple[dict[str, Any], str]]:
+    """Run a stub hooks:evaluate server that captures one request and returns `response`."""
+    captured: dict[str, Any] = {}
+    body = json.dumps(response).encode("utf-8")
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            captured["path"] = self.path
+            captured["headers"] = {k.lower(): v for k, v in self.headers.items()}
+            captured["payload"] = json.loads(self.rfile.read(length).decode("utf-8"))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format, *_args):  # noqa: A003
+            return
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield captured, f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
         server.shutdown()
         server.server_close()
 

@@ -443,6 +443,7 @@ def _assert_generation_json_payload(generation: dict[str, Any]) -> None:
     assert tools[0]["description"] == "Get weather"
     assert tools[0]["type"] == "function"
     assert _decode_proto_json_bytes(tools[0]["input_schema_json"]) == b'{"type":"object"}'
+    assert tools[0]["deferred"] is True
 
     usage = generation["usage"]
     assert _proto_json_int(usage["input_tokens"]) == 120
@@ -531,6 +532,7 @@ def _assert_generation_proto_payload(generation: sigil_pb2.Generation) -> None:
     assert generation.tools[0].description == "Get weather"
     assert generation.tools[0].type == "function"
     assert generation.tools[0].input_schema_json == b'{"type":"object"}'
+    assert generation.tools[0].deferred is True
 
     assert generation.usage.input_tokens == 120
     assert generation.usage.output_tokens == 42
@@ -618,6 +620,7 @@ def _payload_fixture() -> tuple[GenerationStart, Generation]:
                 description="Get weather",
                 type="function",
                 input_schema_json=b'{"type":"object"}',
+                deferred=True,
             )
         ],
         tags={"env": "test"},

@@ -80,6 +80,7 @@ class ToolDefinition:
     description: str = ""
     type: str = ""
     input_schema_json: bytes = b""
+    deferred: bool = False
 
 
 @dataclass(slots=True)
