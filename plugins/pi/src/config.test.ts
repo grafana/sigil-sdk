@@ -27,52 +27,49 @@ describe("resolveConfig", () => {
 
   it("parses full config from file", () => {
     const cfg = resolveConfig({
-      endpoint: "http://localhost:8080/api/v1/generations:export",
+      endpoint: "http://localhost:8080",
       auth: { mode: "tenant", tenantId: "my-tenant" },
       agentName: "pi-custom",
       agentVersion: "1.0.0",
       contentCapture: true,
     });
     expect(cfg).not.toBeNull();
-    expect(cfg?.endpoint).toBe(
-      "http://localhost:8080/api/v1/generations:export",
-    );
+    expect(cfg?.endpoint).toBe("http://localhost:8080");
     expect(cfg?.auth).toEqual({ mode: "tenant", tenantId: "my-tenant" });
     expect(cfg?.agentName).toBe("pi-custom");
     expect(cfg?.agentVersion).toBe("1.0.0");
     expect(cfg?.contentCapture).toBe("full");
   });
 
-  it("auto-appends export path to endpoint", () => {
+  it("stores the bare base URL when given a clean endpoint", () => {
     const cfg = resolveConfig({ endpoint: "http://localhost:8080" });
-    expect(cfg?.endpoint).toBe(
-      "http://localhost:8080/api/v1/generations:export",
-    );
+    expect(cfg?.endpoint).toBe("http://localhost:8080");
   });
 
-  it("auto-appends export path and strips trailing slash", () => {
+  it("strips a trailing slash", () => {
     const cfg = resolveConfig({ endpoint: "http://localhost:8080/" });
-    expect(cfg?.endpoint).toBe(
-      "http://localhost:8080/api/v1/generations:export",
-    );
+    expect(cfg?.endpoint).toBe("http://localhost:8080");
   });
 
-  it("does not double-append export path", () => {
+  it("strips an accidentally-pasted export-path suffix", () => {
     const cfg = resolveConfig({
       endpoint: "http://localhost:8080/api/v1/generations:export",
     });
-    expect(cfg?.endpoint).toBe(
-      "http://localhost:8080/api/v1/generations:export",
-    );
+    expect(cfg?.endpoint).toBe("http://localhost:8080");
   });
 
-  it("preserves an export path with a query string", () => {
+  it("preserves a prefix path", () => {
     const cfg = resolveConfig({
-      endpoint: "http://localhost:8080/api/v1/generations:export?debug=1",
+      endpoint: "https://sigil.example.com/sigil",
     });
-    expect(cfg?.endpoint).toBe(
-      "http://localhost:8080/api/v1/generations:export?debug=1",
-    );
+    expect(cfg?.endpoint).toBe("https://sigil.example.com/sigil");
+  });
+
+  it("strips the export-path suffix from a prefix-mounted URL", () => {
+    const cfg = resolveConfig({
+      endpoint: "https://sigil.example.com/sigil/api/v1/generations:export",
+    });
+    expect(cfg?.endpoint).toBe("https://sigil.example.com/sigil");
   });
 
   it("does not falsely match a similar-looking suffix", () => {
@@ -80,7 +77,7 @@ describe("resolveConfig", () => {
       endpoint: "http://localhost:8080/api/v1/generations:export-debug",
     });
     expect(cfg?.endpoint).toBe(
-      "http://localhost:8080/api/v1/generations:export-debug/api/v1/generations:export",
+      "http://localhost:8080/api/v1/generations:export-debug",
     );
   });
 
@@ -150,7 +147,7 @@ describe("resolveConfig", () => {
       auth: { mode: "none" },
     });
 
-    expect(cfg?.endpoint).toBe("http://env:9090/api/v1/generations:export");
+    expect(cfg?.endpoint).toBe("http://env:9090");
     expect(cfg?.agentName).toBe("pi-env");
     expect(cfg?.contentCapture).toBe("full");
     expect(cfg?.auth).toEqual({ mode: "bearer", bearerToken: "tok-123" });
@@ -244,18 +241,14 @@ describe("resolveConfig canonical SIGIL_* env vars", () => {
   it("reads SIGIL_ENDPOINT as the endpoint", () => {
     process.env.SIGIL_ENDPOINT = "http://canonical:8080";
     const cfg = resolveConfig({});
-    expect(cfg?.endpoint).toBe(
-      "http://canonical:8080/api/v1/generations:export",
-    );
+    expect(cfg?.endpoint).toBe("http://canonical:8080");
   });
 
   it("SIGIL_ENDPOINT wins over SIGIL_PI_ENDPOINT", () => {
     process.env.SIGIL_ENDPOINT = "http://canonical:8080";
     process.env.SIGIL_PI_ENDPOINT = "http://legacy:9090";
     const cfg = resolveConfig({});
-    expect(cfg?.endpoint).toBe(
-      "http://canonical:8080/api/v1/generations:export",
-    );
+    expect(cfg?.endpoint).toBe("http://canonical:8080");
   });
 
   it("derives basic auth from SIGIL_AUTH_TENANT_ID + SIGIL_AUTH_TOKEN", () => {
@@ -596,6 +589,151 @@ describe("resolveConfig redaction", () => {
       endpoint: "http://localhost:8080/api/v1/generations:export",
     });
     expect(cfg?.redaction.redactInputMessages).toBe(false);
+  });
+});
+
+describe("resolveConfig guards", () => {
+  beforeEach(clearEnv);
+  afterEach(clearEnv);
+
+  it("defaults to disabled with 1500ms timeout and fail-open=true", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.guards).toEqual({
+      enabled: false,
+      timeoutMs: 1500,
+      failOpen: true,
+    });
+  });
+
+  it("reads file-level guards block", () => {
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      guards: { enabled: true, timeoutMs: 2500, failOpen: false },
+    });
+    expect(cfg?.guards).toEqual({
+      enabled: true,
+      timeoutMs: 2500,
+      failOpen: false,
+    });
+  });
+
+  it("env overrides file values", () => {
+    process.env.SIGIL_GUARDS_ENABLED = "true";
+    process.env.SIGIL_GUARDS_TIMEOUT_MS = "1500";
+    process.env.SIGIL_GUARDS_FAIL_OPEN = "true";
+
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      guards: { enabled: false, timeoutMs: 2500, failOpen: false },
+    });
+
+    expect(cfg?.guards).toEqual({
+      enabled: true,
+      timeoutMs: 1500,
+      failOpen: true,
+    });
+  });
+
+  it("enables guards via canonical env var only", () => {
+    process.env.SIGIL_GUARDS_ENABLED = "true";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.guards.enabled).toBe(true);
+  });
+
+  it("does not recognise the pi-prefixed alias", () => {
+    process.env.SIGIL_PI_GUARDS_ENABLED = "true";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.guards.enabled).toBe(false);
+  });
+
+  it("warns and falls back to default when SIGIL_GUARDS_ENABLED is not a boolean", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.SIGIL_GUARDS_ENABLED = "maybe";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg).not.toBeNull();
+    expect(cfg?.guards.enabled).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("invalid boolean value for SIGIL_GUARDS_ENABLED"),
+    );
+    warn.mockRestore();
+  });
+
+  it("warns and falls back to default when SIGIL_GUARDS_TIMEOUT_MS is not numeric", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.SIGIL_GUARDS_TIMEOUT_MS = "fast";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg).not.toBeNull();
+    expect(cfg?.guards.timeoutMs).toBe(1500);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "invalid integer value for SIGIL_GUARDS_TIMEOUT_MS",
+      ),
+    );
+    warn.mockRestore();
+  });
+
+  it("rejects SIGIL_GUARDS_TIMEOUT_MS=0 so the SDK does not fall back to its 15s default", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.SIGIL_GUARDS_TIMEOUT_MS = "0";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.guards.timeoutMs).toBe(1500);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "invalid integer value for SIGIL_GUARDS_TIMEOUT_MS",
+      ),
+    );
+    warn.mockRestore();
+  });
+
+  it("rejects guards.timeoutMs=0 from the file config", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+      guards: { timeoutMs: 0 },
+    });
+    expect(cfg?.guards.timeoutMs).toBe(1500);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("invalid integer value for guards.* file entry"),
+    );
+    warn.mockRestore();
+  });
+
+  it("warns and falls back to default when SIGIL_GUARDS_FAIL_OPEN is not a boolean", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.SIGIL_GUARDS_FAIL_OPEN = "sometimes";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg).not.toBeNull();
+    expect(cfg?.guards.failOpen).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "invalid boolean value for SIGIL_GUARDS_FAIL_OPEN",
+      ),
+    );
+    warn.mockRestore();
+  });
+
+  it("supports truthy aliases (on, yes, 1) for env vars", () => {
+    process.env.SIGIL_GUARDS_ENABLED = "on";
+    process.env.SIGIL_GUARDS_FAIL_OPEN = "no";
+    const cfg = resolveConfig({
+      endpoint: "http://localhost:8080/api/v1/generations:export",
+    });
+    expect(cfg?.guards.enabled).toBe(true);
+    expect(cfg?.guards.failOpen).toBe(false);
   });
 });
 
