@@ -20,6 +20,7 @@ from sigil_sdk import (
     GenerationExportConfig,
     GenerationStart,
     ModelRef,
+    TokenUsage,
     ToolExecutionStart,
 )
 
@@ -94,7 +95,7 @@ def test_generation_metrics_carry_span_context():
     try:
         with patch.object(h.client._operation_duration_histogram, "record", side_effect=h.capturing_record):
             rec = h.client.start_generation(GenerationStart(model=_OPENAI))
-            rec.set_result(output_messages=[], usage_input_tokens=10, usage_output_tokens=5)
+            rec.set_result(output=[], usage=TokenUsage(input_tokens=10, output_tokens=5))
             rec.end()
             assert rec.err() is None
         h.assert_metric_carries_trace_id(None, label="generation")

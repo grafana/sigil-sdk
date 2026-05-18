@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
-import io.opentelemetry.sdk.metrics.data.ExemplarData;
+import io.opentelemetry.sdk.metrics.data.DoubleExemplarData;
 import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.testing.exporter.InMemoryMetricReader;
@@ -141,7 +141,7 @@ class SigilClientMetricExemplarTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("metric " + metricName + " not found"));
 
-        List<ExemplarData> exemplars = durationMetric.getHistogramData().getPoints().stream()
+        List<DoubleExemplarData> exemplars = durationMetric.getHistogramData().getPoints().stream()
                 .map(HistogramPointData::getExemplars)
                 .flatMap(List::stream)
                 .toList();

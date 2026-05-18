@@ -47,7 +47,7 @@ public sealed class MetricExemplarTests
             ToolName = "weather",
             AgentName = "test-agent",
         });
-        recorder.SetResult(new ToolExecutionResult { Result = "sunny" });
+        recorder.SetResult(new ToolExecutionEnd { Result = "sunny" });
         recorder.End();
 
         Assert.NotNull(harness.CapturedActivityId);
