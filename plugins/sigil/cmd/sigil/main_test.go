@@ -63,7 +63,7 @@ func TestRun_UnknownAgentExits2(t *testing.T) {
 func TestRun_UnknownVerbExits2(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	gotExit := withExit(t, func() {
-		run([]string{"claude-code", "launch"}, strings.NewReader(""), &stdout, &stderr)
+		run([]string{"codex", "launch"}, strings.NewReader(""), &stdout, &stderr)
 	})
 	if gotExit == nil || *gotExit != 2 {
 		t.Fatalf("exit = %v, want 2", gotExit)
@@ -265,6 +265,115 @@ func TestRun_LauncherErrorExits1(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	gotExit := withExit(t, func() {
 		run([]string{"pi", "--"}, strings.NewReader(""), &stdout, &stderr)
+	})
+	if gotExit == nil || *gotExit != 1 {
+		t.Fatalf("exit = %v, want 1", gotExit)
+	}
+	if !strings.HasPrefix(stderr.String(), "sigil:") {
+		t.Fatalf("stderr does not start with sigil: %q", stderr.String())
+	}
+}
+
+func TestRun_ClaudeLauncherBare(t *testing.T) {
+	var got []string
+	called := 0
+	withStubLauncher(t, "claude", func(_ context.Context, args []string, _ io.Reader, _, _ io.Writer, _ *log.Logger) error {
+		called++
+		got = append([]string{}, args...)
+		return nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	gotExit := withExit(t, func() {
+		run([]string{"claude"}, strings.NewReader(""), &stdout, &stderr)
+	})
+	if gotExit != nil {
+		t.Fatalf("exit code = %d, want no exit", *gotExit)
+	}
+	if called != 1 {
+		t.Fatalf("launcher called %d times, want 1", called)
+	}
+	if len(got) != 0 {
+		t.Fatalf("launcher args = %v, want empty", got)
+	}
+}
+
+func TestRun_ClaudeLauncherSeparatorOnly(t *testing.T) {
+	var got []string
+	withStubLauncher(t, "claude", func(_ context.Context, args []string, _ io.Reader, _, _ io.Writer, _ *log.Logger) error {
+		got = append([]string{}, args...)
+		return nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	withExit(t, func() {
+		run([]string{"claude", "--"}, strings.NewReader(""), &stdout, &stderr)
+	})
+	if len(got) != 0 {
+		t.Fatalf("launcher args = %v, want empty", got)
+	}
+}
+
+func TestRun_ClaudeLauncherForwardsArgs(t *testing.T) {
+	var got []string
+	withStubLauncher(t, "claude", func(_ context.Context, args []string, _ io.Reader, _, _ io.Writer, _ *log.Logger) error {
+		got = append([]string{}, args...)
+		return nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	withExit(t, func() {
+		run([]string{"claude", "--", "--resume", "abc"}, strings.NewReader(""), &stdout, &stderr)
+	})
+	if !reflect.DeepEqual(got, []string{"--resume", "abc"}) {
+		t.Fatalf("launcher args = %v, want [--resume abc]", got)
+	}
+}
+
+func TestRun_ClaudeLauncherMissingSeparatorExits2(t *testing.T) {
+	withStubLauncher(t, "claude", func(_ context.Context, _ []string, _ io.Reader, _, _ io.Writer, _ *log.Logger) error {
+		t.Fatal("launcher must not be called when separator is missing")
+		return nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	gotExit := withExit(t, func() {
+		run([]string{"claude", "foo"}, strings.NewReader(""), &stdout, &stderr)
+	})
+	if gotExit == nil || *gotExit != 2 {
+		t.Fatalf("exit = %v, want 2", gotExit)
+	}
+	if !strings.Contains(stderr.String(), "use `sigil claude -- <args>`") {
+		t.Fatalf("stderr missing forward-args hint: %q", stderr.String())
+	}
+}
+
+func TestRun_ClaudeLauncherUnknownOptionsExits2(t *testing.T) {
+	withStubLauncher(t, "claude", func(_ context.Context, _ []string, _ io.Reader, _, _ io.Writer, _ *log.Logger) error {
+		t.Fatal("launcher must not be called when unknown options precede separator")
+		return nil
+	})
+
+	var stdout, stderr bytes.Buffer
+	gotExit := withExit(t, func() {
+		run([]string{"claude", "--foo", "--", "args"}, strings.NewReader(""), &stdout, &stderr)
+	})
+	if gotExit == nil || *gotExit != 2 {
+		t.Fatalf("exit = %v, want 2", gotExit)
+	}
+	if !strings.Contains(stderr.String(), "unknown options before `--`: [--foo]") {
+		t.Fatalf("stderr missing unknown-options message: %q", stderr.String())
+	}
+}
+
+func TestRun_ClaudeLauncherErrorExits1(t *testing.T) {
+	withStubLauncher(t, "claude", func(_ context.Context, _ []string, _ io.Reader, _, _ io.Writer, _ *log.Logger) error {
+		return errors.New("boom")
+	})
+
+	var stdout, stderr bytes.Buffer
+	gotExit := withExit(t, func() {
+		run([]string{"claude", "--"}, strings.NewReader(""), &stdout, &stderr)
 	})
 	if gotExit == nil || *gotExit != 1 {
 		t.Fatalf("exit = %v, want 1", gotExit)

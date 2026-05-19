@@ -3,9 +3,10 @@
 `sigil` is one Go binary that backs the agent plugins (`plugins/claude-code`, `plugins/codex`, `plugins/cursor`, `plugins/pi`) in this repository. The dispatcher accepts:
 
 ```
-sigil <agent> hook        # process a JSON hook payload on stdin for <agent>
-sigil pi [-- args...]     # bootstrap the @grafana/sigil-pi extension, then exec pi
-sigil --version           # print the build version
+sigil <agent> hook         # process a JSON hook payload on stdin for <agent>
+sigil claude [-- args...]  # bootstrap the sigil-cc plugin, then exec claude
+sigil pi [-- args...]      # bootstrap the @grafana/sigil-pi extension, then exec pi
+sigil --version            # print the build version
 ```
 
 where `<agent>` is `claude-code`, `codex`, or `cursor`.
@@ -55,7 +56,8 @@ When `OTEL_EXPORTER_OTLP_HEADERS` does not contain an `Authorization` entry, the
 
 | Agent | Invocation |
 |-------|------------|
-| `claude-code` | `sigil claude-code hook` (resolved via `PATH`) |
+| `claude-code` (hook) | `sigil claude-code hook` (resolved via `PATH`) |
+| `claude` (launcher) | `sigil claude [-- args...]` (resolved via `PATH`) |
 | `codex` | `sigil codex hook` (resolved via `PATH`) |
 | `cursor` | `plugins/cursor/scripts/run.sh` |
 | `pi` | `sigil pi [-- args...]` (resolved via `PATH`) |
