@@ -288,15 +288,20 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 	turnID := session.ActiveTurnID
+	clearActiveTurn := false
 	if err := updateCommon(sessionID, turnID, session, p, logger, func(f *fragment.Fragment) {
 		f.CompletedAt = p.ResolvedTimestamp()
 		f.StopReason = firstNonEmpty(p.StopReason(), p.Reason(), "end_turn")
 	}); err != nil {
 		logger.Printf("stop: update turn: %v", err)
+		clearActiveTurn = true
 		_ = fragment.ClearActiveTurn(sessionID, turnID, logger)
 		return
 	}
 	defer func() {
+		if !clearActiveTurn {
+			return
+		}
 		if err := fragment.ClearActiveTurn(sessionID, turnID, logger); err != nil {
 			logger.Printf("stop: clear active turn: %v", err)
 		}
@@ -304,6 +309,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 
 	if !config.HasCredentials() {
 		logger.Print("stop: missing SIGIL_ENDPOINT/SIGIL_AUTH_TENANT_ID/SIGIL_AUTH_TOKEN; discarding fragment")
+		clearActiveTurn = true
 		if err := fragment.Delete(sessionID, turnID); err != nil {
 			logger.Printf("stop: delete fragment: %v", err)
 		}
@@ -364,6 +370,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		logger.Printf("stop: delete fragment: %v", err)
 		return
 	}
+	clearActiveTurn = true
 	logger.Printf("stop: emitted session=%s turn=%s", sessionID, turnID)
 }
 

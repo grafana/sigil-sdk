@@ -179,6 +179,29 @@ func TestStopEnrichesExportFromTranscript(t *testing.T) {
 	}
 }
 
+func TestStopRetainsActiveTurnWhenExportFlushFails(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("SIGIL_CONTENT_CAPTURE_MODE", "full")
+	logger := log.New(io.Discard, "", 0)
+
+	t.Setenv("SIGIL_ENDPOINT", "://bad-endpoint")
+	t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+	t.Setenv("SIGIL_AUTH_TOKEN", "token")
+	cfg := config.Config{ContentCapture: sigil.ContentCaptureModeFull}
+
+	UserPromptSubmit(Payload{HookEventNameJSON: "UserPromptSubmit", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:01Z"`), Prompt: "hello"}, cfg, logger)
+	Stop(Payload{HookEventNameJSON: "Stop", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:04Z"`), StopReasonJSON: "end_turn"}, cfg, logger)
+
+	session := fragment.LoadSessionTolerant("sess", logger)
+	if session == nil || session.ActiveTurnID != "turn-000001" {
+		t.Fatalf("expected active turn retained after export failure, got %+v", session)
+	}
+	if got := fragment.LoadTolerant("sess", "turn-000001", logger); got == nil {
+		t.Fatal("expected fragment retained after export failure")
+	}
+}
+
 func TestStopUsesPromptHashForMetadataOnlyTranscriptEnrichment(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
