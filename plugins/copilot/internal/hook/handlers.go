@@ -87,11 +87,13 @@ func UserPromptSubmit(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 	if err := updateCommon(sessionID, turnID, session, p, logger, func(f *fragment.Fragment) {
+		prompt := p.Prompt
+		if prompt == "" {
+			prompt = session.InitialPrompt
+		}
+		f.PromptHash = transcript.PromptHash(prompt)
 		if cfg.ContentCapture != sigil.ContentCaptureModeMetadataOnly {
-			f.Prompt = p.Prompt
-			if f.Prompt == "" {
-				f.Prompt = session.InitialPrompt
-			}
+			f.Prompt = prompt
 			f.InitialPrompt = session.InitialPrompt
 		}
 	}); err != nil {
@@ -326,6 +328,9 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		}()
 	}
 	client := buildClient(cfg, providers, logger)
+	defer func() {
+		_ = client.Shutdown(ctx)
+	}()
 	mapped := mapper.Map(mapper.Inputs{
 		Fragment:       frag,
 		Session:        session,
@@ -348,10 +353,8 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 	}
 	if err := client.Flush(ctx); err != nil {
 		logger.Printf("stop: sigil flush: %v", err)
-		_ = client.Shutdown(ctx)
 		return
 	}
-	_ = client.Shutdown(ctx)
 	if providers != nil {
 		if err := providers.ForceFlush(); err != nil {
 			logger.Printf("stop: otel flush: %v", err)
@@ -431,6 +434,10 @@ func enrichFromTranscript(f *fragment.Fragment, logger *log.Logger) {
 	if f == nil || strings.TrimSpace(f.TranscriptPath) == "" {
 		return
 	}
+	if strings.TrimSpace(f.Prompt) == "" && strings.TrimSpace(f.PromptHash) == "" {
+		logger.Print("stop: transcript enrich: missing turn hint")
+		return
+	}
 
 	deadline := time.Now().Add(transcriptRetryWindow)
 	var (
@@ -440,7 +447,8 @@ func enrichFromTranscript(f *fragment.Fragment, logger *log.Logger) {
 	)
 	for {
 		snap, ok, err := transcript.ReadAssistantTurn(f.TranscriptPath, transcript.ReadHint{
-			UserPrompt: f.Prompt,
+			UserPrompt:     f.Prompt,
+			UserPromptHash: f.PromptHash,
 		})
 		if err != nil {
 			lastErr = err

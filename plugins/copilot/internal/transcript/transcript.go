@@ -2,6 +2,8 @@ package transcript
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,8 +30,9 @@ type Snapshot struct {
 }
 
 type ReadHint struct {
-	TurnID     string
-	UserPrompt string
+	TurnID         string
+	UserPrompt     string
+	UserPromptHash string
 }
 
 type line struct {
@@ -86,6 +89,7 @@ func readTranscriptSnapshot(path string, hint ReadHint) (Snapshot, bool, error) 
 		copilotVersion      string
 		sessionID           string
 		hintPrompt          = strings.TrimSpace(hint.UserPrompt)
+		hintPromptHash      = strings.TrimSpace(hint.UserPromptHash)
 		hintInteractionID   string
 		matched             Snapshot
 		matchedOK           bool
@@ -125,7 +129,7 @@ func readTranscriptSnapshot(path string, hint ReadHint) (Snapshot, bool, error) 
 			if interactionID != "" {
 				promptByInteraction[interactionID] = prompt
 			}
-			if hintPrompt != "" && prompt == hintPrompt {
+			if matchesHintUserMessage(hintPrompt, hintPromptHash, prompt) {
 				hintInteractionID = interactionID
 				matched = Snapshot{}
 				matchedOK = false
@@ -154,7 +158,7 @@ func readTranscriptSnapshot(path string, hint ReadHint) (Snapshot, bool, error) 
 			}
 			snap = candidate
 			ok = true
-			if matchesHintPromptCandidate(hintPrompt, hintInteractionID, candidate) {
+			if matchesHintPromptCandidate(hintPrompt, hintPromptHash, hintInteractionID, candidate) {
 				matched = candidate
 				matchedOK = true
 			}
@@ -164,7 +168,7 @@ func readTranscriptSnapshot(path string, hint ReadHint) (Snapshot, bool, error) 
 	if err != nil {
 		return Snapshot{}, false, err
 	}
-	if hintPrompt != "" {
+	if hintPrompt != "" || hintPromptHash != "" {
 		if matchedOK {
 			snap = matched
 			ok = true
@@ -224,12 +228,29 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func matchesHintPromptCandidate(hintPrompt, hintInteractionID string, candidate Snapshot) bool {
-	if strings.TrimSpace(hintPrompt) == "" {
+func PromptHash(prompt string) string {
+	trimmed := strings.TrimSpace(prompt)
+	if trimmed == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(trimmed))
+	return hex.EncodeToString(sum[:])
+}
+
+func matchesHintUserMessage(hintPrompt, hintPromptHash, prompt string) bool {
+	prompt = strings.TrimSpace(prompt)
+	if strings.TrimSpace(hintPrompt) != "" && prompt == strings.TrimSpace(hintPrompt) {
+		return true
+	}
+	return strings.TrimSpace(hintPromptHash) != "" && PromptHash(prompt) == strings.TrimSpace(hintPromptHash)
+}
+
+func matchesHintPromptCandidate(hintPrompt, hintPromptHash, hintInteractionID string, candidate Snapshot) bool {
+	if strings.TrimSpace(hintPrompt) == "" && strings.TrimSpace(hintPromptHash) == "" {
 		return false
 	}
 	if strings.TrimSpace(hintInteractionID) != "" {
 		return strings.TrimSpace(candidate.InteractionID) == strings.TrimSpace(hintInteractionID)
 	}
-	return strings.TrimSpace(candidate.UserPrompt) == strings.TrimSpace(hintPrompt)
+	return matchesHintUserMessage(hintPrompt, hintPromptHash, candidate.UserPrompt)
 }

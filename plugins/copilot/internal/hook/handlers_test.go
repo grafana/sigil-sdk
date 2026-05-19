@@ -179,6 +179,68 @@ func TestStopEnrichesExportFromTranscript(t *testing.T) {
 	}
 }
 
+func TestStopUsesPromptHashForMetadataOnlyTranscriptEnrichment(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("SIGIL_CONTENT_CAPTURE_MODE", "metadata_only")
+	logger := log.New(io.Discard, "", 0)
+
+	transcriptPath := filepath.Join(t.TempDir(), "events.jsonl")
+	transcript := "" +
+		"{\"type\":\"session.start\",\"data\":{\"sessionId\":\"sess\",\"copilotVersion\":\"1.0.49\"}}\n" +
+		"{\"type\":\"user.message\",\"data\":{\"content\":\"first prompt\",\"interactionId\":\"int-1\"}}\n" +
+		"{\"type\":\"assistant.message\",\"data\":{\"messageId\":\"msg-1\",\"model\":\"claude-sonnet-4.6\",\"content\":\"first answer\",\"interactionId\":\"int-1\",\"turnId\":\"0\",\"outputTokens\":621,\"requestId\":\"req-1\"}}\n" +
+		"{\"type\":\"user.message\",\"data\":{\"content\":\"second prompt\",\"interactionId\":\"int-2\"}}\n" +
+		"{\"type\":\"assistant.message\",\"data\":{\"messageId\":\"msg-2\",\"model\":\"gpt-4.1\",\"content\":\"second answer\",\"interactionId\":\"int-2\",\"turnId\":\"0\",\"outputTokens\":123,\"requestId\":\"req-2\"}}\n"
+	if err := os.WriteFile(transcriptPath, []byte(transcript), 0o600); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	var gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("SIGIL_ENDPOINT", server.URL)
+	t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+	t.Setenv("SIGIL_AUTH_TOKEN", "token")
+	cfg := config.Config{ContentCapture: sigil.ContentCaptureModeMetadataOnly}
+
+	UserPromptSubmit(Payload{HookEventNameJSON: "UserPromptSubmit", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:01Z"`), Prompt: "second prompt"}, cfg, logger)
+	frag := fragment.LoadTolerant("sess", "turn-000001", logger)
+	if frag == nil {
+		t.Fatal("expected fragment")
+	}
+	if frag.Prompt != "" {
+		t.Fatalf("metadata_only persisted raw prompt: %q", frag.Prompt)
+	}
+	if frag.PromptHash == "" || frag.PromptHash == "second prompt" {
+		t.Fatalf("metadata_only prompt hash = %q", frag.PromptHash)
+	}
+
+	Stop(Payload{HookEventNameJSON: "Stop", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:04Z"`), StopReasonJSON: "end_turn", TranscriptPathJSON: transcriptPath}, cfg, logger)
+
+	for _, want := range []string{
+		`"name":"gpt-4.1"`,
+		`"response_model":"gpt-4.1"`,
+		`"output_tokens":"123"`,
+		`"copilot.request_id":"req-2"`,
+	} {
+		if !strings.Contains(gotBody, want) {
+			t.Fatalf("export body missing %q: %s", want, gotBody)
+		}
+	}
+	for _, leaked := range []string{"second prompt", `"response_model":"claude-sonnet-4.6"`, `"output_tokens":"621"`} {
+		if strings.Contains(gotBody, leaked) {
+			t.Fatalf("export body contained %q: %s", leaked, gotBody)
+		}
+	}
+}
+
 func TestStopWaitsForCurrentCLITranscriptTurnInsteadOfReusingPreviousTurn(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")

@@ -74,6 +74,7 @@ type Fragment struct {
 	Cwd             string           `json:"cwd,omitempty"`
 	Source          string           `json:"source,omitempty"`
 	Prompt          string           `json:"prompt,omitempty"`
+	PromptHash      string           `json:"promptHash,omitempty"`
 	InitialPrompt   string           `json:"initialPrompt,omitempty"`
 	TranscriptPath  string           `json:"transcriptPath,omitempty"`
 	AgentVersion    string           `json:"agentVersion,omitempty"`

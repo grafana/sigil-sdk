@@ -154,6 +154,49 @@ func TestReadAssistantTurnDoesNotReusePreviousTranscriptTurnWhenPromptRepeats(t 
 	}
 }
 
+func TestReadAssistantTurnDoesNotReusePreviousTranscriptTurnWhenPromptHashRepeats(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	contents := "" +
+		"{\"type\":\"session.start\",\"data\":{\"sessionId\":\"sess-1\",\"copilotVersion\":\"1.0.49\"}}\n" +
+		"{\"type\":\"user.message\",\"data\":{\"content\":\"same prompt\",\"interactionId\":\"int-1\"}}\n" +
+		"{\"type\":\"assistant.message\",\"data\":{\"messageId\":\"msg-1\",\"model\":\"claude-sonnet-4.6\",\"content\":\"first answer\",\"interactionId\":\"int-1\",\"turnId\":\"0\",\"outputTokens\":621,\"requestId\":\"req-1\"}}\n" +
+		"{\"type\":\"user.message\",\"data\":{\"content\":\"same prompt\",\"interactionId\":\"int-2\"}}\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	hint := ReadHint{UserPromptHash: PromptHash("same prompt")}
+	got, ok, err := ReadAssistantTurn(path, hint)
+	if err != nil {
+		t.Fatalf("ReadAssistantTurn before repeated reply by hash: %v", err)
+	}
+	if ok {
+		t.Fatalf("got snapshot before repeated reply: %+v", got)
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("open transcript for append: %v", err)
+	}
+	_, _ = f.WriteString("{\"type\":\"assistant.message\",\"data\":{\"messageId\":\"msg-2\",\"model\":\"gpt-4.1\",\"content\":\"second answer\",\"interactionId\":\"int-2\",\"turnId\":\"0\",\"outputTokens\":123,\"requestId\":\"req-2\"}}\n")
+	_ = f.Close()
+
+	got, ok, err = ReadAssistantTurn(path, hint)
+	if err != nil {
+		t.Fatalf("ReadAssistantTurn after repeated reply by hash: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected transcript snapshot after repeated reply")
+	}
+	if got.InteractionID != "int-2" {
+		t.Fatalf("InteractionID = %q", got.InteractionID)
+	}
+	if got.RequestID != "req-2" {
+		t.Fatalf("RequestID = %q", got.RequestID)
+	}
+}
+
 func TestReadAssistantTurnDoesNotReusePreviousTranscriptTurnWhenHintPromptNeverAppears(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "events.jsonl")
@@ -171,5 +214,33 @@ func TestReadAssistantTurnDoesNotReusePreviousTranscriptTurnWhenHintPromptNeverA
 	}
 	if ok {
 		t.Fatalf("got stale snapshot for missing prompt: %+v", got)
+	}
+}
+
+func TestReadAssistantTurnMatchesPromptHash(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "events.jsonl")
+	contents := "" +
+		"{\"type\":\"session.start\",\"data\":{\"sessionId\":\"sess-1\",\"copilotVersion\":\"1.0.49\"}}\n" +
+		"{\"type\":\"user.message\",\"data\":{\"content\":\"first prompt\",\"interactionId\":\"int-1\"}}\n" +
+		"{\"type\":\"assistant.message\",\"data\":{\"messageId\":\"msg-1\",\"model\":\"claude-sonnet-4.6\",\"content\":\"first answer\",\"interactionId\":\"int-1\",\"turnId\":\"0\",\"outputTokens\":621,\"requestId\":\"req-1\"}}\n" +
+		"{\"type\":\"user.message\",\"data\":{\"content\":\"second prompt\",\"interactionId\":\"int-2\"}}\n" +
+		"{\"type\":\"assistant.message\",\"data\":{\"messageId\":\"msg-2\",\"model\":\"gpt-4.1\",\"content\":\"second answer\",\"interactionId\":\"int-2\",\"turnId\":\"0\",\"outputTokens\":123,\"requestId\":\"req-2\"}}\n"
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	got, ok, err := ReadAssistantTurn(path, ReadHint{UserPromptHash: PromptHash("second prompt")})
+	if err != nil {
+		t.Fatalf("ReadAssistantTurn by hash: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected transcript snapshot")
+	}
+	if got.Model != "gpt-4.1" {
+		t.Fatalf("Model = %q", got.Model)
+	}
+	if got.RequestID != "req-2" {
+		t.Fatalf("RequestID = %q", got.RequestID)
 	}
 }
