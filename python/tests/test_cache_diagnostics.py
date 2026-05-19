@@ -86,3 +86,22 @@ def test_set_cache_diagnostics_empty_reason_noop() -> None:
 
 def test_set_cache_diagnostics_none_recorder() -> None:
     set_cache_diagnostics(None, "system_changed")
+
+
+def test_set_cache_diagnostics_after_end_noop() -> None:
+    exporter = CapturingGenerationExporter()
+    client = _client(exporter)
+    try:
+        rec = client.start_generation(
+            GenerationStart(model=ModelRef(provider="anthropic", name="claude-3-5-sonnet-latest"))
+        )
+        rec.set_result(
+            output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="ok")])]
+        )
+        rec.end()
+
+        set_cache_diagnostics(rec, "system_changed", missed_input_tokens=42)
+
+        assert CACHE_DIAGNOSTICS_MISS_REASON_KEY not in rec.last_generation.metadata
+    finally:
+        client.shutdown()

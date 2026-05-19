@@ -1177,6 +1177,8 @@ class GenerationRecorder:
         if not miss_reason:
             return
         with self._lock:
+            if self._ended:
+                return
             if self._extra_metadata is None:
                 self._extra_metadata = {}
             self._extra_metadata.pop(CACHE_DIAGNOSTICS_MISSED_INPUT_TOKENS_KEY, None)

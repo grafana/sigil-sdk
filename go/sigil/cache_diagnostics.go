@@ -59,6 +59,9 @@ func SetCacheDiagnostics(rec *GenerationRecorder, missReason string, opts ...Cac
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
+	if rec.ended {
+		return
+	}
 	if rec.extraMetadata == nil {
 		rec.extraMetadata = make(map[string]any, 3)
 	}
