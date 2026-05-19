@@ -9,4 +9,5 @@ use (
 	./plugins/claude-code
 	./plugins/codex
 	./plugins/cursor
+	./plugins/copilot
 )

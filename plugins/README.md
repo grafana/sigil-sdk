@@ -7,6 +7,7 @@ Plugins that send generations from coding agents to [Grafana AI Observability](h
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | [`claude-code/`](claude-code/) | Available |
 | [Codex](https://developers.openai.com/codex) | [`codex/`](codex/) | Experimental |
 | [Cursor](https://cursor.com) | [`cursor/`](cursor/) | Available |
+| [GitHub Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli) | [`copilot/`](copilot/) | Experimental |
 | [OpenCode](https://opencode.ai) | [`opencode/`](opencode/) | Available |
 | [Pi](https://github.com/badlogic/pi) | [`pi/`](pi/) | Available |
 
