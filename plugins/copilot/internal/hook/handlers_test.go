@@ -2,6 +2,8 @@ package hook
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -202,6 +204,64 @@ func TestStopRetainsActiveTurnWhenExportFlushFails(t *testing.T) {
 	}
 }
 
+func TestStopClearsActiveTurnWhenFragmentLoadFails(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("SIGIL_CONTENT_CAPTURE_MODE", "full")
+	logger := log.New(io.Discard, "", 0)
+	cfg := config.Config{ContentCapture: sigil.ContentCaptureModeFull}
+
+	UserPromptSubmit(Payload{HookEventNameJSON: "UserPromptSubmit", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:01Z"`), Prompt: "hello"}, cfg, logger)
+	path := fragment.FragmentFilePath("sess", "turn-000001")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatalf("corrupt fragment: %v", err)
+	}
+
+	Stop(Payload{HookEventNameJSON: "Stop", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:04Z"`), StopReasonJSON: "end_turn"}, cfg, logger)
+
+	session := fragment.LoadSessionTolerant("sess", logger)
+	if session == nil {
+		t.Fatal("expected session to remain")
+	}
+	if session.ActiveTurnID != "" {
+		t.Fatalf("expected active turn cleared after fragment load failure, got %+v", session)
+	}
+}
+
+func TestStopClearsActiveTurnWhenDeleteFailsAfterSuccessfulExport(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("SIGIL_CONTENT_CAPTURE_MODE", "full")
+	logger := log.New(io.Discard, "", 0)
+
+	server := newAcceptedGenerationServer(t)
+	defer server.Close()
+	t.Setenv("SIGIL_ENDPOINT", server.URL)
+	t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+	t.Setenv("SIGIL_AUTH_TOKEN", "token")
+	cfg := config.Config{ContentCapture: sigil.ContentCaptureModeFull}
+
+	origDelete := deleteFragment
+	deleteFragment = func(sessionID, turnID string) error {
+		return errors.New("delete failed")
+	}
+	defer func() { deleteFragment = origDelete }()
+
+	UserPromptSubmit(Payload{HookEventNameJSON: "UserPromptSubmit", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:01Z"`), Prompt: "hello"}, cfg, logger)
+	Stop(Payload{HookEventNameJSON: "Stop", SessionIDJSON: "sess", Timestamp: []byte(`"2026-05-18T12:00:04Z"`), StopReasonJSON: "end_turn"}, cfg, logger)
+
+	session := fragment.LoadSessionTolerant("sess", logger)
+	if session == nil {
+		t.Fatal("expected session to remain")
+	}
+	if session.ActiveTurnID != "" {
+		t.Fatalf("expected active turn cleared after delete failure, got %+v", session)
+	}
+	if got := fragment.LoadTolerant("sess", "turn-000001", logger); got == nil {
+		t.Fatal("expected fragment to remain when delete fails")
+	}
+}
+
 func TestStopUsesPromptHashForMetadataOnlyTranscriptEnrichment(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
@@ -263,6 +323,32 @@ func TestStopUsesPromptHashForMetadataOnlyTranscriptEnrichment(t *testing.T) {
 			t.Fatalf("export body contained %q: %s", leaked, gotBody)
 		}
 	}
+}
+
+func newAcceptedGenerationServer(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		generations, _ := request["generations"].([]any)
+		results := make([]map[string]any, 0, len(generations))
+		for _, raw := range generations {
+			generation, _ := raw.(map[string]any)
+			id, _ := generation["id"].(string)
+			results = append(results, map[string]any{
+				"generation_id": id,
+				"accepted":      true,
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"results": results}); err != nil {
+			http.Error(w, "encode response", http.StatusInternalServerError)
+		}
+	}))
 }
 
 func TestStopWaitsForCurrentCLITranscriptTurnInsteadOfReusingPreviousTurn(t *testing.T) {

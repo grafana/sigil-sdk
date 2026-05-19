@@ -523,10 +523,14 @@ func (c *Client) exportWithRetry(request *sigilv1.ExportGenerationsRequest) erro
 		response, err := c.exporter.Export(timeoutCtx, request)
 		cancel()
 		if err == nil {
+			resultsCount := 0
+			if response != nil {
+				resultsCount = len(response.GetResults())
+			}
 			c.logf(
 				"sigil generation export response requested=%d results=%d",
 				len(request.GetGenerations()),
-				len(response.GetResults()),
+				resultsCount,
 			)
 			logRejectedExportResults(c, response)
 			validateErr := validateExportResponse(request, response)

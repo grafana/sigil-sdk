@@ -27,6 +27,11 @@ const (
 	transcriptRetryInterval = 100 * time.Millisecond
 )
 
+var (
+	loadFragment   = fragment.LoadTolerant
+	deleteFragment = fragment.Delete
+)
+
 func SessionStart(p Payload, cfg config.Config, logger *log.Logger) {
 	sessionID := p.SessionID()
 	if sessionID == "" {
@@ -316,9 +321,10 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		return
 	}
 
-	frag := fragment.LoadTolerant(sessionID, turnID, logger)
+	frag := loadFragment(sessionID, turnID, logger)
 	if frag == nil {
 		logger.Print("stop: no fragment")
+		clearActiveTurn = true
 		return
 	}
 	enrichFromTranscript(frag, logger)
@@ -366,11 +372,11 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 			logger.Printf("stop: otel flush: %v", err)
 		}
 	}
-	if err := fragment.Delete(sessionID, turnID); err != nil {
+	clearActiveTurn = true
+	if err := deleteFragment(sessionID, turnID); err != nil {
 		logger.Printf("stop: delete fragment: %v", err)
 		return
 	}
-	clearActiveTurn = true
 	logger.Printf("stop: emitted session=%s turn=%s", sessionID, turnID)
 }
 
