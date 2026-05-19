@@ -1660,6 +1660,7 @@ type capturingGenerationExporter struct {
 	mu       sync.Mutex
 	requests []*sigilv1.ExportGenerationsRequest
 	err      error
+	response *sigilv1.ExportGenerationsResponse
 }
 
 func (e *capturingGenerationExporter) Export(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
@@ -1670,6 +1671,10 @@ func (e *capturingGenerationExporter) Export(_ context.Context, req *sigilv1.Exp
 	e.mu.Lock()
 	e.requests = append(e.requests, req)
 	e.mu.Unlock()
+
+	if e.response != nil {
+		return e.response, nil
+	}
 
 	results := make([]*sigilv1.ExportGenerationResult, len(req.Generations))
 	for i := range req.Generations {
@@ -1689,6 +1694,50 @@ func (e *capturingGenerationExporter) requestCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return len(e.requests)
+}
+
+func TestFlushReturnsErrorOnRejectedGenerationResult(t *testing.T) {
+	exporter := &capturingGenerationExporter{
+		response: &sigilv1.ExportGenerationsResponse{
+			Results: []*sigilv1.ExportGenerationResult{
+				{
+					GenerationId: "gen-rejected",
+					Accepted:     false,
+					Error:        "validation failed",
+				},
+			},
+		},
+	}
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			MaxRetries:     1,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     10 * time.Millisecond,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		ID:    "gen-rejected",
+		Model: ModelRef{Provider: "openai", Name: "gpt-5.4"},
+	})
+	rec.SetResult(Generation{
+		Output: []Message{AssistantTextMessage("hello")},
+	}, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("unexpected recorder error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := client.Flush(ctx)
+	if err == nil {
+		t.Fatal("expected flush error for rejected generation")
+	}
+	if !strings.Contains(err.Error(), "generation export rejected") {
+		t.Fatalf("unexpected flush error: %v", err)
+	}
 }
 
 func countGenerationSpans(spans []sdktrace.ReadOnlySpan) int {

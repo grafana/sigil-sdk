@@ -500,15 +500,24 @@ func (c *Client) exportWithRetry(request *sigilv1.ExportGenerationsRequest) erro
 		response, err := c.exporter.Export(timeoutCtx, request)
 		cancel()
 		if err == nil {
+			c.logf(
+				"sigil generation export response requested=%d results=%d",
+				len(request.GetGenerations()),
+				len(response.GetResults()),
+			)
 			for i := range response.Results {
 				if !response.Results[i].Accepted {
 					c.logf("sigil generation rejected id=%s error=%s", response.Results[i].GenerationId, response.Results[i].Error)
 				}
 			}
-			return nil
+			if err := validateExportResponse(request, response); err == nil {
+				return nil
+			} else {
+				lastErr = err
+			}
+		} else {
+			lastErr = err
 		}
-
-		lastErr = err
 		if attempt == attempts-1 {
 			break
 		}
@@ -522,6 +531,36 @@ func (c *Client) exportWithRetry(request *sigilv1.ExportGenerationsRequest) erro
 	}
 
 	return lastErr
+}
+
+func validateExportResponse(request *sigilv1.ExportGenerationsRequest, response *sigilv1.ExportGenerationsResponse) error {
+	if response == nil {
+		return errors.New("nil generation export response")
+	}
+	requested := len(request.GetGenerations())
+	results := response.GetResults()
+	if len(results) != requested {
+		return fmt.Errorf("generation export result count mismatch: requested=%d results=%d", requested, len(results))
+	}
+	var rejected []string
+	for _, result := range results {
+		if result == nil {
+			rejected = append(rejected, "<nil result>")
+			continue
+		}
+		if result.Accepted {
+			continue
+		}
+		msg := strings.TrimSpace(result.Error)
+		if msg == "" {
+			msg = "rejected without error"
+		}
+		rejected = append(rejected, fmt.Sprintf("%s: %s", result.GenerationId, msg))
+	}
+	if len(rejected) > 0 {
+		return fmt.Errorf("generation export rejected: %s", strings.Join(rejected, "; "))
+	}
+	return nil
 }
 
 func (c *Client) enqueueGeneration(generation Generation) error {
