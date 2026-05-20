@@ -2131,6 +2131,7 @@ public sealed class GenerationRecorder
     private Exception? _mappingError;
     private Generation? _result;
     private DateTimeOffset? _firstTokenAt;
+    private Dictionary<string, object?>? _extraMetadata;
 
     public Generation? LastGeneration { get; private set; }
 
@@ -2198,6 +2199,50 @@ public sealed class GenerationRecorder
         }
     }
 
+    /// <summary>Attaches cache diagnostic metadata. Call before <see cref="End"/>.</summary>
+    public void SetCacheDiagnostics(string missReason, long? missedInputTokens = null, string? previousMessageId = null)
+    {
+        if (_noop)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(missReason))
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_ended)
+            {
+                return;
+            }
+
+            var meta = _extraMetadata;
+            if (meta == null)
+            {
+                meta = new Dictionary<string, object?>(StringComparer.Ordinal);
+                _extraMetadata = meta;
+            }
+
+            meta.Remove(CacheDiagnostics.MissedInputTokensKey);
+            meta.Remove(CacheDiagnostics.PreviousMessageIdKey);
+            meta[CacheDiagnostics.MissReasonKey] = missReason.Trim();
+            if (missedInputTokens != null)
+            {
+                meta[CacheDiagnostics.MissedInputTokensKey] = missedInputTokens.Value.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture
+                );
+            }
+
+            if (!string.IsNullOrWhiteSpace(previousMessageId))
+            {
+                meta[CacheDiagnostics.PreviousMessageIdKey] = previousMessageId!.Trim();
+            }
+        }
+    }
+
     public void End()
     {
         if (_noop)
@@ -2209,6 +2254,7 @@ public sealed class GenerationRecorder
         Exception? mappingError;
         Generation result;
         DateTimeOffset? firstTokenAt;
+        Dictionary<string, object?>? snapshotExtra;
 
         lock (_gate)
         {
@@ -2222,13 +2268,16 @@ public sealed class GenerationRecorder
             mappingError = _mappingError;
             result = _result != null ? InternalUtils.DeepClone(_result) : new Generation();
             firstTokenAt = _firstTokenAt;
+            snapshotExtra = _extraMetadata == null
+                ? null
+                : new Dictionary<string, object?>(_extraMetadata, StringComparer.Ordinal);
         }
 
         Generation generation;
         try
         {
             var completedAt = _client!._config.UtcNow!();
-            generation = NormalizeGeneration(result, completedAt, callError);
+            generation = NormalizeGeneration(result, completedAt, callError, snapshotExtra);
 
             var modeValue = _contentCaptureMode.ToMetadataValue();
             if (modeValue.Length > 0)
@@ -2325,17 +2374,21 @@ public sealed class GenerationRecorder
             {
                 _activity.SetStatus(ActivityStatusCode.Ok);
             }
-
-            _activity.Stop();
         }
 
         _client.RecordGenerationMetrics(generation, errorType, errorCategory, firstTokenAt);
+        _activity?.Stop();
 
         LastGeneration = InternalUtils.DeepClone(generation);
         Error = localError;
     }
 
-    private Generation NormalizeGeneration(Generation raw, DateTimeOffset completedAt, Exception? callError)
+    private Generation NormalizeGeneration(
+        Generation raw,
+        DateTimeOffset completedAt,
+        Exception? callError,
+        IReadOnlyDictionary<string, object?>? extraMetadata
+    )
     {
         var generation = InternalUtils.DeepClone(raw);
 
@@ -2377,6 +2430,13 @@ public sealed class GenerationRecorder
 
         generation.Tags = Merge(_seed.Tags, generation.Tags);
         generation.Metadata = Merge(_seed.Metadata, generation.Metadata);
+        if (extraMetadata != null)
+        {
+            foreach (var pair in extraMetadata)
+            {
+                generation.Metadata[pair.Key] = pair.Value;
+            }
+        }
 
         generation.ConversationTitle = FirstNonEmpty(
             generation.ConversationTitle,
@@ -2604,12 +2664,12 @@ public sealed class EmbeddingRecorder
             {
                 _activity.SetStatus(ActivityStatusCode.Ok);
             }
-
-            _activity.SetEndTime(completedAt.UtcDateTime);
-            _activity.Stop();
         }
 
         _client.RecordEmbeddingMetrics(_seed, result, _startedAt, completedAt, errorType, errorCategory);
+        _activity?.SetEndTime(completedAt.UtcDateTime);
+        _activity?.Stop();
+
         Error = localError;
     }
 }
@@ -2749,12 +2809,12 @@ public sealed class ToolExecutionRecorder
             {
                 _activity.SetStatus(ActivityStatusCode.Ok);
             }
-
-            _activity.SetEndTime(completedAt.UtcDateTime);
-            _activity.Stop();
         }
 
         _client!.RecordToolExecutionMetrics(_seed, _startedAt, completedAt, finalError);
+        _activity?.SetEndTime(completedAt.UtcDateTime);
+        _activity?.Stop();
+
         Error = finalError;
     }
 }

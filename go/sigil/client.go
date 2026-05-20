@@ -198,16 +198,16 @@ const (
 	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
 	spanAttrToolCallResult         = "gen_ai.tool.call.result"
 
-	metricOperationDuration      = "gen_ai.client.operation.duration"
-	metricTokenUsage             = "gen_ai.client.token.usage"
-	metricTimeToFirstToken       = "gen_ai.client.time_to_first_token"
-	metricToolCallsPerOperation  = "gen_ai.client.tool_calls_per_operation"
-	metricAttrTokenType          = "gen_ai.token.type"
-	metricTokenTypeInput         = "input"
-	metricTokenTypeOutput        = "output"
-	metricTokenTypeCacheRead     = "cache_read"
-	metricTokenTypeCacheWrite    = "cache_write"
-	metricTokenTypeReasoning     = "reasoning"
+	metricOperationDuration     = "gen_ai.client.operation.duration"
+	metricTokenUsage            = "gen_ai.client.token.usage"
+	metricTimeToFirstToken      = "gen_ai.client.time_to_first_token"
+	metricToolCallsPerOperation = "gen_ai.client.tool_calls_per_operation"
+	metricAttrTokenType         = "gen_ai.token.type"
+	metricTokenTypeInput        = "input"
+	metricTokenTypeOutput       = "output"
+	metricTokenTypeCacheRead    = "cache_read"
+	metricTokenTypeCacheWrite   = "cache_write"
+	metricTokenTypeReasoning    = "reasoning"
 )
 
 // durationBucketsSeconds is the OTel GenAI semantic-convention bucket advice
@@ -318,6 +318,8 @@ type GenerationRecorder struct {
 	lastGeneration Generation
 	finalErr       error
 	firstTokenAt   time.Time
+	// extraMetadata is merged last in normalizeGeneration (e.g. cache diagnostics).
+	extraMetadata map[string]any
 }
 
 // EmbeddingRecorder records and closes one in-flight embeddings span.
@@ -809,6 +811,7 @@ func (r *GenerationRecorder) End() {
 	mapErr := r.mapErr
 	generation := r.generation
 	firstTokenAt := r.firstTokenAt
+	extraMeta := cloneMetadata(r.extraMetadata)
 	r.mu.Unlock()
 
 	// No-op recorder: no client/span means nothing to finalize.
@@ -817,7 +820,7 @@ func (r *GenerationRecorder) End() {
 	}
 
 	completedAt := r.client.now().UTC()
-	normalized := r.normalizeGeneration(generation, completedAt, callErr)
+	normalized := r.normalizeGeneration(generation, completedAt, callErr, extraMeta)
 	applyTraceContextFromSpan(r.span, &normalized)
 
 	sanitizerRan := false
@@ -892,7 +895,7 @@ func (r *GenerationRecorder) End() {
 	default:
 		r.span.SetStatus(codes.Ok, "")
 	}
-	r.client.recordGenerationMetrics(normalized, errorType, errorCategory, firstTokenAt)
+	r.client.recordGenerationMetrics(r.ctx, normalized, errorType, errorCategory, firstTokenAt)
 	r.span.End(trace.WithTimestamp(normalized.CompletedAt))
 
 	// rec.Err reports local validation/enqueue failures only.
@@ -1034,7 +1037,7 @@ func (r *EmbeddingRecorder) End() {
 		r.span.SetAttributes(attribute.String(spanAttrErrorCategory, errorCategory))
 	}
 
-	r.client.recordEmbeddingMetrics(r.seed, normalized, r.startedAt, completedAt, errorType, errorCategory)
+	r.client.recordEmbeddingMetrics(r.ctx, r.seed, normalized, r.startedAt, completedAt, errorType, errorCategory)
 	r.span.End(trace.WithTimestamp(completedAt))
 
 	r.mu.Lock()
@@ -1148,7 +1151,7 @@ func (r *ToolExecutionRecorder) End() {
 	} else {
 		r.span.SetStatus(codes.Ok, "")
 	}
-	r.client.recordToolExecutionMetrics(r.seed, r.startedAt, completedAt, finalErr)
+	r.client.recordToolExecutionMetrics(r.ctx, r.seed, r.startedAt, completedAt, finalErr)
 	r.span.End(trace.WithTimestamp(completedAt))
 
 	r.mu.Lock()
@@ -1171,7 +1174,7 @@ func (r *ToolExecutionRecorder) Err() error {
 // internal helpers
 // ---------------------------------------------------------------------------
 
-func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt time.Time, callErr error) Generation {
+func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt time.Time, callErr error, extraMetadata map[string]any) Generation {
 	g := cloneGeneration(raw)
 
 	if g.ID == "" {
@@ -1242,6 +1245,7 @@ func (r *GenerationRecorder) normalizeGeneration(raw Generation, completedAt tim
 	}
 	g.Tags = mergeTags(r.seed.Tags, g.Tags)
 	g.Metadata = mergeMetadata(r.seed.Metadata, g.Metadata)
+	g.Metadata = mergeMetadata(g.Metadata, extraMetadata)
 	if g.Metadata == nil {
 		g.Metadata = map[string]any{}
 	}
@@ -1749,7 +1753,7 @@ func newTelemetryInstruments(meter metric.Meter) (telemetryInstruments, error) {
 	return out, nil
 }
 
-func (c *Client) recordGenerationMetrics(generation Generation, errorType string, errorCategory string, firstTokenAt time.Time) {
+func (c *Client) recordGenerationMetrics(ctx context.Context, generation Generation, errorType string, errorCategory string, firstTokenAt time.Time) {
 	if c == nil {
 		return
 	}
@@ -1773,14 +1777,14 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 		attribute.String(spanAttrErrorType, errorType),
 		attribute.String(spanAttrErrorCategory, errorCategory),
 	)
-	c.instruments.operationDuration.Record(context.Background(), duration, durationAttrs)
+	c.instruments.operationDuration.Record(ctx, duration, durationAttrs)
 
 	recordToken := func(tokenType string, value int64) {
 		if value == 0 {
 			return
 		}
 		c.instruments.tokenUsage.Record(
-			context.Background(),
+			ctx,
 			value,
 			metric.WithAttributes(
 				attribute.String(spanAttrOperationName, operationName(generation)),
@@ -1800,7 +1804,7 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 
 	toolCalls := countToolCalls(generation.Output)
 	c.instruments.toolCallsPerOperation.Record(
-		context.Background(),
+		ctx,
 		int64(toolCalls),
 		metric.WithAttributes(
 			attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
@@ -1813,7 +1817,7 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 		ttft := firstTokenAt.Sub(generation.StartedAt).Seconds()
 		if ttft >= 0 {
 			c.instruments.timeToFirstToken.Record(
-				context.Background(),
+				ctx,
 				ttft,
 				metric.WithAttributes(
 					attribute.String(spanAttrProviderName, strings.TrimSpace(generation.Model.Provider)),
@@ -1826,6 +1830,7 @@ func (c *Client) recordGenerationMetrics(generation Generation, errorType string
 }
 
 func (c *Client) recordEmbeddingMetrics(
+	ctx context.Context,
 	seed EmbeddingStart,
 	result EmbeddingResult,
 	startedAt time.Time,
@@ -1852,7 +1857,7 @@ func (c *Client) recordEmbeddingMetrics(
 	model := strings.TrimSpace(seed.Model.Name)
 	agentName := strings.TrimSpace(seed.AgentName)
 	c.instruments.operationDuration.Record(
-		context.Background(),
+		ctx,
 		duration,
 		metric.WithAttributes(
 			attribute.String(spanAttrOperationName, defaultEmbeddingOperationName),
@@ -1866,7 +1871,7 @@ func (c *Client) recordEmbeddingMetrics(
 
 	if result.InputTokens != 0 {
 		c.instruments.tokenUsage.Record(
-			context.Background(),
+			ctx,
 			result.InputTokens,
 			metric.WithAttributes(
 				attribute.String(spanAttrOperationName, defaultEmbeddingOperationName),
@@ -1879,7 +1884,7 @@ func (c *Client) recordEmbeddingMetrics(
 	}
 }
 
-func (c *Client) recordToolExecutionMetrics(seed ToolExecutionStart, startedAt time.Time, completedAt time.Time, finalErr error) {
+func (c *Client) recordToolExecutionMetrics(ctx context.Context, seed ToolExecutionStart, startedAt time.Time, completedAt time.Time, finalErr error) {
 	if c == nil {
 		return
 	}
@@ -1900,7 +1905,7 @@ func (c *Client) recordToolExecutionMetrics(seed ToolExecutionStart, startedAt t
 		errorCategory = toolErrorCategory(finalErr)
 	}
 	c.instruments.operationDuration.Record(
-		context.Background(),
+		ctx,
 		duration,
 		metric.WithAttributes(
 			attribute.String(spanAttrOperationName, "execute_tool"),

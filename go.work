@@ -10,4 +10,5 @@ use (
 	./plugins/codex
 	./plugins/cursor
 	./plugins/copilot
+	./plugins/sigil
 )
