@@ -1632,7 +1632,7 @@ public sealed partial class SigilClient : IAsyncDisposable
 
         var outTags = new KeyValuePair<string, object?>[tags.Length + 1];
         Array.Copy(tags, outTags, tags.Length);
-        outTags[^1] = new KeyValuePair<string, object?>(SpanAttrAgentVersion, version);
+        outTags[tags.Length] = new KeyValuePair<string, object?>(SpanAttrAgentVersion, version);
         return outTags;
     }
 
