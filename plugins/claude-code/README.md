@@ -1,4 +1,4 @@
-# sigil-cc: Claude Code hooks for Sigil
+# Claude Code plugin for Sigil
 
 A Claude Code plugin that forwards each session's transcript to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/). Backed by the consolidated [`sigil`](../sigil/) binary; this plugin only ships hook manifest + wrapper plumbing.
 
@@ -8,14 +8,28 @@ A Claude Code plugin that forwards each session's transcript to [Grafana AI Obse
 go install github.com/grafana/sigil-sdk/plugins/sigil/cmd/sigil@latest
 ```
 
-Then, from inside Claude Code:
+Then pick one of:
+
+### Quick start via `sigil claude`
+
+```sh
+sigil claude
+```
+
+Installs the `sigil-cc` plugin on first run, then launches Claude Code. Subsequent runs just launch it. Forward flags to `claude` after `--`:
+
+```sh
+sigil claude -- --resume <session-id>
+```
+
+### From inside Claude Code
 
 ```
 /plugin marketplace add grafana/sigil-sdk
 /plugin install sigil-cc@grafana-sigil
 ```
 
-The plugin registers the hooks for you; future hook updates ship with the plugin so you don't re-edit `settings.json`.
+Either path registers the hooks for you; future hook updates ship with the plugin so you don't re-edit `settings.json`.
 
 > `go install` drops the binary in `$GOBIN` (usually `~/go/bin`). The hook manifest invokes `sigil claude-code hook` directly, so make sure `$GOBIN` is on `PATH` for the shell that launches Claude Code. Verify with `sigil --version`.
 

@@ -2,14 +2,15 @@
 // and pi agent plugins. It accepts:
 //
 //	sigil <agent> hook           — dispatch a JSON hook payload on stdin to <agent>
+//	sigil claude [-- args...]    — exec claude after bootstrapping the sigil-cc plugin
 //	sigil pi [-- args...]        — exec pi after bootstrapping the @grafana/sigil-pi extension
 //	sigil --version              — print the build version
 //
 // Unknown agents and unknown verbs exit with code 2 and a usage message on
 // stderr. For hook agents the binary must never crash the calling agent
 // process; once argv parsing succeeds, all errors are swallowed (and logged
-// when SIGIL_DEBUG=true) and the process exits 0. Launcher agents (currently
-// just `pi`) are invoked by a human, so errors surface on stderr with a
+// when SIGIL_DEBUG=true) and the process exits 0. Launcher agents (`claude`
+// and `pi`) are invoked by a human, so errors surface on stderr with a
 // non-zero exit code.
 package main
 
@@ -27,6 +28,8 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/cli"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/dotenv"
 )
+
+const usageLine = "usage: sigil <agent> hook | sigil claude [-- args...] | sigil pi [-- args...]"
 
 // version is overridden via -ldflags at build time.
 var version = "dev"
@@ -47,11 +50,13 @@ var agents = map[string]agentHook{
 	"cursor":      cursor.Hook,
 }
 
-// launchers maps the argv agent name to its launcher adapter. Launchers are
+// launchers maps the argv name to its launcher adapter. Launchers are
 // invoked directly by a human (no JSON on stdin) and replace the current
-// process with the target CLI.
+// process with the target CLI. The launcher name is the target CLI's own
+// name (`claude`, `pi`), not the hook agent name (`claude-code`).
 var launchers = map[string]agentLauncher{
-	"pi": pi.Launch,
+	"claude": claudecode.Launch,
+	"pi":     pi.Launch,
 }
 
 // exit is a package var so tests can intercept termination.
@@ -68,15 +73,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 	}
 
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: sigil <agent> hook | sigil pi [-- args...]")
+		_, _ = fmt.Fprintln(stderr, usageLine)
 		exit(2)
 		return
 	}
 
-	// Launcher dispatch handles `sigil pi [-- args...]` before the hook
-	// branch because pi has no verb (single mode of operation).
+	// Launcher dispatch handles `sigil <launcher> [-- args...]` before the
+	// hook branch because launchers have no verb (single mode of operation).
 	if launcher, ok := launchers[args[0]]; ok {
-		piArgs, ok := parseLauncherArgs(args[0], args[1:], stderr)
+		launcherArgs, ok := parseLauncherArgs(args[0], args[1:], stderr)
 		if !ok {
 			return
 		}
@@ -94,7 +99,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 			}
 		}()
 
-		if err := launcher(context.Background(), piArgs, stdin, stdout, stderr, logger); err != nil {
+		if err := launcher(context.Background(), launcherArgs, stdin, stdout, stderr, logger); err != nil {
 			logger.Printf("launch %s: %v", args[0], err)
 			_, _ = fmt.Fprintf(stderr, "sigil: %v\n", err)
 			exit(1)
@@ -104,7 +109,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 	}
 
 	if len(args) < 2 {
-		_, _ = fmt.Fprintln(stderr, "usage: sigil <agent> hook | sigil pi [-- args...]")
+		_, _ = fmt.Fprintln(stderr, usageLine)
 		exit(2)
 		return
 	}
