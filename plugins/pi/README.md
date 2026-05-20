@@ -67,6 +67,21 @@ Generations are scrubbed for secrets before they leave the process; matches beco
 
 User-role messages are scrubbed too — set `redaction.redactInputMessages: false` to leave them alone, or `redaction.enabled: false` to disable redaction entirely.
 
+### Guards
+
+Guards let you block tool calls before they execute — for example, refusing a `bash` invocation when the command matches a deny rule.
+
+Guards are **disabled by default** and must be turned on explicitly:
+
+```sh
+SIGIL_GUARDS_ENABLED=true pi
+```
+
+Behavior:
+
+- Phase is hardcoded to `postflight` (pi's `tool_call` fires after the assistant message but before the tool runs).
+- Fail-open by default — transport errors, timeouts, and unexpected exceptions allow the tool through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block the tool instead.
+
 ### Options
 
 | Field | Default | Description |
@@ -87,6 +102,9 @@ User-role messages are scrubbed too — set `redaction.redactInputMessages: fals
 | `redaction.enabled` | `true` | Master switch for redaction |
 | `redaction.redactInputMessages` | `true` | Scrub user-role content too |
 | `redaction.redactEmailAddresses` | `true` | Scrub generic email addresses |
+| `guards.enabled` | `false` | Opt-in to request-path policy checks. When true, every `tool_call` is evaluated by Sigil; a `deny` blocks the tool with the server-provided reason |
+| `guards.timeoutMs` | `1500` | Per-call timeout for the guard request in milliseconds |
+| `guards.failOpen` | `true` | When true, transport errors/timeouts allow the tool through. When false, the tool is blocked with a guard-evaluation-failed reason. |
 
 ### Environment variables
 
@@ -101,6 +119,9 @@ Any field can be overridden via env var. When launched via `sigil pi`, vars in `
 | `SIGIL_DEBUG` | `debug` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `otlp.endpoint` |
 | `SIGIL_OTEL_AUTH_TOKEN` | OTLP basic-auth password (falls back to `SIGIL_AUTH_TOKEN`) |
+| `SIGIL_GUARDS_ENABLED` | `guards.enabled` |
+| `SIGIL_GUARDS_TIMEOUT_MS` | `guards.timeoutMs` (integer milliseconds) |
+| `SIGIL_GUARDS_FAIL_OPEN` | `guards.failOpen` |
 
 Explicit `auth.mode` in the config file always wins over env-derived auth.
 

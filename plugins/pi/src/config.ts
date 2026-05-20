@@ -20,6 +20,12 @@ export interface RedactionConfig {
   redactEmailAddresses: boolean;
 }
 
+export interface GuardsFeatureConfig {
+  enabled: boolean;
+  timeoutMs: number;
+  failOpen: boolean;
+}
+
 export interface SigilPiConfig {
   endpoint: string;
   auth: SigilAuthConfig;
@@ -29,6 +35,7 @@ export interface SigilPiConfig {
   debug: boolean;
   otlp?: OtlpConfig;
   redaction: RedactionConfig;
+  guards: GuardsFeatureConfig;
 }
 
 const CONFIG_PATH = join(homedir(), ".config", "sigil-pi", "config.json");
@@ -57,7 +64,7 @@ export function resolveConfig(
   // precedence over the legacy SIGIL_PI_* prefix so a single config.env can
   // drive every agent. The pi-specific names remain as a fallback so users
   // who already configured them keep working.
-  const endpoint = ensureExportPath(
+  const endpoint = normalizeBaseEndpoint(
     (
       env("SIGIL_ENDPOINT") ??
       env("SIGIL_PI_ENDPOINT") ??
@@ -97,6 +104,7 @@ export function resolveConfig(
 
   const otlp = resolveOtlp(file);
   const redaction = resolveRedaction(file);
+  const guards = resolveGuards(file);
 
   return {
     endpoint,
@@ -107,7 +115,93 @@ export function resolveConfig(
     debug,
     otlp,
     redaction,
+    guards,
   };
+}
+
+function resolveGuards(file: Record<string, unknown>): GuardsFeatureConfig {
+  const guardsObj = (file.guards ?? {}) as Record<string, unknown>;
+
+  const enabled = resolveGuardsBool(
+    "SIGIL_GUARDS_ENABLED",
+    guardsObj.enabled,
+    false,
+  );
+  const timeoutMs = resolveGuardsInt(
+    "SIGIL_GUARDS_TIMEOUT_MS",
+    guardsObj.timeoutMs,
+    1500,
+  );
+  const failOpen = resolveGuardsBool(
+    "SIGIL_GUARDS_FAIL_OPEN",
+    guardsObj.failOpen,
+    true,
+  );
+
+  return { enabled, timeoutMs, failOpen };
+}
+
+function resolveGuardsBool(
+  envKey: string,
+  fileValue: unknown,
+  defaultValue: boolean,
+): boolean {
+  const rawEnv = env(envKey);
+  if (rawEnv !== undefined) {
+    const parsed = toBool(rawEnv);
+    if (parsed === undefined) {
+      console.warn(
+        `[sigil-pi] invalid boolean value for ${envKey}: "${rawEnv}" — using default ${defaultValue}`,
+      );
+      return defaultValue;
+    }
+    return parsed;
+  }
+  if (fileValue !== undefined) {
+    const parsed = toBool(fileValue);
+    if (parsed === undefined) {
+      console.warn(
+        `[sigil-pi] invalid boolean value for guards.* file entry — using default ${defaultValue}`,
+      );
+      return defaultValue;
+    }
+    return parsed;
+  }
+  return defaultValue;
+}
+
+function resolveGuardsInt(
+  envKey: string,
+  fileValue: unknown,
+  defaultValue: number,
+): number {
+  // 0 is rejected: the SDK interprets timeoutMs <= 0 as "use built-in default
+  // (15000ms)", which would silently override the plugin's documented 1500ms.
+  const rawEnv = env(envKey);
+  if (rawEnv !== undefined) {
+    const n = Number(rawEnv);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+      console.warn(
+        `[sigil-pi] invalid integer value for ${envKey}: "${rawEnv}" — using default ${defaultValue}`,
+      );
+      return defaultValue;
+    }
+    return n;
+  }
+  if (fileValue !== undefined) {
+    if (
+      typeof fileValue !== "number" ||
+      !Number.isInteger(fileValue) ||
+      fileValue <= 0
+    ) {
+      console.warn(
+        `[sigil-pi] invalid integer value for guards.* file entry — using default ${defaultValue}`,
+      );
+      return defaultValue;
+    }
+    return fileValue;
+  }
+  return defaultValue;
 }
 
 function resolveRedaction(file: Record<string, unknown>): RedactionConfig {
@@ -374,26 +468,33 @@ function parseConfig(raw: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-const EXPORT_PATH = "/api/v1/generations:export";
+export const EXPORT_PATH = "/api/v1/generations:export";
 
 /**
- * Normalize a Sigil endpoint by appending `/api/v1/generations:export` unless
- * the path already ends with it. URL parsing handles trailing slashes and
- * query strings; non-URL inputs fall through and let the SDK surface the
- * failure later.
+ * Normalize a Sigil endpoint to the bare API base URL. Accepts either the
+ * base URL (`https://host` or `https://host/prefix`) or a full generations
+ * export URL (`https://host/api/v1/generations:export`) — the latter is a
+ * common copy-paste mistake. Trailing slashes are stripped. The export path
+ * is reapplied in `client.ts` when constructing the generationExport URL.
  */
-function ensureExportPath(endpoint: string): string {
+function normalizeBaseEndpoint(endpoint: string): string {
   if (!endpoint) return "";
-  let url: URL;
   try {
-    url = new URL(endpoint);
+    const url = new URL(endpoint);
+    let pathname = url.pathname.replace(/\/+$/, "");
+    if (pathname.endsWith(EXPORT_PATH)) {
+      pathname = pathname.slice(0, pathname.length - EXPORT_PATH.length);
+    }
+    url.pathname = pathname;
+    // URL preserves a trailing "/" when pathname is empty; strip it for a
+    // tidy stored value ("http://host" rather than "http://host/").
+    return url.toString().replace(/\/+$/, "");
   } catch {
-    return endpoint.replace(/\/+$/, "") + EXPORT_PATH;
+    const trimmed = endpoint.replace(/\/+$/, "");
+    return trimmed.endsWith(EXPORT_PATH)
+      ? trimmed.slice(0, trimmed.length - EXPORT_PATH.length)
+      : trimmed;
   }
-  const cleanPath = url.pathname.replace(/\/+$/, "");
-  if (cleanPath.endsWith(EXPORT_PATH)) return endpoint;
-  url.pathname = cleanPath + EXPORT_PATH;
-  return url.toString();
 }
 
 function isMissingFileError(err: unknown): boolean {
