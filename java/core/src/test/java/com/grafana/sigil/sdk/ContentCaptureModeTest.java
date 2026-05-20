@@ -13,9 +13,12 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import sigil.v1.GenerationIngest;
 
 class ContentCaptureModeTest {
@@ -931,56 +934,91 @@ class ContentCaptureModeTest {
                 .isEqualTo(expectedErrorType);
     }
 
-    @Test
-    void fullWithMetadataSpans_generation_protoFull_spanTitleAbsent() {
-        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
-                .builder(ContentCaptureMode.FULL_WITH_METADATA_SPANS)
-                .build()) {
-            GenerationRecorder rec = env.client.startGeneration(new GenerationStart()
-                    .setModel(new ModelRef().setProvider("anthropic").setName("claude-sonnet-4-5"))
-                    .setConversationTitle("Sensitive conversation")
-                    .setSystemPrompt("Be helpful."));
-            GenerationResult result = new GenerationResult()
-                    .setUsage(new TokenUsage().setInputTokens(3).setOutputTokens(2));
-            result.getInput().add(new Message()
-                    .setRole(MessageRole.USER)
-                    .setParts(List.of(MessagePart.text("hello world"))));
-            result.getOutput().add(new Message()
-                    .setRole(MessageRole.ASSISTANT)
-                    .setParts(List.of(MessagePart.text("hi back"))));
-            rec.setResult(result);
-            rec.end();
-            assertThat(rec.error()).isEmpty();
+    // Coverage matrix across every on-the-wire mode. One fixture, one
+    // subtest per mode, expectations driven by the records below. DEFAULT is
+    // intentionally absent — it's the resolver fall-through, covered by the
+    // resolution tests above.
 
-            // Proto export (post-gRPC roundtrip) keeps content intact.
-            GenerationIngest.Generation gen = env.singleGeneration();
-            assertThat(gen.getSystemPrompt()).isEqualTo("Be helpful.");
-            assertThat(gen.getInput(0).getParts(0).getText()).isEqualTo("hello world");
-            assertThat(gen.getOutput(0).getParts(0).getText()).isEqualTo("hi back");
-            assertThat(gen.getMetadata().getFieldsMap().get("sigil.sdk.content_capture_mode").getStringValue())
-                    .isEqualTo("full_with_metadata_spans");
-            assertThat(gen.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
-                    .isEqualTo("Sensitive conversation");
-
-            // Span path drops the title.
-            assertThat(env.generationSpan().getAttributes().get(AttributeKey.stringKey("sigil.conversation.title")))
-                    .isNull();
+    record ModeExpect(
+            ContentCaptureMode mode,
+            String marker,
+            boolean protoContentStripped,
+            boolean spanTitlePresent,
+            boolean protoCallErrorRaw,
+            boolean spanRawError) {
+        @Override
+        public String toString() {
+            return marker;
         }
     }
 
-    @Test
-    void fullWithMetadataSpans_providerCallError_redactedOnSpan_rawInProto() {
-        // Proto export under FULL_WITH_METADATA_SPANS keeps the raw provider
-        // call error (gRPC destination is trusted); the OTel span path must
-        // not echo it via exception events or status description.
-        String rawError = "provider returned HTTP 400: blocked content '" + LEAK_MARKER + "'";
+    static Stream<Arguments> contentCaptureModeMatrix() {
+        return Stream.of(
+                Arguments.of(new ModeExpect(ContentCaptureMode.FULL, "full", false, true, true, true)),
+                // NO_TOOL_CONTENT is generation-content-full; only tool spans gate args/results.
+                Arguments.of(new ModeExpect(ContentCaptureMode.NO_TOOL_CONTENT, "no_tool_content", false, true, true, true)),
+                Arguments.of(new ModeExpect(ContentCaptureMode.METADATA_ONLY, "metadata_only", true, false, false, false)),
+                Arguments.of(new ModeExpect(ContentCaptureMode.FULL_WITH_METADATA_SPANS, "full_with_metadata_spans", false, false, true, false)));
+    }
 
-        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
-                .builder(ContentCaptureMode.FULL_WITH_METADATA_SPANS)
-                .build()) {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("contentCaptureModeMatrix")
+    void mode_generation_proto_and_span(ModeExpect expect) {
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv.builder(expect.mode()).build()) {
+            String title = "Sensitive conversation";
+            GenerationRecorder rec = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("anthropic").setName("claude-sonnet-4-5"))
+                    .setConversationTitle(title)
+                    .setSystemPrompt("You are helpful."));
+            rec.setResult(matrixFixtureResult());
+            rec.end();
+            assertThat(rec.error()).isEmpty();
+
+            GenerationIngest.Generation gen = env.singleGeneration();
+            assertThat(gen.getMetadata().getFieldsMap().get("sigil.sdk.content_capture_mode").getStringValue())
+                    .isEqualTo(expect.marker());
+
+            // Content fields: stripped only under METADATA_ONLY.
+            assertProtoContent("system_prompt", gen.getSystemPrompt(), "You are helpful.", expect.protoContentStripped());
+            assertProtoContent("input[0].text", gen.getInput(0).getParts(0).getText(), "What is the weather?", expect.protoContentStripped());
+            assertProtoContent("output[0].thinking", gen.getOutput(0).getParts(0).getThinking(), "let me think about weather", expect.protoContentStripped());
+            assertProtoContent("output[0].tool_call.input_json", gen.getOutput(0).getParts(1).getToolCall().getInputJson().toStringUtf8(), "{\"city\":\"Paris\"}", expect.protoContentStripped());
+            assertProtoContent("output[0].text", gen.getOutput(0).getParts(2).getText(), "It's 18C and sunny in Paris.", expect.protoContentStripped());
+            assertProtoContent("input[1].tool_result.content", gen.getInput(1).getParts(0).getToolResult().getContent(), "sunny 18C", expect.protoContentStripped());
+            assertProtoContent("tools[0].description", gen.getTools(0).getDescription(), "Get weather", expect.protoContentStripped());
+            assertProtoContent("tools[0].input_schema_json", gen.getTools(0).getInputSchemaJson().toStringUtf8(), "{\"type\":\"object\"}", expect.protoContentStripped());
+
+            // Structural fields always preserved.
+            assertThat(gen.getInputCount()).isEqualTo(2);
+            assertThat(gen.getOutput(0).getParts(1).getToolCall().getName()).isEqualTo("weather");
+            assertThat(gen.getUsage().getInputTokens()).isEqualTo(120L);
+
+            // Conversation title metadata mirror: present iff the proto keeps it.
+            if (expect.protoContentStripped()) {
+                assertThat(gen.getMetadata().getFieldsMap()).doesNotContainKey("sigil.conversation.title");
+            } else {
+                assertThat(gen.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
+                        .isEqualTo(title);
+            }
+
+            // Span path: title presence is what the mode advertises.
+            String spanTitle = env.generationSpan().getAttributes().get(AttributeKey.stringKey("sigil.conversation.title"));
+            if (expect.spanTitlePresent()) {
+                assertThat(spanTitle).isEqualTo(title);
+            } else {
+                assertThat(spanTitle).isNull();
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("contentCaptureModeMatrix")
+    void mode_generation_call_error(ModeExpect expect) {
+        String rawError = "provider returned HTTP 400: blocked content '" + LEAK_MARKER + "'";
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv.builder(expect.mode()).build()) {
             GenerationRecorder rec = env.client.startGeneration(new GenerationStart()
                     .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
-                    .setAgentName("agent-fwms-error"));
+                    .setAgentName("agent-matrix-error"));
             rec.setCallError(new RuntimeException(rawError));
             GenerationResult result = new GenerationResult()
                     .setUsage(new TokenUsage().setInputTokens(1).setOutputTokens(1));
@@ -995,10 +1033,99 @@ class ContentCaptureModeTest {
             assertThat(rec.error()).isEmpty();
 
             GenerationIngest.Generation gen = env.singleGeneration();
-            assertThat(gen.getCallError()).isEqualTo(rawError);
-            assertThat(gen.getMetadata().getFieldsMap().get("call_error").getStringValue()).isEqualTo(rawError);
+            if (expect.protoCallErrorRaw()) {
+                assertThat(gen.getCallError()).isEqualTo(rawError);
+                assertThat(gen.getMetadata().getFieldsMap().get("call_error").getStringValue()).isEqualTo(rawError);
+            } else {
+                assertThat(gen.getCallError()).isNotEqualTo(rawError).isNotEmpty();
+                assertThat(gen.getMetadata().getFieldsMap()).doesNotContainKey("call_error");
+            }
 
-            assertSpanErrorRedacted(env.generationSpan(), "provider_call_error");
+            SpanData span = env.generationSpan();
+            if (expect.spanRawError()) {
+                assertThat(span.getStatus().getDescription()).contains(LEAK_MARKER);
+            } else {
+                assertSpanErrorRedacted(span, "provider_call_error");
+            }
+        }
+    }
+
+    @Test
+    void streaming_fullWithMetadataSpans_protoFull_spanTitleAbsent() {
+        // Streaming changes the span operation name to streamText but the
+        // redaction logic is shared with non-streaming. Catches regressions
+        // where the two paths drift apart.
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
+                .builder(ContentCaptureMode.FULL_WITH_METADATA_SPANS)
+                .build()) {
+            String title = "Sensitive streaming conversation";
+            GenerationRecorder rec = env.client.startStreamingGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("anthropic").setName("claude-sonnet-4-5"))
+                    .setConversationTitle(title)
+                    .setSystemPrompt("Be helpful."));
+            GenerationResult result = new GenerationResult()
+                    .setSystemPrompt("Be helpful.")
+                    .setUsage(new TokenUsage().setInputTokens(1).setOutputTokens(1));
+            result.getInput().add(new Message()
+                    .setRole(MessageRole.USER)
+                    .setParts(List.of(MessagePart.text("hello"))));
+            result.getOutput().add(new Message()
+                    .setRole(MessageRole.ASSISTANT)
+                    .setParts(List.of(MessagePart.text("hi"))));
+            rec.setResult(result);
+            rec.end();
+            assertThat(rec.error()).isEmpty();
+
+            GenerationIngest.Generation gen = env.singleGeneration();
+            assertThat(gen.getSystemPrompt()).isEqualTo("Be helpful.");
+            assertThat(gen.getInput(0).getParts(0).getText()).isEqualTo("hello");
+            assertThat(gen.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
+                    .isEqualTo(title);
+            assertThat(gen.getMetadata().getFieldsMap().get("sigil.sdk.content_capture_mode").getStringValue())
+                    .isEqualTo("full_with_metadata_spans");
+
+            // Span uses the streamText operation name and still drops the title.
+            SpanData streamSpan = env.streamingGenerationSpan();
+            assertThat(streamSpan.getAttributes().get(AttributeKey.stringKey("sigil.conversation.title")))
+                    .isNull();
+        }
+    }
+
+    private static GenerationResult matrixFixtureResult() {
+        GenerationResult result = new GenerationResult()
+                .setUsage(new TokenUsage().setInputTokens(120).setOutputTokens(42))
+                .setStopReason("end_turn");
+        result.getInput().add(new Message()
+                .setRole(MessageRole.USER)
+                .setParts(List.of(MessagePart.text("What is the weather?"))));
+        result.getInput().add(new Message()
+                .setRole(MessageRole.TOOL)
+                .setParts(List.of(MessagePart.toolResult(new ToolResultPart()
+                        .setToolCallId("call_1")
+                        .setName("weather")
+                        .setContent("sunny 18C")))));
+        result.getOutput().add(new Message()
+                .setRole(MessageRole.ASSISTANT)
+                .setParts(List.of(
+                        MessagePart.thinking("let me think about weather"),
+                        MessagePart.toolCall(new ToolCall()
+                                .setId("call_1")
+                                .setName("weather")
+                                .setInputJson("{\"city\":\"Paris\"}".getBytes())),
+                        MessagePart.text("It's 18C and sunny in Paris."))));
+        result.getTools().add(new ToolDefinition()
+                .setName("weather")
+                .setDescription("Get weather")
+                .setType("function")
+                .setInputSchemaJson("{\"type\":\"object\"}".getBytes()));
+        return result;
+    }
+
+    private static void assertProtoContent(String field, String actual, String expected, boolean expectStripped) {
+        if (expectStripped) {
+            assertThat(actual).as("%s should be stripped", field).isEmpty();
+        } else {
+            assertThat(actual).as(field).isEqualTo(expected);
         }
     }
 

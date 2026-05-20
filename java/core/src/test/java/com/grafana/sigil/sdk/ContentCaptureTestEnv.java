@@ -112,6 +112,10 @@ final class ContentCaptureTestEnv implements AutoCloseable {
         return singleSpanByOperation("generateText");
     }
 
+    SpanData streamingGenerationSpan() {
+        return singleSpanByOperation("streamText");
+    }
+
     SpanData embeddingSpan() {
         return singleSpanByOperation("embeddings");
     }

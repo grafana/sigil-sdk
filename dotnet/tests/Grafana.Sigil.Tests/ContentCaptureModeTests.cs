@@ -1131,59 +1131,102 @@ public sealed class ContentCaptureModeTests
         Assert.Equal("great answer", request.Comment);
     }
 
-    // --- FullWithMetadataSpans tests ---
+    // --- Coverage matrix across every on-the-wire mode ---
     //
-    // Use ContentCaptureEnv so the proto export is asserted end-to-end
-    // (real in-process gRPC server, post-serialization).
+    // One full-content fixture run through every mode, expectations driven
+    // by the records below. DEFAULT is intentionally absent — it's the
+    // resolver fall-through, covered by the resolution tests above.
 
-    [Fact]
-    public async Task FullWithMetadataSpans_GenerationProtoFull_SpanTitleAbsent()
+    public record ModeExpect(
+        ContentCaptureMode Mode,
+        string Marker,
+        bool ProtoContentStripped,
+        bool SpanTitlePresent,
+        bool ProtoCallErrorRaw,
+        bool SpanRawError)
     {
-        await using var env = new ContentCaptureEnv(ContentCaptureMode.FullWithMetadataSpans);
+        public override string ToString() => Marker;
+    }
+
+    public static TheoryData<ModeExpect> ContentCaptureModeMatrix => new()
+    {
+        new ModeExpect(ContentCaptureMode.Full, "full", false, true, true, true),
+        // NO_TOOL_CONTENT is generation-content-full; only tool spans gate args/results.
+        new ModeExpect(ContentCaptureMode.NoToolContent, "no_tool_content", false, true, true, true),
+        new ModeExpect(ContentCaptureMode.MetadataOnly, "metadata_only", true, false, false, false),
+        new ModeExpect(ContentCaptureMode.FullWithMetadataSpans, "full_with_metadata_spans", false, false, true, false),
+    };
+
+    [Theory]
+    [MemberData(nameof(ContentCaptureModeMatrix))]
+    public async Task ModeMatrix_GenerationProtoAndSpan(ModeExpect expect)
+    {
+        await using var env = new ContentCaptureEnv(expect.Mode);
+        const string title = "Sensitive conversation";
         var recorder = env.Client.StartGeneration(new GenerationStart
         {
             Model = new ModelRef { Provider = "anthropic", Name = "claude-sonnet-4-5" },
-            ConversationTitle = "Sensitive conversation",
-            SystemPrompt = "Be helpful.",
+            ConversationTitle = title,
+            SystemPrompt = "You are helpful.",
         });
-        recorder.SetResult(new Generation
-        {
-            Input = { Message.UserTextMessage("hello world") },
-            Output = { Message.AssistantTextMessage("hi back") },
-            Usage = new TokenUsage { InputTokens = 3, OutputTokens = 2 },
-        });
+        recorder.SetResult(MatrixFixtureGeneration());
         recorder.End();
 
         await env.ShutdownAsync(TestContext.Current.CancellationToken);
 
-        // Proto export keeps every field intact.
         var gen = env.SingleGeneration();
-        Assert.Equal("full_with_metadata_spans",
+        Assert.Equal(expect.Marker,
             gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
-        Assert.Equal("Be helpful.", gen.SystemPrompt);
-        Assert.Equal("hello world", gen.Input[0].Parts[0].Text);
-        Assert.Equal("hi back", gen.Output[0].Parts[0].Text);
-        Assert.Equal("Sensitive conversation",
-            gen.Metadata.Fields[SigilClient.SpanAttrConversationTitle].StringValue);
 
-        // Generation span omits the title.
-        Assert.Null(env.GenerationSpan().GetTagItem(SigilClient.SpanAttrConversationTitle));
+        // Content fields: stripped only under MetadataOnly.
+        AssertProtoContent("system_prompt", gen.SystemPrompt, "You are helpful.", expect.ProtoContentStripped);
+        AssertProtoContent("input[0].text", gen.Input[0].Parts[0].Text, "What is the weather?", expect.ProtoContentStripped);
+        AssertProtoContent("output[0].thinking", gen.Output[0].Parts[0].Thinking, "let me think about weather", expect.ProtoContentStripped);
+        AssertProtoContent("output[0].tool_call.input_json", gen.Output[0].Parts[1].ToolCall.InputJson.ToStringUtf8(), "{\"city\":\"Paris\"}", expect.ProtoContentStripped);
+        AssertProtoContent("output[0].text", gen.Output[0].Parts[2].Text, "It's 18C and sunny in Paris.", expect.ProtoContentStripped);
+        AssertProtoContent("input[1].tool_result.content", gen.Input[1].Parts[0].ToolResult.Content, "sunny 18C", expect.ProtoContentStripped);
+        AssertProtoContent("tools[0].description", gen.Tools[0].Description, "Get weather", expect.ProtoContentStripped);
+        AssertProtoContent("tools[0].input_schema_json", gen.Tools[0].InputSchemaJson.ToStringUtf8(), "{\"type\":\"object\"}", expect.ProtoContentStripped);
+
+        // Structural fields always preserved.
+        Assert.Equal(2, gen.Input.Count);
+        Assert.Equal("weather", gen.Output[0].Parts[1].ToolCall.Name);
+        Assert.Equal(120L, gen.Usage.InputTokens);
+
+        // Conversation title metadata mirror: present iff the proto keeps it.
+        if (expect.ProtoContentStripped)
+        {
+            Assert.False(gen.Metadata.Fields.ContainsKey(SigilClient.SpanAttrConversationTitle));
+        }
+        else
+        {
+            Assert.Equal(title, gen.Metadata.Fields[SigilClient.SpanAttrConversationTitle].StringValue);
+        }
+
+        // Span path: title presence is what the mode advertises.
+        var span = env.GenerationSpan();
+        var spanTitle = span.GetTagItem(SigilClient.SpanAttrConversationTitle)?.ToString();
+        if (expect.SpanTitlePresent)
+        {
+            Assert.Equal(title, spanTitle);
+        }
+        else
+        {
+            Assert.Null(spanTitle);
+        }
     }
 
-    [Fact]
-    public async Task FullWithMetadataSpans_ProviderCallErrorRedactedOnSpan_RawInProto()
+    [Theory]
+    [MemberData(nameof(ContentCaptureModeMatrix))]
+    public async Task ModeMatrix_GenerationCallError(ModeExpect expect)
     {
-        // Proto export under FullWithMetadataSpans keeps the raw provider
-        // call error (gRPC destination is trusted); the OTel span path must
-        // not echo it via exception.message, exception.stacktrace, or status
-        // description.
-        await using var env = new ContentCaptureEnv(ContentCaptureMode.FullWithMetadataSpans);
+        await using var env = new ContentCaptureEnv(expect.Mode);
         var rawError = $"provider returned HTTP 400: blocked content '{LeakMarker}'";
 
         var recorder = env.Client.StartGeneration(new GenerationStart
         {
             Model = new ModelRef { Provider = "openai", Name = "gpt-5" },
-            AgentName = "agent-fwms-error",
+            AgentName = "agent-matrix-error",
         });
         recorder.SetCallError(new InvalidOperationException(rawError));
         recorder.SetResult(new Generation
@@ -1197,10 +1240,130 @@ public sealed class ContentCaptureModeTests
         await env.ShutdownAsync(TestContext.Current.CancellationToken);
 
         var gen = env.SingleGeneration();
-        Assert.Equal(rawError, gen.CallError);
-        Assert.Equal(rawError, gen.Metadata.Fields["call_error"].StringValue);
+        if (expect.ProtoCallErrorRaw)
+        {
+            Assert.Equal(rawError, gen.CallError);
+            Assert.Equal(rawError, gen.Metadata.Fields["call_error"].StringValue);
+        }
+        else
+        {
+            Assert.NotEqual(rawError, gen.CallError);
+            Assert.False(string.IsNullOrEmpty(gen.CallError));
+            Assert.False(gen.Metadata.Fields.ContainsKey("call_error"));
+        }
 
-        AssertSpanErrorRedacted(env.GenerationSpan(), "provider_call_error");
+        var span = env.GenerationSpan();
+        if (expect.SpanRawError)
+        {
+            Assert.Contains(LeakMarker, span.StatusDescription ?? string.Empty);
+        }
+        else
+        {
+            AssertSpanErrorRedacted(span, "provider_call_error");
+        }
+    }
+
+    [Fact]
+    public async Task Streaming_FullWithMetadataSpans_ProtoFull_SpanTitleAbsent()
+    {
+        // Streaming changes the span operation name to streamText but the
+        // redaction logic is shared with non-streaming. Catches regressions
+        // where the two paths drift apart.
+        await using var env = new ContentCaptureEnv(ContentCaptureMode.FullWithMetadataSpans);
+        const string title = "Sensitive streaming conversation";
+        var recorder = env.Client.StartStreamingGeneration(new GenerationStart
+        {
+            Model = new ModelRef { Provider = "anthropic", Name = "claude-sonnet-4-5" },
+            ConversationTitle = title,
+            SystemPrompt = "Be helpful.",
+        });
+        recorder.SetResult(new Generation
+        {
+            SystemPrompt = "Be helpful.",
+            Input = { Message.UserTextMessage("hello") },
+            Output = { Message.AssistantTextMessage("hi") },
+            Usage = new TokenUsage { InputTokens = 1, OutputTokens = 1 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync(TestContext.Current.CancellationToken);
+
+        var gen = env.SingleGeneration();
+        Assert.Equal("Be helpful.", gen.SystemPrompt);
+        Assert.Equal("hello", gen.Input[0].Parts[0].Text);
+        Assert.Equal(title, gen.Metadata.Fields[SigilClient.SpanAttrConversationTitle].StringValue);
+        Assert.Equal("full_with_metadata_spans",
+            gen.Metadata.Fields[SigilClient.MetadataKeyContentCaptureMode].StringValue);
+
+        // Span uses streamText operation and still drops the title.
+        var streamSpan = env.StreamingGenerationSpan();
+        Assert.Null(streamSpan.GetTagItem(SigilClient.SpanAttrConversationTitle));
+    }
+
+    private static Generation MatrixFixtureGeneration()
+    {
+        return new Generation
+        {
+            Input =
+            {
+                Message.UserTextMessage("What is the weather?"),
+                new Message
+                {
+                    Role = MessageRole.Tool,
+                    Parts =
+                    {
+                        Part.ToolResultPart(new ToolResult
+                        {
+                            ToolCallId = "call_1",
+                            Name = "weather",
+                            Content = "sunny 18C",
+                        }),
+                    },
+                },
+            },
+            Output =
+            {
+                new Message
+                {
+                    Role = MessageRole.Assistant,
+                    Parts =
+                    {
+                        Part.ThinkingPart("let me think about weather"),
+                        Part.ToolCallPart(new ToolCall
+                        {
+                            Id = "call_1",
+                            Name = "weather",
+                            InputJson = Encoding.UTF8.GetBytes("{\"city\":\"Paris\"}"),
+                        }),
+                        Part.TextPart("It's 18C and sunny in Paris."),
+                    },
+                },
+            },
+            Tools =
+            {
+                new ToolDefinition
+                {
+                    Name = "weather",
+                    Description = "Get weather",
+                    Type = "function",
+                    InputSchemaJson = Encoding.UTF8.GetBytes("{\"type\":\"object\"}"),
+                },
+            },
+            Usage = new TokenUsage { InputTokens = 120, OutputTokens = 42 },
+            StopReason = "end_turn",
+        };
+    }
+
+    private static void AssertProtoContent(string field, string actual, string expected, bool expectStripped)
+    {
+        if (expectStripped)
+        {
+            Assert.True(string.IsNullOrEmpty(actual), $"{field} should be stripped, got {actual}");
+        }
+        else
+        {
+            Assert.Equal(expected, actual);
+        }
     }
 
     // Tool span content omission applies to both stripped modes. The
@@ -1574,6 +1737,8 @@ public sealed class ContentCaptureModeTests
         public Activity ToolSpan() => SingleSpan("execute_tool");
 
         public Activity GenerationSpan() => SingleSpan("generateText");
+
+        public Activity StreamingGenerationSpan() => SingleSpan("streamText");
 
         public Activity EmbeddingSpan() => SingleSpan("embeddings");
 

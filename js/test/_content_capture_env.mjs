@@ -31,6 +31,47 @@ const protoLoadOptions = {
 // same for them on the span path.
 export const STRIPPED_MODES = ['metadata_only', 'full_with_metadata_spans'];
 
+// Coverage matrix across every on-the-wire mode. DEFAULT is intentionally
+// absent — it's the resolver fall-through. Each entry encodes the contract:
+// what stays in the proto, what marker is stamped, and what the OTel span
+// sees.
+export const MODE_MATRIX = [
+  {
+    mode: 'full',
+    marker: 'full',
+    protoContentStripped: false,
+    spanTitlePresent: true,
+    protoCallErrorRaw: true,
+    spanRawError: true,
+  },
+  {
+    // NO_TOOL_CONTENT is generation-content-full; only tool spans gate
+    // arguments/results via legacy includeContent.
+    mode: 'no_tool_content',
+    marker: 'no_tool_content',
+    protoContentStripped: false,
+    spanTitlePresent: true,
+    protoCallErrorRaw: true,
+    spanRawError: true,
+  },
+  {
+    mode: 'metadata_only',
+    marker: 'metadata_only',
+    protoContentStripped: true,
+    spanTitlePresent: false,
+    protoCallErrorRaw: false, // replaced with error category
+    spanRawError: false,
+  },
+  {
+    mode: 'full_with_metadata_spans',
+    marker: 'full_with_metadata_spans',
+    protoContentStripped: false, // proto path keeps full content
+    spanTitlePresent: false, // but the span drops the title
+    protoCallErrorRaw: true,
+    spanRawError: false,
+  },
+];
+
 // Sentinel substring guaranteed not to appear in any error category classifier
 // output. If it leaks onto a span, the redaction is broken.
 export const LEAK_MARKER = 'ignore previous instructions';
@@ -117,6 +158,9 @@ export async function createContentCaptureEnv(options = {}) {
     },
     generationSpan() {
       return this.spanByOperation('generateText');
+    },
+    streamingGenerationSpan() {
+      return this.spanByOperation('streamText');
     },
     toolSpan() {
       return this.spanByOperation('execute_tool');

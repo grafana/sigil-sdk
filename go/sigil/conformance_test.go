@@ -1655,3 +1655,301 @@ func stringPtr(value string) *string {
 func boolPtr(value bool) *bool {
 	return &value
 }
+
+// modeExpect encodes the contract that every SDK is expected to honor for a
+// given content capture mode: which fields stay in the proto, what marker is
+// stamped, and what the OTel span sees.
+type modeExpect struct {
+	name                 string
+	mode                 sigil.ContentCaptureMode
+	marker               string
+	protoContentStripped bool // system_prompt, message text/thinking, tool args/results, tools.description/schema all stripped
+	spanTitlePresent     bool // generation span carries sigil.conversation.title
+	protoCallErrorRaw    bool // proto.call_error is the raw provider message vs the error category
+	spanRawError         bool // span echoes the raw provider message via exception events / status
+}
+
+// DEFAULT is intentionally absent here — it's the resolver fall-through, not a
+// stable wire mode. The four entries below are the actual on-the-wire modes.
+var contentCaptureModeMatrix = []modeExpect{
+	{
+		name:                 "full",
+		mode:                 sigil.ContentCaptureModeFull,
+		marker:               "full",
+		protoContentStripped: false,
+		spanTitlePresent:     true,
+		protoCallErrorRaw:    true,
+		spanRawError:         true,
+	},
+	{
+		// NO_TOOL_CONTENT is generation-content-full; only tool spans gate
+		// arguments/results via legacy include_content.
+		name:                 "no_tool_content",
+		mode:                 sigil.ContentCaptureModeNoToolContent,
+		marker:               "no_tool_content",
+		protoContentStripped: false,
+		spanTitlePresent:     true,
+		protoCallErrorRaw:    true,
+		spanRawError:         true,
+	},
+	{
+		name:                 "metadata_only",
+		mode:                 sigil.ContentCaptureModeMetadataOnly,
+		marker:               "metadata_only",
+		protoContentStripped: true,
+		spanTitlePresent:     false,
+		protoCallErrorRaw:    false, // replaced with error category
+		spanRawError:         false,
+	},
+	{
+		name:                 "full_with_metadata_spans",
+		mode:                 sigil.ContentCaptureModeFullWithMetadataSpans,
+		marker:               "full_with_metadata_spans",
+		protoContentStripped: false, // proto path keeps full content
+		spanTitlePresent:     false, // but the span drops the title
+		protoCallErrorRaw:    true,
+		spanRawError:         false,
+	},
+}
+
+const contentCaptureLeakMarker = "ignore previous instructions"
+
+// fullContentGeneration returns a generation result with every content-bearing
+// field populated, so a single fixture exercises the strip / preserve contract
+// across all modes.
+func fullContentGeneration() sigil.Generation {
+	return sigil.Generation{
+		SystemPrompt: "You are helpful.",
+		Input: []sigil.Message{
+			sigil.UserTextMessage("What is the weather?"),
+			{
+				Role: sigil.RoleTool,
+				Parts: []sigil.Part{
+					{
+						Kind: sigil.PartKindToolResult,
+						ToolResult: &sigil.ToolResult{
+							ToolCallID: "call_1",
+							Name:       "weather",
+							Content:    "sunny 18C",
+						},
+					},
+				},
+			},
+		},
+		Output: []sigil.Message{
+			{
+				Role: sigil.RoleAssistant,
+				Parts: []sigil.Part{
+					{Kind: sigil.PartKindThinking, Thinking: "let me think about weather"},
+					{
+						Kind: sigil.PartKindToolCall,
+						ToolCall: &sigil.ToolCall{
+							ID:        "call_1",
+							Name:      "weather",
+							InputJSON: json.RawMessage(`{"city":"Paris"}`),
+						},
+					},
+					{Kind: sigil.PartKindText, Text: "It's 18C and sunny in Paris."},
+				},
+			},
+		},
+		Tools: []sigil.ToolDefinition{
+			{
+				Name:        "weather",
+				Description: "Get weather info",
+				Type:        "function",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+			},
+		},
+		Usage: sigil.TokenUsage{
+			InputTokens:  120,
+			OutputTokens: 42,
+			TotalTokens:  162,
+		},
+		StopReason:  "end_turn",
+		CompletedAt: time.Date(2026, 3, 12, 14, 10, 1, 0, time.UTC),
+	}
+}
+
+func TestConformance_ContentCaptureModeMatrix(t *testing.T) {
+	// Generation proto + span coverage across every on-the-wire mode. One
+	// fixture, one subtest per mode, expectations driven by the matrix above.
+	for _, tc := range contentCaptureModeMatrix {
+		t.Run(tc.name+"/generation", func(t *testing.T) {
+			env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+				cfg.ContentCapture = tc.mode
+			}))
+
+			const title = "Sensitive conversation"
+			_, rec := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
+				ConversationID:    "conv-matrix",
+				ConversationTitle: title,
+				Model:             conformanceModel,
+				SystemPrompt:      "You are helpful.",
+				StartedAt:         time.Date(2026, 3, 12, 14, 10, 0, 0, time.UTC),
+			})
+			rec.SetResult(fullContentGeneration(), nil)
+			rec.End()
+			if err := rec.Err(); err != nil {
+				t.Fatalf("record generation: %v", err)
+			}
+
+			env.Shutdown(t)
+
+			gen := env.Ingest.SingleGeneration(t)
+			requireProtoMetadata(t, gen, metadataKeyContentCaptureMode, tc.marker)
+
+			// Content fields: stripped only under METADATA_ONLY.
+			assertProtoContentField(t, "system_prompt", gen.GetSystemPrompt(), "You are helpful.", tc.protoContentStripped)
+			assertProtoContentField(t, "input[0].text", gen.GetInput()[0].GetParts()[0].GetText(), "What is the weather?", tc.protoContentStripped)
+			assertProtoContentField(t, "output[0].thinking", gen.GetOutput()[0].GetParts()[0].GetThinking(), "let me think about weather", tc.protoContentStripped)
+			assertProtoContentField(t, "output[0].tool_call.input_json", string(gen.GetOutput()[0].GetParts()[1].GetToolCall().GetInputJson()), `{"city":"Paris"}`, tc.protoContentStripped)
+			assertProtoContentField(t, "output[0].text", gen.GetOutput()[0].GetParts()[2].GetText(), "It's 18C and sunny in Paris.", tc.protoContentStripped)
+			assertProtoContentField(t, "input[1].tool_result.content", gen.GetInput()[1].GetParts()[0].GetToolResult().GetContent(), "sunny 18C", tc.protoContentStripped)
+			assertProtoContentField(t, "tools[0].description", gen.GetTools()[0].GetDescription(), "Get weather info", tc.protoContentStripped)
+			assertProtoContentField(t, "tools[0].input_schema_json", string(gen.GetTools()[0].GetInputSchemaJson()), `{"type":"object"}`, tc.protoContentStripped)
+
+			// Structural fields are always preserved.
+			if got := len(gen.GetInput()); got != 2 {
+				t.Fatalf("unexpected input length: got %d want 2", got)
+			}
+			if got := gen.GetOutput()[0].GetParts()[1].GetToolCall().GetName(); got != "weather" {
+				t.Fatalf("unexpected tool_call.name: got %q", got)
+			}
+			if got := gen.GetUsage().GetInputTokens(); got != 120 {
+				t.Fatalf("unexpected usage.input_tokens: got %d want 120", got)
+			}
+
+			// Conversation title metadata mirror: present iff the proto keeps it.
+			if tc.protoContentStripped {
+				requireProtoMetadataAbsent(t, gen, metadataKeyConversation)
+			} else {
+				requireProtoMetadata(t, gen, metadataKeyConversation, title)
+			}
+
+			// Span path: title presence is what the mode advertises.
+			span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+			attrs := spanAttrs(span)
+			if tc.spanTitlePresent {
+				requireSpanAttr(t, attrs, spanAttrConversationTitle, title)
+			} else {
+				requireSpanAttrAbsent(t, attrs, spanAttrConversationTitle)
+			}
+		})
+
+		t.Run(tc.name+"/call_error", func(t *testing.T) {
+			env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+				cfg.ContentCapture = tc.mode
+			}))
+
+			rawErr := "provider returned HTTP 400: blocked content '" + contentCaptureLeakMarker + "'"
+			_, rec := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
+				ConversationID: "conv-matrix-error",
+				AgentName:      "agent-matrix-error",
+				Model:          conformanceModel,
+				StartedAt:      time.Date(2026, 3, 12, 14, 15, 0, 0, time.UTC),
+			})
+			rec.SetCallError(errors.New(rawErr))
+			rec.SetResult(sigil.Generation{
+				Input:       []sigil.Message{sigil.UserTextMessage("x")},
+				Output:      []sigil.Message{sigil.AssistantTextMessage("y")},
+				CompletedAt: time.Date(2026, 3, 12, 14, 15, 1, 0, time.UTC),
+			}, nil)
+			rec.End()
+			if err := rec.Err(); err != nil {
+				t.Fatalf("record generation: %v", err)
+			}
+
+			env.Shutdown(t)
+
+			gen := env.Ingest.SingleGeneration(t)
+			if tc.protoCallErrorRaw {
+				if got := gen.GetCallError(); got != rawErr {
+					t.Fatalf("proto call_error: got %q want raw", got)
+				}
+				requireProtoMetadata(t, gen, "call_error", rawErr)
+			} else {
+				if got := gen.GetCallError(); got == rawErr || got == "" {
+					t.Fatalf("proto call_error: got %q, want non-empty error category", got)
+				}
+				requireProtoMetadataAbsent(t, gen, "call_error")
+			}
+
+			span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+			if tc.spanRawError {
+				if desc := span.Status().Description; !strings.Contains(desc, contentCaptureLeakMarker) {
+					t.Fatalf("expected span status to echo raw error, got %q", desc)
+				}
+			} else {
+				if desc := span.Status().Description; strings.Contains(desc, contentCaptureLeakMarker) {
+					t.Fatalf("span status description leaks raw error: %q", desc)
+				}
+				for _, ev := range span.Events() {
+					for _, attr := range ev.Attributes {
+						if strings.Contains(attr.Value.Emit(), contentCaptureLeakMarker) {
+							t.Errorf("span event %q attr %s leaks raw error: %q", ev.Name, attr.Key, attr.Value.Emit())
+						}
+					}
+				}
+				requireSpanAttr(t, spanAttrs(span), spanAttrErrorType, "provider_call_error")
+			}
+		})
+	}
+
+	t.Run("streaming_full_with_metadata_spans", func(t *testing.T) {
+		// Streaming changes the span operation name from generateText to
+		// streamText but the redaction logic is shared with non-streaming.
+		// This subtest catches regressions where the two paths drift apart.
+		env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+			cfg.ContentCapture = sigil.ContentCaptureModeFullWithMetadataSpans
+		}))
+
+		const title = "Sensitive streaming conversation"
+		_, rec := env.Client.StartStreamingGeneration(context.Background(), sigil.GenerationStart{
+			ConversationID:    "conv-stream-fwms",
+			ConversationTitle: title,
+			Model:             conformanceModel,
+			SystemPrompt:      "Be helpful.",
+			StartedAt:         time.Date(2026, 3, 12, 14, 20, 0, 0, time.UTC),
+		})
+		rec.SetResult(sigil.Generation{
+			SystemPrompt: "Be helpful.",
+			Input:        []sigil.Message{sigil.UserTextMessage("hello")},
+			Output:       []sigil.Message{sigil.AssistantTextMessage("hi")},
+			Usage:        sigil.TokenUsage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+			CompletedAt:  time.Date(2026, 3, 12, 14, 20, 1, 0, time.UTC),
+		}, nil)
+		rec.End()
+		if err := rec.Err(); err != nil {
+			t.Fatalf("record streaming generation: %v", err)
+		}
+
+		env.Shutdown(t)
+
+		gen := env.Ingest.SingleGeneration(t)
+		if got := gen.GetSystemPrompt(); got != "Be helpful." {
+			t.Fatalf("streaming proto system_prompt stripped: got %q", got)
+		}
+		if got := gen.GetInput()[0].GetParts()[0].GetText(); got != "hello" {
+			t.Fatalf("streaming proto input text stripped: got %q", got)
+		}
+		requireProtoMetadata(t, gen, metadataKeyConversation, title)
+		requireProtoMetadata(t, gen, metadataKeyContentCaptureMode, "full_with_metadata_spans")
+
+		streamSpan := findSpan(t, env.Spans.Ended(), conformanceStreamOperation)
+		requireSpanAttrAbsent(t, spanAttrs(streamSpan), spanAttrConversationTitle)
+	})
+}
+
+func assertProtoContentField(t *testing.T, name, got, want string, expectStripped bool) {
+	t.Helper()
+	if expectStripped {
+		if got != "" {
+			t.Errorf("%s: expected stripped (empty), got %q", name, got)
+		}
+		return
+	}
+	if got != want {
+		t.Errorf("%s: got %q want %q", name, got, want)
+	}
+}

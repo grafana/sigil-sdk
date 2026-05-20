@@ -7,6 +7,7 @@ import copy
 import json
 import socket
 import threading
+from dataclasses import dataclass
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -1508,3 +1509,222 @@ class TestFullWithMetadataSpans:
             client.shutdown()
             server.shutdown()
             server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# Mode × surface coverage matrix
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _ModeExpect:
+    """What each content capture mode should do to a full-content generation.
+
+    Encodes the contract that every SDK is expected to honor: which fields stay
+    in the proto, which get stripped, and what the OTel span sees.
+    """
+
+    mode: ContentCaptureMode
+    marker: str  # metadata["sigil.sdk.content_capture_mode"] value
+    proto_content_stripped: bool  # system_prompt, message text/thinking, tool args/results, tools.description/schema
+    span_title_present: bool  # whether sigil.conversation.title appears on the generation span
+    proto_call_error_raw: bool  # whether proto.call_error is the raw provider message vs the error category
+    span_raw_error: bool  # whether the span echoes the raw provider message via exception events / status
+
+
+# DEFAULT is intentionally absent here: it's the resolver fall-through and is
+# covered by TestContentCaptureModeResolution. The four entries below are the
+# actual on-the-wire modes.
+_MODE_MATRIX = [
+    _ModeExpect(
+        mode=ContentCaptureMode.FULL,
+        marker="full",
+        proto_content_stripped=False,
+        span_title_present=True,
+        proto_call_error_raw=True,
+        span_raw_error=True,
+    ),
+    _ModeExpect(
+        mode=ContentCaptureMode.NO_TOOL_CONTENT,
+        marker="no_tool_content",
+        # NO_TOOL_CONTENT is generation-content-full; only tool spans gate
+        # arguments/results via legacy include_content.
+        proto_content_stripped=False,
+        span_title_present=True,
+        proto_call_error_raw=True,
+        span_raw_error=True,
+    ),
+    _ModeExpect(
+        mode=ContentCaptureMode.METADATA_ONLY,
+        marker="metadata_only",
+        proto_content_stripped=True,
+        span_title_present=False,
+        proto_call_error_raw=False,  # replaced with error category
+        span_raw_error=False,
+    ),
+    _ModeExpect(
+        mode=ContentCaptureMode.FULL_WITH_METADATA_SPANS,
+        marker="full_with_metadata_spans",
+        proto_content_stripped=False,  # proto path keeps full content
+        span_title_present=False,  # but the span drops the title
+        proto_call_error_raw=True,
+        span_raw_error=False,
+    ),
+]
+
+_MODE_IDS = [expect.mode.value for expect in _MODE_MATRIX]
+
+
+class TestModeCoverageMatrix:
+    """Single full-content fixture run through every mode, asserted via the matrix above.
+
+    Catches gaps in any mode without writing four separate tests for each surface.
+    """
+
+    @pytest.mark.parametrize("expect", _MODE_MATRIX, ids=_MODE_IDS)
+    def test_generation_proto_and_span(self, expect: _ModeExpect):
+        # _full_generation() seeds conversation_title="Weather chat"; the
+        # recorder uses the result's title as the source of truth, so we
+        # assert against that.
+        title = "Weather chat"
+        with _ContentCaptureEnv(content_capture=expect.mode) as env:
+            rec = env.client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                    conversation_title=title,
+                    system_prompt="You are helpful.",
+                )
+            )
+            rec.set_result(_full_generation())
+            rec.end()
+            assert rec.err() is None
+
+            gen = env.single_generation()
+            assert gen.metadata.fields[_METADATA_KEY].string_value == expect.marker
+
+            # Content fields: stripped under METADATA_ONLY, preserved otherwise.
+            assert gen.system_prompt == ("" if expect.proto_content_stripped else "You are helpful.")
+            assert gen.input[0].parts[0].text == ("" if expect.proto_content_stripped else "What is the weather?")
+            assert gen.output[0].parts[0].thinking == (
+                "" if expect.proto_content_stripped else "let me think about weather"
+            )
+            assert gen.output[0].parts[1].tool_call.input_json == (
+                b"" if expect.proto_content_stripped else b'{"city":"Paris"}'
+            )
+            assert gen.output[0].parts[2].text == (
+                "" if expect.proto_content_stripped else "It's 18C and sunny in Paris."
+            )
+            assert gen.input[1].parts[0].tool_result.content == ("" if expect.proto_content_stripped else "sunny 18C")
+            assert gen.input[1].parts[0].tool_result.content_json == (
+                b"" if expect.proto_content_stripped else b'{"temp":18}'
+            )
+            assert gen.tools[0].description == ("" if expect.proto_content_stripped else "Get weather info")
+            assert gen.tools[0].input_schema_json == (b"" if expect.proto_content_stripped else b'{"type":"object"}')
+            # Conversation title lives only in metadata (no top-level proto
+            # field); see the mirror assertion below.
+
+            # Structural fields (counts, names, IDs, roles) always preserved.
+            assert len(gen.input) == 2
+            assert len(gen.output) == 1
+            assert len(gen.output[0].parts) == 3
+            assert gen.output[0].parts[1].tool_call.name == "weather"
+            assert gen.output[0].parts[1].tool_call.id == "call_1"
+            assert gen.tools[0].name == "weather"
+            assert gen.usage.input_tokens == 120
+            assert gen.usage.output_tokens == 42
+            assert gen.stop_reason == "end_turn"
+
+            # Conversation title metadata mirror: present iff the proto keeps the
+            # title (METADATA_ONLY removes it; every other mode mirrors it).
+            title_mirror = gen.metadata.fields.get("sigil.conversation.title")
+            if expect.proto_content_stripped:
+                assert title_mirror is None or title_mirror.string_value == ""
+            else:
+                assert title_mirror.string_value == title
+
+            # Span path: title attribute presence is what the mode advertises.
+            gen_span = env.generation_span()
+            if expect.span_title_present:
+                assert gen_span.attributes.get("sigil.conversation.title") == title
+            else:
+                assert "sigil.conversation.title" not in gen_span.attributes
+
+    @pytest.mark.parametrize("expect", _MODE_MATRIX, ids=_MODE_IDS)
+    def test_generation_call_error(self, expect: _ModeExpect):
+        raw_err = "provider returned HTTP 400: blocked content '" + _LEAK_MARKER + "'"
+        with _ContentCaptureEnv(content_capture=expect.mode) as env:
+            rec = env.client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                    agent_name="agent-matrix-error",
+                )
+            )
+            rec.set_call_error(RuntimeError(raw_err))
+            rec.set_result(
+                Generation(
+                    input=[Message(role=MessageRole.USER, parts=[Part(kind=PartKind.TEXT, text="x")])],
+                    output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="y")])],
+                    usage=TokenUsage(input_tokens=1, output_tokens=1),
+                )
+            )
+            rec.end()
+            assert rec.err() is None
+
+            gen = env.single_generation()
+            if expect.proto_call_error_raw:
+                assert gen.call_error == raw_err
+                assert gen.metadata.fields["call_error"].string_value == raw_err
+            else:
+                # METADATA_ONLY replaces with the error category and removes
+                # the metadata mirror.
+                assert gen.call_error != raw_err
+                assert gen.call_error  # non-empty category
+                assert "call_error" not in gen.metadata.fields
+
+            gen_span = env.generation_span()
+            if expect.span_raw_error:
+                assert _LEAK_MARKER in (gen_span.status.description or "")
+            else:
+                _assert_span_error_redacted(gen_span, "provider_call_error")
+
+    def test_streaming_full_with_metadata_spans(self):
+        """Streaming generations honor the FWMS proto/span split.
+
+        Streaming changes the span operation name from generateText to
+        streamText but the redaction logic is shared with non-streaming. This
+        test catches regressions where the two paths drift apart.
+        """
+        with _ContentCaptureEnv(content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS) as env:
+            rec = env.client.start_streaming_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                    conversation_title="Sensitive streaming conversation",
+                    system_prompt="Be helpful.",
+                )
+            )
+            rec.set_result(
+                Generation(
+                    system_prompt="Be helpful.",
+                    input=[Message(role=MessageRole.USER, parts=[Part(kind=PartKind.TEXT, text="hello")])],
+                    output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="hi")])],
+                    usage=TokenUsage(input_tokens=1, output_tokens=1),
+                )
+            )
+            rec.end()
+            assert rec.err() is None
+
+            # Proto export keeps streaming content full.
+            gen = env.single_generation()
+            assert gen.system_prompt == "Be helpful."
+            assert gen.input[0].parts[0].text == "hello"
+            assert gen.output[0].parts[0].text == "hi"
+            assert gen.metadata.fields["sigil.conversation.title"].string_value == "Sensitive streaming conversation"
+            assert gen.metadata.fields[_METADATA_KEY].string_value == "full_with_metadata_spans"
+
+            # Span uses the streamText operation name and still drops the title.
+            stream_span = next(
+                s
+                for s in env.span_exporter.get_finished_spans()
+                if s.attributes.get("gen_ai.operation.name") == "streamText"
+            )
+            assert "sigil.conversation.title" not in stream_span.attributes

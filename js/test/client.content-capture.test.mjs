@@ -7,6 +7,7 @@ import {
   assertSpanErrorRedacted,
   createContentCaptureEnv,
   LEAK_MARKER,
+  MODE_MATRIX,
   STRIPPED_MODES,
 } from './_content_capture_env.mjs';
 
@@ -643,70 +644,234 @@ test('exported generation includes content capture mode metadata', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// FULL_WITH_METADATA_SPANS — proto export full, span content omitted.
+// Mode × surface coverage matrix
 // ---------------------------------------------------------------------------
 //
-// Uses createContentCaptureEnv so the proto export is asserted end-to-end
-// (real in-process gRPC server, post-serialization).
+// One full-content fixture run through every mode, asserted via MODE_MATRIX.
+// Catches gaps in any mode without writing four separate tests per surface.
 
-test('full_with_metadata_spans keeps proto content but omits conversationTitle from span', async () => {
+function matrixFixtureResult() {
+  // SDK API uses *JSON-suffix camelCase fields (inputJSON, contentJSON,
+  // inputSchemaJSON) which map to bytes input_json / content_json /
+  // input_schema_json on the proto. After gRPC roundtrip the receiving side
+  // sees those as inputJson / contentJson / inputSchemaJson Buffer values.
+  return {
+    systemPrompt: 'You are helpful.',
+    input: [
+      { role: 'user', parts: [{ type: 'text', text: 'What is the weather?' }] },
+      {
+        role: 'tool',
+        parts: [
+          {
+            type: 'tool_result',
+            toolResult: {
+              toolCallId: 'call_1',
+              name: 'weather',
+              content: 'sunny 18C',
+              contentJSON: '{"temp":18}',
+            },
+          },
+        ],
+      },
+    ],
+    output: [
+      {
+        role: 'assistant',
+        parts: [
+          { type: 'thinking', thinking: 'let me think about weather' },
+          {
+            type: 'tool_call',
+            toolCall: { id: 'call_1', name: 'weather', inputJSON: '{"city":"Paris"}' },
+          },
+          { type: 'text', text: "It's 18C and sunny in Paris." },
+        ],
+      },
+    ],
+    tools: [
+      {
+        name: 'weather',
+        description: 'Get weather',
+        type: 'function',
+        inputSchemaJSON: '{"type":"object"}',
+      },
+    ],
+    usage: { inputTokens: 120, outputTokens: 42 },
+    stopReason: 'end_turn',
+  };
+}
+
+function assertProtoContent(field, actual, expected, expectStripped) {
+  // After gRPC roundtrip, bytes fields come back as Buffer; string fields
+  // stay as strings. Either an empty string or zero-length Buffer counts as
+  // stripped.
+  if (expectStripped) {
+    const isEmpty =
+      actual === '' ||
+      actual === undefined ||
+      (Buffer.isBuffer(actual) && actual.length === 0) ||
+      (actual instanceof Uint8Array && actual.length === 0);
+    assert.ok(isEmpty, `${field} should be stripped, got ${JSON.stringify(actual)}`);
+    return;
+  }
+  const actualStr =
+    Buffer.isBuffer(actual) || actual instanceof Uint8Array ? Buffer.from(actual).toString('utf8') : actual;
+  assert.equal(actualStr, expected, field);
+}
+
+for (const expect of MODE_MATRIX) {
+  test(`mode matrix: ${expect.marker} — generation proto + span`, async () => {
+    const env = await createContentCaptureEnv({ contentCapture: expect.mode });
+
+    try {
+      const title = 'Sensitive conversation';
+      const recorder = env.client.startGeneration({
+        model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
+        conversationTitle: title,
+        systemPrompt: 'You are helpful.',
+      });
+      recorder.setResult(matrixFixtureResult());
+      recorder.end();
+      assert.equal(recorder.getError(), undefined);
+
+      const gen = await env.singleGeneration();
+      assert.equal(gen.metadata?.fields?.['sigil.sdk.content_capture_mode']?.stringValue, expect.marker);
+
+      // Content fields: stripped only under METADATA_ONLY.
+      assertProtoContent('system_prompt', gen.systemPrompt, 'You are helpful.', expect.protoContentStripped);
+      assertProtoContent(
+        'input[0].text',
+        gen.input[0].parts[0].text,
+        'What is the weather?',
+        expect.protoContentStripped,
+      );
+      assertProtoContent(
+        'output[0].thinking',
+        gen.output[0].parts[0].thinking,
+        'let me think about weather',
+        expect.protoContentStripped,
+      );
+      assertProtoContent(
+        'output[0].tool_call.input_json',
+        gen.output[0].parts[1].toolCall.inputJson,
+        '{"city":"Paris"}',
+        expect.protoContentStripped,
+      );
+      assertProtoContent(
+        'output[0].text',
+        gen.output[0].parts[2].text,
+        "It's 18C and sunny in Paris.",
+        expect.protoContentStripped,
+      );
+      assertProtoContent(
+        'input[1].tool_result.content',
+        gen.input[1].parts[0].toolResult.content,
+        'sunny 18C',
+        expect.protoContentStripped,
+      );
+      assertProtoContent('tools[0].description', gen.tools[0].description, 'Get weather', expect.protoContentStripped);
+      assertProtoContent(
+        'tools[0].input_schema_json',
+        gen.tools[0].inputSchemaJson,
+        '{"type":"object"}',
+        expect.protoContentStripped,
+      );
+
+      // Structural fields always preserved. inputTokens is serialized as a
+      // string under protoLoader's longs: String option.
+      assert.equal(gen.input.length, 2);
+      assert.equal(gen.output[0].parts[1].toolCall.name, 'weather');
+      assert.equal(Number(gen.usage.inputTokens), 120);
+
+      // Conversation title metadata mirror: present iff the proto keeps it.
+      const titleMirror = gen.metadata?.fields?.['sigil.conversation.title']?.stringValue;
+      if (expect.protoContentStripped) {
+        assert.ok(!titleMirror, `expected title mirror to be absent, got ${titleMirror}`);
+      } else {
+        assert.equal(titleMirror, title);
+      }
+
+      // Span path: title presence is what the mode advertises.
+      const span = env.generationSpan();
+      if (expect.spanTitlePresent) {
+        assert.equal(span.attributes['sigil.conversation.title'], title);
+      } else {
+        assert.equal('sigil.conversation.title' in span.attributes, false);
+      }
+    } finally {
+      await env.close();
+    }
+  });
+
+  test(`mode matrix: ${expect.marker} — generation call_error`, async () => {
+    const env = await createContentCaptureEnv({ contentCapture: expect.mode });
+
+    try {
+      const rawError = `provider returned HTTP 400: blocked content '${LEAK_MARKER}'`;
+      const recorder = env.client.startGeneration({
+        model: { provider: 'openai', name: 'gpt-5' },
+        agentName: 'agent-matrix-error',
+      });
+      recorder.setCallError(new Error(rawError));
+      recorder.setResult({
+        input: [{ role: 'user', parts: [{ type: 'text', text: 'x' }] }],
+        output: [{ role: 'assistant', parts: [{ type: 'text', text: 'y' }] }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      });
+      recorder.end();
+      assert.equal(recorder.getError(), undefined);
+
+      const gen = await env.singleGeneration();
+      if (expect.protoCallErrorRaw) {
+        assert.equal(gen.callError, rawError);
+        assert.equal(gen.metadata?.fields?.call_error?.stringValue, rawError);
+      } else {
+        assert.notEqual(gen.callError, rawError);
+        assert.ok(gen.callError, 'proto.callError should be non-empty error category');
+        assert.equal(gen.metadata?.fields?.call_error, undefined);
+      }
+
+      const span = env.generationSpan();
+      if (expect.spanRawError) {
+        assert.ok((span.status.message ?? '').includes(LEAK_MARKER), 'span should echo raw error');
+      } else {
+        assertSpanErrorRedacted(span, 'provider_call_error');
+      }
+    } finally {
+      await env.close();
+    }
+  });
+}
+
+test('streaming full_with_metadata_spans — proto full, span title absent', async () => {
+  // Streaming changes the span operation name to streamText but the
+  // redaction logic is shared with non-streaming. Catches regressions where
+  // the two paths drift apart.
   const env = await createContentCaptureEnv({ contentCapture: 'full_with_metadata_spans' });
 
   try {
-    const sensitiveTitle = 'Sensitive conversation';
-    const recorder = env.client.startGeneration({
+    const title = 'Sensitive streaming conversation';
+    const recorder = env.client.startStreamingGeneration({
       model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
-      conversationTitle: sensitiveTitle,
+      conversationTitle: title,
       systemPrompt: 'Be helpful.',
     });
     recorder.setResult({
-      input: [{ role: 'user', parts: [{ type: 'text', text: 'hello world' }] }],
-      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'hi back' }] }],
-      usage: { inputTokens: 3, outputTokens: 2 },
-    });
-    recorder.end();
-    assert.equal(recorder.getError(), undefined);
-
-    // Proto export (post-gRPC roundtrip) preserves every field.
-    const gen = await env.singleGeneration();
-    assert.equal(gen.metadata?.fields?.['sigil.sdk.content_capture_mode']?.stringValue, 'full_with_metadata_spans');
-    assert.equal(gen.systemPrompt, 'Be helpful.');
-    assert.equal(gen.input[0].parts[0].text, 'hello world');
-    assert.equal(gen.output[0].parts[0].text, 'hi back');
-    assert.equal(gen.metadata?.fields?.['sigil.conversation.title']?.stringValue, sensitiveTitle);
-
-    // Generation span omits the title.
-    const span = env.generationSpan();
-    assert.equal('sigil.conversation.title' in span.attributes, false, 'span must not carry sigil.conversation.title');
-  } finally {
-    await env.close();
-  }
-});
-
-test('full_with_metadata_spans does not leak raw provider callError into OTel span (raw preserved in proto)', async () => {
-  const env = await createContentCaptureEnv({ contentCapture: 'full_with_metadata_spans' });
-
-  try {
-    const rawError = `provider returned HTTP 400: blocked content '${LEAK_MARKER}'`;
-    const recorder = env.client.startGeneration({
-      model: { provider: 'openai', name: 'gpt-5' },
-      agentName: 'agent-fwms-error',
-    });
-    recorder.setCallError(new Error(rawError));
-    recorder.setResult({
-      input: [{ role: 'user', parts: [{ type: 'text', text: 'x' }] }],
-      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'y' }] }],
+      systemPrompt: 'Be helpful.',
+      input: [{ role: 'user', parts: [{ type: 'text', text: 'hello' }] }],
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'hi' }] }],
       usage: { inputTokens: 1, outputTokens: 1 },
     });
     recorder.end();
     assert.equal(recorder.getError(), undefined);
 
-    // Proto export (post-gRPC roundtrip) preserves the raw provider error.
     const gen = await env.singleGeneration();
-    assert.equal(gen.callError, rawError);
-    assert.equal(gen.metadata?.fields?.call_error?.stringValue, rawError);
+    assert.equal(gen.systemPrompt, 'Be helpful.');
+    assert.equal(gen.input[0].parts[0].text, 'hello');
+    assert.equal(gen.metadata?.fields?.['sigil.conversation.title']?.stringValue, title);
+    assert.equal(gen.metadata?.fields?.['sigil.sdk.content_capture_mode']?.stringValue, 'full_with_metadata_spans');
 
-    assertSpanErrorRedacted(env.generationSpan(), 'provider_call_error');
+    const streamSpan = env.streamingGenerationSpan();
+    assert.equal('sigil.conversation.title' in streamSpan.attributes, false);
   } finally {
     await env.close();
   }
