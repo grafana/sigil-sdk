@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -169,6 +172,120 @@ func TestHookEventRouting(t *testing.T) {
 			}
 			if tt.assertState != nil {
 				tt.assertState(t)
+			}
+		})
+	}
+}
+
+func TestHandlePreToolUse(t *testing.T) {
+	var calls atomic.Int32
+	var responseBody atomic.Value
+	responseBody.Store("")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		body, _ := responseBody.Load().(string)
+		if body == "" {
+			body = `{"action":"allow"}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	closed.Close()
+
+	tests := []struct {
+		name               string
+		env                map[string]string
+		useClosedEndpoint  bool
+		serverResponds     string
+		expectServerCall   bool
+		wantStdoutContains string
+		wantStdoutEmpty    bool
+	}{
+		{
+			name:            "disabled_by_default_no_env",
+			wantStdoutEmpty: true,
+		},
+		{
+			name:            "disabled_explicit_false",
+			env:             map[string]string{"SIGIL_GUARDS_ENABLED": "false"},
+			wantStdoutEmpty: true,
+		},
+		{
+			name:             "enabled_allow_response",
+			env:              map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
+			serverResponds:   `{"action":"allow"}`,
+			expectServerCall: true,
+			wantStdoutEmpty:  true,
+		},
+		{
+			name:               "enabled_deny_response",
+			env:                map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
+			serverResponds:     `{"action":"deny","reason":"blocked tool"}`,
+			expectServerCall:   true,
+			wantStdoutContains: `"permissionDecision":"deny"`,
+		},
+		{
+			name:              "enabled_fail_open_on_transport_error",
+			env:               map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
+			useClosedEndpoint: true,
+			wantStdoutEmpty:   true,
+		},
+		{
+			name: "enabled_fail_closed_on_transport_error",
+			env: map[string]string{
+				"SIGIL_GUARDS_ENABLED":   "true",
+				"SIGIL_GUARDS_FAIL_OPEN": "false",
+			},
+			useClosedEndpoint:  true,
+			wantStdoutContains: `"permissionDecision":"deny"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SIGIL_GUARDS_ENABLED", "")
+			t.Setenv("SIGIL_GUARDS_FAIL_OPEN", "")
+			t.Setenv("SIGIL_GUARDS_TIMEOUT_MS", "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			calls.Store(0)
+			responseBody.Store(tt.serverResponds)
+
+			endpoint := server.URL
+			if tt.useClosedEndpoint {
+				endpoint = closed.URL
+			}
+
+			var stdout bytes.Buffer
+			var logs bytes.Buffer
+			input := &hookInput{
+				HookEventName:  "PreToolUse",
+				SessionID:      "s1",
+				TranscriptPath: "/tmp/t.jsonl",
+				ToolName:       "Bash",
+				ToolInput:      json.RawMessage(`{"command":"echo hi"}`),
+				ToolUseID:      "tu_1",
+			}
+			st := state.Session{Model: "claude-sonnet-4"}
+
+			handlePreToolUse(context.Background(), &stdout, input, st, endpoint, "tenant", "token", log.New(&logs, "", 0))
+
+			if tt.expectServerCall && calls.Load() == 0 {
+				t.Errorf("expected server call, got 0")
+			}
+			if !tt.expectServerCall && !tt.useClosedEndpoint && calls.Load() != 0 {
+				t.Errorf("expected no server call, got %d", calls.Load())
+			}
+			if tt.wantStdoutEmpty && stdout.Len() != 0 {
+				t.Errorf("stdout not empty: %q", stdout.String())
+			}
+			if tt.wantStdoutContains != "" && !strings.Contains(stdout.String(), tt.wantStdoutContains) {
+				t.Errorf("stdout = %q, want substring %q", stdout.String(), tt.wantStdoutContains)
 			}
 		})
 	}

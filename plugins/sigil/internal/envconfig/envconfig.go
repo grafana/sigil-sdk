@@ -5,6 +5,7 @@ package envconfig
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
@@ -93,4 +94,63 @@ func ResolveContentMode(logger *log.Logger) sigil.ContentCaptureMode {
 		return sigil.ContentCaptureModeMetadataOnly
 	}
 	return mode
+}
+
+// GuardsConfig is the resolved guard feature flags for a hook handler.
+// Mirrors plugins/pi/src/config.ts::GuardsFeatureConfig so a single
+// ~/.config/sigil/config.env drives both plugins.
+type GuardsConfig struct {
+	Enabled   bool
+	TimeoutMs int
+	FailOpen  bool
+}
+
+const (
+	defaultGuardsEnabled   = false
+	defaultGuardsTimeoutMs = 1500
+	defaultGuardsFailOpen  = true
+)
+
+// ResolveGuards reads SIGIL_GUARDS_ENABLED / _TIMEOUT_MS / _FAIL_OPEN and
+// returns the effective guard configuration. Unset or empty values fall back
+// to the defaults (off / 1500ms / fail-open). Unrecognised boolean values and
+// non-numeric, zero, or negative timeout values are reported via logger when
+// non-nil and fall back to the default — matching pi's resolveGuards behaviour
+// so the shared config.env produces identical results across plugins. Hooks
+// must not write to stderr, so callers pass their adapter logger here.
+func ResolveGuards(logger *log.Logger) GuardsConfig {
+	cfg := GuardsConfig{
+		Enabled:   resolveGuardsBool(logger, "SIGIL_GUARDS_ENABLED", defaultGuardsEnabled),
+		TimeoutMs: defaultGuardsTimeoutMs,
+		FailOpen:  resolveGuardsBool(logger, "SIGIL_GUARDS_FAIL_OPEN", defaultGuardsFailOpen),
+	}
+	if v := strings.TrimSpace(os.Getenv("SIGIL_GUARDS_TIMEOUT_MS")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			if logger != nil {
+				logger.Printf("config: invalid SIGIL_GUARDS_TIMEOUT_MS=%q; using %d", v, defaultGuardsTimeoutMs)
+			}
+		} else {
+			cfg.TimeoutMs = n
+		}
+	}
+	return cfg
+}
+
+func resolveGuardsBool(logger *log.Logger, key string, def bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		if logger != nil {
+			logger.Printf("config: invalid %s=%q; using %v", key, raw, def)
+		}
+		return def
+	}
 }

@@ -243,12 +243,17 @@ func handlePreToolUse(
 		return
 	}
 
+	guards := envconfig.ResolveGuards(logger)
+	if !guards.Enabled {
+		return
+	}
+
 	modelName := strings.TrimSpace(st.Model)
 	if modelName == "" {
 		modelName = "unknown"
 	}
 
-	failOpen := true
+	failOpen := guards.FailOpen
 	cfg := sigil.Config{
 		API: sigil.APIConfig{
 			Endpoint: sigilEndpoint,
@@ -256,7 +261,7 @@ func handlePreToolUse(
 		Hooks: sigil.HooksConfig{
 			Enabled:  true,
 			Phases:   []sigil.HookPhase{sigil.HookPhasePostflight},
-			Timeout:  1500 * time.Millisecond,
+			Timeout:  time.Duration(guards.TimeoutMs) * time.Millisecond,
 			FailOpen: &failOpen,
 		},
 		GenerationExport: sigil.GenerationExportConfig{
@@ -299,7 +304,18 @@ func handlePreToolUse(
 
 	resp, err := client.EvaluateHook(ctx, req)
 	if err != nil {
+		// The SDK only surfaces an error when FailOpen=false; the fail-open path
+		// returns an allow response with nil err. So reaching here implies strict
+		// mode and we should always emit the deny.
 		logger.Printf("pre_tool_use hook eval: tool=%q endpoint=%q err=%v", toolName, sigilEndpoint, err)
+		out := hookDecision{
+			HookSpecificOutput: hookSpecificOutput{
+				HookEventName:            "PreToolUse",
+				PermissionDecision:       "deny",
+				PermissionDecisionReason: fmt.Sprintf("sigil guard evaluation failed: %v", err),
+			},
+		}
+		_ = json.NewEncoder(stdout).Encode(out)
 		return
 	}
 
