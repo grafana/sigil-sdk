@@ -1,138 +1,114 @@
 # @grafana/sigil-pi
 
-[Pi](https://github.com/badlogic/pi) agent extension that records LLM generations to Grafana AI observability.
+[Pi](https://github.com/badlogic/pi) agent extension that sends LLM generations to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/).
 
-By default only metadata is sent (token counts, cost, model, tool names, durations). Set `contentCapture` to `full` or `no_tool_content` to include message content.
+By default only metadata is sent (token counts, cost, model, tool names, durations). Flip `contentCapture` to `full` or `no_tool_content` to include message content.
 
-## Install
+## 1. Install
 
-**Directly via pi**:
-
-```bash
+```sh
 pi install npm:@grafana/sigil-pi
 ```
 
-**Via the [sigil launcher](../sigil/README.md)** (auto-bootstraps on first run):
+Or use the [sigil launcher](../sigil/README.md) which installs the extension on first run:
 
-```bash
+```sh
+brew install grafana/grafana/sigil
 sigil pi
 ```
 
-The launcher installs Sigil plugin once if the extension isn't registered yet. Subsequent runs skip the install.
+## 2. Add your Grafana Cloud credentials
 
-## Grafana Cloud credentials
+All Sigil connection details live at `https://<your-grafana>.grafana.net/plugins/grafana-sigil-app`. Skip this section if you're running against a self-hosted Sigil — see [Auth modes](#auth-modes) below.
 
-Skip this if you're not using Grafana Cloud — see [Auth modes](#auth-modes) for `tenant` / `bearer` / `none`.
+You need values from three Grafana Cloud pages:
 
-The same Instance ID and access token are used for both Sigil and OTLP. OTLP is required for the AI Observability UI's latency, tool-call, and throughput panels.
+1. **AI Observability → Configuration**
+   - **API URL** → `endpoint`
+   - **Instance ID** → `auth.user` and `otlp.basicUser`
 
-1. **API URL and Instance ID** — in **Observability → AI Observability → Configuration**:
-   - **API URL** → `endpoint` (e.g. `https://sigil-prod-<region>.grafana.net`)
-   - **Instance ID** → `auth.user` and `otlp.basicUser` (numeric stack ID)
-2. **Access policy token** — in **Administration → Cloud access policies**, create a policy with scopes `metrics:write`, `traces:write`, and `sigil:write`, then add a token. The `glc_…` value is shown once — goes into `auth.password` and `otlp.basicPassword`.
-3. **OTLP endpoint** — Cloud Portal → your stack → **OpenTelemetry** card. Copy the OTLP endpoint URL → `otlp.endpoint` (e.g. `https://otlp-gateway-prod-<region>.grafana.net/otlp`).
+2. **Administration → Users and access → Cloud access policies**
+   - Create a policy with scopes `sigil:write`, `metrics:write`, `traces:write`.
+   - Add a token. The `glc_…` value is shown once → `auth.password` and `otlp.basicPassword`.
 
-## Configure
+3. **Grafana Cloud Portal → your stack → OpenTelemetry card**
+   - **OTLP endpoint URL** → `otlp.endpoint`
+
+## 3. Configure
 
 Create `~/.config/sigil-pi/config.json`:
 
 ```json
 {
-  "endpoint": "https://sigil.example.com",
+  "endpoint": "https://sigil-prod-<region>.grafana.net",
   "auth": {
     "mode": "basic",
-    "user": "123456",
+    "user": "<instance-id>",
     "password": "${SIGIL_AUTH_TOKEN}"
   },
   "otlp": {
-    "endpoint": "https://otlp-gateway.grafana.net/otlp",
-    "basicUser": "123456",
+    "endpoint": "https://otlp-gateway-prod-<region>.grafana.net/otlp",
+    "basicUser": "<instance-id>",
     "basicPassword": "${SIGIL_AUTH_TOKEN}"
   }
 }
 ```
 
-String values support `${ENV_VAR}` interpolation.
+String values support `${ENV_VAR}` interpolation, so the token stays out of the file.
+
+To include conversation text (with automatic secret redaction), add `"contentCapture": "full"` to the config.
 
 ### Auth modes
 
-- **basic** — HTTP Basic + `X-Scope-OrgID` (Grafana Cloud): `{ "mode": "basic", "user": "<instance-id>", "password": "${SIGIL_AUTH_TOKEN}" }`
-- **tenant** — `X-Scope-OrgID` only: `{ "mode": "tenant", "tenantId": "my-tenant" }`
-- **bearer** — `Authorization: Bearer`: `{ "mode": "bearer", "bearerToken": "${SIGIL_TOKEN}" }`
-- **none** — no auth (default)
+- `basic` — Grafana Cloud: `{ "mode": "basic", "user": "<instance-id>", "password": "${SIGIL_AUTH_TOKEN}" }`
+- `tenant` — `X-Scope-OrgID` only: `{ "mode": "tenant", "tenantId": "my-tenant" }`
+- `bearer` — `{ "mode": "bearer", "bearerToken": "${SIGIL_TOKEN}" }`
+- `none` — no auth (default)
 
-### Redaction
+## Redaction
 
-Generations are scrubbed for secrets before they leave the process; matches become `[REDACTED:<id>]`. The sanitizer covers Grafana Cloud / cloud provider / SaaS tokens, PEM-encoded private keys, database connection strings, `KEY=value` env-style pairs, bearer tokens, and email addresses.
+Before any generation leaves the process, the SDK scrubs known token formats, PEM private keys, database URLs, `KEY=value` pairs, bearer tokens, and email addresses. Matches become `[REDACTED:<id>]`.
 
-User-role messages are scrubbed too — set `redaction.redactInputMessages: false` to leave them alone, or `redaction.enabled: false` to disable redaction entirely.
+User-role messages are scrubbed too. Set `redaction.redactInputMessages: false` to leave them alone, or `redaction.enabled: false` to disable redaction entirely.
 
-### Guards
+## Guards
 
-Guards let you block tool calls before they execute — for example, refusing a `bash` invocation when the command matches a deny rule.
-
-Guards are **disabled by default** and must be turned on explicitly:
+Guards block tool calls before they execute (e.g. refuse a `bash` invocation matching a deny rule). They're off by default:
 
 ```sh
 SIGIL_GUARDS_ENABLED=true pi
 ```
 
-Behavior:
+By default, transport errors and timeouts let the tool through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block on errors instead.
 
-- Phase is hardcoded to `postflight` (pi's `tool_call` fires after the assistant message but before the tool runs).
-- Fail-open by default — transport errors, timeouts, and unexpected exceptions allow the tool through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block the tool instead.
-
-### Options
+## All options
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `endpoint` | — | Sigil URL |
+| `endpoint` | — | Sigil URL (find it at `/plugins/grafana-sigil-app`) |
 | `auth.mode` | `"none"` | `basic`, `tenant`, `bearer`, or `none` |
 | `auth.user` / `auth.password` | — | Basic auth credentials |
-| `auth.tenantId` | `auth.user` in basic mode | `X-Scope-OrgID` header (required in `tenant` mode) |
-| `auth.bearerToken` | — | Required in `bearer` mode |
+| `auth.tenantId` | `auth.user` in basic mode | `X-Scope-OrgID` header |
+| `auth.bearerToken` | — | Bearer token |
 | `agentName` | `"pi"` | Agent name reported to Sigil |
-| `agentVersion` | auto-detected | Pi agent version |
 | `contentCapture` | `"metadata_only"` | `full`, `no_tool_content`, or `metadata_only` |
 | `debug` | `false` | Log lifecycle events to stderr |
 | `otlp.endpoint` | — | OTLP HTTP endpoint |
 | `otlp.basicUser` / `otlp.basicPassword` | — | OTLP Basic auth |
 | `otlp.bearerToken` | — | OTLP Bearer token |
-| `otlp.headers` | — | Custom OTLP headers |
 | `redaction.enabled` | `true` | Master switch for redaction |
 | `redaction.redactInputMessages` | `true` | Scrub user-role content too |
-| `redaction.redactEmailAddresses` | `true` | Scrub generic email addresses |
-| `guards.enabled` | `false` | Opt-in to request-path policy checks. When true, every `tool_call` is evaluated by Sigil; a `deny` blocks the tool with the server-provided reason |
-| `guards.timeoutMs` | `1500` | Per-call timeout for the guard request in milliseconds |
-| `guards.failOpen` | `true` | When true, transport errors/timeouts allow the tool through. When false, the tool is blocked with a guard-evaluation-failed reason. |
+| `guards.enabled` | `false` | Evaluate `tool_call` requests against Sigil policy |
+| `guards.timeoutMs` | `1500` | Per-call timeout for guard requests |
+| `guards.failOpen` | `true` | Allow tools through when guard checks fail |
 
-### Environment variables
-
-Any field can be overridden via env var. When launched via `sigil pi`, vars in `~/.config/sigil/config.env` are loaded automatically.
+Every field can be overridden via env var. When launched via `sigil pi`, vars in `~/.config/sigil/config.env` are loaded automatically.
 
 | Variable | Sets |
 |----------|------|
 | `SIGIL_ENDPOINT` | `endpoint` |
-| `SIGIL_AUTH_TENANT_ID` + `SIGIL_AUTH_TOKEN` | Basic auth for Sigil and OTLP (Grafana Cloud pattern) |
-| `SIGIL_AGENT_NAME` / `SIGIL_AGENT_VERSION` | `agentName` / `agentVersion` |
+| `SIGIL_AUTH_TENANT_ID` + `SIGIL_AUTH_TOKEN` | Basic auth for Sigil and OTLP |
 | `SIGIL_CONTENT_CAPTURE_MODE` | `contentCapture` |
 | `SIGIL_DEBUG` | `debug` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `otlp.endpoint` |
-| `SIGIL_OTEL_AUTH_TOKEN` | OTLP basic-auth password (falls back to `SIGIL_AUTH_TOKEN`) |
 | `SIGIL_GUARDS_ENABLED` | `guards.enabled` |
-| `SIGIL_GUARDS_TIMEOUT_MS` | `guards.timeoutMs` (integer milliseconds) |
-| `SIGIL_GUARDS_FAIL_OPEN` | `guards.failOpen` |
-
-Explicit `auth.mode` in the config file always wins over env-derived auth.
-
-## What gets sent
-
-Every generation carries model, token usage (input/output/cache), cost, stop reason, tool names and durations, conversation ID, and turn timing. Message content depends on `contentCapture`:
-
-| Mode | Adds |
-|------|------|
-| `metadata_only` (default) | nothing — content is stripped by the SDK |
-| `no_tool_content` | assistant text and thinking |
-| `full` | assistant text, thinking, tool call arguments, tool results |
-
-When `otlp` is configured, the SDK also exports `gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, and `gen_ai.client.tool_calls_per_operation` histograms (labelled by provider/model/agent) plus one trace span per generation. Resource `service.name` is `sigil-pi`.
