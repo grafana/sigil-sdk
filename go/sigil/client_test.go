@@ -899,6 +899,34 @@ func TestStartEmbeddingCapturesAndTruncatesInputTextsWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestStartEmbeddingContentCaptureResolverGatesInputTexts(t *testing.T) {
+	client, recorder, _ := newTestClient(t, Config{
+		EmbeddingCapture: EmbeddingCaptureConfig{
+			CaptureInput:  true,
+			MaxInputItems: 5,
+			MaxTextLength: 100,
+		},
+		ContentCapture: ContentCaptureModeFull,
+		ContentCaptureResolver: func(_ context.Context, _ map[string]any) ContentCaptureMode {
+			return ContentCaptureModeFullWithMetadataSpans
+		},
+	})
+
+	_, embeddingRecorder := client.StartEmbedding(context.Background(), EmbeddingStart{
+		Model: ModelRef{Provider: "openai", Name: "text-embedding-3-small"},
+	})
+	embeddingRecorder.SetResult(EmbeddingResult{
+		InputCount: 1,
+		InputTexts: []string{"resolver-gated sensitive text"},
+	})
+	embeddingRecorder.End()
+
+	span := onlyEmbeddingSpan(t, recorder.Ended())
+	if _, ok := spanAttributeMap(span)[spanAttrEmbeddingInputTexts]; ok {
+		t.Errorf("expected %q to be absent when resolver returns FullWithMetadataSpans", spanAttrEmbeddingInputTexts)
+	}
+}
+
 func TestStartEmbeddingTruncationPreservesUTF8ForMultibyteInput(t *testing.T) {
 	client, recorder, _ := newTestClient(t, Config{
 		EmbeddingCapture: EmbeddingCaptureConfig{

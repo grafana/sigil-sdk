@@ -137,6 +137,17 @@ public sealed class EnvConfigTests
     }
 
     [Fact]
+    public void ContentCaptureModeFullWithMetadataSpansFromEnv()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["SIGIL_CONTENT_CAPTURE_MODE"] = "full_with_metadata_spans",
+        };
+        var (cfg, _) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+        Assert.Equal(ContentCaptureMode.FullWithMetadataSpans, cfg.ContentCapture);
+    }
+
+    [Fact]
     public void AgentUserTagsDebugFromEnv()
     {
         var env = new Dictionary<string, string?>

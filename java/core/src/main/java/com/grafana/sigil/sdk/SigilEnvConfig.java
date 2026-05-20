@@ -264,6 +264,8 @@ public final class SigilEnvConfig {
                 return ContentCaptureMode.NO_TOOL_CONTENT;
             case "metadata_only":
                 return ContentCaptureMode.METADATA_ONLY;
+            case "full_with_metadata_spans":
+                return ContentCaptureMode.FULL_WITH_METADATA_SPANS;
             default:
                 return null;
         }

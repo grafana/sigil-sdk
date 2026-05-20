@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import concurrent.futures
+import copy
 import json
+import socket
 import threading
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import grpc
 import pytest
 from conftest import CapturingGenerationExporter
 from opentelemetry.sdk.trace import TracerProvider
@@ -19,6 +23,9 @@ from sigil_sdk import (
     ContentCaptureMode,
     ConversationRatingInput,
     ConversationRatingValue,
+    EmbeddingCaptureConfig,
+    EmbeddingResult,
+    EmbeddingStart,
     Generation,
     GenerationExportConfig,
     GenerationStart,
@@ -35,8 +42,122 @@ from sigil_sdk import (
     validate_generation,
 )
 from sigil_sdk.context import content_capture_mode_from_context, with_content_capture_mode
+from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
+from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
 
 _METADATA_KEY = "sigil.sdk.content_capture_mode"
+# Sentinel substring guaranteed not to appear in any error category classifier
+# output. If it leaks onto a span, the redaction is broken.
+_LEAK_MARKER = "ignore previous instructions"
+
+
+class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceServicer):
+    """Real gRPC servicer that records exported generation protos."""
+
+    def __init__(self) -> None:
+        self.requests: list[sigil_pb2.ExportGenerationsRequest] = []
+        self._lock = threading.Lock()
+
+    def ExportGenerations(self, request, _context):  # noqa: N802
+        with self._lock:
+            self.requests.append(copy.deepcopy(request))
+        return sigil_pb2.ExportGenerationsResponse(
+            results=[
+                sigil_pb2.ExportGenerationResult(generation_id=generation.id, accepted=True)
+                for generation in request.generations
+            ]
+        )
+
+
+class _ContentCaptureEnv:
+    """Real-gRPC content-capture test env.
+
+    Spins up an in-process gRPC server that captures :class:`sigil_pb2.Generation`
+    payloads as they actually leave the SDK, plus an :class:`InMemorySpanExporter`
+    for OTel span assertions. Use this when a test needs to assert on both the
+    proto export and the span path (the proto/span split that
+    :class:`ContentCaptureMode.FULL_WITH_METADATA_SPANS` introduces).
+    """
+
+    def __init__(self, **client_overrides) -> None:
+        self.servicer = _CapturingGenerationServicer()
+        self._grpc_server = grpc.server(concurrent.futures.ThreadPoolExecutor(max_workers=2))
+        sigil_pb2_grpc.add_GenerationIngestServiceServicer_to_server(self.servicer, self._grpc_server)
+
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        self._grpc_server.add_insecure_port(f"127.0.0.1:{port}")
+        self._grpc_server.start()
+
+        self.span_exporter = InMemorySpanExporter()
+        self._provider = TracerProvider()
+        self._provider.add_span_processor(SimpleSpanProcessor(self.span_exporter))
+
+        kwargs = dict(
+            tracer=self._provider.get_tracer("sigil-content-capture-test"),
+            generation_export=GenerationExportConfig(
+                protocol="grpc",
+                endpoint=f"127.0.0.1:{port}",
+                insecure=True,
+                batch_size=1,
+                flush_interval=timedelta(hours=1),
+                queue_size=10,
+                max_retries=1,
+                initial_backoff=timedelta(milliseconds=1),
+                max_backoff=timedelta(milliseconds=2),
+            ),
+        )
+        kwargs.update(client_overrides)
+        self.client = Client(ClientConfig(**kwargs))
+        self._closed = False
+
+    def __enter__(self) -> _ContentCaptureEnv:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.shutdown()
+
+    def shutdown(self) -> None:
+        """Flush the client and tear the env down. Safe to call repeatedly."""
+        if self._closed:
+            return
+        self._closed = True
+        self.client.shutdown()
+        self._provider.shutdown()
+        self._grpc_server.stop(grace=0)
+
+    def single_generation(self) -> sigil_pb2.Generation:
+        """The one and only proto generation the gRPC server received."""
+        self.shutdown()  # ensure flush
+        assert len(self.servicer.requests) == 1, f"expected 1 export request, got {len(self.servicer.requests)}"
+        assert len(self.servicer.requests[0].generations) == 1
+        return self.servicer.requests[0].generations[0]
+
+    def generation_span(self):
+        return self._single_span("generate")
+
+    def embedding_span(self):
+        return self._single_span("embeddings")
+
+    def tool_span(self):
+        return self._single_span("execute_tool")
+
+    def _single_span(self, name_prefix: str):
+        spans = [s for s in self.span_exporter.get_finished_spans() if s.name.startswith(name_prefix)]
+        assert spans, f"no span starting with {name_prefix!r}"
+        return spans[-1]
+
+
+def _assert_span_error_redacted(span, expected_error_type: str) -> None:
+    """Assert a span has the error type set and no raw provider text."""
+    assert span.status.status_code.name == "ERROR"
+    assert _LEAK_MARKER not in (span.status.description or "")
+    for event in span.events:
+        for value in event.attributes.values():
+            assert _LEAK_MARKER not in str(value), f"span event {event.name!r} leaks raw error: {value!r}"
+    assert span.attributes.get("error.type") == expected_error_type
 
 
 def _new_client(exporter: CapturingGenerationExporter, tracer=None, **overrides) -> Client:
@@ -48,15 +169,16 @@ def _new_client(exporter: CapturingGenerationExporter, tracer=None, **overrides)
         initial_backoff=overrides.get("initial_backoff", timedelta(milliseconds=1)),
         max_backoff=overrides.get("max_backoff", timedelta(milliseconds=1)),
     )
-    return Client(
-        ClientConfig(
-            tracer=tracer,
-            generation_export=generation_export,
-            generation_exporter=exporter,
-            content_capture=overrides.get("content_capture", ContentCaptureMode.DEFAULT),
-            content_capture_resolver=overrides.get("content_capture_resolver", None),
-        )
+    client_config_kwargs = dict(
+        tracer=tracer,
+        generation_export=generation_export,
+        generation_exporter=exporter,
+        content_capture=overrides.get("content_capture", ContentCaptureMode.DEFAULT),
+        content_capture_resolver=overrides.get("content_capture_resolver", None),
     )
+    if "embedding_capture" in overrides:
+        client_config_kwargs["embedding_capture"] = overrides["embedding_capture"]
+    return Client(ClientConfig(**client_config_kwargs))
 
 
 def _seed(content_capture: ContentCaptureMode = ContentCaptureMode.DEFAULT) -> GenerationStart:
@@ -1062,6 +1184,326 @@ class TestRatingCommentStripping:
                 ),
             )
             assert captured["payload"]["comment"] == "this should be preserved"
+        finally:
+            client.shutdown()
+            server.shutdown()
+            server.server_close()
+
+
+# ---------------------------------------------------------------------------
+# FULL_WITH_METADATA_SPANS — proto export full, span content omitted.
+# ---------------------------------------------------------------------------
+
+
+# Modes that strip content from spans. Generations carry a proto/span split;
+# tools and embeddings have no separate proto export so both modes behave the
+# same for them on the span path.
+_STRIPPED_MODES = [ContentCaptureMode.METADATA_ONLY, ContentCaptureMode.FULL_WITH_METADATA_SPANS]
+
+
+class TestFullWithMetadataSpans:
+    """FULL_WITH_METADATA_SPANS keeps proto export full but drops content from OTel spans.
+
+    Mirrors Go's ``TestConformance_FullWithMetadataSpansMode``. Uses a real gRPC
+    ingest server so the proto export is asserted end-to-end, not on the
+    in-memory ``Generation`` object before serialization.
+    """
+
+    def test_generation_proto_full_span_title_absent(self):
+        with _ContentCaptureEnv(content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS) as env:
+            rec = env.client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                    conversation_title="Sensitive conversation",
+                    system_prompt="Be helpful.",
+                )
+            )
+            rec.set_result(
+                Generation(
+                    system_prompt="Be helpful.",
+                    input=[Message(role=MessageRole.USER, parts=[Part(kind=PartKind.TEXT, text="hello world")])],
+                    output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="hi back")])],
+                    tools=[
+                        ToolDefinition(
+                            name="weather",
+                            description="Get weather info",
+                            type="function",
+                            input_schema_json=b'{"type":"object"}',
+                        ),
+                    ],
+                    usage=TokenUsage(input_tokens=3, output_tokens=2),
+                )
+            )
+            rec.end()
+            assert rec.err() is None
+
+            # Proto export (post-gRPC roundtrip) keeps all content untouched.
+            gen = env.single_generation()
+            assert gen.system_prompt == "Be helpful."
+            assert gen.input[0].parts[0].text == "hello world"
+            assert gen.output[0].parts[0].text == "hi back"
+            assert gen.tools[0].description == "Get weather info"
+            assert gen.tools[0].input_schema_json == b'{"type":"object"}'
+            assert gen.metadata.fields[_METADATA_KEY].string_value == "full_with_metadata_spans"
+            assert gen.metadata.fields["sigil.conversation.title"].string_value == "Sensitive conversation"
+
+            # Span path drops the title.
+            assert "sigil.conversation.title" not in env.generation_span().attributes
+
+    def test_provider_call_error_redacted_on_span_raw_in_proto(self):
+        """Provider call errors must not echo raw message on the span under
+        FULL_WITH_METADATA_SPANS, but the proto export must keep the raw text.
+        Mirrors Go's ``provider_call_error_redacted_on_span,_raw_in_proto``.
+        """
+        raw_err = "provider returned HTTP 400: blocked content '" + _LEAK_MARKER + "'"
+        with _ContentCaptureEnv(content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS) as env:
+            rec = env.client.start_generation(
+                GenerationStart(
+                    model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                    agent_name="agent-fwms-error",
+                )
+            )
+            rec.set_call_error(RuntimeError(raw_err))
+            rec.set_result(
+                Generation(
+                    input=[Message(role=MessageRole.USER, parts=[Part(kind=PartKind.TEXT, text="x")])],
+                    output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="y")])],
+                    usage=TokenUsage(input_tokens=1, output_tokens=1),
+                )
+            )
+            rec.end()
+            assert rec.err() is None
+
+            # Proto export (post-gRPC roundtrip) preserves the raw provider error.
+            gen = env.single_generation()
+            assert gen.call_error == raw_err
+            assert gen.metadata.fields["call_error"].string_value == raw_err
+
+            _assert_span_error_redacted(env.generation_span(), "provider_call_error")
+
+    # Tool span content omission and embedding span content omission both apply
+    # to MetadataOnly and FullWithMetadataSpans. Embeddings have no proto
+    # export, and the tool path doesn't have one either, so both modes are
+    # equivalent on the span path.
+    @pytest.mark.parametrize("mode", _STRIPPED_MODES)
+    def test_stripped_modes_tool_span_omits_content_attrs(self, mode):
+        # The full set of content-bearing attributes the tool span path can
+        # carry. Under either stripped mode none of them should appear.
+        with _ContentCaptureEnv(content_capture=mode) as env:
+            with env.client.start_tool_execution(
+                ToolExecutionStart(
+                    tool_name="weather",
+                    tool_call_id="call_1",
+                    include_content=True,
+                    conversation_title="Sensitive tool title",
+                    tool_description="Get weather: free-form provider-supplied text",
+                )
+            ) as rec:
+                rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
+
+            tool_span = env.tool_span()
+            assert "gen_ai.tool.call.arguments" not in tool_span.attributes
+            assert "gen_ai.tool.call.result" not in tool_span.attributes
+            assert "sigil.conversation.title" not in tool_span.attributes
+            assert "gen_ai.tool.description" not in tool_span.attributes
+            # Identity attributes still emitted.
+            assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
+
+    @pytest.mark.parametrize("mode", _STRIPPED_MODES)
+    def test_stripped_modes_tool_span_redacts_call_error(self, mode):
+        # Tool execution has no proto export — the raw provider error must
+        # not echo on the span path under either stripped mode.
+        raw_err = "provider returned HTTP 400: blocked content '" + _LEAK_MARKER + "'"
+        with _ContentCaptureEnv(content_capture=mode) as env:
+            with env.client.start_tool_execution(
+                ToolExecutionStart(
+                    tool_name="weather",
+                    tool_call_id="call_1",
+                    include_content=True,
+                )
+            ) as rec:
+                rec.set_exec_error(RuntimeError(raw_err))
+                rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
+
+            _assert_span_error_redacted(env.tool_span(), "tool_execution_error")
+
+    @pytest.mark.parametrize("mode", _STRIPPED_MODES)
+    def test_stripped_modes_embedding_span_omits_input_texts(self, mode):
+        with _ContentCaptureEnv(
+            content_capture=mode,
+            embedding_capture=EmbeddingCaptureConfig(capture_input=True),
+        ) as env:
+            rec = env.client.start_embedding(
+                EmbeddingStart(model=ModelRef(provider="openai", name="text-embedding-3-small")),
+            )
+            rec.set_result(
+                EmbeddingResult(
+                    input_count=1,
+                    input_tokens=10,
+                    input_texts=["sensitive input text"],
+                    response_model="text-embedding-3-small",
+                )
+            )
+            rec.end()
+            assert rec.err() is None
+
+            emb_span = env.embedding_span()
+            assert "gen_ai.embeddings.input_texts" not in emb_span.attributes
+            # Non-content embedding span fields still populated.
+            assert emb_span.attributes.get("gen_ai.embeddings.input_count") == 1
+            assert emb_span.attributes.get("gen_ai.usage.input_tokens") == 10
+            assert emb_span.attributes.get("gen_ai.response.model") == "text-embedding-3-small"
+
+    @pytest.mark.parametrize("mode", _STRIPPED_MODES)
+    def test_stripped_modes_embedding_provider_call_error_redacted_on_span(self, mode):
+        """Embedding provider errors carry no raw text on the span. Embeddings have
+        no proto export, so the raw error never escapes the span path.
+        """
+        raw_err = "provider returned HTTP 400: blocked content '" + _LEAK_MARKER + "'"
+        with _ContentCaptureEnv(
+            content_capture=mode,
+            embedding_capture=EmbeddingCaptureConfig(capture_input=True),
+        ) as env:
+            rec = env.client.start_embedding(
+                EmbeddingStart(model=ModelRef(provider="openai", name="text-embedding-3-small")),
+            )
+            rec.set_call_error(RuntimeError(raw_err))
+            rec.set_result(
+                EmbeddingResult(input_count=1, input_texts=["sensitive input text"]),
+            )
+            rec.end()
+            assert rec.err() is None
+
+            _assert_span_error_redacted(env.embedding_span(), "provider_call_error")
+
+    def test_resolver_full_with_metadata_spans_hides_embedding_input_texts(self):
+        """Resolver returning FULL_WITH_METADATA_SPANS hides input_texts when client default is FULL."""
+        with _ContentCaptureEnv(
+            content_capture=ContentCaptureMode.FULL,
+            content_capture_resolver=lambda _meta: ContentCaptureMode.FULL_WITH_METADATA_SPANS,
+            embedding_capture=EmbeddingCaptureConfig(capture_input=True),
+        ) as env:
+            rec = env.client.start_embedding(
+                EmbeddingStart(model=ModelRef(provider="openai", name="text-embedding-3-small")),
+            )
+            rec.set_result(
+                EmbeddingResult(input_count=1, input_texts=["resolver-gated sensitive text"]),
+            )
+            rec.end()
+            assert rec.err() is None
+
+            assert "gen_ai.embeddings.input_texts" not in env.embedding_span().attributes
+
+    def test_context_full_does_not_weaken_embedding_full_with_metadata_spans(self):
+        """with_content_capture_mode(FULL) must not unhide gen_ai.embeddings.input_texts when client
+        is FULL_WITH_METADATA_SPANS. Embeddings gate on config + resolver only, matching Go/Java/JS/.NET."""
+        with _ContentCaptureEnv(
+            content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS,
+            embedding_capture=EmbeddingCaptureConfig(capture_input=True),
+        ) as env:
+            with with_content_capture_mode(ContentCaptureMode.FULL):
+                rec = env.client.start_embedding(
+                    EmbeddingStart(model=ModelRef(provider="openai", name="text-embedding-3-small")),
+                )
+                rec.set_result(
+                    EmbeddingResult(input_count=1, input_texts=["context-should-not-leak"]),
+                )
+                rec.end()
+                assert rec.err() is None
+
+            assert "gen_ai.embeddings.input_texts" not in env.embedding_span().attributes
+
+    def test_context_full_overrides_generation_full_with_metadata_spans(self):
+        """with_content_capture_mode(FULL) is an explicit caller override and DOES weaken
+        a client default of FULL_WITH_METADATA_SPANS for generations. Locks in the
+        Python-specific override contract documented on with_content_capture_mode.
+
+        Embeddings deliberately do NOT honor this override (see
+        test_context_full_does_not_weaken_embedding_full_with_metadata_spans).
+        """
+        with _ContentCaptureEnv(content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS) as env:
+            with with_content_capture_mode(ContentCaptureMode.FULL):
+                rec = env.client.start_generation(
+                    GenerationStart(
+                        model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                        conversation_title="Sensitive conversation",
+                    )
+                )
+                rec.set_result(
+                    Generation(
+                        input=[Message(role=MessageRole.USER, parts=[Part(kind=PartKind.TEXT, text="hi")])],
+                        output=[Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="yo")])],
+                        usage=TokenUsage(input_tokens=1, output_tokens=1),
+                    )
+                )
+                rec.end()
+                assert rec.err() is None
+
+            gen = env.single_generation()
+            # Proto export keeps content (also true under FULL_WITH_METADATA_SPANS).
+            assert gen.metadata.fields["sigil.conversation.title"].string_value == "Sensitive conversation"
+            # Resolved mode is FULL, not FULL_WITH_METADATA_SPANS.
+            assert gen.metadata.fields[_METADATA_KEY].string_value == "full"
+
+            # Span path: the ctx FULL override re-enables the title attribute that
+            # FULL_WITH_METADATA_SPANS would have suppressed.
+            assert env.generation_span().attributes.get("sigil.conversation.title") == "Sensitive conversation"
+
+    def test_context_full_overrides_tool_full_with_metadata_spans(self):
+        """with_content_capture_mode(FULL) overrides FULL_WITH_METADATA_SPANS for tool spans too.
+
+        Tool executions have no separate proto export path, so a ctx FULL override
+        re-introduces tool arguments, result, and title on the tool span. This is the
+        Python-specific caller-override contract, intentionally consistent with
+        generation behavior and explicitly different from embeddings.
+        """
+        with _ContentCaptureEnv(content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS) as env:
+            with with_content_capture_mode(ContentCaptureMode.FULL):
+                with env.client.start_tool_execution(
+                    ToolExecutionStart(
+                        tool_name="weather",
+                        tool_call_id="call_1",
+                        include_content=True,
+                        conversation_title="Sensitive tool title",
+                        tool_description="Get weather",
+                    )
+                ) as rec:
+                    rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
+
+            tool_span = env.tool_span()
+            assert tool_span.attributes.get("sigil.conversation.title") == "Sensitive tool title"
+            assert "gen_ai.tool.call.arguments" in tool_span.attributes
+            assert "gen_ai.tool.call.result" in tool_span.attributes
+
+    def test_rating_comment_preserved(self):
+        captured: dict = {}
+        handler = TestRatingCommentStripping._make_rating_handler(self, captured)
+        server = HTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        client = Client(
+            ClientConfig(
+                content_capture=ContentCaptureMode.FULL_WITH_METADATA_SPANS,
+                generation_export=GenerationExportConfig(
+                    protocol="none",
+                    batch_size=1,
+                    flush_interval=timedelta(seconds=60),
+                ),
+                api=ApiConfig(endpoint=f"http://127.0.0.1:{server.server_address[1]}"),
+            )
+        )
+
+        try:
+            client.submit_conversation_rating(
+                "conv-1",
+                ConversationRatingInput(
+                    rating_id="rat-1",
+                    rating=ConversationRatingValue.BAD,
+                    comment="user-supplied free text",
+                ),
+            )
+            assert captured["payload"]["comment"] == "user-supplied free text"
         finally:
             client.shutdown()
             server.shutdown()

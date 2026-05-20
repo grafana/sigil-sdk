@@ -118,22 +118,15 @@ function stripMessageContent(message: Message): void {
 
 /**
  * Determines whether tool execution content (arguments, results) should be
- * included in span attributes. Resolves the effective mode from the
- * explicit tool override, client default, resolver, and legacy
- * `includeContent`.
+ * included in span attributes given the already-resolved content capture
+ * mode and the legacy `includeContent` opt-in.
  */
-export function shouldIncludeToolContent(
-  toolMode: ContentCaptureMode,
-  clientDefault: ContentCaptureMode,
-  resolverMode: ContentCaptureMode,
-  legacyInclude: boolean,
-): boolean {
-  let resolved = resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, clientDefault));
-  if (toolMode !== 'default') {
-    resolved = toolMode;
-  }
-  switch (resolved) {
+export function shouldIncludeToolContent(resolvedMode: ContentCaptureMode, legacyInclude: boolean): boolean {
+  switch (resolvedMode) {
     case 'metadata_only':
+    case 'full_with_metadata_spans':
+      // Tools have no separate gRPC export — full_with_metadata_spans
+      // behaves like metadata_only for tool spans.
       return false;
     case 'full':
       return true;

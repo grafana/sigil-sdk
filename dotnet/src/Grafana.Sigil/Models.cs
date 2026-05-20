@@ -43,6 +43,13 @@ public enum ContentCaptureMode
     Full = 1,
     NoToolContent = 2,
     MetadataOnly = 3,
+    /// <summary>
+    /// Splits the proto and span paths for generation content. Proto export
+    /// keeps full content; the OTel span omits <c>sigil.conversation.title</c>,
+    /// <c>gen_ai.tool.call.arguments</c>, <c>gen_ai.tool.call.result</c>, and
+    /// <c>gen_ai.embeddings.input_texts</c>.
+    /// </summary>
+    FullWithMetadataSpans = 4,
 }
 
 public static class ContentCaptureModeExtensions
@@ -50,6 +57,7 @@ public static class ContentCaptureModeExtensions
     private const string ValueFull = "full";
     private const string ValueNoToolContent = "no_tool_content";
     private const string ValueMetadataOnly = "metadata_only";
+    private const string ValueFullWithMetadataSpans = "full_with_metadata_spans";
 
     public static string ToMetadataValue(this ContentCaptureMode mode)
     {
@@ -58,6 +66,7 @@ public static class ContentCaptureModeExtensions
             ContentCaptureMode.Full => ValueFull,
             ContentCaptureMode.NoToolContent => ValueNoToolContent,
             ContentCaptureMode.MetadataOnly => ValueMetadataOnly,
+            ContentCaptureMode.FullWithMetadataSpans => ValueFullWithMetadataSpans,
             _ => string.Empty,
         };
     }

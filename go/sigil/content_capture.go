@@ -33,13 +33,35 @@ const (
 	// responsible for ensuring these maps do not contain sensitive content
 	// when using MetadataOnly mode.
 	ContentCaptureModeMetadataOnly
+	// ContentCaptureModeFullWithMetadataSpans splits the proto and span paths
+	// for generation content. Use this mode when the gRPC ingest destination is
+	// private but the OTel traces/metrics destination is shared and must not
+	// receive any content.
+	//
+	// Per-entity behaviour:
+	//   - Generation: full content goes to the gRPC export; the generation span
+	//     omits sigil.conversation.title.
+	//   - ToolExecution: there is no separate gRPC export — the tool execution
+	//     span omits gen_ai.tool.call.arguments, gen_ai.tool.call.result, and
+	//     sigil.conversation.title. Equivalent to MetadataOnly for tool spans.
+	//   - Embedding: there is no separate gRPC export — the embedding span
+	//     omits gen_ai.embeddings.input_texts. Equivalent to MetadataOnly for
+	//     embedding spans.
+	//   - Rating: the Rating.Comment field is preserved; only MetadataOnly
+	//     strips it.
+	//
+	// EmbeddingStart has no per-call ContentCapture field; embedding input
+	// text capture is gated by EmbeddingCaptureConfig.CaptureInput and the
+	// effective client mode from ContentCaptureResolver and Config.ContentCapture.
+	ContentCaptureModeFullWithMetadataSpans
 )
 
 const (
-	metadataKeyContentCaptureMode        = "sigil.sdk.content_capture_mode"
-	contentCaptureModeValueFull          = "full"
-	contentCaptureModeValueNoToolContent = "no_tool_content"
-	contentCaptureModeValueMetaOnly      = "metadata_only"
+	metadataKeyContentCaptureMode                = "sigil.sdk.content_capture_mode"
+	contentCaptureModeValueFull                  = "full"
+	contentCaptureModeValueNoToolContent         = "no_tool_content"
+	contentCaptureModeValueMetaOnly              = "metadata_only"
+	contentCaptureModeValueFullWithMetadataSpans = "full_with_metadata_spans"
 )
 
 // resolveContentCaptureMode returns the effective mode from an override and a
@@ -164,6 +186,8 @@ func (m ContentCaptureMode) String() string {
 		return contentCaptureModeValueNoToolContent
 	case ContentCaptureModeMetadataOnly:
 		return contentCaptureModeValueMetaOnly
+	case ContentCaptureModeFullWithMetadataSpans:
+		return contentCaptureModeValueFullWithMetadataSpans
 	default:
 		return "default"
 	}
@@ -183,6 +207,8 @@ func (m *ContentCaptureMode) UnmarshalText(text []byte) error {
 		*m = ContentCaptureModeNoToolContent
 	case contentCaptureModeValueMetaOnly:
 		*m = ContentCaptureModeMetadataOnly
+	case contentCaptureModeValueFullWithMetadataSpans:
+		*m = ContentCaptureModeFullWithMetadataSpans
 	case "default", "":
 		*m = ContentCaptureModeDefault
 	default:

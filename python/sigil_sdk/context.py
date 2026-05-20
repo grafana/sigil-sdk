@@ -145,7 +145,13 @@ def user_id_from_context() -> str | None:
 
 @contextmanager
 def with_content_capture_mode(mode: ContentCaptureMode) -> Iterator[None]:
-    """Sets the content capture mode within a context block."""
+    """Sets the content capture mode within a context block.
+
+    Overrides any client-level ``content_capture`` default for generations
+    and tool executions inside the block, including ``FULL_WITH_METADATA_SPANS``.
+    Embeddings are gated on client config + resolver only and do not honor this
+    override, matching Go/Java/JS/.NET.
+    """
 
     token = _content_capture_mode.set(mode)
     try:

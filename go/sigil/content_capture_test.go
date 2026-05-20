@@ -465,6 +465,7 @@ func TestContentCaptureModeString(t *testing.T) {
 		{ContentCaptureModeFull, "full"},
 		{ContentCaptureModeNoToolContent, "no_tool_content"},
 		{ContentCaptureModeMetadataOnly, "metadata_only"},
+		{ContentCaptureModeFullWithMetadataSpans, "full_with_metadata_spans"},
 		{ContentCaptureModeDefault, "default"},
 	}
 	for _, tc := range cases {
@@ -481,6 +482,7 @@ func TestContentCaptureModeTextMarshaling(t *testing.T) {
 	}{
 		{"full", ContentCaptureModeFull},
 		{"metadata_only", ContentCaptureModeMetadataOnly},
+		{"full_with_metadata_spans", ContentCaptureModeFullWithMetadataSpans},
 		{"default", ContentCaptureModeDefault},
 		{"", ContentCaptureModeDefault},
 	}

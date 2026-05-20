@@ -457,6 +457,67 @@ func TestGenerationSanitizerClearingTitleDoesNotLeak(t *testing.T) {
 	}
 }
 
+func TestGenerationSanitizerUnderFullWithMetadataSpansOmitsSpanTitle(t *testing.T) {
+	var calls int
+	client, recorder, _ := newTestClient(t, Config{
+		ContentCapture: ContentCaptureModeFullWithMetadataSpans,
+		GenerationSanitizer: func(g Generation) Generation {
+			calls++
+			return g
+		},
+	})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model:             ModelRef{Provider: "openai", Name: "gpt-5"},
+		ConversationTitle: "Sensitive title",
+	})
+	rec.SetResult(Generation{
+		Output: []Message{{Role: RoleAssistant, Parts: []Part{{Kind: PartKindText, Text: "ok"}}}},
+		Usage:  TokenUsage{InputTokens: 1, OutputTokens: 1},
+	}, nil)
+	rec.End()
+
+	if err := rec.Err(); err != nil {
+		t.Fatalf("recorder error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected sanitizer to run once, got %d", calls)
+	}
+	span := onlyGenerationSpan(t, recorder.Ended())
+	if _, ok := spanAttributeMap(span)[spanAttrConversationTitle]; ok {
+		t.Errorf("expected %q to be absent under FullWithMetadataSpans even when sanitizer runs", spanAttrConversationTitle)
+	}
+}
+
+func TestGenerationSanitizerPanicUnderFullWithMetadataSpansOmitsSpanTitle(t *testing.T) {
+	var buf bytes.Buffer
+	client, recorder, _ := newTestClient(t, Config{
+		Logger:         log.New(&buf, "", 0),
+		ContentCapture: ContentCaptureModeFullWithMetadataSpans,
+		GenerationSanitizer: func(_ Generation) Generation {
+			panic("boom")
+		},
+	})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		Model:             ModelRef{Provider: "openai", Name: "gpt-5"},
+		ConversationTitle: "Sensitive title",
+	})
+	rec.SetResult(Generation{
+		Output: []Message{{Role: RoleAssistant, Parts: []Part{{Kind: PartKindText, Text: "ok"}}}},
+		Usage:  TokenUsage{InputTokens: 1, OutputTokens: 1},
+	}, nil)
+	rec.End()
+
+	if err := rec.Err(); err != nil {
+		t.Fatalf("recorder error: %v", err)
+	}
+	span := onlyGenerationSpan(t, recorder.Ended())
+	if _, ok := spanAttributeMap(span)[spanAttrConversationTitle]; ok {
+		t.Errorf("expected %q to be absent under FullWithMetadataSpans when sanitizer panics", spanAttrConversationTitle)
+	}
+}
+
 func TestGenerationSanitizerSkippedInMetadataOnlyMode(t *testing.T) {
 	var calls int
 	client, _, _ := newTestClient(t, Config{

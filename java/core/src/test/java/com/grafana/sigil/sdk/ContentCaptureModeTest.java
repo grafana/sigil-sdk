@@ -14,6 +14,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import sigil.v1.GenerationIngest;
 
 class ContentCaptureModeTest {
 
@@ -24,6 +27,8 @@ class ContentCaptureModeTest {
         assertThat(ContentCaptureMode.FULL.toMetadataValue()).isEqualTo("full");
         assertThat(ContentCaptureMode.NO_TOOL_CONTENT.toMetadataValue()).isEqualTo("no_tool_content");
         assertThat(ContentCaptureMode.METADATA_ONLY.toMetadataValue()).isEqualTo("metadata_only");
+        assertThat(ContentCaptureMode.FULL_WITH_METADATA_SPANS.toMetadataValue())
+                .isEqualTo("full_with_metadata_spans");
     }
 
     @Test
@@ -906,6 +911,276 @@ class ContentCaptureModeTest {
                 .setPayload("raw".getBytes()));
 
         return gen;
+    }
+
+    // --- FULL_WITH_METADATA_SPANS tests ---
+    //
+    // Use ContentCaptureTestEnv so the proto export is asserted end-to-end
+    // (real in-process gRPC server, post-serialization), not on the in-memory
+    // Generation object before serialization.
+
+    // Sentinel substring guaranteed not to appear in any error category
+    // classifier output. If it leaks onto a span, the redaction is broken.
+    private static final String LEAK_MARKER = "ignore previous instructions";
+
+    private static void assertSpanErrorRedacted(SpanData span, String expectedErrorType) {
+        assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+        assertThat(span.getStatus().getDescription()).doesNotContain(LEAK_MARKER);
+        assertThat(span.getEvents()).isEmpty();
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("error.type")))
+                .isEqualTo(expectedErrorType);
+    }
+
+    @Test
+    void fullWithMetadataSpans_generation_protoFull_spanTitleAbsent() {
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
+                .builder(ContentCaptureMode.FULL_WITH_METADATA_SPANS)
+                .build()) {
+            GenerationRecorder rec = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("anthropic").setName("claude-sonnet-4-5"))
+                    .setConversationTitle("Sensitive conversation")
+                    .setSystemPrompt("Be helpful."));
+            GenerationResult result = new GenerationResult()
+                    .setUsage(new TokenUsage().setInputTokens(3).setOutputTokens(2));
+            result.getInput().add(new Message()
+                    .setRole(MessageRole.USER)
+                    .setParts(List.of(MessagePart.text("hello world"))));
+            result.getOutput().add(new Message()
+                    .setRole(MessageRole.ASSISTANT)
+                    .setParts(List.of(MessagePart.text("hi back"))));
+            rec.setResult(result);
+            rec.end();
+            assertThat(rec.error()).isEmpty();
+
+            // Proto export (post-gRPC roundtrip) keeps content intact.
+            GenerationIngest.Generation gen = env.singleGeneration();
+            assertThat(gen.getSystemPrompt()).isEqualTo("Be helpful.");
+            assertThat(gen.getInput(0).getParts(0).getText()).isEqualTo("hello world");
+            assertThat(gen.getOutput(0).getParts(0).getText()).isEqualTo("hi back");
+            assertThat(gen.getMetadata().getFieldsMap().get("sigil.sdk.content_capture_mode").getStringValue())
+                    .isEqualTo("full_with_metadata_spans");
+            assertThat(gen.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
+                    .isEqualTo("Sensitive conversation");
+
+            // Span path drops the title.
+            assertThat(env.generationSpan().getAttributes().get(AttributeKey.stringKey("sigil.conversation.title")))
+                    .isNull();
+        }
+    }
+
+    @Test
+    void fullWithMetadataSpans_providerCallError_redactedOnSpan_rawInProto() {
+        // Proto export under FULL_WITH_METADATA_SPANS keeps the raw provider
+        // call error (gRPC destination is trusted); the OTel span path must
+        // not echo it via exception events or status description.
+        String rawError = "provider returned HTTP 400: blocked content '" + LEAK_MARKER + "'";
+
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
+                .builder(ContentCaptureMode.FULL_WITH_METADATA_SPANS)
+                .build()) {
+            GenerationRecorder rec = env.client.startGeneration(new GenerationStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("gpt-5"))
+                    .setAgentName("agent-fwms-error"));
+            rec.setCallError(new RuntimeException(rawError));
+            GenerationResult result = new GenerationResult()
+                    .setUsage(new TokenUsage().setInputTokens(1).setOutputTokens(1));
+            result.getInput().add(new Message()
+                    .setRole(MessageRole.USER)
+                    .setParts(List.of(MessagePart.text("x"))));
+            result.getOutput().add(new Message()
+                    .setRole(MessageRole.ASSISTANT)
+                    .setParts(List.of(MessagePart.text("y"))));
+            rec.setResult(result);
+            rec.end();
+            assertThat(rec.error()).isEmpty();
+
+            GenerationIngest.Generation gen = env.singleGeneration();
+            assertThat(gen.getCallError()).isEqualTo(rawError);
+            assertThat(gen.getMetadata().getFieldsMap().get("call_error").getStringValue()).isEqualTo(rawError);
+
+            assertSpanErrorRedacted(env.generationSpan(), "provider_call_error");
+        }
+    }
+
+    // Tool span content omission and embedding span content omission both
+    // apply to MetadataOnly and FullWithMetadataSpans. Embeddings have no
+    // proto export, and the tool path doesn't have one either, so both modes
+    // are equivalent on the span path.
+    enum StrippedMode {
+        METADATA_ONLY(ContentCaptureMode.METADATA_ONLY),
+        FULL_WITH_METADATA_SPANS(ContentCaptureMode.FULL_WITH_METADATA_SPANS);
+
+        final ContentCaptureMode mode;
+
+        StrippedMode(ContentCaptureMode mode) {
+            this.mode = mode;
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(StrippedMode.class)
+    void strippedModes_toolSpan_omitsContentAttrs(StrippedMode mode) {
+        // The full set of content-bearing attributes the tool span path can
+        // carry. Under either stripped mode none of them should appear.
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv.builder(mode.mode).build()) {
+            try (ToolExecutionRecorder rec = env.client.startToolExecution(new ToolExecutionStart()
+                    .setToolName("weather")
+                    .setToolCallId("call_1")
+                    .setConversationTitle("Sensitive tool title")
+                    .setToolDescription("Get weather: free-form provider-supplied text")
+                    .setIncludeContent(true))) {
+                rec.setResult(new ToolExecutionResult()
+                        .setArguments(Map.of("city", "Paris"))
+                        .setResult(Map.of("temp_c", 18)));
+            }
+
+            SpanData toolSpan = env.toolSpan();
+            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.call.arguments"))).isNull();
+            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.call.result"))).isNull();
+            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("sigil.conversation.title"))).isNull();
+            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.description"))).isNull();
+            // Identity attributes still emitted.
+            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.name"))).isEqualTo("weather");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(StrippedMode.class)
+    void strippedModes_toolSpan_redactsCallError(StrippedMode mode) {
+        // Tools have no proto export — the raw provider error must not echo
+        // on the span path under either stripped mode.
+        String rawError = "provider returned HTTP 400: blocked content '" + LEAK_MARKER + "'";
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv.builder(mode.mode).build()) {
+            try (ToolExecutionRecorder rec = env.client.startToolExecution(new ToolExecutionStart()
+                    .setToolName("weather")
+                    .setToolCallId("call_1")
+                    .setIncludeContent(true))) {
+                rec.setCallError(new RuntimeException(rawError));
+                rec.setResult(new ToolExecutionResult()
+                        .setArguments(Map.of("city", "Paris"))
+                        .setResult(Map.of("temp_c", 18)));
+            }
+
+            assertSpanErrorRedacted(env.toolSpan(), "tool_execution_error");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(StrippedMode.class)
+    void strippedModes_embeddingSpan_omitsInputTexts(StrippedMode mode) {
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
+                .builder(mode.mode)
+                .embeddingCapture(new EmbeddingCaptureConfig().setCaptureInput(true))
+                .build()) {
+            EmbeddingRecorder rec = env.client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")));
+            rec.setResult(new EmbeddingResult()
+                    .setInputCount(1)
+                    .setInputTokens(10)
+                    .setInputTexts(List.of("sensitive input text"))
+                    .setResponseModel("text-embedding-3-small"));
+            rec.end();
+            assertThat(rec.error()).isEmpty();
+
+            SpanData embSpan = env.embeddingSpan();
+            assertThat(embSpan.getAttributes().get(AttributeKey.stringArrayKey("gen_ai.embeddings.input_texts")))
+                    .isNull();
+            // Non-content embedding fields remain.
+            assertThat(embSpan.getAttributes().get(AttributeKey.longKey("gen_ai.embeddings.input_count"))).isEqualTo(1L);
+            assertThat(embSpan.getAttributes().get(AttributeKey.longKey("gen_ai.usage.input_tokens"))).isEqualTo(10L);
+            assertThat(embSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.response.model")))
+                    .isEqualTo("text-embedding-3-small");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(StrippedMode.class)
+    void strippedModes_embeddingProviderCallError_redactedOnSpan(StrippedMode mode) {
+        // Embeddings have no proto export, so the raw provider error must not
+        // echo on the span path under either stripped mode.
+        String rawError = "provider returned HTTP 400: blocked content '" + LEAK_MARKER + "'";
+
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
+                .builder(mode.mode)
+                .embeddingCapture(new EmbeddingCaptureConfig().setCaptureInput(true))
+                .build()) {
+            EmbeddingRecorder rec = env.client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")));
+            rec.setCallError(new RuntimeException(rawError));
+            rec.setResult(new EmbeddingResult()
+                    .setInputCount(1)
+                    .setInputTexts(List.of("sensitive input text")));
+            rec.end();
+
+            assertSpanErrorRedacted(env.embeddingSpan(), "provider_call_error");
+        }
+    }
+
+    @Test
+    void fullWithMetadataSpans_resolverHidesEmbeddingInputTexts() {
+        try (ContentCaptureTestEnv env = ContentCaptureTestEnv
+                .builder(ContentCaptureMode.FULL)
+                .contentCaptureResolver(_meta -> ContentCaptureMode.FULL_WITH_METADATA_SPANS)
+                .embeddingCapture(new EmbeddingCaptureConfig().setCaptureInput(true))
+                .build()) {
+            EmbeddingRecorder rec = env.client.startEmbedding(new EmbeddingStart()
+                    .setModel(new ModelRef().setProvider("openai").setName("text-embedding-3-small")));
+            rec.setResult(new EmbeddingResult()
+                    .setInputCount(1)
+                    .setInputTexts(List.of("resolver-gated sensitive text")));
+            rec.end();
+            assertThat(rec.error()).isEmpty();
+
+            assertThat(env.embeddingSpan().getAttributes().get(AttributeKey.stringArrayKey("gen_ai.embeddings.input_texts")))
+                    .isNull();
+        }
+    }
+
+    @Test
+    void fullWithMetadataSpans_rating_preservesComment() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<com.fasterxml.jackson.databind.JsonNode> payload =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/v1/conversations/conv-1/ratings", exchange -> {
+            byte[] body = exchange.getRequestBody().readAllBytes();
+            payload.set(Json.MAPPER.readTree(body));
+            byte[] response = """
+                    {
+                      "rating":{"rating_id":"rat-1","conversation_id":"conv-1","rating":"CONVERSATION_RATING_VALUE_BAD","created_at":"2026-02-13T12:00:00Z"},
+                      "summary":{"total_count":1,"good_count":0,"bad_count":1,"latest_rating":"CONVERSATION_RATING_VALUE_BAD","latest_rated_at":"2026-02-13T12:00:00Z","has_bad_rating":true}
+                    }
+                    """.getBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (java.io.OutputStream os = exchange.getResponseBody()) {
+                os.write(response);
+            }
+        });
+        server.start();
+
+        SigilClientConfig config = new SigilClientConfig()
+                .setGenerationExporter(new TestFixtures.CapturingExporter())
+                .setContentCapture(ContentCaptureMode.FULL_WITH_METADATA_SPANS)
+                .setApi(new ApiConfig().setEndpoint("http://127.0.0.1:" + server.getAddress().getPort()))
+                .setGenerationExport(new GenerationExportConfig()
+                        .setProtocol(GenerationExportProtocol.HTTP)
+                        .setEndpoint("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1/generations:export")
+                        .setBatchSize(1)
+                        .setFlushInterval(Duration.ofMinutes(10))
+                        .setMaxRetries(0));
+
+        try (SigilClient client = new SigilClient(config)) {
+            client.submitConversationRating("conv-1",
+                    new SubmitConversationRatingRequest()
+                            .setRatingId("rat-1")
+                            .setRating(ConversationRatingValue.BAD)
+                            .setComment("user-supplied free text"));
+        } finally {
+            server.stop(0);
+        }
+
+        assertThat(payload.get().path("comment").asText()).isEqualTo("user-supplied free text");
     }
 
     private static SpanData findGenerationSpan(List<SpanData> spans) {

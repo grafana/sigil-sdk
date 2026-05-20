@@ -28,7 +28,7 @@ _DEFAULT_PROTOCOL = "grpc"
 _DEFAULT_INSECURE = False
 _DEFAULT_AUTH_MODE = "none"
 _VALID_AUTH_MODES = ("none", "tenant", "bearer", "basic")
-_VALID_CONTENT_CAPTURE = ("full", "no_tool_content", "metadata_only")
+_VALID_CONTENT_CAPTURE = ("full", "no_tool_content", "metadata_only", "full_with_metadata_spans")
 
 
 @dataclass(slots=True)
@@ -363,6 +363,8 @@ def _content_capture_from_str(value: str) -> ContentCaptureMode:
         return ContentCaptureMode.NO_TOOL_CONTENT
     if value == "metadata_only":
         return ContentCaptureMode.METADATA_ONLY
+    if value == "full_with_metadata_spans":
+        return ContentCaptureMode.FULL_WITH_METADATA_SPANS
     return ContentCaptureMode.DEFAULT
 
 

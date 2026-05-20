@@ -43,6 +43,16 @@ class ContentCaptureMode(str, Enum):
     FULL = "full"
     NO_TOOL_CONTENT = "no_tool_content"
     METADATA_ONLY = "metadata_only"
+    # FULL_WITH_METADATA_SPANS splits the proto and span paths for generation
+    # content. The proto export keeps full content; the OTel span omits
+    # ``sigil.conversation.title``, ``gen_ai.tool.call.arguments``,
+    # ``gen_ai.tool.call.result``, and ``gen_ai.embeddings.input_texts``.
+    # Use this mode when the gRPC ingest destination is private but the OTel
+    # trace/metric destination is shared and must not receive any content.
+    # Tool execution and embedding spans behave identically to METADATA_ONLY
+    # under this mode (they have no separate gRPC export). Rating comments
+    # are preserved.
+    FULL_WITH_METADATA_SPANS = "full_with_metadata_spans"
 
 
 _metadata_key_content_capture_mode = "sigil.sdk.content_capture_mode"

@@ -23,8 +23,16 @@ export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
  *   prompts, and raw artifacts. User-provided `metadata` and `tags` are NOT
  *   stripped — callers are responsible for ensuring these do not contain
  *   sensitive content.
+ * - `'full_with_metadata_spans'` — splits the proto and span paths for
+ *   generation content. The proto export keeps full content; the OTel span
+ *   omits `sigil.conversation.title`, `gen_ai.tool.call.arguments`,
+ *   `gen_ai.tool.call.result`, and `gen_ai.embeddings.input_texts`. Use this
+ *   mode when the gRPC ingest destination is private but the OTel trace and
+ *   metric destinations are shared and must not receive any content.
+ *   Equivalent to `'metadata_only'` for tool and embedding spans (they have
+ *   no separate gRPC export). Rating comments are preserved.
  */
-export type ContentCaptureMode = 'default' | 'full' | 'no_tool_content' | 'metadata_only';
+export type ContentCaptureMode = 'default' | 'full' | 'no_tool_content' | 'metadata_only' | 'full_with_metadata_spans';
 
 /**
  * Callback invoked before each generation or tool execution to dynamically

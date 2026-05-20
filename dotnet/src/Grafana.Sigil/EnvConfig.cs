@@ -302,6 +302,7 @@ public static class EnvConfig
             "full" => ContentCaptureMode.Full,
             "no_tool_content" => ContentCaptureMode.NoToolContent,
             "metadata_only" => ContentCaptureMode.MetadataOnly,
+            "full_with_metadata_spans" => ContentCaptureMode.FullWithMetadataSpans,
             _ => null,
         };
     }

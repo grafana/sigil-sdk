@@ -3,6 +3,12 @@ import test from 'node:test';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { defaultConfig, SigilClient } from '../.test-dist/index.js';
+import {
+  assertSpanErrorRedacted,
+  createContentCaptureEnv,
+  LEAK_MARKER,
+  STRIPPED_MODES,
+} from './_content_capture_env.mjs';
 
 class CapturingExporter {
   requests = [];
@@ -203,14 +209,9 @@ test('metadata_only does not leak conversationTitle into OTel span', async () =>
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(
-      span.attributes['sigil.conversation.title'],
-      '',
-      'span conversationTitle must be cleared to empty string',
-    );
-    assert.notEqual(
-      span.attributes['sigil.conversation.title'],
-      sensitiveTitle,
-      'span must not contain sensitive conversationTitle',
+      'sigil.conversation.title' in span.attributes,
+      false,
+      'span must not carry sigil.conversation.title under metadata_only',
     );
   } finally {
     await shutdownHarness(harness);
@@ -252,6 +253,13 @@ test('content capture mode is stamped in generation metadata', async () => {
     { clientMode: 'full', genMode: 'metadata_only', wantMarker: 'metadata_only', wantStripped: true },
     { clientMode: 'metadata_only', genMode: 'full', wantMarker: 'full', wantStripped: false },
     { clientMode: 'full', genMode: undefined, wantMarker: 'full', wantStripped: false },
+    {
+      clientMode: 'full_with_metadata_spans',
+      genMode: undefined,
+      wantMarker: 'full_with_metadata_spans',
+      // FULL_WITH_METADATA_SPANS keeps proto content full.
+      wantStripped: false,
+    },
   ];
 
   for (const tc of cases) {
@@ -635,6 +643,207 @@ test('exported generation includes content capture mode metadata', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// FULL_WITH_METADATA_SPANS — proto export full, span content omitted.
+// ---------------------------------------------------------------------------
+//
+// Uses createContentCaptureEnv so the proto export is asserted end-to-end
+// (real in-process gRPC server, post-serialization).
+
+test('full_with_metadata_spans keeps proto content but omits conversationTitle from span', async () => {
+  const env = await createContentCaptureEnv({ contentCapture: 'full_with_metadata_spans' });
+
+  try {
+    const sensitiveTitle = 'Sensitive conversation';
+    const recorder = env.client.startGeneration({
+      model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
+      conversationTitle: sensitiveTitle,
+      systemPrompt: 'Be helpful.',
+    });
+    recorder.setResult({
+      input: [{ role: 'user', parts: [{ type: 'text', text: 'hello world' }] }],
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'hi back' }] }],
+      usage: { inputTokens: 3, outputTokens: 2 },
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    // Proto export (post-gRPC roundtrip) preserves every field.
+    const gen = await env.singleGeneration();
+    assert.equal(gen.metadata?.fields?.['sigil.sdk.content_capture_mode']?.stringValue, 'full_with_metadata_spans');
+    assert.equal(gen.systemPrompt, 'Be helpful.');
+    assert.equal(gen.input[0].parts[0].text, 'hello world');
+    assert.equal(gen.output[0].parts[0].text, 'hi back');
+    assert.equal(gen.metadata?.fields?.['sigil.conversation.title']?.stringValue, sensitiveTitle);
+
+    // Generation span omits the title.
+    const span = env.generationSpan();
+    assert.equal('sigil.conversation.title' in span.attributes, false, 'span must not carry sigil.conversation.title');
+  } finally {
+    await env.close();
+  }
+});
+
+test('full_with_metadata_spans does not leak raw provider callError into OTel span (raw preserved in proto)', async () => {
+  const env = await createContentCaptureEnv({ contentCapture: 'full_with_metadata_spans' });
+
+  try {
+    const rawError = `provider returned HTTP 400: blocked content '${LEAK_MARKER}'`;
+    const recorder = env.client.startGeneration({
+      model: { provider: 'openai', name: 'gpt-5' },
+      agentName: 'agent-fwms-error',
+    });
+    recorder.setCallError(new Error(rawError));
+    recorder.setResult({
+      input: [{ role: 'user', parts: [{ type: 'text', text: 'x' }] }],
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'y' }] }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    // Proto export (post-gRPC roundtrip) preserves the raw provider error.
+    const gen = await env.singleGeneration();
+    assert.equal(gen.callError, rawError);
+    assert.equal(gen.metadata?.fields?.call_error?.stringValue, rawError);
+
+    assertSpanErrorRedacted(env.generationSpan(), 'provider_call_error');
+  } finally {
+    await env.close();
+  }
+});
+
+// Tool span content omission and embedding span content omission both apply
+// to metadata_only and full_with_metadata_spans. Embeddings have no proto
+// export, and the tool path doesn't have one either, so both modes are
+// equivalent on the span path.
+for (const mode of STRIPPED_MODES) {
+  test(`${mode} tool span omits content attributes`, async () => {
+    // The full set of content-bearing attributes the tool span can carry.
+    // Under either stripped mode none of them should appear.
+    const env = await createContentCaptureEnv({ contentCapture: mode });
+
+    try {
+      const recorder = env.client.startToolExecution({
+        toolName: 'weather',
+        toolCallId: 'call_1',
+        includeContent: true,
+        conversationTitle: 'Sensitive tool title',
+        toolDescription: 'Get weather: free-form provider-supplied text',
+      });
+      recorder.setResult({ arguments: { city: 'Paris' }, result: { temp_c: 18 } });
+      recorder.end();
+      assert.equal(recorder.getError(), undefined);
+
+      const span = env.toolSpan();
+      assert.equal('gen_ai.tool.call.arguments' in span.attributes, false, 'tool args must be absent');
+      assert.equal('gen_ai.tool.call.result' in span.attributes, false, 'tool result must be absent');
+      assert.equal('sigil.conversation.title' in span.attributes, false, 'conversation title must be absent');
+      assert.equal('gen_ai.tool.description' in span.attributes, false, 'tool description must be absent');
+      // Identity attributes still emitted.
+      assert.equal(span.attributes['gen_ai.tool.name'], 'weather');
+    } finally {
+      await env.close();
+    }
+  });
+
+  test(`${mode} tool span redacts raw provider callError`, async () => {
+    // Tools have no proto export — the raw provider error must not echo on
+    // the span path under either stripped mode.
+    const env = await createContentCaptureEnv({ contentCapture: mode });
+
+    try {
+      const rawError = `provider returned HTTP 400: blocked content '${LEAK_MARKER}'`;
+      const recorder = env.client.startToolExecution({
+        toolName: 'weather',
+        toolCallId: 'call_1',
+        includeContent: true,
+      });
+      recorder.setCallError(new Error(rawError));
+      recorder.setResult({ arguments: { city: 'Paris' }, result: { temp_c: 18 } });
+      recorder.end();
+
+      assertSpanErrorRedacted(env.toolSpan(), 'tool_execution_error');
+    } finally {
+      await env.close();
+    }
+  });
+
+  test(`${mode} embedding span omits input_texts even when captureInput=true`, async () => {
+    const env = await createContentCaptureEnv({
+      contentCapture: mode,
+      embeddingCapture: { captureInput: true, maxInputItems: 5, maxTextLength: 100 },
+    });
+
+    try {
+      const recorder = env.client.startEmbedding({
+        model: { provider: 'openai', name: 'text-embedding-3-small' },
+      });
+      recorder.setResult({
+        inputCount: 1,
+        inputTokens: 10,
+        inputTexts: ['sensitive input text'],
+        responseModel: 'text-embedding-3-small',
+      });
+      recorder.end();
+      assert.equal(recorder.getError(), undefined);
+
+      const span = env.embeddingSpan();
+      assert.equal('gen_ai.embeddings.input_texts' in span.attributes, false, 'input_texts must be absent');
+      // Non-content embedding span fields remain.
+      assert.equal(span.attributes['gen_ai.embeddings.input_count'], 1);
+      assert.equal(span.attributes['gen_ai.usage.input_tokens'], 10);
+      assert.equal(span.attributes['gen_ai.response.model'], 'text-embedding-3-small');
+    } finally {
+      await env.close();
+    }
+  });
+
+  test(`${mode} embedding span redacts raw provider callError`, async () => {
+    // Embeddings have no proto export, so the raw provider error must not
+    // echo on the span path under either stripped mode.
+    const env = await createContentCaptureEnv({
+      contentCapture: mode,
+      embeddingCapture: { captureInput: true, maxInputItems: 5, maxTextLength: 100 },
+    });
+
+    try {
+      const rawError = `provider returned HTTP 400: blocked content '${LEAK_MARKER}'`;
+      const recorder = env.client.startEmbedding({
+        model: { provider: 'openai', name: 'text-embedding-3-small' },
+      });
+      recorder.setCallError(new Error(rawError));
+      recorder.setResult({ inputCount: 1, inputTexts: ['sensitive input text'] });
+      recorder.end();
+
+      assertSpanErrorRedacted(env.embeddingSpan(), 'provider_call_error');
+    } finally {
+      await env.close();
+    }
+  });
+}
+
+test('resolver returning full_with_metadata_spans hides embedding input_texts (client default full)', async () => {
+  const env = await createContentCaptureEnv({
+    contentCapture: 'full',
+    contentCaptureResolver: () => 'full_with_metadata_spans',
+    embeddingCapture: { captureInput: true, maxInputItems: 5, maxTextLength: 100 },
+  });
+
+  try {
+    const recorder = env.client.startEmbedding({
+      model: { provider: 'openai', name: 'text-embedding-3-small' },
+    });
+    recorder.setResult({ inputCount: 1, inputTexts: ['resolver-gated sensitive text'] });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    assert.equal('gen_ai.embeddings.input_texts' in env.embeddingSpan().attributes, false);
+  } finally {
+    await env.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -647,7 +856,7 @@ function newHarness(overrides = {}) {
   const generationExporter = new CapturingExporter();
   const defaults = defaultConfig();
 
-  const { contentCapture, contentCaptureResolver, ...exportOverrides } = overrides;
+  const { contentCapture, contentCaptureResolver, embeddingCapture, ...exportOverrides } = overrides;
 
   const client = new SigilClient({
     tracer,
@@ -662,6 +871,7 @@ function newHarness(overrides = {}) {
     },
     contentCapture,
     contentCaptureResolver,
+    embeddingCapture,
     generationExporter,
   });
 

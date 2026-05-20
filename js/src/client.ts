@@ -659,14 +659,19 @@ export class SigilClient {
     return resolveContentCaptureMode(seed.contentCapture ?? 'default', clientMode);
   }
 
-  internalResolveToolIncludeContent(seed: ToolExecutionStart): boolean {
+  internalResolveEmbeddingContentCaptureMode(seed: EmbeddingStart): ContentCaptureMode {
+    // Mirror generation resolution so a per-call resolver can hide
+    // gen_ai.embeddings.input_texts without changing the client default.
+    const resolverMode = callContentCaptureResolver(this.config.contentCaptureResolver, seed.metadata);
+    return resolveClientContentCaptureMode(resolveContentCaptureMode(resolverMode, this.config.contentCapture));
+  }
+
+  internalResolveToolContentCaptureMode(seed: ToolExecutionStart): ContentCaptureMode {
     const resolverMode = callContentCaptureResolver(this.config.contentCaptureResolver, undefined);
-    return shouldIncludeToolContent(
-      seed.contentCapture ?? 'default',
-      this.config.contentCapture,
-      resolverMode,
-      seed.includeContent ?? false,
+    const clientMode = resolveClientContentCaptureMode(
+      resolveContentCaptureMode(resolverMode, this.config.contentCapture),
     );
+    return resolveContentCaptureMode(seed.contentCapture ?? 'default', clientMode);
   }
 
   internalHasGenerationSanitizer(): boolean {
@@ -685,17 +690,31 @@ export class SigilClient {
     return cloneGeneration(sanitized);
   }
 
-  internalStartGenerationSpan(seed: GenerationStart, mode: GenerationMode, startedAt: Date): Span {
+  internalStartGenerationSpan(
+    seed: GenerationStart,
+    mode: GenerationMode,
+    startedAt: Date,
+    contentCaptureMode: ContentCaptureMode,
+  ): Span {
     const operationName = seed.operationName ?? defaultOperationNameForMode(mode);
     const span = this.tracer.startSpan(generationSpanName(operationName, seed.model.name), {
       kind: SpanKind.CLIENT,
       startTime: startedAt,
     });
 
+    // metadata_only and full_with_metadata_spans both drop the title from
+    // the span. Under full_with_metadata_spans the proto payload still
+    // carries the title — it is rebuilt from `seed.conversationTitle` in
+    // end(), so we only zero the value sent to the span here.
+    const spanTitle =
+      contentCaptureMode === 'metadata_only' || contentCaptureMode === 'full_with_metadata_spans'
+        ? undefined
+        : seed.conversationTitle;
+
     setGenerationSpanAttributes(span, {
       id: seed.id,
       conversationId: seed.conversationId,
-      conversationTitle: seed.conversationTitle,
+      conversationTitle: spanTitle,
       userId: seed.userId,
       agentName: seed.agentName,
       agentVersion: seed.agentVersion,
@@ -811,14 +830,21 @@ export class SigilClient {
     localError: Error | undefined,
     startedAt: Date,
     completedAt: Date,
+    contentCaptureMode: ContentCaptureMode = 'default',
   ): void {
     span.updateName(embeddingSpanName(seed.model.name));
-    setEmbeddingEndSpanAttributes(span, result, hasResult, this.config.embeddingCapture);
+    setEmbeddingEndSpanAttributes(span, result, hasResult, this.config.embeddingCapture, contentCaptureMode);
 
-    if (callError !== undefined) {
+    // Redact span-side error text under both stripped modes. Embeddings have
+    // no proto export, so the raw provider error never escapes the span
+    // path; matches the generation full_with_metadata_spans contract.
+    const redactSpanErrors =
+      contentCaptureMode === 'metadata_only' || contentCaptureMode === 'full_with_metadata_spans';
+
+    if (callError !== undefined && !redactSpanErrors) {
       span.recordException(callError);
     }
-    if (localError !== undefined) {
+    if (localError !== undefined && !redactSpanErrors) {
       span.recordException(localError);
     }
 
@@ -827,11 +853,17 @@ export class SigilClient {
     if (callError !== undefined) {
       errorType = 'provider_call_error';
       errorCategory = errorCategoryFromError(callError, true);
-      span.setStatus({ code: SpanStatusCode.ERROR, message: callError.message });
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: redactSpanErrors ? errorCategory : callError.message,
+      });
     } else if (localError !== undefined) {
       errorType = 'validation_error';
       errorCategory = 'sdk_error';
-      span.setStatus({ code: SpanStatusCode.ERROR, message: localError.message });
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: redactSpanErrors ? errorCategory : localError.message,
+      });
     } else {
       span.setStatus({ code: SpanStatusCode.OK });
     }
@@ -853,6 +885,7 @@ export class SigilClient {
     span: Span,
     toolExecution: ToolExecution,
     localError: Error | undefined,
+    contentCaptureMode: ContentCaptureMode = 'default',
   ): Error | undefined {
     setToolSpanAttributes(span, toolExecution);
 
@@ -872,16 +905,34 @@ export class SigilClient {
       }
     }
 
+    // Tools have no proto export; under both stripped modes the span must
+    // not echo raw provider exception text via recordException events or the
+    // status description.
+    const redactSpanErrors =
+      contentCaptureMode === 'metadata_only' || contentCaptureMode === 'full_with_metadata_spans';
+
     if (toolExecution.callError !== undefined) {
-      span.recordException(new Error(toolExecution.callError));
+      const errorCategory = errorCategoryFromError(toolExecution.callError, true);
+      if (!redactSpanErrors) {
+        span.recordException(new Error(toolExecution.callError));
+      }
       span.setAttribute(spanAttrErrorType, 'tool_execution_error');
-      span.setAttribute(spanAttrErrorCategory, errorCategoryFromError(toolExecution.callError, true));
-      span.setStatus({ code: SpanStatusCode.ERROR, message: toolExecution.callError });
+      span.setAttribute(spanAttrErrorCategory, errorCategory);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: redactSpanErrors ? errorCategory : toolExecution.callError,
+      });
     } else if (localError !== undefined) {
-      span.recordException(localError);
+      const errorCategory = errorCategoryFromError(localError, true);
+      if (!redactSpanErrors) {
+        span.recordException(localError);
+      }
       span.setAttribute(spanAttrErrorType, 'tool_execution_error');
-      span.setAttribute(spanAttrErrorCategory, errorCategoryFromError(localError, true));
-      span.setStatus({ code: SpanStatusCode.ERROR, message: localError.message });
+      span.setAttribute(spanAttrErrorCategory, errorCategory);
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: redactSpanErrors ? errorCategory : localError.message,
+      });
     } else {
       span.setStatus({ code: SpanStatusCode.OK });
     }
@@ -1170,7 +1221,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
     this.mode = this.seed.mode ?? defaultMode;
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
     this.contentCaptureMode = this.client.internalResolveGenerationContentCaptureMode(this.seed);
-    this.span = this.client.internalStartGenerationSpan(this.seed, this.mode, this.startedAt);
+    this.span = this.client.internalStartGenerationSpan(this.seed, this.mode, this.startedAt, this.contentCaptureMode);
   }
 
   setResult(result: GenerationResult): void {
@@ -1318,8 +1369,23 @@ class GenerationRecorderImpl implements GenerationRecorder {
 
     const validationError = validateGeneration(validationTarget);
 
-    this.client.internalSyncGenerationSpan(this.span, generation);
-    if (effectiveContentCaptureMode === 'metadata_only') {
+    // full_with_metadata_spans: proto export keeps the title, but the span
+    // path must drop it. Pass a shallow copy with the title cleared so the
+    // in-memory generation (the proto payload) stays untouched.
+    const spanGeneration =
+      effectiveContentCaptureMode === 'full_with_metadata_spans'
+        ? { ...generation, conversationTitle: '' }
+        : generation;
+    this.client.internalSyncGenerationSpan(this.span, spanGeneration);
+    if (
+      effectiveContentCaptureMode === 'metadata_only' &&
+      this.contentCaptureMode !== 'metadata_only' &&
+      this.contentCaptureMode !== 'full_with_metadata_spans'
+    ) {
+      // Sanitizer fallback downgrades effective mode to metadata_only.
+      // Skipped when the original mode already left the attribute absent at
+      // start time (metadata_only / full_with_metadata_spans) so the
+      // start-span omission isn't re-emitted here as an empty value.
       this.client.internalClearSpanConversationTitle(this.span);
     }
     this.client.internalApplyTraceContextFromSpan(this.span, generation);
@@ -1339,7 +1405,21 @@ class GenerationRecorderImpl implements GenerationRecorder {
       }
     }
 
-    const finalCallError = effectiveContentCaptureMode === 'metadata_only' ? generation.callError : this.callError;
+    // Under metadata_only stripContent already replaced generation.callError
+    // with the category, so the span path can read it back from the
+    // generation. Under full_with_metadata_spans generation.callError stays
+    // raw for the gRPC export, so we substitute the precomputed category for
+    // the span path here.
+    let finalCallError: string | undefined;
+    if (this.callError === undefined) {
+      finalCallError = undefined;
+    } else if (effectiveContentCaptureMode === 'metadata_only') {
+      finalCallError = generation.callError;
+    } else if (effectiveContentCaptureMode === 'full_with_metadata_spans') {
+      finalCallError = callErrorCategory.length > 0 ? callErrorCategory : 'sdk_error';
+    } else {
+      finalCallError = this.callError;
+    }
 
     this.client.internalFinalizeGenerationSpan(
       this.span,
@@ -1361,6 +1441,7 @@ class EmbeddingRecorderImpl implements EmbeddingRecorder {
   private readonly seed: EmbeddingStart;
   private readonly startedAt: Date;
   private readonly span: Span;
+  private readonly contentCaptureMode: ContentCaptureMode;
   private ended = false;
   private callError?: Error;
   private result?: EmbeddingResult;
@@ -1373,6 +1454,7 @@ class EmbeddingRecorderImpl implements EmbeddingRecorder {
   ) {
     this.seed = cloneEmbeddingStart(seed);
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
+    this.contentCaptureMode = this.client.internalResolveEmbeddingContentCaptureMode(this.seed);
     this.span = this.client.internalStartEmbeddingSpan(this.seed, this.startedAt);
   }
 
@@ -1413,6 +1495,7 @@ class EmbeddingRecorderImpl implements EmbeddingRecorder {
       localError,
       this.startedAt,
       completedAt,
+      this.contentCaptureMode,
     );
     this.localError = localError;
   }
@@ -1427,6 +1510,7 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
   private readonly startedAt: Date;
   private readonly span: Span;
   private readonly resolvedIncludeContent: boolean;
+  private readonly toolMode: ContentCaptureMode;
   private ended = false;
   private result?: ToolExecutionResult;
   private callError?: string;
@@ -1461,7 +1545,16 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
         this.seed.agentVersion = fromConfig;
       }
     }
-    this.resolvedIncludeContent = this.client.internalResolveToolIncludeContent(this.seed);
+    // Under metadata_only or full_with_metadata_spans, the start-time tool
+    // span must not carry any content-bearing seed field. Tools have no
+    // proto export, so dropping these on the seed is the only redaction
+    // surface.
+    this.toolMode = this.client.internalResolveToolContentCaptureMode(this.seed);
+    if (this.toolMode === 'metadata_only' || this.toolMode === 'full_with_metadata_spans') {
+      this.seed.conversationTitle = undefined;
+      this.seed.toolDescription = undefined;
+    }
+    this.resolvedIncludeContent = shouldIncludeToolContent(this.toolMode, this.seed.includeContent ?? false);
     this.startedAt = this.seed.startedAt ?? this.client.internalNow();
     this.span = this.client.internalStartToolExecutionSpan(this.seed, this.startedAt);
   }
@@ -1513,7 +1606,12 @@ class ToolExecutionRecorderImpl implements ToolExecutionRecorder {
     } else {
       this.client.internalRecordToolExecution(toolExecution);
     }
-    this.localError = this.client.internalFinalizeToolExecutionSpan(this.span, toolExecution, this.localError);
+    this.localError = this.client.internalFinalizeToolExecutionSpan(
+      this.span,
+      toolExecution,
+      this.localError,
+      this.toolMode,
+    );
   }
 
   getError(): Error | undefined {
@@ -1746,6 +1844,7 @@ function setEmbeddingEndSpanAttributes(
   result: EmbeddingResult,
   hasResult: boolean,
   captureConfig: SigilSdkConfig['embeddingCapture'],
+  contentCaptureMode: ContentCaptureMode = 'default',
 ): void {
   if (hasResult) {
     span.setAttribute(spanAttrEmbeddingInputCount, result.inputCount);
@@ -1759,7 +1858,10 @@ function setEmbeddingEndSpanAttributes(
   if (result.dimensions !== undefined) {
     span.setAttribute(spanAttrEmbeddingDimCount, result.dimensions);
   }
-  if (captureConfig.captureInput && result.inputTexts !== undefined) {
+  // Embeddings have no proto export; full_with_metadata_spans matches
+  // metadata_only for input-text span attributes.
+  const omitInputTexts = contentCaptureMode === 'metadata_only' || contentCaptureMode === 'full_with_metadata_spans';
+  if (captureConfig.captureInput && result.inputTexts !== undefined && !omitInputTexts) {
     const texts = captureEmbeddingInputTexts(
       result.inputTexts,
       captureConfig.maxInputItems,

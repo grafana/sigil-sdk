@@ -215,6 +215,12 @@ public sealed partial class SigilClient : IAsyncDisposable
             ? InternalUtils.Utc(seed.StartedAt.Value)
             : _config.UtcNow!();
 
+        // Resolve the effective mode so a per-call resolver can hide
+        // gen_ai.embeddings.input_texts without changing the client default.
+        var resolverMode = CallContentCaptureResolver(_config.ContentCaptureResolver, seed.Metadata, _log);
+        var embeddingMode = ResolveClientContentCaptureMode(
+            ResolveContentCaptureMode(resolverMode, _config.ContentCapture));
+
         var activity = _activitySource.StartActivity(
             EmbeddingSpanName(seed.Model.Name),
             ActivityKind.Client,
@@ -229,7 +235,7 @@ public sealed partial class SigilClient : IAsyncDisposable
             ApplyEmbeddingStartSpanAttributes(activity, seed);
         }
 
-        return new EmbeddingRecorder(this, seed, seed.StartedAt.Value, activity);
+        return new EmbeddingRecorder(this, seed, seed.StartedAt.Value, activity, embeddingMode);
     }
 
     public ToolExecutionRecorder StartToolExecution(ToolExecutionStart start)
@@ -290,12 +296,16 @@ public sealed partial class SigilClient : IAsyncDisposable
         var includeContent = toolMode switch
         {
             ContentCaptureMode.MetadataOnly => false,
+            // FullWithMetadataSpans has no tool export path, so it matches
+            // MetadataOnly for tool span content.
+            ContentCaptureMode.FullWithMetadataSpans => false,
             ContentCaptureMode.Full => true,
             _ => seed.IncludeContent,
         };
 #pragma warning restore CS0618
 
-        if (toolMode == ContentCaptureMode.MetadataOnly)
+        if (toolMode == ContentCaptureMode.MetadataOnly
+            || toolMode == ContentCaptureMode.FullWithMetadataSpans)
         {
             seed.ToolDescription = string.Empty;
             seed.ConversationTitle = string.Empty;
@@ -315,7 +325,12 @@ public sealed partial class SigilClient : IAsyncDisposable
             ApplyToolSpanAttributes(activity, seed);
         }
 
-        return new ToolExecutionRecorder(this, seed, seed.StartedAt!.Value, includeContent, toolMode == ContentCaptureMode.MetadataOnly, activity);
+        // Tools have no proto export; under both stripped modes the span
+        // must not echo raw provider exception text via exception events or
+        // the status description.
+        var redactSpanErrors = toolMode == ContentCaptureMode.MetadataOnly
+            || toolMode == ContentCaptureMode.FullWithMetadataSpans;
+        return new ToolExecutionRecorder(this, seed, seed.StartedAt!.Value, includeContent, redactSpanErrors, activity);
     }
 
     public async Task<SubmitConversationRatingResponse> SubmitConversationRatingAsync(
@@ -568,7 +583,13 @@ public sealed partial class SigilClient : IAsyncDisposable
         {
             Id = seed.Id,
             ConversationId = seed.ConversationId,
-            ConversationTitle = ccMode == ContentCaptureMode.MetadataOnly ? string.Empty : seed.ConversationTitle,
+            // FullWithMetadataSpans drops the title from the start span the
+            // same way MetadataOnly does. The recorder rebuilds the proto
+            // payload from `seed` at end-time, so this only affects the span.
+            ConversationTitle =
+                ccMode == ContentCaptureMode.MetadataOnly || ccMode == ContentCaptureMode.FullWithMetadataSpans
+                    ? string.Empty
+                    : seed.ConversationTitle,
             UserId = seed.UserId,
             AgentName = seed.AgentName,
             AgentVersion = seed.AgentVersion,
@@ -1349,7 +1370,8 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal static void ApplyEmbeddingEndSpanAttributes(
         Activity activity,
         EmbeddingResult result,
-        EmbeddingCaptureConfig captureConfig
+        EmbeddingCaptureConfig captureConfig,
+        ContentCaptureMode mode = ContentCaptureMode.Default
     )
     {
         activity.SetTag(SpanAttrEmbeddingInputCount, result.InputCount);
@@ -1366,7 +1388,11 @@ public sealed partial class SigilClient : IAsyncDisposable
         {
             activity.SetTag(SpanAttrEmbeddingDimCount, result.Dimensions.Value);
         }
-        if (captureConfig.CaptureInput)
+        // Embeddings have no proto export; FullWithMetadataSpans matches
+        // MetadataOnly for input-text span attributes.
+        var omitInputTexts = mode == ContentCaptureMode.MetadataOnly
+            || mode == ContentCaptureMode.FullWithMetadataSpans;
+        if (captureConfig.CaptureInput && !omitInputTexts)
         {
             var inputTexts = CaptureEmbeddingInputTexts(result.InputTexts, captureConfig);
             if (inputTexts.Count > 0)
@@ -2007,6 +2033,7 @@ public sealed partial class SigilClient : IAsyncDisposable
         return ResolveToolContentCaptureMode(toolMode, ctxMode, ctxSet, clientDefault) switch
         {
             ContentCaptureMode.MetadataOnly => false,
+            ContentCaptureMode.FullWithMetadataSpans => false,
             ContentCaptureMode.Full => true,
             _ => legacyInclude,
         };
@@ -2297,7 +2324,12 @@ public sealed class GenerationRecorder
             _contextScope = null;
         }
 
-        var redactErrors = _contentCaptureMode == ContentCaptureMode.MetadataOnly;
+        // Redact span-side error text under both stripped modes. Proto export
+        // under FullWithMetadataSpans still gets the raw generation.CallError
+        // (set during normalization); only the OTel span path is redacted.
+        var redactErrors =
+            _contentCaptureMode == ContentCaptureMode.MetadataOnly
+            || _contentCaptureMode == ContentCaptureMode.FullWithMetadataSpans;
 
         if (_activity != null)
         {
@@ -2305,7 +2337,27 @@ public sealed class GenerationRecorder
             generation.SpanId = _activity.SpanId.ToHexString();
 
             _activity.DisplayName = SigilClient.GenerationSpanName(generation.OperationName, generation.Model.Name);
-            SigilClient.ApplyGenerationSpanAttributes(_activity, generation);
+            // FullWithMetadataSpans keeps proto export full but the span path
+            // must drop sigil.conversation.title. `generation` is a local
+            // snapshot here, so save the title, zero it for the span call,
+            // and restore — no deep clone needed.
+            if (_contentCaptureMode == ContentCaptureMode.FullWithMetadataSpans)
+            {
+                var savedTitle = generation.ConversationTitle;
+                generation.ConversationTitle = string.Empty;
+                try
+                {
+                    SigilClient.ApplyGenerationSpanAttributes(_activity, generation);
+                }
+                finally
+                {
+                    generation.ConversationTitle = savedTitle;
+                }
+            }
+            else
+            {
+                SigilClient.ApplyGenerationSpanAttributes(_activity, generation);
+            }
 
             if (callError != null)
             {
@@ -2537,6 +2589,7 @@ public sealed class EmbeddingRecorder
     private readonly EmbeddingStart _seed;
     private readonly DateTimeOffset _startedAt;
     private readonly Activity? _activity;
+    private readonly ContentCaptureMode _contentCaptureMode;
     private readonly bool _noop;
 
 #if NET10_0_OR_GREATER
@@ -2556,6 +2609,7 @@ public sealed class EmbeddingRecorder
         EmbeddingStart seed,
         DateTimeOffset startedAt,
         Activity? activity,
+        ContentCaptureMode contentCaptureMode = ContentCaptureMode.Default,
         bool noop = false
     )
     {
@@ -2563,6 +2617,7 @@ public sealed class EmbeddingRecorder
         _seed = seed;
         _startedAt = startedAt;
         _activity = activity;
+        _contentCaptureMode = contentCaptureMode;
         _noop = noop;
     }
 
@@ -2638,27 +2693,36 @@ public sealed class EmbeddingRecorder
             errorCategory = "sdk_error";
         }
 
+        // Redact span-side error text under both stripped modes. Embeddings
+        // have no proto export, so the raw provider error never escapes the
+        // span path; matches the generation FullWithMetadataSpans contract.
+        var redactSpanErrors =
+            _contentCaptureMode == ContentCaptureMode.MetadataOnly
+            || _contentCaptureMode == ContentCaptureMode.FullWithMetadataSpans;
+
         var completedAt = _client!._config.UtcNow!();
         if (_activity != null)
         {
             _activity.DisplayName = SigilClient.EmbeddingSpanName(_seed.Model.Name);
             SigilClient.ApplyEmbeddingStartSpanAttributes(_activity, _seed);
-            SigilClient.ApplyEmbeddingEndSpanAttributes(_activity, result, _client.EmbeddingCapture);
+            SigilClient.ApplyEmbeddingEndSpanAttributes(_activity, result, _client.EmbeddingCapture, _contentCaptureMode);
 
             if (callError != null)
             {
-                SigilClient.RecordException(_activity, callError);
+                SigilClient.RecordException(_activity, callError, redactSpanErrors);
             }
             if (localError != null)
             {
-                SigilClient.RecordException(_activity, localError);
+                SigilClient.RecordException(_activity, localError, redactSpanErrors);
             }
 
             if (errorType.Length > 0)
             {
                 _activity.SetTag(SigilClient.SpanAttrErrorType, errorType);
                 _activity.SetTag(SigilClient.SpanAttrErrorCategory, errorCategory);
-                _activity.SetStatus(ActivityStatusCode.Error, (callError ?? localError)?.Message);
+                _activity.SetStatus(
+                    ActivityStatusCode.Error,
+                    redactSpanErrors ? errorCategory : (callError ?? localError)?.Message);
             }
             else
             {

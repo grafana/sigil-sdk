@@ -125,6 +125,12 @@ class SigilEnvConfigTest {
     }
 
     @Test
+    void contentCaptureModeFullWithMetadataSpansFromEnv() {
+        SigilClientConfig cfg = resolve(Map.of("SIGIL_CONTENT_CAPTURE_MODE", "full_with_metadata_spans")).config();
+        assertThat(cfg.getContentCapture()).isEqualTo(ContentCaptureMode.FULL_WITH_METADATA_SPANS);
+    }
+
+    @Test
     void agentUserTagsDebugFromEnv() {
         Map<String, String> env = Map.of(
                 "SIGIL_AGENT_NAME", "planner",

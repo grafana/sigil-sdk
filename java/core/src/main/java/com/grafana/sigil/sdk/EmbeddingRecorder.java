@@ -9,13 +9,14 @@ import java.util.concurrent.TimeUnit;
 
 /** Recorder for one embedding call lifecycle. */
 public final class EmbeddingRecorder implements AutoCloseable {
-    static final EmbeddingRecorder INSTANCE_NOOP =
-            new EmbeddingRecorder(null, new EmbeddingStart(), Span.getInvalid(), Instant.EPOCH, true);
+    static final EmbeddingRecorder INSTANCE_NOOP = new EmbeddingRecorder(
+            null, new EmbeddingStart(), Span.getInvalid(), Instant.EPOCH, ContentCaptureMode.DEFAULT, true);
 
     private final SigilClient client;
     private final EmbeddingStart seed;
     private final Span span;
     private final Instant startedAt;
+    private final ContentCaptureMode contentCaptureMode;
     private final boolean noop;
 
     private final Object lock = new Object();
@@ -24,15 +25,27 @@ public final class EmbeddingRecorder implements AutoCloseable {
     private EmbeddingResult result;
     private Throwable finalError;
 
-    EmbeddingRecorder(SigilClient client, EmbeddingStart seed, Span span, Instant startedAt) {
-        this(client, seed, span, startedAt, false);
+    EmbeddingRecorder(
+            SigilClient client,
+            EmbeddingStart seed,
+            Span span,
+            Instant startedAt,
+            ContentCaptureMode contentCaptureMode) {
+        this(client, seed, span, startedAt, contentCaptureMode, false);
     }
 
-    private EmbeddingRecorder(SigilClient client, EmbeddingStart seed, Span span, Instant startedAt, boolean noop) {
+    private EmbeddingRecorder(
+            SigilClient client,
+            EmbeddingStart seed,
+            Span span,
+            Instant startedAt,
+            ContentCaptureMode contentCaptureMode,
+            boolean noop) {
         this.client = client;
         this.seed = seed;
         this.span = span;
         this.startedAt = startedAt;
+        this.contentCaptureMode = contentCaptureMode;
         this.noop = noop;
     }
 
@@ -75,7 +88,8 @@ public final class EmbeddingRecorder implements AutoCloseable {
         }
 
         span.updateName(SigilClient.embeddingSpanName(seed.getModel().getName()));
-        SigilClient.setEmbeddingEndSpanAttributes(span, snapshotResult, client.getEmbeddingCaptureConfig());
+        SigilClient.setEmbeddingEndSpanAttributes(
+                span, snapshotResult, client.getEmbeddingCaptureConfig(), contentCaptureMode);
 
         Throwable localError = null;
         try {
@@ -85,10 +99,17 @@ public final class EmbeddingRecorder implements AutoCloseable {
             localError = throwable;
         }
 
-        if (snapshotCallError != null) {
+        // Redact span-side error text under both stripped modes. Embeddings
+        // have no proto export, so the raw provider error never escapes the
+        // span path; matches the generation FULL_WITH_METADATA_SPANS contract.
+        boolean redactSpanErrors =
+                contentCaptureMode == ContentCaptureMode.METADATA_ONLY
+                        || contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS;
+
+        if (snapshotCallError != null && !redactSpanErrors) {
             span.recordException(snapshotCallError);
         }
-        if (localError != null) {
+        if (localError != null && !redactSpanErrors) {
             span.recordException(localError);
         }
 
@@ -99,13 +120,17 @@ public final class EmbeddingRecorder implements AutoCloseable {
             errorCategory = SigilClient.errorCategoryFromThrowable(snapshotCallError, true);
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, errorType);
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
-            span.setStatus(StatusCode.ERROR, String.valueOf(snapshotCallError.getMessage()));
+            span.setStatus(
+                    StatusCode.ERROR,
+                    redactSpanErrors ? errorCategory : String.valueOf(snapshotCallError.getMessage()));
         } else if (localError != null) {
             errorType = "validation_error";
             errorCategory = "sdk_error";
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, errorType);
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
-            span.setStatus(StatusCode.ERROR, String.valueOf(localError.getMessage()));
+            span.setStatus(
+                    StatusCode.ERROR,
+                    redactSpanErrors ? errorCategory : String.valueOf(localError.getMessage()));
         } else {
             span.setStatus(StatusCode.OK);
         }

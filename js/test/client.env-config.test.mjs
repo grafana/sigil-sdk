@@ -85,6 +85,13 @@ const configFromEnvCases = [
     },
   },
   {
+    name: 'full_with_metadata_spans content_capture_mode from env',
+    env: { SIGIL_CONTENT_CAPTURE_MODE: 'full_with_metadata_spans' },
+    check: (cfg) => {
+      assert.equal(cfg.contentCapture, 'full_with_metadata_spans');
+    },
+  },
+  {
     name: 'invalid auth mode preserves valid env siblings',
     env: {
       SIGIL_AUTH_MODE: 'Bearrer',

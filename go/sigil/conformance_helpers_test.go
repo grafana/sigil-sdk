@@ -28,6 +28,7 @@ const (
 	conformanceToolOperation       = "execute_tool"
 	conformanceEmbeddingOperation  = "embeddings"
 	metadataKeyConversation        = "sigil.conversation.title"
+	metadataKeyContentCaptureMode  = "sigil.sdk.content_capture_mode"
 	metadataKeyCanonicalUserID     = "sigil.user.id"
 	metadataKeyLegacyUserID        = "user.id"
 	metadataKeyThinkingBudget      = "sigil.gen_ai.request.thinking.budget_tokens"
@@ -52,6 +53,7 @@ const (
 	spanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled"
 	spanAttrRequestThinkingBudget  = metadataKeyThinkingBudget
 	spanAttrEmbeddingInputCount    = "gen_ai.embeddings.input_count"
+	spanAttrEmbeddingInputTexts    = "gen_ai.embeddings.input_texts"
 	spanAttrEmbeddingDimCount      = "gen_ai.embeddings.dimension.count"
 	spanAttrToolName               = "gen_ai.tool.name"
 	spanAttrToolCallID             = "gen_ai.tool.call.id"

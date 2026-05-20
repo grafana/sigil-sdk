@@ -170,6 +170,15 @@ func TestResolveFromEnv(t *testing.T) {
 			},
 		},
 		{
+			name: "full_with_metadata_spans content capture mode from env",
+			env:  map[string]string{"SIGIL_CONTENT_CAPTURE_MODE": "full_with_metadata_spans"},
+			check: func(t *testing.T, cfg Config) {
+				if cfg.ContentCapture != ContentCaptureModeFullWithMetadataSpans {
+					t.Errorf("ContentCapture=%v", cfg.ContentCapture)
+				}
+			},
+		},
+		{
 			name:    "invalid content capture mode returns error",
 			env:     map[string]string{"SIGIL_CONTENT_CAPTURE_MODE": "bogus"},
 			wantErr: true,

@@ -47,6 +47,10 @@ def _check_content_capture_metadata(cfg: ClientConfig) -> None:
     assert cfg.content_capture == ContentCaptureMode.METADATA_ONLY
 
 
+def _check_content_capture_full_with_metadata_spans(cfg: ClientConfig) -> None:
+    assert cfg.content_capture == ContentCaptureMode.FULL_WITH_METADATA_SPANS
+
+
 def _check_invalid_auth_mode_preserves_valid(cfg: ClientConfig) -> None:
     assert cfg.generation_export.endpoint == "valid.example:4318"
     assert cfg.agent_name == "valid-agent"
@@ -95,6 +99,11 @@ def _check_stray_tenant_does_not_error(cfg: ClientConfig) -> None:
             {"SIGIL_CONTENT_CAPTURE_MODE": "metadata_only"},
             _check_content_capture_metadata,
             id="content capture mode from env",
+        ),
+        pytest.param(
+            {"SIGIL_CONTENT_CAPTURE_MODE": "full_with_metadata_spans"},
+            _check_content_capture_full_with_metadata_spans,
+            id="full_with_metadata_spans content capture mode from env",
         ),
         pytest.param(
             {

@@ -129,7 +129,21 @@ public class GenerationRecorder implements AutoCloseable {
             }
 
             span.updateName(SigilClient.generationSpanName(generation.getOperationName(), generation.getModel().getName()));
-            SigilClient.setGenerationSpanAttributes(span, generation);
+            // FULL_WITH_METADATA_SPANS keeps the proto export full but the
+            // span path must drop sigil.conversation.title. `generation` is
+            // a local snapshot here, so save the title, zero it for the span
+            // attribute call, and restore — no deep copy needed.
+            if (contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
+                String savedTitle = generation.getConversationTitle();
+                generation.setConversationTitle("");
+                try {
+                    SigilClient.setGenerationSpanAttributes(span, generation);
+                } finally {
+                    generation.setConversationTitle(savedTitle);
+                }
+            } else {
+                SigilClient.setGenerationSpanAttributes(span, generation);
+            }
 
             try {
                 GenerationValidator.validate(generation);
@@ -145,11 +159,16 @@ public class GenerationRecorder implements AutoCloseable {
                 }
             }
 
-            boolean isMetadataOnly = contentCaptureMode == ContentCaptureMode.METADATA_ONLY;
-            if (snapshotCallError != null && !isMetadataOnly) {
+            // Redact span-side error text under both stripped modes. Proto
+            // export under FULL_WITH_METADATA_SPANS still gets the raw
+            // generation.callError; only the OTel span path is redacted.
+            boolean redactSpanErrors =
+                    contentCaptureMode == ContentCaptureMode.METADATA_ONLY
+                            || contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS;
+            if (snapshotCallError != null && !redactSpanErrors) {
                 span.recordException(snapshotCallError);
             }
-            if (localError != null && !isMetadataOnly) {
+            if (localError != null && !redactSpanErrors) {
                 span.recordException(localError);
             }
 
@@ -160,19 +179,19 @@ public class GenerationRecorder implements AutoCloseable {
                 errorCategory = SigilClient.errorCategoryFromThrowable(snapshotCallError, true);
                 span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "provider_call_error");
                 span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
-                span.setStatus(StatusCode.ERROR, isMetadataOnly ? errorCategory : String.valueOf(snapshotCallError.getMessage()));
+                span.setStatus(StatusCode.ERROR, redactSpanErrors ? errorCategory : String.valueOf(snapshotCallError.getMessage()));
             } else if (localError instanceof ValidationException) {
                 errorType = "validation_error";
                 errorCategory = "sdk_error";
                 span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "validation_error");
                 span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
-                span.setStatus(StatusCode.ERROR, isMetadataOnly ? errorCategory : String.valueOf(localError.getMessage()));
+                span.setStatus(StatusCode.ERROR, redactSpanErrors ? errorCategory : String.valueOf(localError.getMessage()));
             } else if (localError != null) {
                 errorType = "enqueue_error";
                 errorCategory = "sdk_error";
                 span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "enqueue_error");
                 span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
-                span.setStatus(StatusCode.ERROR, isMetadataOnly ? errorCategory : String.valueOf(localError.getMessage()));
+                span.setStatus(StatusCode.ERROR, redactSpanErrors ? errorCategory : String.valueOf(localError.getMessage()));
             } else {
                 span.setStatus(StatusCode.OK);
             }

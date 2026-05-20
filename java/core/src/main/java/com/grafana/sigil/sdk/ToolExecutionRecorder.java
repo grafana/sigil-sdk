@@ -15,7 +15,10 @@ public class ToolExecutionRecorder implements AutoCloseable {
     private final Instant startedAt;
     private final ContentCaptureMode contentCaptureMode;
     private final boolean includeContent;
-    private final boolean metadataOnly;
+    // Tools have no proto export; under both stripped modes the span must
+    // not echo raw provider exception text via recordException events or the
+    // status description.
+    private final boolean redactSpanErrors;
 
     private final Object lock = new Object();
     private boolean ended;
@@ -30,9 +33,10 @@ public class ToolExecutionRecorder implements AutoCloseable {
         this.span = span;
         this.startedAt = startedAt;
         this.contentCaptureMode = contentCaptureMode;
-        this.metadataOnly = contentCaptureMode == ContentCaptureMode.METADATA_ONLY;
+        this.redactSpanErrors = contentCaptureMode == ContentCaptureMode.METADATA_ONLY
+                || contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS;
         this.includeContent = switch (contentCaptureMode) {
-            case METADATA_ONLY -> false;
+            case METADATA_ONLY, FULL_WITH_METADATA_SPANS -> false;
             case FULL -> true;
             default -> legacyIncludeContent;
         };
@@ -45,7 +49,7 @@ public class ToolExecutionRecorder implements AutoCloseable {
         this.startedAt = null;
         this.contentCaptureMode = ContentCaptureMode.NO_TOOL_CONTENT;
         this.includeContent = false;
-        this.metadataOnly = false;
+        this.redactSpanErrors = false;
     }
 
     /** Sets tool execution arguments/result payload. */
@@ -111,12 +115,14 @@ public class ToolExecutionRecorder implements AutoCloseable {
 
         if (snapshotCallError != null) {
             String errorCategory = SigilClient.errorCategoryFromThrowable(snapshotCallError, true);
-            if (!metadataOnly) {
+            if (!redactSpanErrors) {
                 span.recordException(snapshotCallError);
             }
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_TYPE, "tool_execution_error");
             span.setAttribute(SigilClient.SPAN_ATTR_ERROR_CATEGORY, errorCategory);
-            span.setStatus(StatusCode.ERROR, metadataOnly ? errorCategory : String.valueOf(snapshotCallError.getMessage()));
+            span.setStatus(
+                    StatusCode.ERROR,
+                    redactSpanErrors ? errorCategory : String.valueOf(snapshotCallError.getMessage()));
         } else {
             span.setStatus(StatusCode.OK);
         }

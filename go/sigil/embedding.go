@@ -12,6 +12,10 @@ type EmbeddingCaptureConfig struct {
 }
 
 // EmbeddingStart seeds embedding span fields before the provider call executes.
+//
+// EmbeddingStart has no per-call ContentCapture field; embedding input text
+// capture is gated by EmbeddingCaptureConfig.CaptureInput and the effective
+// client mode. See [ContentCaptureModeFullWithMetadataSpans].
 type EmbeddingStart struct {
 	Model          ModelRef
 	AgentName      string

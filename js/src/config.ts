@@ -180,7 +180,7 @@ function envOverrides(env: Record<string, string | undefined>, logger: SigilLogg
   const ccm = trimmed(env, 'SIGIL_CONTENT_CAPTURE_MODE');
   if (ccm !== undefined) {
     const normalized = ccm.toLowerCase();
-    if (['full', 'no_tool_content', 'metadata_only'].includes(normalized)) {
+    if (['full', 'no_tool_content', 'metadata_only', 'full_with_metadata_spans'].includes(normalized)) {
       out.contentCapture = normalized as ContentCaptureMode;
     } else {
       logger.warn?.(`sigil: ignoring invalid SIGIL_CONTENT_CAPTURE_MODE: ${ccm}`);

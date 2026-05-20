@@ -239,13 +239,20 @@ public final class SigilClient implements AutoCloseable {
         Instant startedAt = seed.getStartedAt() == null ? now() : seed.getStartedAt();
         seed.setStartedAt(startedAt);
 
+        // Resolve the effective mode so a per-call resolver can hide
+        // gen_ai.embeddings.input_texts without changing the client default.
+        ContentCaptureMode resolverMode = callContentCaptureResolver(
+                config.getContentCaptureResolver(), seed.getMetadata(), config.getLogger());
+        ContentCaptureMode embeddingMode = resolveClientContentCaptureMode(
+                resolveContentCaptureMode(resolverMode, config.getContentCapture()));
+
         Span span = tracer.spanBuilder(embeddingSpanName(seed.getModel().getName()))
                 .setSpanKind(SpanKind.CLIENT)
                 .setStartTimestamp(startedAt)
                 .startSpan();
         setEmbeddingStartSpanAttributes(span, seed);
 
-        return new EmbeddingRecorder(this, seed, span, startedAt);
+        return new EmbeddingRecorder(this, seed, span, startedAt, embeddingMode);
     }
 
     /**
@@ -352,7 +359,10 @@ public final class SigilClient implements AutoCloseable {
                 ctxMode,
                 effectiveClientDefault);
 
-        if (resolvedToolMode == ContentCaptureMode.METADATA_ONLY) {
+        if (resolvedToolMode == ContentCaptureMode.METADATA_ONLY
+                || resolvedToolMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
+            // FULL_WITH_METADATA_SPANS has no tool export path, so it matches
+            // METADATA_ONLY for tool span content.
             seed.setConversationTitle("");
             seed.setToolDescription("");
         }
@@ -710,7 +720,12 @@ public final class SigilClient implements AutoCloseable {
         initial.setThinkingEnabled(seed.getThinkingEnabled());
         initial.getParentGenerationIds().addAll(seed.getParentGenerationIds());
         initial.setEffectiveVersion(seed.getEffectiveVersion());
-        if (ccMode == ContentCaptureMode.METADATA_ONLY) {
+        if (ccMode == ContentCaptureMode.METADATA_ONLY
+                || ccMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
+            // FULL_WITH_METADATA_SPANS keeps the proto title but the start
+            // span path must omit sigil.conversation.title. The recorder
+            // rebuilds the proto payload from the seed at end-time, so this
+            // mutation only affects span attributes.
             initial.setConversationTitle("");
         }
         setGenerationSpanAttributes(span, initial);
@@ -1094,7 +1109,8 @@ public final class SigilClient implements AutoCloseable {
         }
     }
 
-    static void setEmbeddingEndSpanAttributes(Span span, EmbeddingResult result, EmbeddingCaptureConfig captureConfig) {
+    static void setEmbeddingEndSpanAttributes(
+            Span span, EmbeddingResult result, EmbeddingCaptureConfig captureConfig, ContentCaptureMode mode) {
         span.setAttribute(SPAN_ATTR_EMBEDDING_INPUT_COUNT, (long) result.getInputCount());
         if (result.getInputTokens() != 0L) {
             span.setAttribute(SPAN_ATTR_INPUT_TOKENS, result.getInputTokens());
@@ -1106,7 +1122,11 @@ public final class SigilClient implements AutoCloseable {
             span.setAttribute(SPAN_ATTR_EMBEDDING_DIM_COUNT, result.getDimensions());
         }
 
-        if (captureConfig.isCaptureInput()) {
+        // Embeddings have no proto export; FULL_WITH_METADATA_SPANS matches
+        // METADATA_ONLY for input-text span attributes.
+        boolean omitInputTexts = mode == ContentCaptureMode.METADATA_ONLY
+                || mode == ContentCaptureMode.FULL_WITH_METADATA_SPANS;
+        if (captureConfig.isCaptureInput() && !omitInputTexts) {
             List<String> inputTexts = captureEmbeddingInputTexts(result.getInputTexts(), captureConfig);
             if (!inputTexts.isEmpty()) {
                 span.setAttribute(AttributeKey.stringArrayKey(SPAN_ATTR_EMBEDDING_INPUT_TEXTS), inputTexts);

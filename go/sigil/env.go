@@ -169,6 +169,8 @@ func parseContentCaptureMode(v string) (ContentCaptureMode, error) {
 		return ContentCaptureModeNoToolContent, nil
 	case "metadata_only":
 		return ContentCaptureModeMetadataOnly, nil
+	case "full_with_metadata_spans":
+		return ContentCaptureModeFullWithMetadataSpans, nil
 	default:
 		return ContentCaptureModeDefault, fmt.Errorf("sigil: invalid SIGIL_CONTENT_CAPTURE_MODE %q", v)
 	}
