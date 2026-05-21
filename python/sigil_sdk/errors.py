@@ -33,6 +33,14 @@ class RatingTransportError(SigilError):
     """Raised when rating submission transport fails."""
 
 
+class EvalConflictError(SigilError):
+    """Raised on 409 responses from the eval API (duplicate run_id, idempotency conflicts, etc.)."""
+
+
+class EvalTransportError(SigilError):
+    """Raised when experiment or score API transport fails."""
+
+
 class HookDeniedError(SigilError):
     """Raised when a synchronous hook evaluation responds with action=deny."""
 

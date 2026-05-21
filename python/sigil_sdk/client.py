@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import http
 import json
 import logging
 import re
@@ -34,10 +35,26 @@ from .context import (
 from .errors import (
     ClientShutdownError,
     EnqueueError,
+    EvalConflictError,
+    EvalTransportError,
     QueueFullError,
     RatingConflictError,
     RatingTransportError,
     ValidationError,
+)
+from .experiments import (
+    CreateExperimentRequest,
+    Experiment,
+    ExperimentListResponse,
+    ExperimentReport,
+    ExperimentRunner,
+    ExperimentScoresResponse,
+    ExperimentSpec,
+    ExportScoresRequest,
+    ExportScoresResponse,
+    ScoreItem,
+    UpdateExperimentRequest,
+    payload_from_request,
 )
 from .exporters import GRPCGenerationExporter, HTTPGenerationExporter, NoopGenerationExporter
 from .hooks import HookEvaluateRequest, HookEvaluateResponse
@@ -682,6 +699,121 @@ class Client:
 
         return _parse_submit_conversation_rating_response(parsed)
 
+    def export_scores(
+        self,
+        request: ExportScoresRequest | Sequence[ScoreItem] | dict[str, Any],
+    ) -> ExportScoresResponse:
+        """Exports externally-computed generation scores to Sigil."""
+
+        self._assert_open()
+        if isinstance(request, Sequence) and not isinstance(request, (dict, str, bytes, bytearray)):
+            payload = ExportScoresRequest(scores=list(request)).to_payload()
+        else:
+            payload = payload_from_request(request)
+        parsed = self._send_api_json("POST", "/api/v1/scores:export", payload, expected_statuses=(200, 202))
+        return ExportScoresResponse.from_payload(parsed)
+
+    def create_experiment(self, request: CreateExperimentRequest | dict[str, Any]) -> Experiment:
+        """Creates an external or collection-backed Sigil experiment."""
+
+        self._assert_open()
+        parsed = self._send_api_json("POST", "/api/v1/eval/experiments", payload_from_request(request))
+        return Experiment.from_payload(parsed)
+
+    def get_experiment(self, run_id: str) -> Experiment:
+        """Fetches an experiment by run ID."""
+
+        self._assert_open()
+        path = f"/api/v1/eval/experiments/{urllib_parse.quote(run_id.strip(), safe='')}"
+        parsed = self._send_api_json("GET", path, None)
+        return Experiment.from_payload(parsed)
+
+    def list_experiments(self, *, limit: int | None = None, cursor: str = "") -> ExperimentListResponse:
+        """Lists experiments visible to the configured tenant."""
+
+        self._assert_open()
+        params: dict[str, str] = {}
+        if limit is not None:
+            params["limit"] = str(limit)
+        if cursor:
+            params["cursor"] = cursor
+        parsed = self._send_api_json("GET", _path_with_query("/api/v1/eval/experiments", params), None)
+        return ExperimentListResponse.from_payload(parsed)
+
+    def update_experiment(self, run_id: str, request: UpdateExperimentRequest | dict[str, Any]) -> Experiment:
+        """Updates mutable experiment fields or marks an external run terminal."""
+
+        self._assert_open()
+        path = f"/api/v1/eval/experiments/{urllib_parse.quote(run_id.strip(), safe='')}"
+        parsed = self._send_api_json("PATCH", path, payload_from_request(request))
+        return Experiment.from_payload(parsed)
+
+    def complete_experiment(
+        self,
+        run_id: str,
+        *,
+        status: str = "succeeded",
+        score_count: int | None = None,
+        metadata: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> Experiment:
+        """Convenience wrapper for finalizing an external experiment."""
+
+        return self.update_experiment(
+            run_id,
+            UpdateExperimentRequest(
+                status=status,  # type: ignore[arg-type]
+                score_count=score_count,
+                metadata=metadata,
+                error=error,
+            ),
+        )
+
+    def cancel_experiment(self, run_id: str) -> Experiment:
+        """Cancels a running Sigil experiment."""
+
+        self._assert_open()
+        path = f"/api/v1/eval/experiments/{urllib_parse.quote(run_id.strip(), safe='')}:cancel"
+        parsed = self._send_api_json("POST", path, {})
+        return Experiment.from_payload(parsed)
+
+    def list_experiment_scores(
+        self,
+        run_id: str,
+        *,
+        limit: int | None = None,
+        cursor: str = "",
+    ) -> ExperimentScoresResponse:
+        """Lists scores associated with an experiment run."""
+
+        self._assert_open()
+        params: dict[str, str] = {}
+        if limit is not None:
+            params["limit"] = str(limit)
+        if cursor:
+            params["cursor"] = cursor
+        path = f"/api/v1/eval/experiments/{urllib_parse.quote(run_id.strip(), safe='')}/scores"
+        parsed = self._send_api_json("GET", _path_with_query(path, params), None)
+        return ExperimentScoresResponse.from_payload(parsed)
+
+    def get_experiment_report(self, run_id: str) -> ExperimentReport:
+        """Builds a report for an experiment run."""
+
+        self._assert_open()
+        path = f"/api/v1/eval/experiments/{urllib_parse.quote(run_id.strip(), safe='')}/report"
+        parsed = self._send_api_json("GET", path, None)
+        return ExperimentReport.from_payload(parsed)
+
+    def create_experiment_runner(
+        self,
+        spec: ExperimentSpec,
+        *,
+        score_batch_size: int = 100,
+    ) -> ExperimentRunner:
+        """Creates a generic external experiment runner over this client."""
+
+        return ExperimentRunner(self, spec, score_batch_size=score_batch_size)
+
     def flush(self) -> None:
         """Flushes all queued generations immediately."""
 
@@ -926,6 +1058,57 @@ class Client:
 
         if first_error is not None:
             raise first_error
+
+    def _send_api_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None,
+        *,
+        expected_statuses: tuple[int, ...] = (200,),
+    ) -> dict[str, Any]:
+        endpoint = _api_endpoint(self._config.api.endpoint, self._config.generation_export.insecure, path)
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        headers = {
+            "Accept": "application/json",
+            **self._config.generation_export.headers,
+        }
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib_request.Request(endpoint, data=body, method=method, headers=headers)
+
+        raw: bytes
+        status: int
+        try:
+            with urllib_request.urlopen(req, timeout=30) as response:
+                status = response.getcode()
+                raw = response.read()
+        except urllib_error.HTTPError as exc:
+            raw_error = exc.read().decode("utf-8", errors="replace").strip()
+            msg = _api_error_text(raw_error, exc.code)
+            if exc.code == 400:
+                raise ValidationError(f"sigil eval API validation failed: {msg}") from exc
+            if exc.code == 409:
+                raise EvalConflictError(f"sigil eval API conflict: {msg}") from exc
+            raise EvalTransportError(f"sigil eval API transport failed: status {exc.code}: {msg}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise EvalTransportError(f"sigil eval API transport failed: {exc}") from exc
+
+        if status not in expected_statuses:
+            decoded = raw.decode("utf-8", errors="replace").strip()
+            raise EvalTransportError(
+                f"sigil eval API transport failed: status {status}: {_api_error_text(decoded, status)}"
+            )
+
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise EvalTransportError(f"sigil eval API transport failed: invalid JSON response: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise EvalTransportError("sigil eval API transport failed: invalid response payload")
+        return parsed
 
     def _export_with_retry(self, send: Callable[[], Any]):
         """Run an export call with the configured exponential backoff retry.
@@ -2144,6 +2327,42 @@ def _normalize_conversation_rating_input(input_value: ConversationRatingInput) -
 def _conversation_rating_endpoint(endpoint: str, insecure: bool, conversation_id: str) -> str:
     base_url = _base_url_from_api_endpoint(endpoint, insecure)
     return f"{base_url}/api/v1/conversations/{urllib_parse.quote(conversation_id, safe='')}/ratings"
+
+
+def _api_endpoint(endpoint: str, insecure: bool, path: str) -> str:
+    base_url = _base_url_from_eval_api_endpoint(endpoint, insecure)
+    clean_path = path if path.startswith("/") else f"/{path}"
+    return f"{base_url}{clean_path}"
+
+
+def _base_url_from_eval_api_endpoint(endpoint: str, insecure: bool) -> str:
+    trimmed = endpoint.strip()
+    if trimmed == "":
+        raise EvalTransportError("sigil eval API transport failed: api endpoint is required")
+
+    if trimmed.startswith("http://") or trimmed.startswith("https://"):
+        parsed = urllib_parse.urlparse(trimmed)
+        if parsed.scheme == "" or parsed.netloc == "":
+            raise EvalTransportError("sigil eval API transport failed: api endpoint host is required")
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    without_scheme = trimmed[7:] if trimmed.startswith("grpc://") else trimmed
+    host = without_scheme.split("/", 1)[0].strip()
+    if host == "":
+        raise EvalTransportError("sigil eval API transport failed: api endpoint host is required")
+    scheme = "http" if insecure else "https"
+    return f"{scheme}://{host}"
+
+
+def _path_with_query(path: str, params: dict[str, str]) -> str:
+    clean = {key: value for key, value in params.items() if value != ""}
+    if not clean:
+        return path
+    return f"{path}?{urllib_parse.urlencode(clean)}"
+
+
+def _api_error_text(raw_error: str, status: int) -> str:
+    return raw_error or http.HTTPStatus(status).phrase
 
 
 def _base_url_from_api_endpoint(endpoint: str, insecure: bool) -> str:

@@ -180,6 +180,82 @@ with client.start_generation(
 client.shutdown()
 ```
 
+## External Experiments
+
+Use external experiments when an offline eval harness runs tasks itself and wants Sigil to store the
+run, conversations, scores, and report.
+
+```python
+from sigil_sdk import (
+    Client,
+    CreateExperimentRequest,
+    Generation,
+    GenerationStart,
+    ModelRef,
+    ScoreItem,
+    ScoreSource,
+    ScoreValue,
+    UpdateExperimentRequest,
+    assistant_text_message,
+    user_text_message,
+)
+
+client = Client()
+run = client.create_experiment(
+    CreateExperimentRequest(
+        run_id="o11y-bench-local-1",
+        name="o11y bench local smoke",
+        tags=["o11y-bench"],
+        metadata={"dataset_id": "o11y-bench", "candidate": {"agent_name": "gcx"}},
+    )
+)
+
+generation_id = "gen-task-1"
+conversation_id = "conv-task-1"
+with client.start_generation(
+    GenerationStart(
+        id=generation_id,
+        conversation_id=conversation_id,
+        model=ModelRef(provider="openai", name="gpt-4o-mini"),
+        agent_name="o11y-bench",
+        metadata={"task_id": "task-1", "experiment_run_id": run.run_id},
+    )
+) as recorder:
+    # Call the candidate agent/app under test here; record its result.
+    recorder.set_result(
+        Generation(
+            id=generation_id,
+            conversation_id=conversation_id,
+            model=ModelRef(provider="openai", name="gpt-4o-mini"),
+            input=[user_text_message("Rank jobs by CPU usage.")],
+            output=[assistant_text_message("backend is hottest")],
+        )
+    )
+
+# Flush queued generations before exporting scores so strict ingest can find them.
+client.flush()
+response = client.export_scores(
+    [
+        ScoreItem(
+            score_id="sc-o11y-bench-local-1-task-1",
+            generation_id=generation_id,
+            conversation_id=conversation_id,
+            evaluator_id="o11y_bench.correctness",
+            evaluator_version="v1",
+            score_key="correctness",
+            value=ScoreValue(number=0.9),
+            run_id=run.run_id,
+            passed=True,
+            metadata={"task_id": "task-1", "task_category": "smoke", "trial_id": "trial-0"},
+            source=ScoreSource(kind="experiment", id=run.run_id),
+        )
+    ]
+)
+
+client.update_experiment(run.run_id, UpdateExperimentRequest(status="succeeded", score_count=response.accepted_count))
+report = client.get_experiment_report(run.run_id)
+```
+
 ## Pre-Ingest Redaction
 
 Use `generation_sanitizer` when you want to redact substrings from normalized generations before
