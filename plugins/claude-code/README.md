@@ -82,5 +82,8 @@ Common culprits: `sigil --version` doesn't work (binary not on `PATH`), a missin
 | `SIGIL_USER_ID` | from `~/.claude.json` | Override the user id. |
 | `SIGIL_USER_ID_SOURCE` | `email` | Which field to read from `~/.claude.json`: `email` or `accountUuid`. |
 | `SIGIL_DEBUG` | `false` | Log to `~/.local/state/sigil/logs/sigil.log`. |
+| `SIGIL_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Claude Code `PreToolUse` hook calls Sigil's `/api/v1/hooks:evaluate` and blocks tool calls denied by guard rules. |
+| `SIGIL_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
+| `SIGIL_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
 
 If your OTLP **Instance ID** (on the OpenTelemetry card) differs from your AI Observability Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>` manually instead of relying on the auto-synthesised auth.
