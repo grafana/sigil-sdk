@@ -2,7 +2,7 @@
 
 [Pi](https://github.com/badlogic/pi) agent extension that sends LLM generations to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/).
 
-By default only metadata is sent (token counts, cost, model, tool names, durations). Flip `contentCapture` to `full` or `no_tool_content` to include message content.
+By default only metadata is sent (token counts, cost, model, tool names, durations). Flip `SIGIL_CONTENT_CAPTURE_MODE` to `full` or `no_tool_content` to include message content.
 
 ## 1. Install
 
@@ -19,57 +19,39 @@ sigil pi
 
 ## 2. Add your Grafana Cloud credentials
 
-All Sigil connection details live at `https://<your-grafana>.grafana.net/plugins/grafana-sigil-app`. Skip this section if you're running against a self-hosted Sigil — see [Auth modes](#auth-modes) below.
+All Sigil connection details live at `https://<your-grafana>.grafana.net/plugins/grafana-sigil-app`.
 
 You need values from three Grafana Cloud pages:
 
 1. **AI Observability → Configuration**
-   - **API URL** → `endpoint`
-   - **Instance ID** → `auth.user` and `otlp.basicUser`
+   - **API URL** → `SIGIL_ENDPOINT`
+   - **Instance ID** → `SIGIL_AUTH_TENANT_ID`
 
 2. **Administration → Users and access → Cloud access policies**
    - Create a policy with scopes `sigil:write`, `metrics:write`, `traces:write`.
-   - Add a token. The `glc_…` value is shown once → `auth.password` and `otlp.basicPassword`.
+   - Add a token. The `glc_…` value is shown once → `SIGIL_AUTH_TOKEN`.
 
 3. **Grafana Cloud Portal → your stack → OpenTelemetry card**
-   - **OTLP endpoint URL** → `otlp.endpoint`
+   - **OTLP endpoint URL** → `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT`
 
 ## 3. Configure
 
-Create `~/.config/sigil-pi/config.json`:
+Configuration comes from canonical `SIGIL_*` env vars. The extension also reads `$XDG_CONFIG_HOME/sigil/config.env` (default `~/.config/sigil/config.env`) on startup and copies entries into `process.env` for keys whose existing OS value is empty or whitespace-only. Plain `pi` and `sigil pi` share the same file.
 
-```json
-{
-  "endpoint": "https://sigil-prod-<region>.grafana.net",
-  "auth": {
-    "mode": "basic",
-    "user": "<instance-id>",
-    "password": "${SIGIL_AUTH_TOKEN}"
-  },
-  "otlp": {
-    "endpoint": "https://otlp-gateway-prod-<region>.grafana.net/otlp",
-    "basicUser": "<instance-id>",
-    "basicPassword": "${SIGIL_AUTH_TOKEN}"
-  }
-}
+Minimal `~/.config/sigil/config.env`:
+
+```sh
+SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
+SIGIL_AUTH_TENANT_ID=<instance-id>
+SIGIL_AUTH_TOKEN=glc_...
+SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 ```
 
-String values support `${ENV_VAR}` interpolation, so the token stays out of the file.
-
-To include conversation text (with automatic secret redaction), add `"contentCapture": "full"` to the config.
-
-### Auth modes
-
-- `basic` — Grafana Cloud: `{ "mode": "basic", "user": "<instance-id>", "password": "${SIGIL_AUTH_TOKEN}" }`
-- `tenant` — `X-Scope-OrgID` only: `{ "mode": "tenant", "tenantId": "my-tenant" }`
-- `bearer` — `{ "mode": "bearer", "bearerToken": "${SIGIL_TOKEN}" }`
-- `none` — no auth (default)
+When `SIGIL_AUTH_TENANT_ID` and `SIGIL_AUTH_TOKEN` are both set, both Sigil generation export and the OTLP endpoint authenticate with the synthesized Basic auth header (`Basic base64(tenant:token)`). With only one of the two set, no auth header is sent.
 
 ## Redaction
 
-Before any generation leaves the process, the SDK scrubs known token formats, PEM private keys, database URLs, `KEY=value` pairs, bearer tokens, and email addresses. Matches become `[REDACTED:<id>]`.
-
-User-role messages are scrubbed too. Set `redaction.redactInputMessages: false` to leave them alone, or `redaction.enabled: false` to disable redaction entirely.
+Before any generation leaves the process, the SDK scrubs known token formats, PEM private keys, database URLs, `KEY=value` pairs, bearer tokens, and email addresses. Matches become `[REDACTED:<id>]`. User input messages are redacted by default; set `SIGIL_REDACT_INPUT_MESSAGES=false` to leave them unchanged.
 
 ## Guards
 
@@ -81,48 +63,28 @@ SIGIL_GUARDS_ENABLED=true pi
 
 By default, transport errors and timeouts let the tool through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block on errors instead. Raise or lower `SIGIL_GUARDS_TIMEOUT_MS` (default `1500`) to trade latency against tolerance for slow evaluators.
 
-| Variable | Default | Description |
-|---|---|---|
-| `SIGIL_GUARDS_ENABLED` | `false` | Evaluate `tool_call` requests against Sigil policy. |
-| `SIGIL_GUARDS_FAIL_OPEN` | `true` | Allow tools through when the guard call fails. Set `false` for strict mode. |
-| `SIGIL_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout for guard requests, in milliseconds. |
-
 The same three variables are honored by the [Claude Code plugin](../claude-code/README.md); both plugins read them from `~/.config/sigil/config.env`.
 
 ## All options
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `endpoint` | — | Sigil URL (find it at `/plugins/grafana-sigil-app`) |
-| `auth.mode` | `"none"` | `basic`, `tenant`, `bearer`, or `none` |
-| `auth.user` / `auth.password` | — | Basic auth credentials |
-| `auth.tenantId` | `auth.user` in basic mode | `X-Scope-OrgID` header |
-| `auth.bearerToken` | — | Bearer token |
-| `agentName` | `"pi"` | Agent name reported to Sigil |
-| `contentCapture` | `"metadata_only"` | `full`, `no_tool_content`, or `metadata_only` |
-| `debug` | `false` | Log lifecycle events to stderr |
-| `otlp.endpoint` | — | OTLP HTTP endpoint |
-| `otlp.basicUser` / `otlp.basicPassword` | — | OTLP Basic auth |
-| `otlp.bearerToken` | — | OTLP Bearer token |
-| `redaction.enabled` | `true` | Master switch for redaction |
-| `redaction.redactInputMessages` | `true` | Scrub user-role content too |
-| `guards.enabled` | `false` | Evaluate `tool_call` requests against Sigil policy |
-| `guards.timeoutMs` | `1500` | Per-call timeout for guard requests |
-| `guards.failOpen` | `true` | Allow tools through when guard checks fail |
+`~/.config/sigil/config.env` is the only configuration file. Every option is set via env var.
 
-Every field can be overridden via env var.
-
-On startup the extension reads `$XDG_CONFIG_HOME/sigil/config.env` (default `~/.config/sigil/config.env`) and copies the entries into `process.env` for keys whose existing OS value is empty or whitespace-only. This happens on every launch — plain `pi` and `sigil pi` resolve credentials from the same file.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SIGIL_ENDPOINT` | — | Sigil URL (find it at `/plugins/grafana-sigil-app`) |
+| `SIGIL_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. Combined with `SIGIL_AUTH_TOKEN` becomes Basic auth for Sigil and OTLP. |
+| `SIGIL_AUTH_TOKEN` | — | Cloud access policy token (`glc_…`). |
+| `SIGIL_AGENT_NAME` | `pi` | Agent name reported to Sigil. |
+| `SIGIL_AGENT_VERSION` | — | Optional version string reported with the agent. |
+| `SIGIL_CONTENT_CAPTURE_MODE` | `metadata_only` | `full`, `no_tool_content`, or `metadata_only`. |
+| `SIGIL_DEBUG` | `false` | Log lifecycle events to stderr. |
+| `SIGIL_REDACT_INPUT_MESSAGES` | `true` | Redact known secret patterns in user input messages before export. |
+| `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP HTTP endpoint. Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
+| `SIGIL_OTEL_AUTH_TOKEN` | — | OTel-only auth token. Overrides `SIGIL_AUTH_TOKEN` when synthesising OTLP Basic auth. |
+| `SIGIL_GUARDS_ENABLED` | `false` | Evaluate `tool_call` requests against Sigil policy. |
+| `SIGIL_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout for guard requests, in milliseconds. |
+| `SIGIL_GUARDS_FAIL_OPEN` | `true` | Allow tools through when the guard call fails. Set `false` for strict mode. |
 
 File format: one `KEY=value` per line, `#` line comments, optional `export ` prefix, optional matching single or double quotes around the value. Only the following keys are honoured — anything else (including stray `PATH=…` lines) is ignored: any `SIGIL_*` key plus `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_INSECURE`, and `OTEL_SERVICE_NAME`.
 
 A non-empty OS env value always wins over the file; an empty or whitespace-only OS value is treated as unset and gets filled from `config.env`. Missing files are silent.
-
-| Variable | Sets |
-|----------|------|
-| `SIGIL_ENDPOINT` | `endpoint` |
-| `SIGIL_AUTH_TENANT_ID` + `SIGIL_AUTH_TOKEN` | Basic auth for Sigil and OTLP |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `contentCapture` |
-| `SIGIL_DEBUG` | `debug` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `otlp.endpoint` |
-| `SIGIL_GUARDS_ENABLED` | `guards.enabled` |

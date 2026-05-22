@@ -27,11 +27,7 @@ function makeConfig(overrides?: Partial<SigilPiConfig>): SigilPiConfig {
     agentName: "pi",
     contentCapture: "metadata_only",
     debug: false,
-    redaction: {
-      enabled: true,
-      redactInputMessages: true,
-      redactEmailAddresses: true,
-    },
+    redactInputMessages: true,
     guards: {
       enabled: false,
       timeoutMs: 1500,
@@ -51,10 +47,8 @@ describe("createSigilClient", () => {
     });
   });
 
-  it("creates sdk client with tenant auth", () => {
-    const client = createSigilClient(
-      makeConfig({ auth: { mode: "tenant", tenantId: "t-1" } }),
-    );
+  it("creates sdk client with no auth", () => {
+    const client = createSigilClient(makeConfig());
 
     expect(client).toEqual({});
     expect(SigilClientMock).toHaveBeenCalledTimes(1);
@@ -62,7 +56,7 @@ describe("createSigilClient", () => {
       generationExport: {
         protocol: "http",
         endpoint: "http://localhost:8080/api/v1/generations:export",
-        auth: { mode: "tenant", tenantId: "t-1" },
+        auth: { mode: "none" },
       },
       api: { endpoint: "http://localhost:8080" },
       hooks: {
@@ -91,13 +85,13 @@ describe("createSigilClient", () => {
     );
   });
 
-  it("maps basic auth to sdk format with tenantId", () => {
+  it("passes basic auth through with tenantId", () => {
     createSigilClient(
       makeConfig({
         auth: {
           mode: "basic",
-          user: "12345",
-          password: "pass",
+          basicUser: "12345",
+          basicPassword: "pass",
           tenantId: "12345",
         },
       }),
@@ -213,50 +207,15 @@ describe("createSigilClient", () => {
     expect(client).toBeNull();
   });
 
-  it("wires generationSanitizer when redaction is enabled", () => {
-    createSigilClient(makeConfig());
+  it("wires input redaction into the sanitizer", () => {
+    createSigilClient(makeConfig({ redactInputMessages: false }));
 
     expect(createSecretRedactionSanitizerMock).toHaveBeenCalledTimes(1);
     expect(createSecretRedactionSanitizerMock).toHaveBeenCalledWith({
-      redactInputMessages: true,
-      redactEmailAddresses: true,
+      redactInputMessages: false,
     });
     expect(SigilClientMock).toHaveBeenCalledWith(
       expect.objectContaining({ generationSanitizer: SANITIZER }),
-    );
-  });
-
-  it("forwards redaction sub-flags to the sanitizer factory", () => {
-    createSigilClient(
-      makeConfig({
-        redaction: {
-          enabled: true,
-          redactInputMessages: false,
-          redactEmailAddresses: false,
-        },
-      }),
-    );
-
-    expect(createSecretRedactionSanitizerMock).toHaveBeenCalledWith({
-      redactInputMessages: false,
-      redactEmailAddresses: false,
-    });
-  });
-
-  it("omits generationSanitizer when redaction is disabled", () => {
-    createSigilClient(
-      makeConfig({
-        redaction: {
-          enabled: false,
-          redactInputMessages: true,
-          redactEmailAddresses: true,
-        },
-      }),
-    );
-
-    expect(createSecretRedactionSanitizerMock).not.toHaveBeenCalled();
-    expect(SigilClientMock).toHaveBeenCalledWith(
-      expect.objectContaining({ generationSanitizer: undefined }),
     );
   });
 });

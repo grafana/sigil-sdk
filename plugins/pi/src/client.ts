@@ -1,13 +1,10 @@
-import type {
-  GenerationExportConfig,
-  SigilLogger,
-} from "@grafana/sigil-sdk-js";
+import type { SigilLogger } from "@grafana/sigil-sdk-js";
 import {
   createSecretRedactionSanitizer,
   SigilClient,
 } from "@grafana/sigil-sdk-js";
 import type { Meter, Tracer } from "@opentelemetry/api";
-import type { SigilAuthConfig, SigilPiConfig } from "./config.js";
+import type { SigilPiConfig } from "./config.js";
 import { EXPORT_PATH } from "./config.js";
 
 export interface SigilClientOptions {
@@ -51,7 +48,7 @@ export function createSigilClient(
       generationExport: {
         protocol: "http",
         endpoint: appendExportPath(config.endpoint),
-        auth: mapAuth(config.auth),
+        auth: config.auth,
       },
       api: { endpoint: config.endpoint },
       hooks: {
@@ -64,12 +61,9 @@ export function createSigilClient(
       ...(options?.tracer ? { tracer: options.tracer } : {}),
       ...(options?.meter ? { meter: options.meter } : {}),
       logger: createSdkLogger(config.debug),
-      generationSanitizer: config.redaction.enabled
-        ? createSecretRedactionSanitizer({
-            redactInputMessages: config.redaction.redactInputMessages,
-            redactEmailAddresses: config.redaction.redactEmailAddresses,
-          })
-        : undefined,
+      generationSanitizer: createSecretRedactionSanitizer({
+        redactInputMessages: config.redactInputMessages,
+      }),
     });
   } catch (err) {
     console.warn("[sigil-pi] failed to create SigilClient:", err);
@@ -91,19 +85,5 @@ function appendExportPath(endpoint: string): string {
     return url.toString();
   } catch {
     return endpoint.replace(/\/+$/, "") + EXPORT_PATH;
-  }
-}
-
-function mapAuth(auth: SigilAuthConfig): GenerationExportConfig["auth"] {
-  switch (auth.mode) {
-    case "basic":
-      return {
-        mode: "basic",
-        basicUser: auth.user,
-        basicPassword: auth.password,
-        tenantId: auth.tenantId,
-      };
-    default:
-      return auth;
   }
 }
