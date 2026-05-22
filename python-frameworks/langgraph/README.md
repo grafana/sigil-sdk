@@ -24,10 +24,11 @@ config = with_sigil_langgraph_callbacks(None, client=client, provider_resolver="
 ```python
 from typing import TypedDict
 
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from sigil_sdk import Client
-from sigil_sdk_langgraph import SigilLangGraphHandler, with_sigil_langgraph_callbacks
+from sigil_sdk_langgraph import with_sigil_langgraph_callbacks
 
 
 class GraphState(TypedDict):
@@ -36,21 +37,15 @@ class GraphState(TypedDict):
 
 
 client = Client()
-handler = SigilLangGraphHandler(
-    client=client,
-    provider_resolver="auto",
-    agent_name="langgraph-example",
-    agent_version="1.0.0",
-)
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 
-def run_model(state: GraphState) -> GraphState:
+def run_model(state: GraphState, config: RunnableConfig) -> GraphState:
     response = llm.invoke(
         state["prompt"],
-        config=with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto"),
+        config=config,
     )
-    return {"prompt": state["prompt"], "answer": response.content}
+    return {"prompt": state["prompt"], "answer": str(response.content).strip()}
 
 
 workflow = StateGraph(GraphState)
@@ -59,13 +54,25 @@ workflow.set_entry_point("model")
 workflow.add_edge("model", END)
 graph = workflow.compile()
 
+sigil_config = with_sigil_langgraph_callbacks(
+    None,
+    client=client,
+    provider_resolver="auto",
+    agent_name="langgraph-example",
+    agent_version="1.0.0",
+)
+
 # Non-stream graph invocation.
-out = graph.invoke({"prompt": "Explain SLO burn rate in one paragraph.", "answer": ""})
+out = graph.invoke(
+    {"prompt": "Explain SLO burn rate in one paragraph.", "answer": ""},
+    config=sigil_config,
+)
 print(out["answer"])
 
 # Streamed graph events.
 for _event in graph.stream(
     {"prompt": "List three practical alerting tips.", "answer": ""},
+    config=sigil_config,
 ):
     pass
 
@@ -93,7 +100,12 @@ handler = SigilLangGraphHandler(
     capture_workflow_steps=True,
 )
 
-result = graph.invoke(input, config={"callbacks": [handler]})
+# Reuse the `graph` from the end-to-end example above. The node must pass its
+# received `config` into `llm.invoke(...)` so generations link to the workflow step.
+result = graph.invoke(
+    {"prompt": "Explain why my dashboard is slow.", "answer": ""},
+    config={"callbacks": [handler]},
+)
 client.shutdown()
 ```
 

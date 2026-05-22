@@ -258,7 +258,10 @@ handler = SigilLangGraphHandler(
     conversation_title="Incident Response Pipeline",
     capture_workflow_steps=True,
 )
-result = graph.invoke(input, config={"callbacks": [handler]})
+result = graph.invoke(
+    {"prompt": "Investigate elevated API latency.", "answer": ""},
+    config={"callbacks": [handler]},
+)
 ```
 
 ### Complete LangGraph instrumentation example
@@ -266,17 +269,24 @@ result = graph.invoke(input, config={"callbacks": [handler]})
 End-to-end example showing OTel setup, Sigil client, handler, and correct shutdown order.
 The `OTEL_EXPORTER_OTLP_ENDPOINT` env var is read automatically by the OTel exporters.
 
-`.env` — find these values at `https://<your-grafana>.grafana.net/plugins/grafana-sigil-app`:
+Environment variables — export these values or load them with your app's `.env` tooling.
+Find the Sigil values at `https://<your-grafana>.grafana.net/plugins/grafana-sigil-app` and the OTLP endpoint in the Grafana Cloud OpenTelemetry card:
 ```dotenv
 SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
 SIGIL_AUTH_TENANT_ID=<instance-id>
 SIGIL_AUTH_TOKEN=glc_...
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
-OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(instance_id:cloud_api_token)>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64(otlp-instance-id:cloud_api_token)>"
+OPENAI_API_KEY=sk-...
 ```
 
 ```python
 import os
+from typing import TypedDict
+
+from langchain_core.runnables import RunnableConfig
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -289,6 +299,13 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import sigil_sdk
 from sigil_sdk.config import AuthConfig, GenerationExportConfig
 from sigil_sdk_langgraph import SigilLangGraphHandler
+
+
+class GraphState(TypedDict):
+    prompt: str
+    classification: str
+    answer: str
+
 
 # 1. OTel providers MUST be configured BEFORE creating the Sigil client.
 resource = Resource.create({"service.name": "my-langgraph-app"})
@@ -305,10 +322,11 @@ client = sigil_sdk.Client(
     sigil_sdk.ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ.get("SIGIL_ENDPOINT", "http://localhost:8080"),
+            endpoint=os.environ["SIGIL_ENDPOINT"],
             auth=AuthConfig(
-                mode="tenant",
-                tenant_id=os.environ.get("SIGIL_AUTH_TENANT_ID", "anonymous"),
+                mode="basic",
+                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
+                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
             ),
         ),
     )
@@ -317,18 +335,61 @@ client = sigil_sdk.Client(
 # 3. LangGraph handler with workflow step capture.
 handler = SigilLangGraphHandler(
     client=client,
-    agent_name="my-pipeline",
-    conversation_title="My Pipeline Run",
+    provider_resolver="auto",
+    agent_name="support-triage",
+    agent_version="1.0.0",
+    conversation_title="Support Triage Workflow",
     capture_workflow_steps=True,
 )
 
-# 4. Run the graph with the handler as a callback.
-result = graph.invoke(input, config={"callbacks": [handler]})
+# 4. Build a small graph. Passing config into llm.invoke keeps LLM generations
+# linked to the enclosing workflow step.
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-# 5. Shutdown order: Sigil first, then OTel providers.
-client.shutdown()
-tp.shutdown()
-mp.shutdown()
+
+def classify(state: GraphState, config: RunnableConfig) -> dict[str, str]:
+    response = llm.invoke(
+        "Classify this support request as billing, reliability, or usage: "
+        f"{state['prompt']}",
+        config=config,
+    )
+    return {"classification": str(response.content).strip()}
+
+
+def draft_answer(state: GraphState, config: RunnableConfig) -> dict[str, str]:
+    response = llm.invoke(
+        "Write a concise answer for this support request.\n"
+        f"Category: {state['classification']}\n"
+        f"Request: {state['prompt']}",
+        config=config,
+    )
+    return {"answer": str(response.content).strip()}
+
+
+workflow = StateGraph(GraphState)
+workflow.add_node("classify", classify)
+workflow.add_node("draft_answer", draft_answer)
+workflow.set_entry_point("classify")
+workflow.add_edge("classify", "draft_answer")
+workflow.add_edge("draft_answer", END)
+graph = workflow.compile()
+
+try:
+    # 5. Run the graph with the handler as a callback.
+    result = graph.invoke(
+        {
+            "prompt": "My dashboard is slow after adding several high-cardinality labels.",
+            "classification": "",
+            "answer": "",
+        },
+        config={"callbacks": [handler]},
+    )
+    print(result["answer"])
+finally:
+    # 6. Shutdown order: Sigil first, then OTel providers.
+    client.shutdown()
+    tp.shutdown()
+    mp.shutdown()
 ```
 
 The handler:
