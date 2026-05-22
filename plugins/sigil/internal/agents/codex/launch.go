@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/launcher"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/local"
 )
 
@@ -81,12 +82,7 @@ func Launch(ctx context.Context, args []string, localEnv *local.LaunchEnv, _ io.
 		}
 	}
 
-	env := local.Environ(localEnv)
-	argv := append([]string{bin}, args...)
-	if err := execFn(bin, argv, env); err != nil {
-		return fmt.Errorf("exec codex: %w", err)
-	}
-	return nil
+	return launcher.Exec(execFn, bin, "codex", args, local.Environ(localEnv))
 }
 
 func defaultRunInstall(ctx context.Context, bin string, w io.Writer) error {
@@ -109,19 +105,7 @@ func defaultRunInstall(ctx context.Context, bin string, w io.Writer) error {
 // output. Output is human-formatted but stable: each plugin line looks like
 // `  <plugin>@<marketplace> (<state>)`.
 func defaultPluginList(ctx context.Context, bin string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, "plugin", "list")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		// `%v` on *exec.ExitError renders only "exit status N" and drops the
-		// captured stderr, so attach codex's diagnostic explicitly.
-		if msg := bytes.TrimSpace(stderr.Bytes()); len(msg) > 0 {
-			return nil, fmt.Errorf("%w: %s", err, msg)
-		}
-		return nil, err
-	}
-	return out, nil
+	return launcher.Output(ctx, bin, "plugin", "list")
 }
 
 // pluginInstalled reports whether `sigil-codex@grafana-sigil` is registered

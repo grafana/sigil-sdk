@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/launcher"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/local"
 )
 
@@ -75,12 +76,7 @@ func Launch(ctx context.Context, args []string, localEnv *local.LaunchEnv, _ io.
 		}
 	}
 
-	env := local.Environ(localEnv)
-	argv := append([]string{bin}, args...)
-	if err := execFn(bin, argv, env); err != nil {
-		return fmt.Errorf("exec claude: %w", err)
-	}
-	return nil
+	return launcher.Exec(execFn, bin, "claude", args, local.Environ(localEnv))
 }
 
 func defaultRunInstall(ctx context.Context, bin string, w io.Writer) error {

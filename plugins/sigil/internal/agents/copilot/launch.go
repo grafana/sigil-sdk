@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/launcher"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/local"
 )
 
@@ -69,12 +70,7 @@ func Launch(ctx context.Context, args []string, localEnv *local.LaunchEnv, _ io.
 		}
 	}
 
-	env := local.Environ(localEnv)
-	argv := append([]string{bin}, args...)
-	if err := execFn(bin, argv, env); err != nil {
-		return fmt.Errorf("exec copilot: %w", err)
-	}
-	return nil
+	return launcher.Exec(execFn, bin, "copilot", args, local.Environ(localEnv))
 }
 
 func defaultRunInstall(ctx context.Context, bin string, w io.Writer) error {
@@ -92,17 +88,7 @@ func defaultRunInstall(ctx context.Context, bin string, w io.Writer) error {
 // `Installed plugins:` header followed by one `  • <plugin> (v<ver>)` line
 // per plugin.
 func defaultPluginList(ctx context.Context, bin string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, "plugin", "list")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		if msg := bytes.TrimSpace(stderr.Bytes()); len(msg) > 0 {
-			return nil, fmt.Errorf("%w: %s", err, msg)
-		}
-		return nil, err
-	}
-	return out, nil
+	return launcher.Output(ctx, bin, "plugin", "list")
 }
 
 // pluginInstalled reports whether `sigil-copilot` is registered in copilot's

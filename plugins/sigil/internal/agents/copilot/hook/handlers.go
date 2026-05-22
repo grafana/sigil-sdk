@@ -20,6 +20,8 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/otel"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/redact"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/sigilemit"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/timeutil"
 )
 
 const (
@@ -334,7 +336,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), stopExportTimeout)
 	defer cancel()
-	providers := setupOTelIfConfigured(ctx, logger)
+	providers := sigilemit.SetupOTel(ctx, logger)
 	if providers != nil {
 		defer func() {
 			if err := providers.Shutdown(ctx); err != nil {
@@ -552,47 +554,22 @@ func shouldPreferTranscriptSnapshot(current transcript.Snapshot, haveCurrent boo
 	return false
 }
 
+// buildClient constructs the Sigil client. copilot leaves endpoint, tenant ID,
+// and token to the SDK's automatic SIGIL_* env resolution, so it only needs the
+// shared HTTP/basic-auth export defaults plus the OTel wiring.
 func buildClient(cfg config.Config, providers *otel.Providers, logger *log.Logger) *sigil.Client {
-	c := sigil.Config{
-		ContentCapture: cfg.ContentCapture,
-		Logger:         logger,
-		GenerationExport: sigil.GenerationExportConfig{
-			Protocol: sigil.GenerationExportProtocolHTTP,
-			Endpoint: strings.TrimRight(os.Getenv("SIGIL_ENDPOINT"), "/") + "/api/v1/generations:export",
-			Auth:     sigil.AuthConfig{Mode: sigil.ExportAuthModeBasic},
-		},
-	}
-	if providers != nil {
-		c.Tracer = providers.Tracer(otelInstrumentationName)
-		c.Meter = providers.Meter(otelInstrumentationName)
-	}
-	return sigil.NewClient(c)
-}
-
-func setupOTelIfConfigured(ctx context.Context, logger *log.Logger) *otel.Providers {
-	if otel.EndpointFromEnv() == "" {
-		return nil
-	}
-	providers, err := otel.Setup(ctx)
-	if err != nil {
-		logger.Printf("otel: setup: %v", err)
-		return nil
-	}
-	return providers
+	return sigilemit.NewClient(sigilemit.ClientOptions{
+		InstrumentationName: otelInstrumentationName,
+		ContentCapture:      cfg.ContentCapture,
+		Logger:              logger,
+		Providers:           providers,
+	})
 }
 
 func emitGeneration(ctx context.Context, client *sigil.Client, frag *fragment.Fragment, mapped mapper.Mapped, logger *log.Logger) error {
-	genCtx, rec := client.StartGeneration(ctx, mapped.Start)
-	rec.SetResult(mapped.Generation, nil)
-	if mapped.CallError != nil {
-		rec.SetCallError(mapped.CallError)
-	}
-	emitToolSpans(genCtx, client, frag, mapped.Generation, logger)
-	rec.End()
-	if err := rec.Err(); err != nil {
-		return fmt.Errorf("recorder: %w", err)
-	}
-	return nil
+	return sigilemit.Record(ctx, client, mapped.Start, mapped.Generation, mapped.CallError, func(genCtx context.Context) {
+		emitToolSpans(genCtx, client, frag, mapped.Generation, logger)
+	})
 }
 
 func emitToolSpans(ctx context.Context, client *sigil.Client, frag *fragment.Fragment, gen sigil.Generation, logger *log.Logger) {
@@ -659,9 +636,12 @@ func mappedContentCapture(gen sigil.Generation) sigil.ContentCaptureMode {
 	return sigil.ContentCaptureModeMetadataOnly
 }
 
+// toolSpanWindow differs from sigilemit.ToolSpanWindow: copilot records a
+// per-tool StartedAt at preToolUse and uses it as the window base, falling back
+// to a duration-derived start only when StartedAt is missing.
 func toolSpanWindow(t fragment.ToolRecord, genCompletedAt time.Time) (startedAt, completedAt time.Time) {
-	completedAt = parseToolTimestamp(t.CompletedAt, genCompletedAt)
-	startedAt = parseToolTimestamp(t.StartedAt, completedAt)
+	completedAt = timeutil.ParseTimestamp(t.CompletedAt, genCompletedAt)
+	startedAt = timeutil.ParseTimestamp(t.StartedAt, completedAt)
 	if t.DurationMs != nil && !completedAt.IsZero() {
 		startedAt = completedAt.Add(-time.Duration(*t.DurationMs) * time.Millisecond)
 	}
@@ -671,19 +651,9 @@ func toolSpanWindow(t fragment.ToolRecord, genCompletedAt time.Time) (startedAt,
 	return startedAt, completedAt
 }
 
-func parseToolTimestamp(s string, def time.Time) time.Time {
-	if s == "" {
-		return def
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	return def
-}
-
+// toolErrorOr trims whitespace before the empty check, unlike
+// sigilemit.ToolError, so a whitespace-only tool error message collapses to the
+// generic sentinel. Kept local to preserve that behavior.
 func toolErrorOr(msg string) error {
 	if strings.TrimSpace(msg) == "" {
 		return errToolError

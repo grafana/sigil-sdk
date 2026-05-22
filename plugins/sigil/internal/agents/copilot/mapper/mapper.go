@@ -1,18 +1,16 @@
 package mapper
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/copilot/fragment"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/mapperutil"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/maputil"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/redact"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/timeutil"
 )
@@ -41,10 +39,7 @@ func Map(in Inputs) Mapped {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	mode := in.ContentCapture
-	if mode == sigil.ContentCaptureModeDefault {
-		mode = sigil.ContentCaptureModeMetadataOnly
-	}
+	mode := mapperutil.NormalizeContentMode(in.ContentCapture)
 	completedAt := timeutil.ParseTimestamp(frag.CompletedAt, timeutil.ParseTimestamp(frag.LastEventAt, now))
 	startedAt := timeutil.ParseTimestamp(frag.StartedAt, completedAt)
 
@@ -142,8 +137,8 @@ func Map(in Inputs) Mapped {
 		OperationName:  "generateText",
 		Model:          model,
 		Tools:          tools,
-		Tags:           cloneStringMap(tags),
-		Metadata:       cloneAnyMap(metadata),
+		Tags:           maputil.Clone(tags),
+		Metadata:       maputil.Clone(metadata),
 		StartedAt:      startedAt,
 		ContentCapture: mode,
 	}
@@ -173,8 +168,8 @@ func Map(in Inputs) Mapped {
 		StopReason:  stopReason,
 		StartedAt:   startedAt,
 		CompletedAt: completedAt,
-		Tags:        cloneStringMap(tags),
-		Metadata:    cloneAnyMap(metadata),
+		Tags:        maputil.Clone(tags),
+		Metadata:    maputil.Clone(metadata),
 	}
 
 	return Mapped{Start: start, Generation: gen, CallError: callErr}
@@ -254,9 +249,7 @@ func derefInt64(v *int64) int64 {
 }
 
 func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (input, output []sigil.Message) {
-	if mode == sigil.ContentCaptureModeDefault {
-		mode = sigil.ContentCaptureModeMetadataOnly
-	}
+	mode = mapperutil.NormalizeContentMode(mode)
 	red := redact.New()
 	if mode != sigil.ContentCaptureModeMetadataOnly {
 		prompt := strings.TrimSpace(frag.Prompt)
@@ -300,49 +293,21 @@ func buildMessages(frag *fragment.Fragment, mode sigil.ContentCaptureMode) (inpu
 }
 
 func buildToolDefinitions(tools []fragment.ToolRecord) []sigil.ToolDefinition {
-	seen := map[string]struct{}{}
-	names := make([]string, 0, len(tools))
-	for _, item := range tools {
-		if item.ToolName == "" {
-			continue
-		}
-		if _, ok := seen[item.ToolName]; ok {
-			continue
-		}
-		seen[item.ToolName] = struct{}{}
-		names = append(names, item.ToolName)
+	names := make([]string, len(tools))
+	for i := range tools {
+		names[i] = tools[i].ToolName
 	}
-	sort.Strings(names)
-	out := make([]sigil.ToolDefinition, 0, len(names))
-	for _, name := range names {
-		out = append(out, sigil.ToolDefinition{Name: name, Type: "function"})
-	}
-	return out
+	return mapperutil.SortedToolDefinitions(names)
 }
 
 func GenerationID(sessionID, turnID string) string {
-	sum := sha256.Sum256([]byte(sessionID + "\x00" + turnID))
-	return "copilot-" + hex.EncodeToString(sum[:])[:24]
+	return mapperutil.DeterministicID("copilot", sessionID, turnID)
 }
 
-func cloneStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	maps.Copy(out, in)
-	return out
-}
-
-func cloneAnyMap(in map[string]any) map[string]any {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(in))
-	maps.Copy(out, in)
-	return out
-}
-
+// inferProvider is intentionally stricter than mapperutil.InferProvider: it
+// requires hyphenated prefixes ("gpt-", "claude-", "gemini-") and trims
+// whitespace, so unknown providers fall through to the "copilot" fallback
+// rather than being guessed from a loose substring match. Keep it local.
 func inferProvider(model string) string {
 	model = strings.ToLower(strings.TrimSpace(model))
 	switch {
