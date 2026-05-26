@@ -1,12 +1,15 @@
 // Package guard evaluates tool calls against Sigil guard policy and
-// returns a host-neutral result; callers translate it into their own
-// stdout response shape.
+// returns a host-neutral result. Callers translate the result into their
+// own stdout response shape; convenience writers are provided for shapes
+// shared by more than one host agent (e.g. WriteHookSpecificOutputDeny
+// for the Claude Code / Codex PreToolUse envelope).
 package guard
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -65,6 +68,10 @@ func (r Result) Blocked() bool {
 //   - Sigil returns deny: returns deny with the rule reason.
 //   - transport error and fail-open: returns allow (matches SDK behaviour).
 //   - transport error and fail-closed: returns deny with a transport reason.
+//
+// A local-mode endpoint (http://127.0.0.1, http://localhost, http://[::1])
+// uses stand-in placeholder credentials for the credential check so that
+// running against a local Sigil instance does not require real cloud creds.
 func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCallInput, logger *log.Logger) Result {
 	if !cfg.Enabled {
 		return Result{Action: sigil.HookActionAllow}
@@ -76,6 +83,7 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 	endpoint := strings.TrimSpace(os.Getenv("SIGIL_ENDPOINT"))
 	tenantID := strings.TrimSpace(os.Getenv("SIGIL_AUTH_TENANT_ID"))
 	authToken := strings.TrimSpace(os.Getenv("SIGIL_AUTH_TOKEN"))
+	tenantID, authToken = envconfig.LocalAuthPlaceholders(endpoint, tenantID, authToken)
 	if endpoint == "" || tenantID == "" || authToken == "" {
 		if cfg.FailOpen {
 			if logger != nil {
@@ -194,4 +202,35 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 	}
 
 	return Result{Action: sigil.HookActionAllow}
+}
+
+// hookSpecificOutputDeny is the PreToolUse deny envelope shared by Claude
+// Code and Codex. Both hosts read this exact JSON shape on stdout.
+type hookSpecificOutputDeny struct {
+	HookSpecificOutput hookSpecificOutputDenyBody `json:"hookSpecificOutput"`
+}
+
+type hookSpecificOutputDenyBody struct {
+	HookEventName            string `json:"hookEventName"`
+	PermissionDecision       string `json:"permissionDecision"`
+	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
+}
+
+// WriteHookSpecificOutputDeny writes the PreToolUse deny JSON used by Claude
+// Code and Codex. The two hosts share the exact wire format, so they share
+// this writer; reason falls back to a generic message when blank.
+func WriteHookSpecificOutputDeny(stdout io.Writer, reason string) {
+	if stdout == nil {
+		return
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "tool call denied by Sigil guard"
+	}
+	_ = json.NewEncoder(stdout).Encode(hookSpecificOutputDeny{
+		HookSpecificOutput: hookSpecificOutputDenyBody{
+			HookEventName:            "PreToolUse",
+			PermissionDecision:       "deny",
+			PermissionDecisionReason: reason,
+		},
+	})
 }
