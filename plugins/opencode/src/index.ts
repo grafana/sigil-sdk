@@ -13,6 +13,9 @@ export const SigilPlugin: Plugin = async ({ client }) => {
     "chat.message": async (input, output) => {
       hooks.chatMessage(input, output);
     },
+    "experimental.chat.system.transform": async (input, output) => {
+      hooks.systemTransform(input, output);
+    },
     event: async ({ event }) => {
       await hooks.event({
         event: event as { type: string; properties: unknown },
