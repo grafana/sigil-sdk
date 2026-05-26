@@ -122,7 +122,7 @@ jobs:
           install_args: biome
           cache: true
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
       - name: Lint
         run: mise run lint:ts:sdk-js
@@ -141,6 +141,9 @@ jobs:
 
       - name: Test pi plugin
         run: pnpm --filter @grafana/sigil-pi run test
+
+      - name: Lint opencode plugin
+        run: mise run lint:ts:plugin-opencode
 
       - name: Typecheck opencode plugin
         run: pnpm --filter @grafana/sigil-opencode run typecheck

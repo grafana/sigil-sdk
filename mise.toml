@@ -18,7 +18,11 @@ SIGIL_PROTOBUF_VERSION = "6.31.1"
 
 [tasks.deps]
 description = "Install JS/TS dependencies"
-run = "pnpm install"
+run = "pnpm install --frozen-lockfile"
+
+[tasks."deps:update"]
+description = "Update JS/TS dependencies and pnpm lockfile"
+run = "pnpm install --no-frozen-lockfile"
 
 # --- Formatting ---
 
@@ -51,9 +55,14 @@ description = "Format Pi plugin code"
 depends = ["deps"]
 run = "pnpm --filter @grafana/sigil-pi run lint:fix"
 
+[tasks."format:ts:plugin-opencode"]
+description = "Format OpenCode plugin code"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-opencode run lint:fix"
+
 [tasks.format]
 description = "Format all code"
-depends = ["format:go", "format:py", "format:cs", "format:ts:sdk-js", "format:ts:plugin-pi"]
+depends = ["format:go", "format:py", "format:cs", "format:ts:sdk-js", "format:ts:plugin-pi", "format:ts:plugin-opencode"]
 
 # --- Linting ---
 
@@ -95,13 +104,18 @@ description = "Lint Pi plugin code"
 depends = ["deps"]
 run = "pnpm --filter @grafana/sigil-pi run lint"
 
+[tasks."lint:ts:plugin-opencode"]
+description = "Lint OpenCode plugin code"
+depends = ["deps"]
+run = "pnpm --filter @grafana/sigil-opencode run lint"
+
 [tasks."lint:js-dependency-pinning"]
 description = "Verify JavaScript dependencies are pinned where required"
 run = "pnpm run check:js-dependency-pinning"
 
 [tasks.lint]
 description = "Run all linting"
-depends = ["lint:go", "lint:py", "lint:cs", "lint:ts:sdk-js", "lint:ts:plugin-pi", "lint:js-dependency-pinning"]
+depends = ["lint:go", "lint:py", "lint:cs", "lint:ts:sdk-js", "lint:ts:plugin-pi", "lint:ts:plugin-opencode", "lint:js-dependency-pinning"]
 
 # --- Type checking ---
 

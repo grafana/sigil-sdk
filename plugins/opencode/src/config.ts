@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
-import { join } from "path";
 import { homedir } from "os";
+import { join } from "path";
 
 export type SigilAuthConfig =
   | { mode: "bearer"; bearerToken: string }
@@ -17,7 +17,12 @@ export type SigilConfig = {
   contentCapture?: boolean;
 };
 
-const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode-sigil.json");
+const CONFIG_PATH = join(
+  homedir(),
+  ".config",
+  "opencode",
+  "opencode-sigil.json",
+);
 
 const DISABLED: SigilConfig = {
   enabled: false,

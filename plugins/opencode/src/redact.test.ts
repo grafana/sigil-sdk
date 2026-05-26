@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Redactor } from "./redact.js";
 
 describe("Redactor", () => {
@@ -79,7 +79,8 @@ MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy5AhEiS0C5
     });
 
     it("redacts bearer tokens in headers", () => {
-      const input = 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+      const input =
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
       const result = redactor.redact(input);
       expect(result).toContain("[REDACTED:");
     });
@@ -99,7 +100,8 @@ MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy5AhEiS0C5
     });
 
     it("handles multiple secrets in one string", () => {
-      const input = "key=AKIAIOSFODNN7REALKEY token=glc_abcdefghijklmnopqrstuvwxyz1234";
+      const input =
+        "key=AKIAIOSFODNN7REALKEY token=glc_abcdefghijklmnopqrstuvwxyz1234";
       const result = redactor.redact(input);
       expect(result).not.toContain("AKIAIOSFODNN7REALKEY");
       expect(result).not.toContain("glc_abcdefghijklmnopqrstuvwxyz1234");
@@ -121,7 +123,8 @@ MIIEpAIBAAKCAQEA0Z3VS5JJcds3xfn/ygWyF8PbnGy5AhEiS0C5
     });
 
     it("does NOT redact normal text", () => {
-      const input = "The API key configuration is stored in the settings panel.";
+      const input =
+        "The API key configuration is stored in the settings panel.";
       expect(redactor.redactLightweight(input)).toBe(input);
     });
   });

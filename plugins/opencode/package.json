@@ -25,6 +25,8 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
+    "lint": "biome check .",
+    "lint:fix": "biome check --fix .",
     "pretypecheck": "mise run build:ts:sdk-js",
     "typecheck": "tsc --noEmit",
     "deploy": "bash scripts/deploy.sh",

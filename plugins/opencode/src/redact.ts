@@ -19,35 +19,84 @@ interface SecretPattern {
 const TIER1_PATTERNS: SecretPattern[] = [
   // Grafana
   { id: "grafana-cloud-token", regex: /\bglc_[A-Za-z0-9_-]{20,}/g, tier: 1 },
-  { id: "grafana-service-account-token", regex: /\bglsa_[A-Za-z0-9_-]{20,}/g, tier: 1 },
+  {
+    id: "grafana-service-account-token",
+    regex: /\bglsa_[A-Za-z0-9_-]{20,}/g,
+    tier: 1,
+  },
   // AWS
-  { id: "aws-access-token", regex: /\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/g, tier: 1 },
+  {
+    id: "aws-access-token",
+    regex: /\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/g,
+    tier: 1,
+  },
   // GitHub
   { id: "github-pat", regex: /\bghp_[A-Za-z0-9_]{36,}/g, tier: 1 },
   { id: "github-oauth", regex: /\bgho_[A-Za-z0-9_]{36,}/g, tier: 1 },
   { id: "github-app-token", regex: /\bghs_[A-Za-z0-9_]{36,}/g, tier: 1 },
-  { id: "github-fine-grained-pat", regex: /\bgithub_pat_[A-Za-z0-9_]{82}/g, tier: 1 },
+  {
+    id: "github-fine-grained-pat",
+    regex: /\bgithub_pat_[A-Za-z0-9_]{82}/g,
+    tier: 1,
+  },
   // Anthropic
-  { id: "anthropic-api-key", regex: /\bsk-ant-api03-[a-zA-Z0-9_-]{93}AA/g, tier: 1 },
-  { id: "anthropic-admin-key", regex: /\bsk-ant-admin01-[a-zA-Z0-9_-]{93}AA/g, tier: 1 },
+  {
+    id: "anthropic-api-key",
+    regex: /\bsk-ant-api03-[a-zA-Z0-9_-]{93}AA/g,
+    tier: 1,
+  },
+  {
+    id: "anthropic-admin-key",
+    regex: /\bsk-ant-admin01-[a-zA-Z0-9_-]{93}AA/g,
+    tier: 1,
+  },
   // OpenAI (legacy format + modern sk-proj-/sk-svcacct- formats)
-  { id: "openai-api-key", regex: /\bsk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}/g, tier: 1 },
+  {
+    id: "openai-api-key",
+    regex: /\bsk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}/g,
+    tier: 1,
+  },
   { id: "openai-project-key", regex: /\bsk-proj-[a-zA-Z0-9_-]{40,}/g, tier: 1 },
-  { id: "openai-svcacct-key", regex: /\bsk-svcacct-[a-zA-Z0-9_-]{40,}/g, tier: 1 },
+  {
+    id: "openai-svcacct-key",
+    regex: /\bsk-svcacct-[a-zA-Z0-9_-]{40,}/g,
+    tier: 1,
+  },
   // GCP
   { id: "gcp-api-key", regex: /\bAIza[A-Za-z0-9_-]{35}/g, tier: 1 },
   // PEM private keys
-  { id: "private-key", regex: /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g, tier: 1 },
+  {
+    id: "private-key",
+    regex:
+      /-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----/g,
+    tier: 1,
+  },
   // Connection strings with embedded credentials
-  { id: "connection-string", regex: /(?:postgres|mysql|mongodb|redis|amqp):\/\/[^\s'"]+@[^\s'"]+/g, tier: 1 },
+  {
+    id: "connection-string",
+    regex: /(?:postgres|mysql|mongodb|redis|amqp):\/\/[^\s'"]+@[^\s'"]+/g,
+    tier: 1,
+  },
   // Bearer tokens in Authorization headers
-  { id: "bearer-token", regex: /[Bb]earer\s+[A-Za-z0-9_.\-~+/]{20,}={0,3}/g, tier: 1 },
+  {
+    id: "bearer-token",
+    regex: /[Bb]earer\s+[A-Za-z0-9_.\-~+/]{20,}={0,3}/g,
+    tier: 1,
+  },
   // Slack tokens
   { id: "slack-token", regex: /\bxox[bporas]-[A-Za-z0-9-]{10,}/g, tier: 1 },
   // Stripe keys
-  { id: "stripe-key", regex: /\b[sr]k_(?:live|test)_[A-Za-z0-9]{20,}/g, tier: 1 },
+  {
+    id: "stripe-key",
+    regex: /\b[sr]k_(?:live|test)_[A-Za-z0-9]{20,}/g,
+    tier: 1,
+  },
   // SendGrid
-  { id: "sendgrid-api-key", regex: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g, tier: 1 },
+  {
+    id: "sendgrid-api-key",
+    regex: /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g,
+    tier: 1,
+  },
   // Twilio
   { id: "twilio-api-key", regex: /\bSK[a-f0-9]{32}/g, tier: 1 },
   // npm tokens
@@ -60,7 +109,8 @@ const TIER1_PATTERNS: SecretPattern[] = [
 const TIER2_PATTERNS: SecretPattern[] = [
   {
     id: "env-secret-value",
-    regex: /(?<=(?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)\S+/gi,
+    regex:
+      /(?<=(?:PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|API_KEY|PRIVATE_KEY|ACCESS_KEY)\s*[=:]\s*)\S+/gi,
     tier: 2,
   },
 ];

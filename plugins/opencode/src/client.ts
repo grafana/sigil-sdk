@@ -1,5 +1,5 @@
 import { SigilClient } from "@grafana/sigil-sdk-js";
-import type { SigilConfig, SigilAuthConfig } from "./config.js";
+import type { SigilAuthConfig, SigilConfig } from "./config.js";
 
 // Matches ExportAuthConfig from @grafana/sigil-sdk-js (not re-exported from package index)
 type ResolvedAuth = {
@@ -22,9 +22,13 @@ type ResolvedTransport = {
 function resolveAuth(auth: SigilAuthConfig): ResolvedTransport {
   switch (auth.mode) {
     case "bearer":
-      return { auth: { mode: "bearer", bearerToken: resolveEnvVars(auth.bearerToken) } };
+      return {
+        auth: { mode: "bearer", bearerToken: resolveEnvVars(auth.bearerToken) },
+      };
     case "tenant":
-      return { auth: { mode: "tenant", tenantId: resolveEnvVars(auth.tenantId) } };
+      return {
+        auth: { mode: "tenant", tenantId: resolveEnvVars(auth.tenantId) },
+      };
     case "basic": {
       // JS SDK doesn't support Basic auth natively — use
       // mode "none" and inject the Authorization header manually.
@@ -48,7 +52,7 @@ export function createSigilClient(config: SigilConfig): SigilClient | null {
     if (!config.endpoint.includes(GENERATION_EXPORT_PATH)) {
       console.warn(
         `[sigil] endpoint "${config.endpoint}" does not include "${GENERATION_EXPORT_PATH}" -- ` +
-        `the JS SDK requires the full export URL (e.g. "http://localhost:8080${GENERATION_EXPORT_PATH}")`,
+          `the JS SDK requires the full export URL (e.g. "http://localhost:8080${GENERATION_EXPORT_PATH}")`,
       );
     }
     const transport = resolveAuth(config.auth);

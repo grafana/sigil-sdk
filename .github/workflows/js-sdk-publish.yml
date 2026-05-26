@@ -41,7 +41,7 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
       - name: Bump version
         id: bump
@@ -51,7 +51,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
           CURRENT=$(node -p "require('./js/package.json').version")
-          (cd js && npm version "$BUMP" --no-git-tag-version >/dev/null)
+          (cd js && npm version "$BUMP" --no-git-tag-version --package-lock=false --ignore-scripts >/dev/null)
           NEW=$(node -p "require('./js/package.json').version")
 
           echo "new-version=${NEW}" >> "$GITHUB_OUTPUT"
@@ -74,7 +74,7 @@ jobs:
         working-directory: js
         run: |
           mkdir -p ../tarballs
-          pnpm pack --pack-destination ../tarballs
+          pnpm --config.ignore-scripts=true pack --pack-destination ../tarballs
           mv ../tarballs/grafana-sigil-sdk-js-*.tgz ../tarballs/sdk-js.tgz
 
       - name: Upload tarball
@@ -106,7 +106,7 @@ jobs:
           path: tarballs/
 
       - name: Publish to npm
-        run: npm publish ./tarballs/sdk-js.tgz --access public
+        run: npm publish ./tarballs/sdk-js.tgz --access public --ignore-scripts
 
   tag:
     if: ${{ !inputs.dry-run }}
@@ -148,7 +148,7 @@ jobs:
         run: |
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
 
-          (cd js && npm version "${NEW_VERSION}" --no-git-tag-version --allow-same-version >/dev/null)
+          (cd js && npm version "${NEW_VERSION}" --no-git-tag-version --allow-same-version --package-lock=false --ignore-scripts >/dev/null)
 
           BRANCH="release/sdk-js-${NEW_VERSION}"
           git checkout -b "${BRANCH}"

@@ -61,10 +61,10 @@ jobs:
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version-file: js/package.json
+          node-version: "24"
           cache: pnpm
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
       - name: Resolve plugin list
         id: plan
@@ -89,13 +89,13 @@ jobs:
           BUMP_SUMMARY=""
           for p in ${PLUGINS}; do
             echo "::group::Preparing plugins/${p}"
-            (cd "plugins/${p}" && npm version "${BUMP}" --no-git-tag-version)
+            (cd "plugins/${p}" && npm version "${BUMP}" --no-git-tag-version --package-lock=false --ignore-scripts)
             NEW=$(node -p "require('./plugins/${p}/package.json').version")
             NAME=$(node -p "require('./plugins/${p}/package.json').name")
             echo "Plugin ${p}: ${NAME}@${NEW}"
 
             pnpm --filter "${NAME}" run build
-            (cd "plugins/${p}" && pnpm pack --pack-destination "../../tarballs")
+            (cd "plugins/${p}" && pnpm --config.ignore-scripts=true pack --pack-destination "../../tarballs")
 
             # pnpm pack output is e.g. grafana-sigil-pi-0.1.1.tgz; rename to <plugin>.tgz
             # so the matrix step doesn't need to know the version.
@@ -196,4 +196,4 @@ jobs:
       - name: Publish ${{ matrix.plugin }} to npm
         env:
           PLUGIN: ${{ matrix.plugin }}
-        run: npm publish "./tarballs/${PLUGIN}.tgz" --access public
+        run: npm publish "./tarballs/${PLUGIN}.tgz" --access public --ignore-scripts

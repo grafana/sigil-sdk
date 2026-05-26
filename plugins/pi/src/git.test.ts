@@ -10,6 +10,7 @@ function git(cwd: string, args: string[]): string {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
+    timeout: 5000,
   }).trim();
 }
 
@@ -20,6 +21,8 @@ function initRepo(cwd: string, branch = "main"): void {
   // user.* config is required for `git commit` to succeed in CI sandboxes.
   git(cwd, ["config", "user.email", "test@example.com"]);
   git(cwd, ["config", "user.name", "test"]);
+  // Avoid inheriting developer/global commit signing settings in local runs.
+  git(cwd, ["config", "commit.gpgsign", "false"]);
   git(cwd, ["commit", "-q", "--allow-empty", "-m", "init"]);
 }
 

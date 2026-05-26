@@ -3,9 +3,9 @@ set -euo pipefail
 
 mise run build:ts:sdk-js
 
-tsc --noEmit
+pnpm exec tsc --noEmit
 
-npx esbuild src/index.ts \
+pnpm exec esbuild src/index.ts \
   --bundle \
   --format=esm \
   --platform=node \
@@ -14,4 +14,4 @@ npx esbuild src/index.ts \
   --external:@opencode-ai/plugin \
   --external:@opencode-ai/sdk
 
-tsc --project tsconfig.build.json --emitDeclarationOnly --declaration --declarationMap --outDir dist
+pnpm exec tsc --project tsconfig.build.json --emitDeclarationOnly --declaration --declarationMap --outDir dist

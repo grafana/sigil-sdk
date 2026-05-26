@@ -12,14 +12,13 @@
 //
 // Set UPDATE_GOLDENS=1 to regenerate the golden after a deliberate change.
 
-import { createServer, type Server } from "node:http";
 import { readFileSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-
-import { createSigilHooks } from "./hooks.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SigilConfig } from "./config.js";
+import { createSigilHooks } from "./hooks.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = join(
@@ -164,7 +163,13 @@ function opencodeMessageFixture() {
       },
     },
   ];
-  return { sessionID, userMessage, userParts, assistantMessage, assistantParts };
+  return {
+    sessionID,
+    userMessage,
+    userParts,
+    assistantMessage,
+    assistantParts,
+  };
 }
 
 const SDK_ENV_KEYS = [
@@ -209,9 +214,16 @@ describe("opencode plugin: real-SDK golden export", () => {
     savedEnv = {};
   });
 
-  async function runCompleteAssistantTurn(configOverrides: Partial<SigilConfig> = {}) {
-    const { sessionID, userMessage, userParts, assistantMessage, assistantParts } =
-      opencodeMessageFixture();
+  async function runCompleteAssistantTurn(
+    configOverrides: Partial<SigilConfig> = {},
+  ) {
+    const {
+      sessionID,
+      userMessage,
+      userParts,
+      assistantMessage,
+      assistantParts,
+    } = opencodeMessageFixture();
 
     const config: SigilConfig = {
       enabled: true,

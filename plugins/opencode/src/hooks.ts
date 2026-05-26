@@ -1,10 +1,10 @@
 import type { SigilClient } from "@grafana/sigil-sdk-js";
-import type { AssistantMessage, UserMessage, Part } from "@opencode-ai/sdk";
 import type { PluginInput } from "@opencode-ai/plugin";
-import type { SigilConfig } from "./config.js";
+import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk";
 import { createSigilClient } from "./client.js";
+import type { SigilConfig } from "./config.js";
+import { mapError, mapGeneration, mapToolDefinitions } from "./mappers.js";
 import { Redactor } from "./redact.js";
-import { mapGeneration, mapError, mapToolDefinitions } from "./mappers.js";
 
 type OpencodeClient = PluginInput["client"];
 
@@ -19,7 +19,10 @@ type PendingGeneration = {
 };
 const pendingGenerations = new Map<string, PendingGeneration>();
 
-function buildAgentName(prefix: string | undefined, mode: string | undefined): string {
+function buildAgentName(
+  prefix: string | undefined,
+  mode: string | undefined,
+): string {
   const base = prefix || "opencode";
   return mode ? `${base}:${mode}` : base;
 }
@@ -48,18 +51,22 @@ async function handleEvent(
 ): Promise<void> {
   if (event.type !== "message.updated") return;
 
-  const properties = event.properties as { info?: { role?: string } } | undefined;
+  const properties = event.properties as
+    | { info?: { role?: string } }
+    | undefined;
   const msg = properties?.info;
   if (!msg || msg.role !== "assistant") return;
 
   const assistantMsg = msg as AssistantMessage;
 
   // Only record terminal messages
-  const isTerminal = assistantMsg.finish || assistantMsg.error || assistantMsg.time.completed;
+  const isTerminal =
+    assistantMsg.finish || assistantMsg.error || assistantMsg.time.completed;
   if (!isTerminal) return;
 
   // Dedup
-  const sessionSet = recordedMessages.get(assistantMsg.sessionID) ?? new Set<string>();
+  const sessionSet =
+    recordedMessages.get(assistantMsg.sessionID) ?? new Set<string>();
   if (sessionSet.has(assistantMsg.id)) return;
   sessionSet.add(assistantMsg.id);
   recordedMessages.set(assistantMsg.sessionID, sessionSet);
@@ -96,14 +103,20 @@ async function handleEvent(
   // When contentCapture is enabled, map full content with redaction;
   // otherwise fall back to metadata-only result (no message content).
   const result = contentCapture
-    ? mapGeneration(assistantMsg, pending?.userParts ?? [], assistantParts, redactor)
+    ? mapGeneration(
+        assistantMsg,
+        pending?.userParts ?? [],
+        assistantParts,
+        redactor,
+      )
     : mapGeneration(assistantMsg, [], [], redactor);
 
   try {
     if (assistantMsg.error) {
+      const error = assistantMsg.error;
       await sigil.startGeneration(seed, async (recorder) => {
         recorder.setResult(result);
-        recorder.setCallError(mapError(assistantMsg.error!));
+        recorder.setCallError(mapError(error));
       });
     } else {
       await sigil.startGeneration(seed, async (recorder) => {
@@ -133,7 +146,9 @@ async function handleLifecycle(
   }
 
   if (type === "session.deleted") {
-    const properties = event.properties as { info?: { id?: string } } | undefined;
+    const properties = event.properties as
+      | { info?: { id?: string } }
+      | undefined;
     const sessionId = properties?.info?.id;
     if (sessionId) {
       recordedMessages.delete(sessionId);
@@ -151,7 +166,9 @@ async function handleLifecycle(
 }
 
 export type SigilHooks = {
-  event: (input: { event: { type: string; properties: unknown } }) => Promise<void>;
+  event: (input: {
+    event: { type: string; properties: unknown };
+  }) => Promise<void>;
   chatMessage: (
     input: { sessionID: string },
     output: { message: UserMessage; parts: Part[] },
@@ -165,7 +182,9 @@ export async function createSigilHooks(
   if (!config.enabled) return null;
 
   if (!config.endpoint) {
-    console.warn("[sigil] endpoint is required when enabled -- skipping Sigil initialization");
+    console.warn(
+      "[sigil] endpoint is required when enabled -- skipping Sigil initialization",
+    );
     return null;
   }
 
