@@ -338,7 +338,16 @@ agent_name / agent_version — agent identity
 trace_id / span_id     — OTel correlation
 ```
 
-### SDK workflow step API
+### Choosing a workflow step instrumentation path
+
+There are two layers:
+
+- **Manual SDK API** — use `enqueue_workflow_step(step)` when forwarding pre-built workflow steps or instrumenting custom execution graphs directly. You create step IDs, parent edges, timestamps, input/output state, and linked generation IDs yourself.
+- **Framework adapter** — use the adapter when one exists, such as `SigilLangGraphHandler` for LangGraph. The adapter creates workflow steps automatically from framework callbacks.
+
+Do not use both paths for the same LangGraph node, or you will record duplicate workflow steps.
+
+### Manual SDK workflow step API
 
 The SDK client exposes `enqueue_workflow_step(step)` which queues the step for batch export alongside generations. The flush pipeline handles both.
 
@@ -350,20 +359,21 @@ step = WorkflowStep(
     id="wfs_abc123",
     conversation_id="conv-1",
     step_name="classify",
-    framework="langgraph",
+    framework="custom-orchestrator",
     started_at=datetime.now(timezone.utc),
     completed_at=datetime.now(timezone.utc),
     input_state={"text": "input data"},
     output_state={"category": "incident"},
-    tags={"sigil.framework.name": "langgraph"},
+    tags={"sigil.framework.name": "custom-orchestrator"},
     linked_generation_ids=["gen_xyz"],  # LLM calls inside this step
     parent_step_ids=[],                  # first node, no parents
 )
 client.enqueue_workflow_step(step)
 ```
 
-### Framework adapter pattern (LangGraph)
+### LangGraph adapter pattern
 
+For LangGraph, prefer the adapter instead of manually calling `enqueue_workflow_step`.
 The `SigilLangGraphHandler` automatically captures workflow steps when `capture_workflow_steps=True`.
 Always set `conversation_title` to a short human-readable label. It appears as the conversation name in the Sigil UI; without it, the title falls back to an opaque auto-generated ID.
 
@@ -376,7 +386,10 @@ handler = SigilLangGraphHandler(
     conversation_title="Incident Response Pipeline",
     capture_workflow_steps=True,
 )
-result = graph.invoke(input, config={"callbacks": [handler]})
+result = graph.invoke(
+    {"prompt": "Investigate elevated API latency.", "answer": ""},
+    config={"callbacks": [handler]},
+)
 ```
 
 ### Workflow step vs generation: decision table
