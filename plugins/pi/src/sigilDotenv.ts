@@ -110,8 +110,8 @@ function readSigilDotenv(path: string): SigilDotenvReadResult {
 /**
  * Read and parse the dotenv file at `path`. Missing files return `{}`
  * silently — the dotenv config is optional and credentials may come from
- * other sources (shell env, sigil-pi/config.json). Other read failures emit a
- * single `[sigil-pi]` warning and also return `{}`.
+ * other sources (shell env). Other read failures emit a single `[sigil-pi]`
+ * warning and also return `{}`.
  */
 export function loadSigilDotenv(path: string): Record<string, string> {
   return readSigilDotenv(path).env;
