@@ -27,6 +27,7 @@ CI runs `mise run check:proto` and fails the build if the committed stubs drift 
 
 - The Go workspace (`go.work`) covers `go/`, `go-providers/*`, `go-frameworks/google-adk`, and `plugins/sigil`. Adding a new Go module means updating `go.work` *and* `go.work.sum`. Lint tasks use `GOWORK=off` and iterate per-module via `find . -name go.mod`, so each module must also lint and build on its own.
 - The pnpm workspace covers `js/` and `plugins/*`. Use `pnpm --filter <name>` from the root; `mise.toml` does this via tasks like `lint:ts:sdk-js`.
+- When adding a JS workspace package, plugin, or private example, update `js/scripts/check-js-dependency-pinning.mjs` so dependency pinning enforcement covers the new manifest. Published packages should keep runtime `dependencies` and `peerDependencies` as compatible ranges, but pin `devDependencies`; private examples should pin external dependencies exactly.
 - Java uses a single gradle multi-project rooted at `java/`; modules are listed in `java/settings.gradle.kts`.
 - .NET uses a single solution at `dotnet/Sigil.DotNet.slnx`; projects are listed there.
 
