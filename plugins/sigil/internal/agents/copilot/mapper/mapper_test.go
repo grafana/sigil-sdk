@@ -83,6 +83,20 @@ func TestMapFullModeIncludesRedactedPromptAndToolContent(t *testing.T) {
 	}
 }
 
+func TestMapPreservesFullWithMetadataSpansOnStart(t *testing.T) {
+	got := Map(Inputs{
+		Fragment:       basicFragment(),
+		ContentCapture: sigil.ContentCaptureModeFullWithMetadataSpans,
+		Now:            fixedTime,
+	})
+	if got.Start.ContentCapture != sigil.ContentCaptureModeFullWithMetadataSpans {
+		t.Fatalf("Start.ContentCapture = %q, want full_with_metadata_spans", got.Start.ContentCapture)
+	}
+	if len(got.Generation.Input) == 0 || got.Generation.Input[0].Parts[0].Text == "" {
+		t.Fatalf("full_with_metadata_spans should emit full gRPC content, got %+v", got.Generation.Input)
+	}
+}
+
 func TestMapMetadataOnlyStripsPromptAndToolResultContent(t *testing.T) {
 	got := Map(Inputs{
 		Fragment:       basicFragment(),

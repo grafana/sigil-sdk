@@ -65,6 +65,22 @@ func TestMapFullRedactsContent(t *testing.T) {
 	}
 }
 
+func TestMapPreservesFullWithMetadataSpansOnStart(t *testing.T) {
+	f := &fragment.Fragment{
+		SessionID: "sess",
+		TurnID:    "turn",
+		Model:     "gpt-5.5",
+		Prompt:    "hello",
+	}
+	got := Map(Inputs{Fragment: f, ContentCapture: sigil.ContentCaptureModeFullWithMetadataSpans, Now: time.Unix(1, 0)})
+	if got.Start.ContentCapture != sigil.ContentCaptureModeFullWithMetadataSpans {
+		t.Fatalf("Start.ContentCapture = %q, want full_with_metadata_spans", got.Start.ContentCapture)
+	}
+	if len(got.Generation.Input) == 0 || got.Generation.Input[0].Parts[0].Text != "hello" {
+		t.Fatalf("full_with_metadata_spans should emit full gRPC content, got %+v", got.Generation.Input)
+	}
+}
+
 func TestMapFullRedactsInvalidJSONAsJSONString(t *testing.T) {
 	secret := "glc_abcdefghijklmnopqrstuvwxyz"
 	f := &fragment.Fragment{

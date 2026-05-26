@@ -42,6 +42,10 @@ func Map(in Inputs) Mapped {
 	completedAt := timeutil.ParseTimestamp(frag.CompletedAt, timeutil.ParseTimestamp(frag.LastEventAt, now))
 	startedAt := timeutil.ParseTimestamp(frag.StartedAt, completedAt)
 	mode := mapperutil.NormalizeContentMode(in.ContentCapture)
+	startContentCapture := in.ContentCapture
+	if startContentCapture == sigil.ContentCaptureModeDefault {
+		startContentCapture = sigil.ContentCaptureModeMetadataOnly
+	}
 
 	modelName := strings.TrimSpace(frag.Model)
 	if modelName == "" {
@@ -79,7 +83,7 @@ func Map(in Inputs) Mapped {
 		Tags:                maputil.Clone(tags),
 		Metadata:            maputil.Clone(metadata),
 		StartedAt:           startedAt,
-		ContentCapture:      mode,
+		ContentCapture:      startContentCapture,
 	}
 	gen := sigil.Generation{
 		ID:                  id,

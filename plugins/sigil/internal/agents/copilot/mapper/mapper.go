@@ -40,6 +40,10 @@ func Map(in Inputs) Mapped {
 		now = time.Now()
 	}
 	mode := mapperutil.NormalizeContentMode(in.ContentCapture)
+	startContentCapture := in.ContentCapture
+	if startContentCapture == sigil.ContentCaptureModeDefault {
+		startContentCapture = sigil.ContentCaptureModeMetadataOnly
+	}
 	completedAt := timeutil.ParseTimestamp(frag.CompletedAt, timeutil.ParseTimestamp(frag.LastEventAt, now))
 	startedAt := timeutil.ParseTimestamp(frag.StartedAt, completedAt)
 
@@ -140,7 +144,7 @@ func Map(in Inputs) Mapped {
 		Tags:           maputil.Clone(tags),
 		Metadata:       maputil.Clone(metadata),
 		StartedAt:      startedAt,
-		ContentCapture: mode,
+		ContentCapture: startContentCapture,
 	}
 
 	gen := sigil.Generation{
