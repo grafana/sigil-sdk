@@ -335,6 +335,7 @@ describe("opencode plugin: real-SDK golden export", () => {
     "full",
     "no_tool_content",
     "metadata_only",
+    "full_with_metadata_spans",
   ] as const)("propagates content capture mode %s to the SDK export", async (contentCapture) => {
     const { turn, messageFetches } = await runCompleteAssistantTurn({
       contentCapture,
@@ -350,6 +351,17 @@ describe("opencode plugin: real-SDK golden export", () => {
         "Bash",
         "Read",
       ]);
+    }
+    // full_with_metadata_spans must keep tool bodies in the proto export
+    // (the SDK splits content only on the OTel span side); see
+    // go/sigil/content_capture.go on ContentCaptureModeFullWithMetadataSpans.
+    if (contentCapture === "full_with_metadata_spans") {
+      expect(findOutputPart(turn, "tool_call").tool_call.input_json).not.toBe(
+        "",
+      );
+      expect(findOutputPart(turn, "tool_result").tool_result.content).not.toBe(
+        "",
+      );
     }
   });
 

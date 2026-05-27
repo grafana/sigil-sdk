@@ -2,7 +2,7 @@
 
 [Pi](https://github.com/badlogic/pi) agent extension that sends LLM generations to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/).
 
-By default only metadata is sent (token counts, cost, model, tool names, durations). Set `SIGIL_CONTENT_CAPTURE_MODE=full` or `no_tool_content` to include message content.
+By default only metadata is sent (token counts, cost, model, tool names, durations). Set `SIGIL_CONTENT_CAPTURE_MODE` to `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans` to control what is sent. `default` is accepted as an alias for `metadata_only`.
 
 ## 1. Install and launch
 
@@ -99,7 +99,7 @@ The same three variables are honored by the [Claude Code plugin](../claude-code/
 | `SIGIL_AUTH_TOKEN` | — | Cloud access policy token (`glc_…`). |
 | `SIGIL_AGENT_NAME` | `pi` | Agent name reported to Sigil. |
 | `SIGIL_AGENT_VERSION` | — | Optional version string reported with the agent. |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `metadata_only` | `full`, `no_tool_content`, or `metadata_only`. |
+| `SIGIL_CONTENT_CAPTURE_MODE` | `metadata_only` | One of `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans`. `default` is accepted as an alias for `metadata_only`. |
 | `SIGIL_DEBUG` | `false` | Log lifecycle events to stderr. |
 | `SIGIL_REDACT_INPUT_MESSAGES` | `true` | Redact known secret patterns in user input messages before export. |
 | `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP HTTP endpoint. Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |

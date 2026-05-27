@@ -73,6 +73,23 @@ describe("resolveConfig", () => {
     expect(cfg?.contentCapture).toBe("metadata_only");
   });
 
+  it("accepts SIGIL_CONTENT_CAPTURE_MODE=full_with_metadata_spans", () => {
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.SIGIL_CONTENT_CAPTURE_MODE = "full_with_metadata_spans";
+    const cfg = resolveConfig();
+    expect(cfg?.contentCapture).toBe("full_with_metadata_spans");
+  });
+
+  it("maps SIGIL_CONTENT_CAPTURE_MODE=default to metadata_only without warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.SIGIL_CONTENT_CAPTURE_MODE = "default";
+    const cfg = resolveConfig();
+    expect(cfg?.contentCapture).toBe("metadata_only");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("warns and falls back to metadata_only on unknown content-capture value", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     process.env.SIGIL_ENDPOINT = "http://localhost:8080";

@@ -138,16 +138,26 @@ function resolveGuards(): GuardsFeatureConfig {
   };
 }
 
+// Modes the parser passes through to the SDK verbatim. "default" is
+// intentionally absent: it is collapsed to "metadata_only" in
+// parseContentCaptureMode before the includes check, matching the canonical
+// Go envconfig.ResolveContentMode. If "default" were listed here, removing
+// the early-return would silently let the literal reach the SDK, which would
+// then resolve it to "no_tool_content" via its client-level default.
 const VALID_CAPTURE_MODES: ContentCaptureMode[] = [
   "full",
   "no_tool_content",
   "metadata_only",
+  "full_with_metadata_spans",
 ];
 
 function parseContentCaptureMode(value: string): ContentCaptureMode {
   const normalized = value.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return "full";
   if (["0", "false", "no", "off"].includes(normalized)) return "metadata_only";
+  // Resolve "default" inside the plugin: the SDK's client-level default would
+  // otherwise map it to "no_tool_content", which differs from the Go binary.
+  if (normalized === "default") return "metadata_only";
   if (VALID_CAPTURE_MODES.includes(normalized as ContentCaptureMode)) {
     return normalized as ContentCaptureMode;
   }

@@ -6,6 +6,19 @@ import type {
   ToolDefinition,
 } from "@grafana/sigil-sdk-js";
 
+// includesToolBodies decides whether tool argument JSON, tool result content,
+// and tool description/schema are included in the proto export.
+//
+// Both `full` and `full_with_metadata_spans` ship full content in the proto
+// export per the SDK contract (see go/sigil/content_capture.go on
+// ContentCaptureModeFullWithMetadataSpans). The two modes only differ on the
+// OTel span side, which is handled inside the SDK, not in this mapper.
+function includesToolBodies(contentCapture: ContentCaptureMode): boolean {
+  return (
+    contentCapture === "full" || contentCapture === "full_with_metadata_spans"
+  );
+}
+
 /**
  * Pi's ToolInfo shape from @mariozechner/pi-coding-agent.
  * Declared here to avoid a hard import of pi types (treated as external at
@@ -264,8 +277,9 @@ export function mapUserMessage(
  * full registry. `activeNames === null` means "no filter" (the active-set
  * API is unavailable); an empty Set means "no tools offered this turn" and
  * produces an empty result. `description` and `inputSchemaJSON` are body
- * content and are only emitted under `contentCapture === "full"`; otherwise
- * the definitions are name-only, matching how `git.branch` is gated.
+ * content and are only emitted when the mode includes tool bodies (`full` or
+ * `full_with_metadata_spans`); otherwise the definitions are name-only,
+ * matching how `git.branch` is gated.
  */
 export function mapTools(
   toolCatalog: PiToolInfo[],
@@ -274,7 +288,7 @@ export function mapTools(
 ): ToolDefinition[] {
   const defs: ToolDefinition[] = [];
   const seen = new Set<string>();
-  const includeBody = contentCapture === "full";
+  const includeBody = includesToolBodies(contentCapture);
 
   for (const tool of toolCatalog) {
     if (!tool || typeof tool.name !== "string") continue;
@@ -394,7 +408,8 @@ export function extractRequestControls(
  * Map assistant message content blocks to Sigil output messages.
  * - text/thinking parts: only when contentCapture allows body content.
  * - tool_call parts: always emitted (structure needed for the SDK's
- *   tool_calls_per_operation metric); inputJSON is only filled in `full` mode.
+ *   tool_calls_per_operation metric); inputJSON is only filled when the mode
+ *   includes tool bodies (`full` or `full_with_metadata_spans`).
  */
 function mapAssistantOutput(
   msg: PiAssistantMessage,
@@ -433,10 +448,9 @@ function mapAssistantOutput(
               toolCall: {
                 id: block.id,
                 name: block.name,
-                inputJSON:
-                  contentCapture === "full"
-                    ? JSON.stringify(block.arguments)
-                    : "",
+                inputJSON: includesToolBodies(contentCapture)
+                  ? JSON.stringify(block.arguments)
+                  : "",
               },
             },
           ],
@@ -451,14 +465,15 @@ function mapAssistantOutput(
 
 /**
  * Map pi tool results to Sigil tool result messages. Always emits the
- * structural part; body content is included only in `full` mode.
+ * structural part; body content is included only when the mode includes tool
+ * bodies (`full` or `full_with_metadata_spans`).
  */
 function mapToolResultsOutput(
   toolResults: PiToolResult[],
   contentCapture: ContentCaptureMode,
 ): Message[] {
   const messages: Message[] = [];
-  const includeBody = contentCapture === "full";
+  const includeBody = includesToolBodies(contentCapture);
 
   for (const tr of toolResults) {
     let content = "";

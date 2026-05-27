@@ -245,7 +245,14 @@ describe("pi plugin: real-SDK golden export", () => {
     savedEnv = {};
   });
 
-  it("matches the recorded golden export for a full assistant turn", async () => {
+  // runFullTurn drives the FakePi event stream through one assistant turn and
+  // returns the normalized export plus the turn generation. Tests that want a
+  // non-default content capture mode set
+  // process.env.SIGIL_CONTENT_CAPTURE_MODE before calling this helper.
+  async function runFullTurn(): Promise<{
+    exports: { path: string; generations: unknown[] }[];
+    turn: any;
+  }> {
     const pi = new FakePi();
     registerExtension(pi as any);
 
@@ -303,7 +310,6 @@ describe("pi plugin: real-SDK golden export", () => {
       );
     }
 
-    // Invariant assertions in addition to the golden diff.
     for (const exp of exports) {
       expect(exp.path).toBe("/api/v1/generations:export");
     }
@@ -311,6 +317,25 @@ describe("pi plugin: real-SDK golden export", () => {
     expect(allGen.length).toBeGreaterThan(0);
     const turn = allGen.find((g) => g.agent_name === "pi");
     expect(turn, "expected a generation with agent_name=pi").toBeDefined();
+
+    return { exports, turn };
+  }
+
+  // The proto export uses a oneof for `parts`, so a part is identified by
+  // which field is populated (`tool_call`, `tool_result`, `text`, ...), not
+  // by a `type` discriminator. Matches the helper in opencode's golden test.
+  function findOutputPart(turn: any, key: string): any {
+    for (const msg of turn.output ?? []) {
+      for (const part of msg.parts ?? []) {
+        if (part[key] !== undefined) return part;
+      }
+    }
+    throw new Error(`missing output part ${key}`);
+  }
+
+  it("matches the recorded golden export for a full assistant turn", async () => {
+    const { exports, turn } = await runFullTurn();
+
     expect(turn.conversation_id).toBe("pi-conv-1");
     expect(turn.model.name).toBe("claude-sonnet-4-pi");
     expect(turn.model.provider).toBe("anthropic");
@@ -319,6 +344,38 @@ describe("pi plugin: real-SDK golden export", () => {
     expect(String(turn.usage.output_tokens)).toBe("30");
 
     assertGoldenJSON(GOLDEN_PATH, exports);
+  });
+
+  it.each([
+    "full",
+    "no_tool_content",
+    "metadata_only",
+    "full_with_metadata_spans",
+  ] as const)("propagates content capture mode %s to the SDK export", async (contentCapture) => {
+    process.env.SIGIL_CONTENT_CAPTURE_MODE = contentCapture;
+
+    const { turn } = await runFullTurn();
+
+    expect(turn.metadata["sigil.sdk.content_capture_mode"]).toBe(
+      contentCapture,
+    );
+
+    // full and full_with_metadata_spans must keep tool bodies in the proto
+    // export (the SDK splits content only on the OTel span side); see
+    // go/sigil/content_capture.go on ContentCaptureModeFullWithMetadataSpans.
+    const expectsToolBodies =
+      contentCapture === "full" ||
+      contentCapture === "full_with_metadata_spans";
+
+    const toolCall = findOutputPart(turn, "tool_call");
+    const toolResult = findOutputPart(turn, "tool_result");
+    if (expectsToolBodies) {
+      expect(toolCall.tool_call.input_json).not.toBe("");
+      expect(toolResult.tool_result.content).not.toBe("");
+    } else {
+      expect(toolCall.tool_call.input_json).toBe("");
+      expect(toolResult.tool_result.content).toBe("");
+    }
   });
 });
 

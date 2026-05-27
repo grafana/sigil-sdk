@@ -416,6 +416,71 @@ describe("mapGenerationResult", () => {
     expect(roles).toContain("tool");
   });
 
+  it("full_with_metadata_spans matches full for proto-export tool bodies", () => {
+    // Per the SDK contract (ContentCaptureModeFullWithMetadataSpans in
+    // go/sigil/content_capture.go), the proto export gets full generation
+    // content under this mode; only the OTel span side is reduced.
+    const msg = makeMsg({
+      content: [
+        { type: "text", text: "I'll run that command" },
+        {
+          type: "toolCall",
+          id: "c1",
+          name: "bash",
+          arguments: { command: "ls" },
+        },
+      ],
+    });
+    const toolResults = [
+      makeToolResult({
+        toolCallId: "c1",
+        content: [{ type: "text", text: "file.txt" }],
+      }),
+    ];
+    const result = mapGenerationResult(
+      msg,
+      toolResults,
+      "full_with_metadata_spans",
+    );
+
+    const toolCallPart = result.output
+      ?.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "tool_call");
+    expect(
+      (toolCallPart as { toolCall: { inputJSON: string } }).toolCall.inputJSON,
+    ).toBe(JSON.stringify({ command: "ls" }));
+
+    const toolResultPart = result.output
+      ?.flatMap((m) => m.parts ?? [])
+      .find((p) => p.type === "tool_result");
+    expect(
+      (toolResultPart as { toolResult: { content: string } }).toolResult
+        .content,
+    ).toBe("file.txt");
+  });
+
+  it("mapTools emits descriptions and schemas under full_with_metadata_spans", () => {
+    const catalog: PiToolInfo[] = [
+      {
+        name: "bash",
+        description: "Run a shell command",
+        parameters: { type: "object" },
+      },
+    ];
+    const defs = mapTools(
+      catalog,
+      new Set(["bash"]),
+      "full_with_metadata_spans",
+    );
+    expect(defs).toEqual([
+      {
+        name: "bash",
+        description: "Run a shell command",
+        inputSchemaJSON: JSON.stringify({ type: "object" }),
+      },
+    ]);
+  });
+
   it("skips redacted thinking blocks", () => {
     const msg = makeMsg({
       content: [
