@@ -206,6 +206,9 @@ func conversationTitle(st *state.Session, sessionID string, r *redact.Redactor) 
 	if r != nil {
 		t = r.RedactLightweight(t)
 	}
+	if t == "" {
+		return sessionID
+	}
 	if len(t) > maxTitleLen {
 		t = t[:maxTitleLen]
 		// Truncate to valid UTF-8 boundary
