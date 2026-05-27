@@ -3,6 +3,7 @@ package hook
 import (
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 
@@ -66,6 +67,9 @@ func setConversationTitle(conversationID, prompt string, logger *log.Logger) {
 	title := strings.TrimSpace(prompt)
 	if len(title) > maxTitleLen {
 		title = title[:maxTitleLen]
+		for !utf8.ValidString(title) {
+			title = title[:len(title)-1]
+		}
 	}
 	sess.ConversationTitle = title
 	if err := fragment.SaveSession(*sess); err != nil {
