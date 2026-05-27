@@ -93,12 +93,13 @@ func MapFragment(in Inputs) Mapped {
 	if in.Session != nil && len(in.Session.WorkspaceRoots) > 0 {
 		workspaceRoot = in.Session.WorkspaceRoots[0]
 	}
-	var cursorVersion, userEmail string
+	var cursorVersion, userEmail, conversationTitle string
 	var isBackgroundAgent bool
 	if in.Session != nil {
 		cursorVersion = in.Session.CursorVersion
 		userEmail = in.Session.UserEmail
 		isBackgroundAgent = in.Session.IsBackgroundAgent
+		conversationTitle = in.Session.ConversationTitle
 	}
 
 	tagMap := tags.Build(tags.BuiltinInputs{
@@ -119,10 +120,11 @@ func MapFragment(in Inputs) Mapped {
 	}
 
 	start := sigil.GenerationStart{
-		ID:               frag.GenerationID,
-		ConversationID:   frag.ConversationID,
-		UserID:           uid,
-		AgentName:        AgentName,
+		ID:                frag.GenerationID,
+		ConversationID:    frag.ConversationID,
+		ConversationTitle: conversationTitle,
+		UserID:            uid,
+		AgentName:         AgentName,
 		AgentVersion:     cursorVersion,
 		EffectiveVersion: cursorVersion,
 		Mode:             sigil.GenerationModeSync,
@@ -138,10 +140,11 @@ func MapFragment(in Inputs) Mapped {
 	input, output := buildMessages(frag, in.ContentCapture)
 
 	gen := sigil.Generation{
-		ID:               frag.GenerationID,
-		ConversationID:   frag.ConversationID,
-		UserID:           uid,
-		AgentName:        AgentName,
+		ID:                frag.GenerationID,
+		ConversationID:    frag.ConversationID,
+		ConversationTitle: conversationTitle,
+		UserID:            uid,
+		AgentName:         AgentName,
 		AgentVersion:     cursorVersion,
 		EffectiveVersion: cursorVersion,
 		Mode:             sigil.GenerationModeSync,
