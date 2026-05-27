@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0] - 2026-05-27
+
+### Features
+
+- **plugins/sigil**: add opencode launcher (#224)
+- **plugins**: auto-update sigil plugins (#185)
+- **plugins/codex**: support tool call guards (#213)
+- **plugins/copilot**: support tool call guards (#214)
+
+### Bug Fixes
+
+- **plugins/sigil**: set service.instance.id per agent session (#218)
+
+### Documentation
+
+- **plugins**: lead with sigil launcher, hide manual install (#210)
+
 ## [0.6.0] - 2026-05-26
 
 ### Features
