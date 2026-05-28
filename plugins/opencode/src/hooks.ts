@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { SigilClient } from "@grafana/sigil-sdk-js";
+import type { ContentCaptureMode, SigilClient } from "@grafana/sigil-sdk-js";
 import type { PluginInput } from "@opencode-ai/plugin";
 import type {
   AssistantMessage,
@@ -35,6 +35,46 @@ type SessionContext = {
   model: { provider: string; name: string } | undefined;
 };
 const sessionContexts = new Map<string, SessionContext>();
+
+export type ToolExecutionRecord = {
+  sessionID: string;
+  toolName: string;
+  toolCallId: string;
+  startedAt: number;
+  completedAt: number;
+  input?: unknown;
+  output?: unknown;
+  isError?: boolean;
+  error?: string;
+};
+
+const activeToolExecutions = new Map<string, ToolExecutionRecord>();
+const completedToolExecutions = new Map<string, ToolExecutionRecord[]>();
+
+function toolExecutionKey(sessionID: string, callID: string): string {
+  return `${sessionID}\x00${callID}`;
+}
+
+/** @internal Exported for testing. */
+export function _resetToolExecutionState(): void {
+  activeToolExecutions.clear();
+  completedToolExecutions.clear();
+}
+
+/** @internal Exported for testing. */
+export function _peekToolExecutionState(): {
+  active: ToolExecutionRecord[];
+  completed: ToolExecutionRecord[];
+} {
+  const completed: ToolExecutionRecord[] = [];
+  for (const list of completedToolExecutions.values()) {
+    completed.push(...list);
+  }
+  return {
+    active: Array.from(activeToolExecutions.values()),
+    completed,
+  };
+}
 
 type MessageUpdatedInfo = Partial<AssistantMessage> & {
   id?: string;
@@ -240,16 +280,39 @@ async function recordAssistantMessage(
     config.contentCapture,
   );
 
+  // Span records prefer terminal `ToolPart.state.time` when assistant parts
+  // are already available. `assistantParts` is empty in `metadata_only` (we
+  // intentionally skip the REST fetch there), so hook records take over and
+  // give us per-tool spans without forcing a body fetch.
+  const termRecords = toolSpansFromParts(
+    assistantMsg.sessionID,
+    assistantParts,
+  );
+  const hookRecords = completedToolExecutions.get(assistantMsg.sessionID) ?? [];
+  const spanRecords = mergeToolSpanRecords(termRecords, hookRecords);
+  const spanOpts = {
+    conversationId: assistantMsg.sessionID,
+    agentName: buildAgentName(config.agentName, assistantMsg.mode),
+    agentVersion: config.agentVersion,
+    requestProvider: assistantMsg.providerID,
+    requestModel: assistantMsg.modelID,
+    contentCapture: config.contentCapture,
+    redactor,
+    debugLog,
+  };
+
   try {
     if (assistantMsg.error) {
       const error = assistantMsg.error;
       await sigil.startGeneration(seed, async (recorder) => {
         recorder.setResult(result);
         recorder.setCallError(mapError(error));
+        emitToolSpans(sigil, spanRecords, spanOpts);
       });
     } else {
       await sigil.startGeneration(seed, async (recorder) => {
         recorder.setResult(result);
+        emitToolSpans(sigil, spanRecords, spanOpts);
       });
     }
   } catch (err) {
@@ -257,8 +320,11 @@ async function recordAssistantMessage(
     // Sigil recording failure should never break the plugin
   }
 
-  // Clean up pending generation
+  // Clean up pending generation and per-turn tool records. The completed
+  // records were consumed above; clearing them prevents duplicate spans if
+  // another export path fires for the same session.
   pendingGenerations.delete(assistantMsg.sessionID);
+  completedToolExecutions.delete(assistantMsg.sessionID);
 }
 
 async function sweepTerminalAssistantMessages(
@@ -341,10 +407,18 @@ async function handleLifecycle(
       recordedMessages.delete(sessionId);
       pendingGenerations.delete(sessionId);
       sessionContexts.delete(sessionId);
+      completedToolExecutions.delete(sessionId);
+      for (const key of activeToolExecutions.keys()) {
+        if (key.startsWith(`${sessionId}\x00`)) {
+          activeToolExecutions.delete(key);
+        }
+      }
     }
   }
 
   if (type === "global.disposed") {
+    activeToolExecutions.clear();
+    completedToolExecutions.clear();
     try {
       await sigil.shutdown();
     } catch {
@@ -366,6 +440,16 @@ async function handleToolExecuteBefore(
   input: { tool: string; sessionID: string; callID: string },
   output: { args: unknown },
 ): Promise<void> {
+  const key = toolExecutionKey(input.sessionID, input.callID);
+  activeToolExecutions.set(key, {
+    sessionID: input.sessionID,
+    toolName: input.tool,
+    toolCallId: input.callID,
+    startedAt: Date.now(),
+    completedAt: 0,
+    input: output.args,
+  });
+
   const guards = config.guards;
   if (guards?.enabled !== true) return;
   const res = await runToolCallGuard({
@@ -379,8 +463,28 @@ async function handleToolExecuteBefore(
     failOpen: guards.failOpen,
   });
   if (res?.block) {
+    activeToolExecutions.delete(key);
     throw new Error(res.reason);
   }
+}
+
+function handleToolExecuteAfter(
+  input: { tool: string; sessionID: string; callID: string; args: unknown },
+  output: { title: string; output: string; metadata: unknown },
+): void {
+  const key = toolExecutionKey(input.sessionID, input.callID);
+  const active = activeToolExecutions.get(key);
+  if (!active) return;
+  activeToolExecutions.delete(key);
+
+  const completed: ToolExecutionRecord = {
+    ...active,
+    completedAt: Date.now(),
+    output: output.output,
+  };
+  const list = completedToolExecutions.get(input.sessionID) ?? [];
+  list.push(completed);
+  completedToolExecutions.set(input.sessionID, list);
 }
 
 async function handlePermissionAsk(
@@ -469,6 +573,138 @@ function stringField(value: unknown, key: string): string | undefined {
     : undefined;
 }
 
+/**
+ * Extract completed/error tool execution records from already-fetched
+ * terminal assistant parts. Persisted `ToolPart.state.time.start/end` is
+ * more accurate than hook wall-clock timing, so prefer this when parts are
+ * available.
+ *
+ * @internal Exported for testing.
+ */
+export function toolSpansFromParts(
+  sessionID: string,
+  parts: Part[],
+): ToolExecutionRecord[] {
+  const records: ToolExecutionRecord[] = [];
+  for (const part of parts) {
+    if (part.type !== "tool") continue;
+    const { state } = part;
+    if (state.status === "completed") {
+      records.push({
+        sessionID,
+        toolName: part.tool,
+        toolCallId: part.callID,
+        startedAt: state.time.start,
+        completedAt: state.time.end,
+        input: state.input,
+        output: state.output,
+      });
+    } else if (state.status === "error") {
+      records.push({
+        sessionID,
+        toolName: part.tool,
+        toolCallId: part.callID,
+        startedAt: state.time.start,
+        completedAt: state.time.end,
+        input: state.input,
+        isError: true,
+        error: state.error,
+      });
+    }
+  }
+  return records;
+}
+
+/**
+ * Merge tool execution records from terminal `ToolPart` values with
+ * hook-recorded records, preferring terminal-part timing and state. Hook
+ * records survive only when the terminal parts don't already cover them.
+ *
+ * @internal Exported for testing.
+ */
+export function mergeToolSpanRecords(
+  termRecords: ToolExecutionRecord[],
+  hookRecords: ToolExecutionRecord[],
+): ToolExecutionRecord[] {
+  const merged: ToolExecutionRecord[] = [...termRecords];
+  const seen = new Set(
+    termRecords.map((r) => toolExecutionKey(r.sessionID, r.toolCallId)),
+  );
+  for (const rec of hookRecords) {
+    const key = toolExecutionKey(rec.sessionID, rec.toolCallId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(rec);
+  }
+  return merged;
+}
+
+/**
+ * Emit Sigil tool execution spans for a set of completed tool records.
+ * Errors thrown by the SDK are swallowed so a span failure cannot break
+ * the plugin.
+ *
+ * @internal Exported for testing.
+ */
+export function emitToolSpans(
+  client: SigilClient,
+  records: ToolExecutionRecord[],
+  opts: {
+    conversationId: string;
+    agentName: string;
+    agentVersion?: string;
+    requestProvider: string;
+    requestModel: string;
+    contentCapture: ContentCaptureMode;
+    redactor: Redactor;
+    debugLog: (msg: string, ...args: unknown[]) => void;
+  },
+): void {
+  if (records.length === 0) return;
+  const includeContent = opts.contentCapture === "full";
+
+  for (const record of records) {
+    try {
+      const rec = client.startToolExecution({
+        toolName: record.toolName,
+        toolCallId: record.toolCallId,
+        toolType: "function",
+        conversationId: opts.conversationId,
+        agentName: opts.agentName,
+        agentVersion: opts.agentVersion,
+        requestProvider: opts.requestProvider,
+        requestModel: opts.requestModel,
+        startedAt: new Date(record.startedAt),
+        contentCapture: opts.contentCapture,
+      });
+
+      if (record.isError) {
+        rec.setCallError(new Error(record.error || "tool returned error"));
+      }
+
+      const end: {
+        arguments?: unknown;
+        result?: unknown;
+        completedAt: Date;
+      } = {
+        completedAt: new Date(record.completedAt),
+      };
+
+      if (includeContent && record.input !== undefined) {
+        end.arguments = opts.redactor.redact(JSON.stringify(record.input));
+      }
+      if (includeContent && record.output !== undefined) {
+        end.result = opts.redactor.redact(String(record.output));
+      }
+
+      rec.setResult(end);
+      rec.end();
+    } catch (err) {
+      opts.debugLog(`tool span export failed for ${record.toolName}`, err);
+    }
+  }
+}
+
 export type SigilHooks = {
   event: (input: {
     event: { type: string; properties: unknown };
@@ -485,6 +721,10 @@ export type SigilHooks = {
     input: { tool: string; sessionID: string; callID: string },
     output: { args: unknown },
   ) => Promise<void>;
+  toolExecuteAfter: (
+    input: { tool: string; sessionID: string; callID: string; args: unknown },
+    output: { title: string; output: string; metadata: unknown },
+  ) => void;
   permissionAsk: (
     input: Permission,
     output: { status: "ask" | "deny" | "allow" },
@@ -552,6 +792,9 @@ export async function createSigilHooks(
     },
     toolExecuteBefore: async (input, output) => {
       await handleToolExecuteBefore(sigil, config, input, output);
+    },
+    toolExecuteAfter: (input, output) => {
+      handleToolExecuteAfter(input, output);
     },
     permissionAsk: async (input, output) => {
       await handlePermissionAsk(sigil, config, input, output);

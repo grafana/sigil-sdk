@@ -140,6 +140,22 @@ function opencodeMessageFixture() {
       type: "text",
       text: "hi",
     },
+    {
+      id: "assist-tool-1",
+      sessionID,
+      messageID,
+      type: "tool",
+      callID: "tc-otlp-1",
+      tool: "Bash",
+      state: {
+        status: "completed",
+        input: { command: "ls" },
+        output: "main.go",
+        title: "ls",
+        metadata: {},
+        time: { start: 1_700_000_001_500, end: 1_700_000_002_000 },
+      },
+    },
   ];
   return {
     sessionID,
@@ -225,6 +241,19 @@ describe("createSigilHooks OTLP wiring", () => {
       { sessionID },
       { message: userMessage as any, parts: userParts as any },
     );
+    await hooks.toolExecuteBefore(
+      { sessionID, callID: "tc-otlp-1", tool: "Bash" },
+      { args: { command: "ls" } },
+    );
+    hooks.toolExecuteAfter(
+      {
+        sessionID,
+        callID: "tc-otlp-1",
+        tool: "Bash",
+        args: { command: "ls" },
+      },
+      { title: "ls", output: "main.go", metadata: {} },
+    );
     await hooks.event({
       event: {
         type: "message.updated",
@@ -259,42 +288,85 @@ describe("createSigilHooks OTLP wiring", () => {
     }
 
     const traceScopes = new Set<string>();
+    type AttributeKV = {
+      key?: string;
+      value?: {
+        stringValue?: string;
+        intValue?: string | number;
+        doubleValue?: number;
+        boolValue?: boolean;
+      };
+    };
+    type Span = {
+      name?: string;
+      attributes?: AttributeKV[];
+    };
+    const spans: Span[] = [];
     for (const req of traceReqs) {
       const payload = JSON.parse(req.body) as {
         resourceSpans?: Array<{
-          scopeSpans?: Array<{ scope?: { name?: string } }>;
+          scopeSpans?: Array<{
+            scope?: { name?: string };
+            spans?: Span[];
+          }>;
         }>;
       };
       for (const rs of payload.resourceSpans ?? []) {
         for (const ss of rs.scopeSpans ?? []) {
           if (ss.scope?.name) traceScopes.add(ss.scope.name);
+          for (const sp of ss.spans ?? []) spans.push(sp);
         }
       }
     }
     expect(traceScopes.has(SIGIL_OPENCODE_SCOPE)).toBe(true);
 
+    const hasExecuteToolSpan = spans.some((sp) =>
+      sp.attributes?.some(
+        (a) =>
+          a.key === "gen_ai.operation.name" &&
+          a.value?.stringValue === "execute_tool",
+      ),
+    );
+    expect(hasExecuteToolSpan).toBe(true);
+
     let sawDurationMetric = false;
+    let sawExecuteToolDuration = false;
     for (const req of metricReqs) {
       const payload = JSON.parse(req.body) as {
         resourceMetrics?: Array<{
           scopeMetrics?: Array<{
             scope?: { name?: string };
-            metrics?: Array<{ name: string }>;
+            metrics?: Array<{
+              name: string;
+              histogram?: {
+                dataPoints?: Array<{
+                  attributes?: AttributeKV[];
+                }>;
+              };
+            }>;
           }>;
         }>;
       };
       for (const rm of payload.resourceMetrics ?? []) {
         for (const sm of rm.scopeMetrics ?? []) {
           if (sm.scope?.name !== SIGIL_OPENCODE_SCOPE) continue;
-          if (
-            sm.metrics?.some((m) => m.name === SIGIL_OPERATION_DURATION_METRIC)
-          ) {
+          for (const m of sm.metrics ?? []) {
+            if (m.name !== SIGIL_OPERATION_DURATION_METRIC) continue;
             sawDurationMetric = true;
+            for (const dp of m.histogram?.dataPoints ?? []) {
+              const op = dp.attributes?.find(
+                (a) => a.key === "gen_ai.operation.name",
+              );
+              if (op?.value?.stringValue === "execute_tool") {
+                sawExecuteToolDuration = true;
+              }
+            }
           }
         }
       }
     }
     expect(sawDurationMetric).toBe(true);
+    expect(sawExecuteToolDuration).toBe(true);
   });
 
   it("does not contact the OTLP endpoint when config.otlp is absent", async () => {

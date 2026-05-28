@@ -21,6 +21,9 @@ export const SigilPlugin: Plugin = async ({ client }) => {
     "tool.execute.before": async (input, output) => {
       await hooks.toolExecuteBefore(input, output);
     },
+    "tool.execute.after": async (input, output) => {
+      hooks.toolExecuteAfter(input, output);
+    },
     "permission.ask": async (input, output) => {
       await hooks.permissionAsk(input, output);
     },
