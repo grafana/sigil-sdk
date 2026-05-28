@@ -143,6 +143,7 @@ Return:
   - non-stream: `SYNC`
   - stream: `STREAM`
 - Raw provider artifacts are default OFF and only enabled for explicit debug opt-in.
+- Set stable `agent_name` and `agent_version` on generations and framework handlers. `agent_version` is optional for generation ingest, but it is required for version-level Performance charts because Sigil joins Prometheus metrics by the SDK-emitted `gen_ai.agent.version` label.
 
 ## OTel setup (required)
 
@@ -253,7 +254,7 @@ On generation and tool spans, capture or preserve these when available:
   - `sigil.generation.id`
   - `gen_ai.conversation.id`
   - `gen_ai.agent.name`
-  - `gen_ai.agent.version`
+  - `gen_ai.agent.version` — required for per-version Performance charts; set SDK `agent_version`
   - `sigil.generation.parent_generation_ids`
   - `sigil.sdk.name`
 - model:
@@ -364,6 +365,7 @@ from sigil_sdk_langgraph import SigilLangGraphHandler
 handler = SigilLangGraphHandler(
     client=client,
     agent_name="my-pipeline",
+    agent_version="1.0.0",
     conversation_title="Incident Response Pipeline",
     capture_workflow_steps=True,
 )
