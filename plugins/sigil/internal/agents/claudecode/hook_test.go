@@ -178,6 +178,13 @@ func TestHookEventRouting(t *testing.T) {
 	}
 }
 
+// TestHandlePreToolUse covers Claude-Code-specific wiring around the shared
+// guard helper: ensuring the helper is consulted only when guards are
+// enabled, that allow verdicts produce empty stdout, and that deny verdicts
+// produce the Claude Code PreToolUse envelope (hookSpecificOutput +
+// hookEventName=PreToolUse). Deep behaviour around fail-open/closed,
+// missing credentials, and transport errors lives in the guard package
+// tests; this test only verifies the integration shape.
 func TestHandlePreToolUse(t *testing.T) {
 	var calls atomic.Int32
 	var responseBody atomic.Value
@@ -193,55 +200,36 @@ func TestHandlePreToolUse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	closed.Close()
-
 	tests := []struct {
 		name               string
 		env                map[string]string
-		useClosedEndpoint  bool
 		serverResponds     string
 		expectServerCall   bool
-		wantStdoutContains string
+		wantStdoutContains []string
 		wantStdoutEmpty    bool
 	}{
 		{
-			name:            "disabled_by_default_no_env",
+			name:            "disabled_by_default",
 			wantStdoutEmpty: true,
 		},
 		{
-			name:            "disabled_explicit_false",
-			env:             map[string]string{"SIGIL_GUARDS_ENABLED": "false"},
-			wantStdoutEmpty: true,
-		},
-		{
-			name:             "enabled_allow_response",
+			name:             "enabled_allow",
 			env:              map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
 			serverResponds:   `{"action":"allow"}`,
 			expectServerCall: true,
 			wantStdoutEmpty:  true,
 		},
 		{
-			name:               "enabled_deny_response",
-			env:                map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
-			serverResponds:     `{"action":"deny","reason":"blocked tool"}`,
-			expectServerCall:   true,
-			wantStdoutContains: `"permissionDecision":"deny"`,
-		},
-		{
-			name:              "enabled_fail_open_on_transport_error",
-			env:               map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
-			useClosedEndpoint: true,
-			wantStdoutEmpty:   true,
-		},
-		{
-			name: "enabled_fail_closed_on_transport_error",
-			env: map[string]string{
-				"SIGIL_GUARDS_ENABLED":   "true",
-				"SIGIL_GUARDS_FAIL_OPEN": "false",
+			name:             "enabled_deny_writes_claude_envelope",
+			env:              map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
+			serverResponds:   `{"action":"deny","reason":"blocked tool"}`,
+			expectServerCall: true,
+			wantStdoutContains: []string{
+				`"hookSpecificOutput"`,
+				`"hookEventName":"PreToolUse"`,
+				`"permissionDecision":"deny"`,
+				`"permissionDecisionReason":"blocked tool"`,
 			},
-			useClosedEndpoint:  true,
-			wantStdoutContains: `"permissionDecision":"deny"`,
 		},
 	}
 
@@ -253,14 +241,12 @@ func TestHandlePreToolUse(t *testing.T) {
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
+			t.Setenv("SIGIL_ENDPOINT", server.URL)
+			t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+			t.Setenv("SIGIL_AUTH_TOKEN", "token")
 
 			calls.Store(0)
 			responseBody.Store(tt.serverResponds)
-
-			endpoint := server.URL
-			if tt.useClosedEndpoint {
-				endpoint = closed.URL
-			}
 
 			var stdout bytes.Buffer
 			var logs bytes.Buffer
@@ -274,19 +260,21 @@ func TestHandlePreToolUse(t *testing.T) {
 			}
 			st := state.Session{Model: "claude-sonnet-4"}
 
-			handlePreToolUse(context.Background(), &stdout, input, st, endpoint, "tenant", "token", log.New(&logs, "", 0))
+			handlePreToolUse(context.Background(), &stdout, input, st, log.New(&logs, "", 0))
 
 			if tt.expectServerCall && calls.Load() == 0 {
 				t.Errorf("expected server call, got 0")
 			}
-			if !tt.expectServerCall && !tt.useClosedEndpoint && calls.Load() != 0 {
+			if !tt.expectServerCall && calls.Load() != 0 {
 				t.Errorf("expected no server call, got %d", calls.Load())
 			}
 			if tt.wantStdoutEmpty && stdout.Len() != 0 {
 				t.Errorf("stdout not empty: %q", stdout.String())
 			}
-			if tt.wantStdoutContains != "" && !strings.Contains(stdout.String(), tt.wantStdoutContains) {
-				t.Errorf("stdout = %q, want substring %q", stdout.String(), tt.wantStdoutContains)
+			for _, want := range tt.wantStdoutContains {
+				if !strings.Contains(stdout.String(), want) {
+					t.Errorf("stdout missing %q\nfull output: %s", want, stdout.String())
+				}
 			}
 		})
 	}

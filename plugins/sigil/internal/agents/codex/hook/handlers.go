@@ -80,24 +80,11 @@ func UserPromptSubmit(p Payload, cfg config.Config, logger *log.Logger) {
 	}
 }
 
-// preToolUseDecision is the JSON shape Codex understands as a deny verdict
-// on PreToolUse. Matches Claude Code's hookDecision so downstream rules
-// stay consistent across agents.
-type preToolUseDecision struct {
-	HookSpecificOutput preToolUseDecisionOutput `json:"hookSpecificOutput"`
-}
-
-type preToolUseDecisionOutput struct {
-	HookEventName            string `json:"hookEventName"`
-	PermissionDecision       string `json:"permissionDecision"`
-	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
-}
-
 // PreToolUse evaluates a Codex tool call against Sigil guard rules. It writes
-// a deny JSON object to stdout when the call must be blocked and stays silent
-// when the call is allowed. Transport setup, credential checks, and
-// fail-open/closed behaviour all live in the shared guard package so this
-// handler stays in lockstep with the copilot and other agents.
+// a PreToolUse deny envelope to stdout when the call must be blocked and
+// stays silent when the call is allowed. Transport setup, credential checks,
+// and fail-open/closed behaviour live in the shared guard package. Claude
+// Code and Codex also share the PreToolUse deny envelope writer.
 func PreToolUse(ctx context.Context, stdout io.Writer, p Payload, cfg config.Config, logger *log.Logger) {
 	res := guard.EvaluateToolCall(ctx, cfg.Guards, guard.ToolCallInput{
 		AgentName:     mapper.AgentName,
@@ -108,7 +95,7 @@ func PreToolUse(ctx context.Context, stdout io.Writer, p Payload, cfg config.Con
 		ModelName:     p.Model,
 	}, logger)
 	if res.Blocked() {
-		writePreToolDeny(stdout, res.Reason)
+		guard.WriteHookSpecificOutputDeny(stdout, res.Reason)
 	}
 }
 
@@ -134,20 +121,6 @@ func isOpenAIOSeriesModel(m string) bool {
 		return false
 	}
 	return m[1] >= '0' && m[1] <= '9'
-}
-
-func writePreToolDeny(stdout io.Writer, reason string) {
-	if strings.TrimSpace(reason) == "" {
-		reason = "tool call denied by Sigil guard"
-	}
-	out := preToolUseDecision{
-		HookSpecificOutput: preToolUseDecisionOutput{
-			HookEventName:            "PreToolUse",
-			PermissionDecision:       "deny",
-			PermissionDecisionReason: reason,
-		},
-	}
-	_ = json.NewEncoder(stdout).Encode(out)
 }
 
 func PostToolUse(p Payload, cfg config.Config, logger *log.Logger) {

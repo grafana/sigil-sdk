@@ -6,7 +6,6 @@ package claudecode
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +18,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/claudecode/mapper"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/claudecode/state"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/claudecode/transcript"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/guard"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/otel"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/redact"
@@ -49,17 +49,6 @@ type hookInput struct {
 	ToolUseID      string          `json:"tool_use_id,omitempty"`
 }
 
-type hookDecision struct {
-	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
-}
-
-type hookSpecificOutput struct {
-	HookEventName            string `json:"hookEventName"`
-	PermissionDecision       string `json:"permissionDecision,omitempty"`
-	PermissionDecisionReason string `json:"permissionDecisionReason,omitempty"`
-	AdditionalContext        string `json:"additionalContext,omitempty"`
-}
-
 // Hook reads a single Claude Code hook payload from stdin, processes it, and
 // optionally writes a decision response to stdout. Returns an error only on
 // payload-shaped failures the dispatcher should log — runtime telemetry
@@ -71,6 +60,32 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 		return nil
 	}
 	logger.Printf("event=%s session=%s transcript=%s", input.HookEventName, input.SessionID, input.TranscriptPath)
+
+	st := state.Load(input.SessionID)
+
+	// Route lightweight events that do not need real Sigil credentials first.
+	// SessionStart only updates local state; PreToolUse calls into the shared
+	// guard helper which manages its own credentials, timeouts, and
+	// fail-open/closed behaviour. Routing these before the missing-creds
+	// gate below means strict guard mode can still deny when SIGIL_* env
+	// vars are absent.
+	switch strings.TrimSpace(input.HookEventName) {
+	case "SessionStart":
+		st.Model = strings.TrimSpace(input.Model)
+		if err := state.Save(input.SessionID, st); err != nil {
+			logger.Printf("save state: %v", err)
+		}
+		return nil
+	case "PreToolUse":
+		guardCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		handlePreToolUse(guardCtx, stdout, input, st, logger)
+		return nil
+	case "", "Stop", "SessionEnd":
+		// Fall through to transcript export below.
+	default:
+		return nil
+	}
 
 	sigilEndpoint := os.Getenv("SIGIL_ENDPOINT")
 	tenantID := os.Getenv("SIGIL_AUTH_TENANT_ID")
@@ -103,24 +118,6 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 	hookCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	hookCtx = sigil.WithUserID(hookCtx, userID)
-
-	st := state.Load(input.SessionID)
-
-	switch strings.TrimSpace(input.HookEventName) {
-	case "", "Stop", "SessionEnd":
-		// Stop and SessionEnd hooks use the transcript to export generations.
-	case "SessionStart":
-		st.Model = strings.TrimSpace(input.Model)
-		if err := state.Save(input.SessionID, st); err != nil {
-			logger.Printf("save state: %v", err)
-		}
-		return nil
-	case "PreToolUse":
-		handlePreToolUse(hookCtx, stdout, input, st, sigilEndpoint, tenantID, authToken, logger)
-		return nil
-	default:
-		return nil
-	}
 
 	otelProviders, err := otel.Setup(hookCtx, input.SessionID)
 	if err != nil {
@@ -237,123 +234,23 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 	return nil
 }
 
-func handlePreToolUse(
-	ctx context.Context,
-	stdout io.Writer,
-	input *hookInput,
-	st state.Session,
-	sigilEndpoint, tenantID, authToken string,
-	logger *log.Logger,
-) {
-	toolName := strings.TrimSpace(input.ToolName)
-	if toolName == "" {
-		return
-	}
-
-	guards := envconfig.ResolveGuards(logger)
-	if !guards.Enabled {
-		return
-	}
-
-	modelName := strings.TrimSpace(st.Model)
-	if modelName == "" {
-		modelName = "unknown"
-	}
-
-	failOpen := guards.FailOpen
-	cfg := sigil.Config{
-		API: sigil.APIConfig{
-			Endpoint: sigilEndpoint,
-		},
-		Hooks: sigil.HooksConfig{
-			Enabled:  true,
-			Phases:   []sigil.HookPhase{sigil.HookPhasePostflight},
-			Timeout:  time.Duration(guards.TimeoutMs) * time.Millisecond,
-			FailOpen: &failOpen,
-		},
-		GenerationExport: sigil.GenerationExportConfig{
-			Auth: sigil.AuthConfig{
-				Mode:          sigil.ExportAuthModeBasic,
-				BasicUser:     tenantID,
-				BasicPassword: authToken,
-				TenantID:      tenantID,
-			},
-		},
-	}
-
-	client := sigil.NewClient(cfg)
-	defer func() { _ = client.Shutdown(ctx) }()
-
-	req := sigil.HookEvaluateRequest{
-		Phase: sigil.HookPhasePostflight,
-		Context: sigil.HookContext{
-			AgentName:    AgentName,
-			AgentVersion: Version,
-			Model:        &sigil.HookModel{Provider: "anthropic", Name: modelName},
-		},
-		Input: sigil.HookInput{
-			Output: []sigil.Message{{
-				Role: sigil.RoleAssistant,
-				Parts: []sigil.Part{{
-					Kind: sigil.PartKindToolCall,
-					ToolCall: &sigil.ToolCall{
-						ID:        strings.TrimSpace(input.ToolUseID),
-						Name:      toolName,
-						InputJSON: input.ToolInput,
-					},
-				}},
-			}},
-		},
-	}
-	if payload, mErr := json.Marshal(req); mErr == nil {
-		logger.Printf("pre_tool_use hook request: %s", string(payload))
-	}
-
-	resp, err := client.EvaluateHook(ctx, req)
-	if err != nil {
-		// The SDK only surfaces an error when FailOpen=false; the fail-open path
-		// returns an allow response with nil err. So reaching here implies strict
-		// mode and we should always emit the deny.
-		logger.Printf("pre_tool_use hook eval: tool=%q endpoint=%q err=%v", toolName, sigilEndpoint, err)
-		out := hookDecision{
-			HookSpecificOutput: hookSpecificOutput{
-				HookEventName:            "PreToolUse",
-				PermissionDecision:       "deny",
-				PermissionDecisionReason: fmt.Sprintf("sigil guard evaluation failed: %v", err),
-			},
-		}
-		_ = json.NewEncoder(stdout).Encode(out)
-		return
-	}
-
-	if resp != nil {
-		logger.Printf(
-			"pre_tool_use hook eval: tool=%q endpoint=%q action=%q rule_id=%q reason=%q",
-			toolName,
-			sigilEndpoint,
-			string(resp.Action),
-			resp.RuleID,
-			resp.Reason,
-		)
-	}
-
-	if deniedErr := sigil.HookDeniedFromResponse(resp); deniedErr != nil {
-		reason := "tool call denied by Sigil guard"
-		var denied *sigil.HookDeniedError
-		if errors.As(deniedErr, &denied) && strings.TrimSpace(denied.Reason) != "" {
-			reason = denied.Reason
-		}
-		if strings.TrimSpace(reason) == "" {
-			reason = "tool call denied by Sigil guard"
-		}
-		out := hookDecision{
-			HookSpecificOutput: hookSpecificOutput{
-				HookEventName:            "PreToolUse",
-				PermissionDecision:       "deny",
-				PermissionDecisionReason: reason,
-			},
-		}
-		_ = json.NewEncoder(stdout).Encode(out)
+// handlePreToolUse evaluates the tool call against Sigil guards and writes a
+// PreToolUse deny envelope to stdout when the call is blocked. All Sigil
+// transport, credential, fail-open/closed, and local-endpoint placeholder
+// behaviour lives in the shared guard helper so this stays in lockstep with
+// the codex and copilot agents.
+func handlePreToolUse(ctx context.Context, stdout io.Writer, input *hookInput, st state.Session, logger *log.Logger) {
+	res := guard.EvaluateToolCall(ctx, envconfig.ResolveGuards(logger), guard.ToolCallInput{
+		AgentName:     AgentName,
+		AgentVersion:  Version,
+		ModelProvider: "anthropic",
+		ModelName:     strings.TrimSpace(st.Model),
+		ToolName:      strings.TrimSpace(input.ToolName),
+		ToolCallID:    strings.TrimSpace(input.ToolUseID),
+		ToolInputJSON: input.ToolInput,
+	}, logger)
+	if res.Blocked() {
+		guard.WriteHookSpecificOutputDeny(stdout, res.Reason)
 	}
 }
 

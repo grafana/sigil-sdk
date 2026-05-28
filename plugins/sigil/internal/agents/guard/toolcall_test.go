@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -26,11 +27,14 @@ func TestEvaluateToolCall(t *testing.T) {
 		useClosedServer bool
 		// clearCreds blanks the SIGIL_ENDPOINT/SIGIL_AUTH_TENANT_ID/
 		// SIGIL_AUTH_TOKEN env vars before the call.
-		clearCreds       bool
-		toolName         string
-		wantAction       sigil.HookAction
-		wantReasonSub    string
-		wantServerCalled bool
+		clearCreds bool
+		// clearCredsKeepEndpoint clears tenant/token but keeps the (local)
+		// endpoint set, to exercise the LocalAuthPlaceholders path.
+		clearCredsKeepEndpoint bool
+		toolName               string
+		wantAction             sigil.HookAction
+		wantReasonSub          string
+		wantServerCalled       bool
 	}{
 		{
 			name:       "disabled returns allow without contacting sigil",
@@ -92,6 +96,18 @@ func TestEvaluateToolCall(t *testing.T) {
 			wantAction:    sigil.HookActionDeny,
 			wantReasonSub: "missing SIGIL_ENDPOINT",
 		},
+		{
+			// httptest servers bind to a loopback address, which IsLocalEndpoint
+			// classifies as local. With empty creds we expect placeholder auth so
+			// the request proceeds instead of being rejected as missing-creds.
+			name:                   "local endpoint with empty creds applies placeholders",
+			cfg:                    envconfig.GuardsConfig{Enabled: true, TimeoutMs: 1500, FailOpen: false},
+			clearCredsKeepEndpoint: true,
+			serverResponds:         `{"action":"allow"}`,
+			toolName:               "bash",
+			wantAction:             sigil.HookActionAllow,
+			wantServerCalled:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -115,11 +131,16 @@ func TestEvaluateToolCall(t *testing.T) {
 			if tt.useClosedServer {
 				endpoint = closed.URL
 			}
-			if tt.clearCreds {
+			switch {
+			case tt.clearCreds:
 				t.Setenv("SIGIL_ENDPOINT", "")
 				t.Setenv("SIGIL_AUTH_TENANT_ID", "")
 				t.Setenv("SIGIL_AUTH_TOKEN", "")
-			} else {
+			case tt.clearCredsKeepEndpoint:
+				t.Setenv("SIGIL_ENDPOINT", endpoint)
+				t.Setenv("SIGIL_AUTH_TENANT_ID", "")
+				t.Setenv("SIGIL_AUTH_TOKEN", "")
+			default:
 				t.Setenv("SIGIL_ENDPOINT", endpoint)
 				t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
 				t.Setenv("SIGIL_AUTH_TOKEN", "token")
@@ -149,4 +170,43 @@ func TestEvaluateToolCall(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWriteHookSpecificOutputDeny(t *testing.T) {
+	tests := []struct {
+		name    string
+		reason  string
+		wantSub []string
+	}{
+		{
+			name:    "explicit reason",
+			reason:  "blocked by rule r-1",
+			wantSub: []string{`"hookEventName":"PreToolUse"`, `"permissionDecision":"deny"`, `"permissionDecisionReason":"blocked by rule r-1"`},
+		},
+		{
+			name:    "blank reason falls back to generic",
+			reason:  "",
+			wantSub: []string{`"permissionDecisionReason":"tool call denied by Sigil guard"`},
+		},
+		{
+			name:    "whitespace reason falls back to generic",
+			reason:  "   ",
+			wantSub: []string{`"permissionDecisionReason":"tool call denied by Sigil guard"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			WriteHookSpecificOutputDeny(&buf, tt.reason)
+			got := buf.String()
+			for _, want := range tt.wantSub {
+				if !strings.Contains(got, want) {
+					t.Errorf("output missing %q\nfull output: %s", want, got)
+				}
+			}
+		})
+	}
+
+	// nil writer must not panic.
+	WriteHookSpecificOutputDeny(nil, "x")
 }
