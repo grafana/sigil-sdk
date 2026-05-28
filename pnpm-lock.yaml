@@ -85,7 +85,7 @@ importers:
         specifier: 1.14.3
         version: 1.14.3
       '@grpc/proto-loader':
-        specifier: 0.8.0
+        specifier: 0.8.1
         version: 0.8.1
       '@types/node':
         specifier: 24.12.0
