@@ -33,6 +33,22 @@ class RatingTransportError(SigilError):
     """Raised when rating submission transport fails."""
 
 
+class NotFoundError(SigilError):
+    """Raised when a requested resource does not exist (HTTP 404)."""
+
+
+class ConflictError(SigilError):
+    """Raised when a request conflicts with current resource state (HTTP 409)."""
+
+
+class ExperimentTransportError(SigilError):
+    """Raised when an experiment control-plane request fails."""
+
+
+class ScoreExportError(SigilError):
+    """Raised when a score export request fails at the transport level."""
+
+
 class HookDeniedError(SigilError):
     """Raised when a synchronous hook evaluation responds with action=deny."""
 

@@ -488,3 +488,203 @@ def tool_result_message(tool_call_id: str, content: str) -> Message:
             )
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Offline evaluation: experiments and scores
+#
+# These models map to the Sigil eval control plane (HTTP):
+#   POST   /api/v1/eval/experiments
+#   GET    /api/v1/eval/experiments/{run_id}
+#   PATCH  /api/v1/eval/experiments/{run_id}
+#   POST   /api/v1/eval/experiments/{run_id}:cancel
+#   POST   /api/v1/scores:export
+#   GET    /api/v1/eval/experiments/{run_id}/report
+# ---------------------------------------------------------------------------
+
+
+class ExperimentStatus(str, Enum):
+    """Lifecycle status of an experiment run (server spelling)."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class ExperimentSource(str, Enum):
+    """Origin of an experiment run.
+
+    ``EXTERNAL`` runs are driven by SDK/CI callers that export their own
+    generations and scores. ``COLLECTION`` runs are fanned out server-side from
+    a saved conversation collection.
+    """
+
+    EXTERNAL = "external"
+    COLLECTION = "collection"
+
+
+@dataclass(slots=True)
+class ScoreValue:
+    """A single typed score value. Exactly one field must be set.
+
+    The boolean field serializes to the JSON key ``bool`` to match the Sigil
+    score schema, while staying a valid Python attribute name (``boolean``).
+    """
+
+    number: float | None = None
+    boolean: bool | None = None
+    string: str | None = None
+
+
+@dataclass(slots=True)
+class ScoreSource:
+    """Provenance for an exported score (e.g. ``kind="experiment"``)."""
+
+    kind: str = ""
+    id: str = ""
+
+
+@dataclass(slots=True)
+class ScoreItem:
+    """A score to export via ``POST /api/v1/scores:export``.
+
+    Set ``run_id`` to attribute the score to an experiment report.
+    """
+
+    score_id: str
+    generation_id: str
+    evaluator_id: str
+    evaluator_version: str
+    score_key: str
+    value: ScoreValue
+    conversation_id: str = ""
+    trace_id: str = ""
+    span_id: str = ""
+    rule_id: str = ""
+    run_id: str = ""
+    passed: bool | None = None
+    explanation: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime | None = None
+    source: ScoreSource | None = None
+
+
+@dataclass(slots=True)
+class ExportScoreResult:
+    """Per-score outcome from a score export request."""
+
+    score_id: str
+    accepted: bool
+    error: str = ""
+
+
+@dataclass(slots=True)
+class ExportScoresResponse:
+    """Response envelope from ``POST /api/v1/scores:export``."""
+
+    results: list[ExportScoreResult] = field(default_factory=list)
+
+    @property
+    def accepted_count(self) -> int:
+        """Number of scores the server accepted."""
+
+        return sum(1 for result in self.results if result.accepted)
+
+    @property
+    def rejected(self) -> list[ExportScoreResult]:
+        """Scores the server rejected, with their error detail."""
+
+        return [result for result in self.results if not result.accepted]
+
+
+@dataclass(slots=True)
+class ExperimentEvaluator:
+    """Pairs an evaluator id with the selector deciding which generations it scores.
+
+    Only relevant for ``COLLECTION`` runs.
+    """
+
+    id: str
+    selector: str
+
+
+@dataclass(slots=True)
+class CreateExperimentRequest:
+    """Request body for ``POST /api/v1/eval/experiments``."""
+
+    name: str
+    source: ExperimentSource | str = ExperimentSource.EXTERNAL
+    run_id: str = ""
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    collection_id: str = ""
+    evaluators: list[ExperimentEvaluator] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class UpdateExperimentRequest:
+    """Request body for ``PATCH /api/v1/eval/experiments/{run_id}``.
+
+    Every field is optional; ``None`` fields are omitted from the PATCH body so
+    callers can update only what they intend to change.
+    """
+
+    name: str | None = None
+    description: str | None = None
+    tags: list[str] | None = None
+    status: ExperimentStatus | str | None = None
+    metadata: dict[str, Any] | None = None
+    error: str | None = None
+    score_count: int | None = None
+
+
+@dataclass(slots=True)
+class Experiment:
+    """An experiment run as returned by the Sigil eval control plane."""
+
+    run_id: str
+    name: str
+    source: str
+    status: str
+    tenant_id: str = ""
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
+    collection_id: str = ""
+    evaluators: list[ExperimentEvaluator] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score_count: int = 0
+    error: str = ""
+    created_by: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class ExperimentReportSummary:
+    """Aggregate summary block of an experiment report."""
+
+    n_conversations: int = 0
+    n_generations: int = 0
+    n_scores: int = 0
+    pass_rate: float = 0.0
+    mean_score: float = 0.0
+    total_cost_usd: float = 0.0
+    total_tokens: int = 0
+
+
+@dataclass(slots=True)
+class ExperimentReport:
+    """Aggregated experiment report from ``GET .../{run_id}/report``.
+
+    ``breakdowns`` and ``points`` are kept as raw decoded JSON for this first
+    iteration; only the run and summary are promoted to typed objects.
+    """
+
+    run: Experiment
+    summary: ExperimentReportSummary
+    breakdowns: dict[str, Any] = field(default_factory=dict)
+    points: list[dict[str, Any]] = field(default_factory=list)
