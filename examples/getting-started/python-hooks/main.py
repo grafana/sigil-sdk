@@ -167,9 +167,10 @@ try:
 except HookDeniedError as exc:
     print(f"Blocked by Sigil guard rule {exc.rule_id or '<unknown>'}: {exc.reason}")
 
+else:
+    print("Done - check the AI Observability plugin in your Grafana Cloud stack.")
+
 finally:
     sigil.shutdown()
     tp.shutdown()
     mp.shutdown()
-
-print("Done - check the AI Observability plugin in your Grafana Cloud stack.")
