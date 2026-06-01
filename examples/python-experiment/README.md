@@ -71,7 +71,7 @@ View in Sigil: http://localhost:8080/a/grafana-sigil-app/evaluation/experiments/
   its call via `run.start_generation(...)`. If you record generations elsewhere
   (e.g. a provider wrapper), call `run.track_generation_id(gen_id)` instead.
 - **Real grading:** replace `exact_match_scorer` with your own scorer — including
-  an LLM-as-judge that itself records a generation (see the `sigil-experiments`
-  skill shipped in the `sigil-sdk` package).
+  an LLM-as-judge that itself records a generation (see the
+  `python/skills/sigil-experiments/` skill in this repo).
 - **CI gate:** inspect `result.report.summary.pass_rate` and exit non-zero to
   fail a pull request.

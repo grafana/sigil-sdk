@@ -31,6 +31,7 @@ from sigil_sdk import (
     CreateExperimentRequest,
     ExperimentReport,
     ExperimentStatus,
+    ScoreExportError,
     ScoreItem,
     ScoreSource,
     ScoreValue,
@@ -184,8 +185,8 @@ class ExperimentRun:
         """
 
         kwargs = {**self._handler_kwargs, **overrides}
-        extra_tags = {"experiment.run_id": self.run_id, **dict(kwargs.pop("extra_tags", {}) or {})}
-        extra_metadata = {"experiment_run_id": self.run_id, **dict(kwargs.pop("extra_metadata", {}) or {})}
+        extra_tags = {**dict(kwargs.pop("extra_tags", {}) or {}), "experiment.run_id": self.run_id}
+        extra_metadata = {**dict(kwargs.pop("extra_metadata", {}) or {}), "experiment_run_id": self.run_id}
         self._active_sink = []
         cls = _CapturingAsyncHandler if self._async_handler else _CapturingSyncHandler
         return cls(
@@ -275,7 +276,7 @@ class ExperimentRun:
 
         if not scores:
             return 0
-        gen_ids = list(generation_ids or [])
+        gen_ids = list(generation_ids if generation_ids is not None else self.produced_generation_ids)
         # Default to the conversation id wired into langgraph_config so scores
         # link to the same conversation as the generations they grade.
         conv_id = (conversation_id or self._active_conversation_id or "").strip()
@@ -284,8 +285,9 @@ class ExperimentRun:
         if self._upload == "continuous":
             self._client.flush()
             response = self._client.export_scores(items)
-            self._accepted += response.accepted_count
-            return response.accepted_count
+            accepted = _accepted_or_raise(response)
+            self._accepted += accepted
+            return accepted
         self._buffer.extend(items)
         return len(items)
 
@@ -296,9 +298,10 @@ class ExperimentRun:
             return 0
         self._client.flush()
         response = self._client.export_scores(self._buffer)
-        self._accepted += response.accepted_count
+        accepted = _accepted_or_raise(response)
+        self._accepted += accepted
         self._buffer.clear()
-        return response.accepted_count
+        return accepted
 
     @property
     def accepted_scores(self) -> int:
@@ -327,8 +330,8 @@ class ExperimentRun:
 
         if self._finalized:
             return
-        self._finalized = True
         self._client.complete_experiment(self.run_id, status, score_count=self._accepted, error=error)
+        self._finalized = True
 
     # --- internals --------------------------------------------------------- #
 
@@ -588,3 +591,11 @@ def _safe(fn: Callable[[], Any]) -> Any:
         return fn()
     except Exception:  # noqa: BLE001 - best-effort finalize/cancel/report
         return None
+
+
+def _accepted_or_raise(response: Any) -> int:
+    rejected = getattr(response, "rejected", [])
+    if rejected:
+        details = "; ".join(f"{r.score_id}: {r.error or 'rejected'}" for r in rejected)
+        raise ScoreExportError(f"sigil score export rejected {len(rejected)} score(s): {details}")
+    return int(getattr(response, "accepted_count", 0))

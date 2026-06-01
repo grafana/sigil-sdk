@@ -18,7 +18,7 @@ automatically), grade, and export scores under the same `run_id`.
 ## Setup
 
 ```bash
-pip install "sigil-sdk>=0.6.0" "sigil-sdk-langgraph>=0.6.0"
+pip install "sigil-sdk>=0.7.0" "sigil-sdk-langgraph>=0.7.0"
 ```
 
 Configure the client from env (works in CI):

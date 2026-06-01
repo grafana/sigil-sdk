@@ -66,6 +66,7 @@ View in Sigil: http://localhost:8080/a/grafana-sigil-app/evaluation/experiments/
   `target` invoke it with `run.langgraph_config()`.
 - **Real grading:** replace `exact_match_scorer` with your own scorer — including
   an LLM-as-judge that itself records a generation (see the
-  `sigil-langgraph-experiments` skill in the `sigil-sdk-langgraph` package).
+  `python-frameworks/langgraph/skills/sigil-langgraph-experiments/` skill in
+  this repo).
 - **CI gate:** inspect `result.report.summary.pass_rate` and exit non-zero to
   fail a pull request.

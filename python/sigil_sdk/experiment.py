@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from .client import Client
+from .errors import ScoreExportError
 from .models import (
     CreateExperimentRequest,
     ExperimentReport,
@@ -281,8 +282,9 @@ class ExperimentRun:
         if self._upload == "continuous":
             self._client.flush()
             response = self._client.export_scores(items)
-            self._accepted += response.accepted_count
-            return response.accepted_count
+            accepted = _accepted_or_raise(response)
+            self._accepted += accepted
+            return accepted
         self._buffer.extend(items)
         return len(items)
 
@@ -293,9 +295,10 @@ class ExperimentRun:
             return 0
         self._client.flush()
         response = self._client.export_scores(self._buffer)
-        self._accepted += response.accepted_count
+        accepted = _accepted_or_raise(response)
+        self._accepted += accepted
         self._buffer.clear()
-        return response.accepted_count
+        return accepted
 
     @property
     def accepted_scores(self) -> int:
@@ -324,8 +327,8 @@ class ExperimentRun:
 
         if self._finalized:
             return
-        self._finalized = True
         self._client.complete_experiment(self.run_id, status, score_count=self._accepted, error=error)
+        self._finalized = True
 
     # --- internals --------------------------------------------------------- #
 
@@ -624,3 +627,11 @@ def _safe(fn: Callable[[], Any]) -> Any:
         return fn()
     except Exception:  # noqa: BLE001 - best-effort finalize/cancel/report
         return None
+
+
+def _accepted_or_raise(response: Any) -> int:
+    rejected = getattr(response, "rejected", [])
+    if rejected:
+        details = "; ".join(f"{r.score_id}: {r.error or 'rejected'}" for r in rejected)
+        raise ScoreExportError(f"sigil score export rejected {len(rejected)} score(s): {details}")
+    return int(getattr(response, "accepted_count", 0))

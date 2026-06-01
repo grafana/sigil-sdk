@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from sigil_sdk import Client, ClientConfig
+from sigil_sdk import ApiConfig, Client, ClientConfig
 from sigil_sdk.config import default_config, resolve_config
 from sigil_sdk.models import ContentCaptureMode, GenerationStart, ModelRef
 
@@ -135,6 +135,19 @@ def test_explicit_overrides_env() -> None:
     )
     assert cfg.generation_export.endpoint == "https://explicit:4318"
     assert cfg.agent_name == "planner"
+
+
+def test_sigil_endpoint_also_defaults_api_endpoint() -> None:
+    cfg = resolve_config(None, env={"SIGIL_ENDPOINT": "https://sigil.example"})
+    assert cfg.generation_export.endpoint == "https://sigil.example"
+    assert cfg.api.endpoint == "https://sigil.example"
+
+
+def test_explicit_api_endpoint_overrides_sigil_endpoint() -> None:
+    explicit = ClientConfig(api=ApiConfig(endpoint="https://api.example"))
+    cfg = resolve_config(explicit, env={"SIGIL_ENDPOINT": "https://ingest.example"})
+    assert cfg.generation_export.endpoint == "https://ingest.example"
+    assert cfg.api.endpoint == "https://api.example"
 
 
 def test_caller_bearer_mode_wins_over_env_basic_mode() -> None:

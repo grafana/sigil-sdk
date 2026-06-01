@@ -21,6 +21,7 @@ from sigil_sdk import (
     GenerationExportConfig,
     GenerationStart,
     ModelRef,
+    ScoreExportError,
     ScoreItem,
     ScoreOutput,
     ScoreValue,
@@ -43,6 +44,8 @@ class _FakeClient:
     completed: list[tuple[str, str, int | None, str | None]] = field(default_factory=list)
     canceled: list[str] = field(default_factory=list)
     flushes: int = 0
+    complete_failures: int = 0
+    reject_scores: bool = False
 
     def create_experiment(self, request):
         self.created.append(request)
@@ -53,9 +56,17 @@ class _FakeClient:
 
     def export_scores(self, scores):
         self.exported.append(list(scores))
-        return ExportScoresResponse(results=[ExportScoreResult(s.score_id, True) for s in scores])
+        return ExportScoresResponse(
+            results=[
+                ExportScoreResult(s.score_id, not self.reject_scores, "rejected" if self.reject_scores else "")
+                for s in scores
+            ]
+        )
 
     def complete_experiment(self, run_id, status, *, score_count=None, error=None, metadata=None):
+        if self.complete_failures > 0:
+            self.complete_failures -= 1
+            raise RuntimeError("complete failed")
         status_value = getattr(status, "value", status)
         self.completed.append((run_id, status_value, score_count, error))
 
@@ -321,6 +332,34 @@ def test_manual_mode_leaves_run_open_until_publish() -> None:
     assert published == 1
     assert len(client.exported) == 1
     assert client.completed == [("run_manual", "succeeded", 1, None)]
+
+
+def test_rejected_scores_raise_instead_of_silent_success() -> None:
+    client = _FakeClient(reject_scores=True)
+    item = DatasetItem(id="it1", input="x", expected="y")
+
+    with pytest.raises(ScoreExportError, match="rejected 1 score"):
+        with experiment(client=client, run_id="run_reject", name="reject", print_url=False) as run:
+            run.add_scores(
+                _reward_scorer(item, TargetResult(output="y", generation_ids=["gen-1"])),
+                item=item,
+                generation_ids=["gen-1"],
+            )
+
+    assert len(client.completed) == 1
+    assert client.completed[0][0:3] == ("run_reject", "failed", 0)
+    assert client.completed[0][3] is not None and "sigil score export rejected 1 score" in client.completed[0][3]
+
+
+def test_finalize_can_be_retried_after_transport_failure() -> None:
+    client = _FakeClient(complete_failures=1)
+    run = ExperimentRun(client=client, run_id="run_retry", name="retry", dataset=None, candidate=None, upload="manual")
+
+    with pytest.raises(RuntimeError, match="complete failed"):
+        run.finalize(ExperimentStatus.SUCCEEDED)
+
+    run.finalize(ExperimentStatus.SUCCEEDED)
+    assert client.completed == [("run_retry", "succeeded", 0, None)]
 
 
 def test_multiple_generations_require_explicit_generation_id() -> None:

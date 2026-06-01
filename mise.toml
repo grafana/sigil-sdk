@@ -492,7 +492,7 @@ run = "mise run test:sdk:conformance"
 # --- Python version bump ---
 
 [tasks."sdk:py:bump"]
-description = "Bump version across all 9 Python SDK pyproject.toml files"
+description = "Bump version across all Python SDK pyproject.toml files"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -514,6 +514,8 @@ PACKAGE_DIRS=(
   python-frameworks/llamaindex
   python-frameworks/google-adk
   python-frameworks/litellm
+  python-frameworks/pydantic-ai
+  python-frameworks/strands
 )
 
 for dir in "${PACKAGE_DIRS[@]}"; do

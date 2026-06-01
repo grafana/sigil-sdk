@@ -210,8 +210,9 @@ def resolve_config(
     log = logging.getLogger("sigil_sdk")
 
     # Transport
+    env_endpoint = _env(env, "SIGIL_ENDPOINT")
     if out.generation_export.endpoint is None:
-        out.generation_export.endpoint = _env(env, "SIGIL_ENDPOINT") or _DEFAULT_ENDPOINT
+        out.generation_export.endpoint = env_endpoint or _DEFAULT_ENDPOINT
     if out.generation_export.protocol is None:
         out.generation_export.protocol = _env(env, "SIGIL_PROTOCOL") or _DEFAULT_PROTOCOL
     if out.generation_export.insecure is None:
@@ -284,7 +285,9 @@ def resolve_config(
     if out.generation_export_endpoint:
         out.generation_export.endpoint = out.generation_export_endpoint
     if out.api.endpoint.strip() == "":
-        out.api.endpoint = "http://localhost:8080"
+        out.api.endpoint = env_endpoint or "http://localhost:8080"
+    elif env_endpoint and out.api.endpoint == ApiConfig().endpoint:
+        out.api.endpoint = env_endpoint
 
     out.generation_export.headers = _resolve_export_headers(
         out.generation_export.headers,
