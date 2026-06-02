@@ -185,7 +185,9 @@ func WithExperiment(ctx context.Context, opts ExperimentOptions, fn func(context
 	err := fn(ctx, run)
 	if err != nil {
 		if errorsIsContextCanceled(err) {
-			_, _ = opts.Client.CancelExperiment(ctx, opts.RunID)
+			cancelCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_, _ = opts.Client.CancelExperiment(cancelCtx, opts.RunID)
+			cancel()
 			return run, err
 		}
 		_ = run.Finalize(ctx, ExperimentStatusFailed, err.Error())
