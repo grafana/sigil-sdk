@@ -76,12 +76,26 @@ func TestLaunch(t *testing.T) {
 			wantStderr:    []string{"removing the legacy " + PluginName + " plugin"},
 		},
 		{
-			name:          "plugin list probe failure is non-fatal",
-			lookPath:      func(string) (string, error) { return binPath, nil },
-			pluginList:    func(context.Context, string) ([]byte, error) { return nil, errors.New("probe boom") },
-			wantUninstall: 0,
+			name:       "plugin list probe failure still attempts best-effort uninstall",
+			lookPath:   func(string) (string, error) { return binPath, nil },
+			pluginList: func(context.Context, string) ([]byte, error) { return nil, errors.New("probe boom") },
+			// The probe can't confirm the plugin state, but the shared hooks
+			// file is already written, so we must still try to remove a
+			// possible leftover plugin to avoid double-firing.
+			wantUninstall: 1,
 			wantExec:      true,
 			wantLog:       []string{"probe boom"},
+		},
+		{
+			name:          "probe failure with failing best-effort uninstall stays quiet and non-fatal",
+			lookPath:      func(string) (string, error) { return binPath, nil },
+			pluginList:    func(context.Context, string) ([]byte, error) { return nil, errors.New("probe boom") },
+			runUninstall:  func(context.Context, string, io.Writer) error { return errors.New("not installed") },
+			wantUninstall: 1,
+			wantExec:      true,
+			// Best-effort cleanup must not surface the alarming manual-removal
+			// guidance: when the probe failed the plugin may simply be absent.
+			wantLog: []string{"best-effort uninstall " + PluginName},
 		},
 		{
 			name:          "continues when uninstall fails",

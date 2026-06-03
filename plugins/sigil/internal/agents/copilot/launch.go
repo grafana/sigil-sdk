@@ -97,7 +97,16 @@ func installUserHooks(stderr io.Writer, logger *log.Logger) {
 func removeStalePlugin(bin string, stderr io.Writer, logger *log.Logger) {
 	installed, err := pluginInstalled(context.Background(), bin)
 	if err != nil {
+		// The probe failed, so we cannot confirm whether the plugin is
+		// registered. The shared hooks file is already written, so a
+		// lingering plugin would double-fire every turn. Attempt a quiet
+		// best-effort uninstall anyway: when the plugin is absent the CLI
+		// just reports "not installed", which is harmless and stays in the
+		// debug log rather than alarming the user on stderr.
 		logger.Printf("copilot plugin list probe: %v", err)
+		if uninstallErr := runUninstall(context.Background(), bin, io.Discard); uninstallErr != nil {
+			logger.Printf("best-effort uninstall %s after probe failure: %v", PluginName, uninstallErr)
+		}
 		return
 	}
 	if !installed {
