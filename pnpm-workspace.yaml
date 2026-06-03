@@ -3,6 +3,9 @@ packages:
   - 'js-core'
   - 'plugins/*'
 
+overrides:
+  tar: 7.5.15
+
 # Security Hardening Week package-manager policy.
 minimumReleaseAge: 4320
 trustPolicy: no-downgrade
