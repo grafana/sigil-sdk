@@ -1084,3 +1084,43 @@ func TestProcess_UserPromptRedaction(t *testing.T) {
 		})
 	}
 }
+
+func TestProcess_CostUSD(t *testing.T) {
+	tests := []struct {
+		name     string
+		costUSD  float64
+		wantCost bool
+	}{
+		{"cost present", 0.0042, true},
+		{"cost zero", 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := makeAssistantLine("claude-sonnet-4-20250514", 50, []transcript.ContentBlock{
+				{Type: "text", Text: "hello"},
+			}, "end_turn")
+			line.CostUSD = tt.costUSD
+
+			st := &state.Session{}
+			gens := Process([]transcript.Line{line}, st, Options{SessionID: "sess-1"}, nil)
+
+			if len(gens) != 1 {
+				t.Fatalf("got %d generations, want 1", len(gens))
+			}
+			gen := gens[0]
+			if tt.wantCost {
+				if gen.Metadata == nil {
+					t.Fatal("expected metadata to be set")
+				}
+				if gen.Metadata["cost_usd"] != tt.costUSD {
+					t.Errorf("cost_usd = %v, want %v", gen.Metadata["cost_usd"], tt.costUSD)
+				}
+			} else {
+				if gen.Metadata != nil && gen.Metadata["cost_usd"] != nil {
+					t.Errorf("expected no cost_usd in metadata, got %v", gen.Metadata["cost_usd"])
+				}
+			}
+		})
+	}
+}

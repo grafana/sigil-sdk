@@ -21,6 +21,7 @@ type Line struct {
 	Entrypoint  string          `json:"entrypoint"`
 	RequestID   string          `json:"requestId"`
 	IsSidechain bool            `json:"isSidechain"`
+	CostUSD     float64         `json:"costUSD"`
 	Message     json.RawMessage `json:"message"`
 
 	// EndOffset is the byte position after this line in the transcript file.

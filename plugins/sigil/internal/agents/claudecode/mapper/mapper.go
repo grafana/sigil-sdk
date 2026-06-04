@@ -404,6 +404,13 @@ func processAssistantLine(line transcript.Line, uctx *userContext, _ *state.Sess
 	gen.Input = buildInput(uctx, r)
 	gen.Output = buildOutput(msg.Content, r)
 
+	if line.CostUSD > 0 {
+		if gen.Metadata == nil {
+			gen.Metadata = make(map[string]any)
+		}
+		gen.Metadata["cost_usd"] = line.CostUSD
+	}
+
 	return gen, true
 }
 
