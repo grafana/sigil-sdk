@@ -301,7 +301,9 @@ func readTranscriptSettled(ctx context.Context, path string, offset int64, logge
 		// empty read means "nothing new", not "mid-flush"), or the tail is
 		// already the last complete assistant turn. Only a trailing tool_result
 		// or partial turn that Claude Code is still flushing warrants the wait.
-		settled := len(raw) == 0 || raw[len(raw)-1].EndOffset == safeOffset
+		// A trailing user prompt (text only, no tool_result) is context for the
+		// next turn and doesn't indicate mid-flush state; treat as settled.
+		settled := len(raw) == 0 || raw[len(raw)-1].EndOffset == safeOffset || isUserTextPrompt(raw[len(raw)-1])
 		if settled || !time.Now().Before(deadline) {
 			return coalesced, safeOffset, len(raw)
 		}
@@ -314,6 +316,33 @@ func readTranscriptSettled(ctx context.Context, path string, offset int64, logge
 		case <-timer.C:
 		}
 	}
+}
+
+// isUserTextPrompt returns true if line is a user message containing only a
+// text prompt (no tool_result blocks). Such lines are context for the next
+// turn, not evidence that Claude Code is mid-flush, so they should not trigger
+// the settle wait.
+func isUserTextPrompt(line transcript.Line) bool {
+	if line.Type != "user" {
+		return false
+	}
+	var msg transcript.UserMessage
+	if err := json.Unmarshal(line.Message, &msg); err != nil {
+		return false
+	}
+	text, blocks, err := transcript.ParseUserContent(msg.Content)
+	if err != nil {
+		return false
+	}
+	if text != "" {
+		return true
+	}
+	for _, b := range blocks {
+		if b.Type == "tool_result" {
+			return false
+		}
+	}
+	return true
 }
 
 func parseHookInput(r io.Reader) (*hookInput, error) {
