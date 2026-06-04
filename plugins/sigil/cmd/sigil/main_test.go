@@ -799,3 +799,126 @@ func TestRun_LocalLaunchersShareReceiver(t *testing.T) {
 		assert.Equal(t, endpoint, envs[name].Endpoint, name)
 	}
 }
+
+func TestNormalizeTag(t *testing.T) {
+	for _, tc := range []struct {
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{in: "project=hackathon", want: "project=hackathon", wantOK: true},
+		{in: "  project = hackathon  ", want: "project=hackathon", wantOK: true},
+		{in: "empty=", want: "empty=", wantOK: true},
+		{in: "value=has=equals", want: "value=has=equals", wantOK: true},
+		{in: "noequals", wantOK: false},
+		{in: "=novalue", wantOK: false},
+		{in: "  =trimmed", wantOK: false},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			got, ok := normalizeTag(tc.in)
+			assert.Equal(t, tc.wantOK, ok)
+			if tc.wantOK {
+				assert.Equal(t, tc.want, got)
+			}
+		})
+	}
+}
+
+func TestMergeTags(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		existing string
+		flags    []string
+		want     string
+	}{
+		{name: "no existing", existing: "", flags: []string{"project=hackathon"}, want: "project=hackathon"},
+		{name: "append to existing", existing: "env=prod", flags: []string{"project=hackathon"}, want: "env=prod,project=hackathon"},
+		{name: "flag overrides existing in place", existing: "project=old,env=prod", flags: []string{"project=new"}, want: "project=new,env=prod"},
+		{name: "multiple flags", existing: "", flags: []string{"project=hackathon", "team=ai"}, want: "project=hackathon,team=ai"},
+		{name: "drops malformed existing entries", existing: "bogus, =bad ,env=prod", flags: []string{"project=x"}, want: "env=prod,project=x"},
+		{name: "last flag wins for duplicate key", existing: "", flags: []string{"k=1", "k=2"}, want: "k=2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, mergeTags(tc.existing, tc.flags))
+		})
+	}
+}
+
+// TestRun_LauncherTagFlagSetsSigilTags checks that --tag tokens before `--`
+// merge into SIGIL_TAGS for the exec'd child while args after `--` are
+// forwarded untouched.
+func TestRun_LauncherTagFlagSetsSigilTags(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		existingTag string
+		argv        []string
+		wantTags    string
+		wantArgs    []string
+	}{
+		{name: "single tag no separator", argv: []string{"--tag", "project=hackathon"}, wantTags: "project=hackathon", wantArgs: nil},
+		{name: "equals form", argv: []string{"--tag=project=hackathon"}, wantTags: "project=hackathon", wantArgs: nil},
+		{name: "repeated with forwarded args", argv: []string{"--tag", "project=hackathon", "--tag", "team=ai", "--", "--resume"}, wantTags: "project=hackathon,team=ai", wantArgs: []string{"--resume"}},
+		{name: "merges onto existing env", existingTag: "env=prod", argv: []string{"--tag", "project=hackathon"}, wantTags: "env=prod,project=hackathon", wantArgs: nil},
+		{name: "overrides existing key", existingTag: "project=old", argv: []string{"--tag", "project=new"}, wantTags: "project=new", wantArgs: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateDotenvHome(t)
+			t.Setenv("SIGIL_ENDPOINT", "https://cloud.example.com")
+			t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+			t.Setenv("SIGIL_AUTH_TOKEN", "token")
+			// Register SIGIL_TAGS for cleanup so os.Setenv inside run does
+			// not leak into other tests.
+			t.Setenv("SIGIL_TAGS", tc.existingTag)
+
+			var gotTags string
+			var gotArgs []string
+			withStubLauncher(t, "claude", func(_ context.Context, args []string, _ *local.LaunchEnv, _ io.Reader, _, _ io.Writer, _ *log.Logger, _ string) error {
+				gotTags = os.Getenv("SIGIL_TAGS")
+				gotArgs = args
+				return nil
+			})
+
+			var stdout, stderr bytes.Buffer
+			gotExit := withExit(t, func() {
+				run(append([]string{"claude"}, tc.argv...), strings.NewReader(""), &stdout, &stderr)
+			})
+			require.Nil(t, gotExit, "stderr=%q", stderr.String())
+			assert.Equal(t, tc.wantTags, gotTags)
+			assert.Equal(t, tc.wantArgs, gotArgs)
+		})
+	}
+}
+
+func TestRun_LauncherTagFlagInvalid(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		argv              []string
+		wantStderrContain string
+	}{
+		{name: "missing argument", argv: []string{"--tag"}, wantStderrContain: "--tag requires a key=value argument"},
+		{name: "missing argument before separator", argv: []string{"--tag", "--", "x"}, wantStderrContain: "--tag requires a key=value argument"},
+		{name: "greedily consumes next token", argv: []string{"--tag", "--local"}, wantStderrContain: "invalid --tag \"--local\""},
+		{name: "no equals", argv: []string{"--tag", "bogus"}, wantStderrContain: "invalid --tag \"bogus\""},
+		{name: "empty key", argv: []string{"--tag", "=novalue"}, wantStderrContain: "invalid --tag \"=novalue\""},
+		{name: "equals form no value separator", argv: []string{"--tag=bogus"}, wantStderrContain: "invalid --tag \"bogus\""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateDotenvHome(t)
+			t.Setenv("SIGIL_ENDPOINT", "https://cloud.example.com")
+			t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+			t.Setenv("SIGIL_AUTH_TOKEN", "token")
+			withStubLauncher(t, "claude", func(_ context.Context, _ []string, _ *local.LaunchEnv, _ io.Reader, _, _ io.Writer, _ *log.Logger, _ string) error {
+				t.Fatal("launcher must not be called for invalid --tag")
+				return nil
+			})
+
+			var stdout, stderr bytes.Buffer
+			gotExit := withExit(t, func() {
+				run(append([]string{"claude"}, tc.argv...), strings.NewReader(""), &stdout, &stderr)
+			})
+			require.NotNil(t, gotExit)
+			assert.Equal(t, 2, *gotExit)
+			assert.Contains(t, stderr.String(), tc.wantStderrContain)
+		})
+	}
+}

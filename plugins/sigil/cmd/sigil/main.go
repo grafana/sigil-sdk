@@ -1,14 +1,17 @@
 // Command sigil is the single binary used by the Claude Code, Codex,
 // Copilot, Cursor, OpenCode, and pi agent plugins. It accepts:
 //
-//	sigil <agent> hook                     — dispatch a JSON hook payload on stdin to <agent>
-//	sigil claude   [--local] [-- args...]  — exec claude after bootstrapping the sigil-cc plugin
-//	sigil codex    [--local] [-- args...]  — exec codex after bootstrapping the sigil-codex plugin
-//	sigil copilot  [--local] [-- args...]  — exec copilot after bootstrapping the sigil-copilot plugin
-//	sigil opencode [--local] [-- args...]  — exec opencode after bootstrapping the @grafana/sigil-opencode plugin
-//	sigil pi       [--local] [-- args...]  — exec pi after bootstrapping the @grafana/sigil-pi extension
-//	sigil local start|status|stop          — manage the local capture daemon
-//	sigil --version                        — print the build version
+//	sigil <agent> hook                                — dispatch a JSON hook payload on stdin to <agent>
+//	sigil claude   [--local] [--tag k=v] [-- args...] — exec claude after bootstrapping the sigil-cc plugin
+//	sigil codex    [--local] [--tag k=v] [-- args...] — exec codex after bootstrapping the sigil-codex plugin
+//	sigil copilot  [--local] [--tag k=v] [-- args...] — exec copilot after bootstrapping the sigil-copilot plugin
+//	sigil opencode [--local] [--tag k=v] [-- args...] — exec opencode after bootstrapping the @grafana/sigil-opencode plugin
+//	sigil pi       [--local] [--tag k=v] [-- args...] — exec pi after bootstrapping the @grafana/sigil-pi extension
+//	sigil local start|status|stop                     — manage the local capture daemon
+//	sigil --version                                   — print the build version
+//
+// --tag is repeatable and adds key=value pairs to SIGIL_TAGS so they land
+// on every generation the launched session produces.
 //
 // Unknown agents and unknown verbs exit with code 2 and a usage message on
 // stderr. For hook agents the binary must never crash the calling agent
@@ -71,7 +74,7 @@ func renderLocalBanner(uiURL string) string {
 	return localBannerBox.Render(strings.Join(lines, "\n"))
 }
 
-const usageLine = "usage: sigil login | sigil local start|status|stop | sigil <agent> hook | sigil claude [--local] [-- args...] | sigil codex [--local] [-- args...] | sigil copilot [--local] [-- args...] | sigil opencode [--local] [-- args...] | sigil pi [--local] [-- args...]"
+const usageLine = "usage: sigil login | sigil local start|status|stop | sigil <agent> hook | sigil <claude|codex|copilot|opencode|pi> [--local] [--tag key=value]... [-- args...]"
 
 // version is overridden via -ldflags at build time.
 var version = "dev"
@@ -308,12 +311,19 @@ func runLoginCommand(args []string, stderr io.Writer) {
 }
 
 // parseLauncherArgs splits sigil-side tokens from forwarded args at the
-// first `--`. The only recognised sigil-side flag is `--local`, which
-// redirects the launched agent at the local receiver. Any other token
-// before `--` is an error.
+// first `--`. Recognised sigil-side flags are:
+//   - `--local`, which redirects the launched agent at the local receiver.
+//   - `--tag key=value` (repeatable; also `--tag=key=value`), which adds
+//     a tag to SIGIL_TAGS so it lands on every generation the session
+//     produces. Flag tags merge onto (and override) any SIGIL_TAGS already
+//     in the environment.
+//
+// Any other token before `--` is an error.
 //
 // Returns the forwarded args plus a non-nil *local.LaunchEnv when --local
-// was set; the env values point at the local daemon.
+// was set; the env values point at the local daemon. When --tag is used,
+// SIGIL_TAGS is updated in the current process environment so the exec'd
+// child (which inherits os.Environ via local.Environ) sees it.
 //
 // Diagnostics distinguish two cases:
 //   - No `--` and there are unrecognised tokens: the user probably
@@ -339,11 +349,36 @@ func parseLauncherArgs(name string, rest []string, stderr io.Writer) ([]string, 
 	}
 
 	localRequested := false
+	var flagTags []string
 	var unknown []string
-	for _, tok := range sigilSide {
-		switch tok {
-		case "--local":
+	for i := 0; i < len(sigilSide); i++ {
+		tok := sigilSide[i]
+		switch {
+		case tok == "--local":
 			localRequested = true
+		case tok == "--tag":
+			if i+1 >= len(sigilSide) {
+				_, _ = fmt.Fprintln(stderr, "sigil: --tag requires a key=value argument")
+				exit(2)
+				return nil, nil, false
+			}
+			i++
+			kv, ok := normalizeTag(sigilSide[i])
+			if !ok {
+				_, _ = fmt.Fprintf(stderr, "sigil: invalid --tag %q (want key=value)\n", sigilSide[i])
+				exit(2)
+				return nil, nil, false
+			}
+			flagTags = append(flagTags, kv)
+		case strings.HasPrefix(tok, "--tag="):
+			raw := strings.TrimPrefix(tok, "--tag=")
+			kv, ok := normalizeTag(raw)
+			if !ok {
+				_, _ = fmt.Fprintf(stderr, "sigil: invalid --tag %q (want key=value)\n", raw)
+				exit(2)
+				return nil, nil, false
+			}
+			flagTags = append(flagTags, kv)
 		default:
 			unknown = append(unknown, tok)
 		}
@@ -359,6 +394,10 @@ func parseLauncherArgs(name string, rest []string, stderr io.Writer) ([]string, 
 		return nil, nil, false
 	}
 
+	if len(flagTags) > 0 {
+		_ = os.Setenv("SIGIL_TAGS", mergeTags(os.Getenv("SIGIL_TAGS"), flagTags))
+	}
+
 	var localEnv *local.LaunchEnv
 	if localRequested {
 		endpoint, otlp, err := setupLocalLaunch(stderr)
@@ -369,6 +408,63 @@ func parseLauncherArgs(name string, rest []string, stderr io.Writer) ([]string, 
 		localEnv = &local.LaunchEnv{Endpoint: endpoint, OTLPEndpoint: otlp}
 	}
 	return forwarded, localEnv, true
+}
+
+// normalizeTag validates a `--tag` value and returns it as a trimmed
+// `key=value` pair. The key must be non-empty; the value may be empty
+// (matching the SDK's SIGIL_TAGS parser, which keeps empty values). ok is
+// false when the token has no `=` or an empty key.
+func normalizeTag(raw string) (string, bool) {
+	rawKey, rawValue, ok := strings.Cut(raw, "=")
+	if !ok {
+		return "", false
+	}
+	key := strings.TrimSpace(rawKey)
+	if key == "" {
+		return "", false
+	}
+	return key + "=" + strings.TrimSpace(rawValue), true
+}
+
+// mergeTags layers flag-supplied `key=value` tags onto an existing
+// SIGIL_TAGS CSV value and returns the merged CSV. Existing keys keep their
+// position but take the flag's value (flags win); new keys are appended in
+// flag order. Malformed existing entries (no `=`, empty key) are dropped,
+// matching the SDK's parseCSVKV. flagTags entries are assumed already
+// normalised by normalizeTag.
+func mergeTags(existing string, flagTags []string) string {
+	var order []string
+	vals := map[string]string{}
+	add := func(k, v string) {
+		if _, seen := vals[k]; !seen {
+			order = append(order, k)
+		}
+		vals[k] = v
+	}
+	for part := range strings.SplitSeq(existing, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		rawKey, rawValue, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			continue
+		}
+		add(key, strings.TrimSpace(rawValue))
+	}
+	for _, t := range flagTags {
+		key, value, _ := strings.Cut(t, "=")
+		add(key, value)
+	}
+	parts := make([]string, 0, len(order))
+	for _, k := range order {
+		parts = append(parts, k+"="+vals[k])
+	}
+	return strings.Join(parts, ",")
 }
 
 // setupLocalLaunch starts the local receiver if needed and returns the
