@@ -415,16 +415,15 @@ func parseLauncherArgs(name string, rest []string, stderr io.Writer) ([]string, 
 // (matching the SDK's SIGIL_TAGS parser, which keeps empty values). ok is
 // false when the token has no `=` or an empty key.
 func normalizeTag(raw string) (string, bool) {
-	idx := strings.IndexByte(raw, '=')
-	if idx < 0 {
+	rawKey, rawValue, ok := strings.Cut(raw, "=")
+	if !ok {
 		return "", false
 	}
-	key := strings.TrimSpace(raw[:idx])
+	key := strings.TrimSpace(rawKey)
 	if key == "" {
 		return "", false
 	}
-	value := strings.TrimSpace(raw[idx+1:])
-	return key + "=" + value, true
+	return key + "=" + strings.TrimSpace(rawValue), true
 }
 
 // mergeTags layers flag-supplied `key=value` tags onto an existing
@@ -447,15 +446,19 @@ func mergeTags(existing string, flagTags []string) string {
 		if part == "" {
 			continue
 		}
-		idx := strings.IndexByte(part, '=')
-		if idx <= 0 {
+		rawKey, rawValue, ok := strings.Cut(part, "=")
+		if !ok {
 			continue
 		}
-		add(strings.TrimSpace(part[:idx]), strings.TrimSpace(part[idx+1:]))
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			continue
+		}
+		add(key, strings.TrimSpace(rawValue))
 	}
 	for _, t := range flagTags {
-		idx := strings.IndexByte(t, '=')
-		add(t[:idx], t[idx+1:])
+		key, value, _ := strings.Cut(t, "=")
+		add(key, value)
 	}
 	parts := make([]string, 0, len(order))
 	for _, k := range order {
