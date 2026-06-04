@@ -54,6 +54,16 @@ func exportConfig(endpoint, tenantID, authToken string) sigil.GenerationExportCo
 // previously filtered on "sigil-cc" need to update to "sigil.claude-code".
 const otelInstrumentationName = "sigil.claude-code"
 
+// transcriptSettleInterval is the poll spacing used while waiting for Claude
+// Code to finish flushing a turn to the transcript (see readTranscriptSettled).
+const transcriptSettleInterval = 100 * time.Millisecond
+
+// transcriptSettleWindow bounds how long readTranscriptSettled re-reads the
+// transcript waiting for the final assistant turn to land on disk. It is a var
+// so tests can zero it out and skip the wait. See readTranscriptSettled for why
+// the wait exists.
+var transcriptSettleWindow = 2 * time.Second
+
 type hookInput struct {
 	HookEventName  string          `json:"hook_event_name"`
 	SessionID      string          `json:"session_id"`
@@ -143,17 +153,12 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 	}
 	defer func() { _ = otelProviders.Shutdown(hookCtx) }()
 
-	lines, _, err := transcript.Read(input.TranscriptPath, st.Offset)
-	if err != nil {
-		logger.Printf("read transcript: %v", err)
+	lines, safeOffset, rawCount := readTranscriptSettled(hookCtx, input.TranscriptPath, st.Offset, logger)
+	if rawCount == 0 {
 		return nil
 	}
-	if len(lines) == 0 {
-		return nil
-	}
-	logger.Printf("read %d raw lines", len(lines))
+	logger.Printf("read %d raw lines", rawCount)
 
-	lines, safeOffset := mapper.Coalesce(lines)
 	if safeOffset == 0 {
 		logger.Printf("no completed assistant turn yet; keeping offset=%d", st.Offset)
 		return nil
@@ -258,6 +263,95 @@ func handlePreToolUse(ctx context.Context, stdout io.Writer, input *hookInput, s
 	if res.Blocked() {
 		guard.WriteHookSpecificOutputDeny(stdout, res.Reason)
 	}
+}
+
+// readTranscriptSettled reads transcript lines from offset and coalesces them
+// into complete assistant turns, briefly re-reading to dodge a flush race.
+//
+// Claude Code fires the Stop hook before the closing assistant turn (and its
+// preceding tool_result) is reliably flushed to the JSONL transcript. A single
+// read therefore often misses the last turn of a session: the hook coalesces
+// only through the prior tool-use turn, advances the offset there, and exits.
+// Because export happens solely on Stop/SessionEnd, no later event re-reads the
+// turn once it lands, so the final message is lost forever.
+//
+// To close the race we re-read until the tail no longer looks like an
+// assistant turn that is still landing (see tailNeedsSettle) or
+// transcriptSettleWindow elapses. The common case (the turn is already fully
+// flushed when Stop fires) settles on the first read and adds no latency; only
+// a trailing tool_result, a partial assistant line, or a lone prompt awaiting
+// its first assistant reply triggers the bounded wait.
+//
+// Returns the coalesced lines, the safe offset, and the raw line count so the
+// caller can distinguish "nothing to read" from "read but nothing complete".
+func readTranscriptSettled(ctx context.Context, path string, offset int64, logger *log.Logger) ([]transcript.Line, int64, int) {
+	deadline := time.Now().Add(transcriptSettleWindow)
+	for {
+		raw, _, err := transcript.Read(path, offset)
+		if err != nil {
+			logger.Printf("read transcript: %v", err)
+			return nil, 0, 0
+		}
+
+		coalesced, safeOffset := mapper.Coalesce(raw)
+
+		// Settle unless the tail is an assistant turn Claude Code is still
+		// flushing. An empty read (redundant Stop/SessionEnd after a prior
+		// export) has nothing to wait for, and tailNeedsSettle decides the rest.
+		settled := len(raw) == 0 || !tailNeedsSettle(raw[len(raw)-1], safeOffset)
+		if settled || !time.Now().Before(deadline) {
+			return coalesced, safeOffset, len(raw)
+		}
+
+		timer := time.NewTimer(transcriptSettleInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return coalesced, safeOffset, len(raw)
+		case <-timer.C:
+		}
+	}
+}
+
+// tailNeedsSettle reports whether the last raw transcript line indicates an
+// assistant turn that Claude Code is still flushing, so re-reading may recover
+// it. safeOffset is the end of the last complete assistant turn (from Coalesce).
+//
+//   - Tail is the last complete assistant turn (EndOffset == safeOffset): fully
+//     landed, nothing to wait for.
+//   - Tail is an assistant line that did not coalesce (no terminal stop_reason):
+//     a partial/streaming turn still landing — wait.
+//   - Tail is a tool_result: the assistant called a tool and will emit a follow
+//     -up turn that has not landed yet — wait (this is the diagnosed bug).
+//   - Tail is a plain user prompt: the start of a turn. Wait only when no
+//     completed assistant turn has landed in this batch (safeOffset == 0) — that
+//     is the symmetric race for a tool-free final turn whose assistant reply is
+//     still flushing. When a completed turn precedes the prompt (safeOffset > 0)
+//     the prompt belongs to a *future* turn, so the current event already has
+//     all it needs and must not block on it.
+func tailNeedsSettle(last transcript.Line, safeOffset int64) bool {
+	if last.EndOffset == safeOffset {
+		return false
+	}
+	if last.Type == "assistant" {
+		return true
+	}
+
+	var msg transcript.UserMessage
+	if err := json.Unmarshal(last.Message, &msg); err != nil {
+		// Unknown shape: be conservative and wait rather than risk dropping
+		// an assistant turn that is mid-flush behind it.
+		return true
+	}
+	_, blocks, err := transcript.ParseUserContent(msg.Content)
+	if err == nil {
+		for _, b := range blocks {
+			if b.Type == "tool_result" {
+				return true
+			}
+		}
+	}
+	return safeOffset == 0
 }
 
 func parseHookInput(r io.Reader) (*hookInput, error) {
