@@ -32,6 +32,18 @@ Then follow your agent's quickstart:
 - [OpenCode](../opencode/README.md)
 - [pi](../pi/README.md)
 
+## Tagging sessions
+
+Add `--tag key=value` (repeatable) before any `--` to attach tags to every generation the launched session produces. This is shorthand for setting `SIGIL_TAGS`; flag tags merge onto (and override) any `SIGIL_TAGS` already in the environment.
+
+```sh
+sigil claude --tag project=hackathon --tag team=ai
+# forward args to the underlying CLI after `--`
+sigil claude --tag project=hackathon -- --resume
+```
+
+The same flag works for every launcher (`claude`, `codex`, `copilot`, `opencode`, `pi`) and combines with `--local`.
+
 ## Content capture
 
 The shared `sigil` binary defaults to `metadata_only`: only model, tokens, tool names, timing, and cost ship to Grafana AI Observability. Prompts, responses, and tool I/O stay on the local machine. To opt into sending content, set `SIGIL_CONTENT_CAPTURE_MODE` in `~/.config/sigil/config.env`. The shared binary parser accepts every mode the SDKs support:
