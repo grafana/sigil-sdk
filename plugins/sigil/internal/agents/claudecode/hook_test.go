@@ -23,6 +23,14 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
+func TestMain(m *testing.M) {
+	// The transcript flush-race wait is unnecessary against the synthetic,
+	// fully-written transcripts these tests use; zero it so incomplete
+	// fixtures return immediately instead of blocking the settle window.
+	transcriptSettleWindow = 0
+	os.Exit(m.Run())
+}
+
 func TestParseHookInput_PreToolUse(t *testing.T) {
 	in := `{"hook_event_name":"PreToolUse","session_id":"s1","transcript_path":"/tmp/t.jsonl","tool_name":"Bash","tool_input":{"command":"echo hi"},"tool_use_id":"tu_1"}`
 	got, err := parseHookInput(strings.NewReader(in))
@@ -320,6 +328,120 @@ func buildHookUserJSONL(sessionID, text string) string {
 	}
 	data, _ := json.Marshal(line)
 	return string(data)
+}
+
+func buildHookAssistantJSONL(sessionID, requestID, stopReason, text string, outputTokens int64) string {
+	line := map[string]any{
+		"type":      "assistant",
+		"sessionId": sessionID,
+		"timestamp": "2025-06-01T12:00:00Z",
+		"version":   "1.0.0",
+		"requestId": requestID,
+		"message": map[string]any{
+			"model":       "claude-opus-4",
+			"stop_reason": stopReason,
+			"usage":       map[string]any{"input_tokens": 3, "output_tokens": outputTokens},
+			"content":     []any{map[string]any{"type": "text", "text": text}},
+		},
+	}
+	data, _ := json.Marshal(line)
+	return string(data)
+}
+
+func buildHookToolResultJSONL(sessionID, toolUseID, content string) string {
+	line := map[string]any{
+		"type":      "user",
+		"sessionId": sessionID,
+		"timestamp": "2025-06-01T12:00:00Z",
+		"version":   "1.0.0",
+		"message": map[string]any{
+			"role": "user",
+			"content": []any{map[string]any{
+				"type":        "tool_result",
+				"tool_use_id": toolUseID,
+				"content":     content,
+			}},
+		},
+	}
+	data, _ := json.Marshal(line)
+	return string(data)
+}
+
+// TestReadTranscriptSettled_CapturesLateFinalTurn reproduces the Claude Code
+// flush race: the Stop hook reads a transcript whose tail is still a dangling
+// tool_result, then the closing assistant turn lands on disk a moment later.
+// Without the settle wait the final turn would be dropped (and never recovered,
+// since export only happens on Stop/SessionEnd).
+func TestReadTranscriptSettled_CapturesLateFinalTurn(t *testing.T) {
+	prev := transcriptSettleWindow
+	transcriptSettleWindow = 2 * time.Second
+	t.Cleanup(func() { transcriptSettleWindow = prev })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	sessionID := "late-final-turn"
+
+	// Initial on-disk state at Stop time: the tool-use turn is complete, its
+	// result has landed, but the closing assistant turn has not been flushed.
+	initial := buildHookAssistantJSONL(sessionID, "req_a", "tool_use", "calling tool", 10) + "\n" +
+		buildHookToolResultJSONL(sessionID, "tu_1", "tool ok") + "\n"
+	if err := os.WriteFile(path, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Append the closing assistant turn shortly after the first read.
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return
+		}
+		defer func() { _ = f.Close() }()
+		_, _ = f.WriteString(buildHookAssistantJSONL(sessionID, "req_b", "end_turn", "all done", 5) + "\n")
+	}()
+
+	logs := log.New(io.Discard, "", 0)
+	lines, safeOffset, rawCount := readTranscriptSettled(context.Background(), path, 0, logs)
+
+	if rawCount != 3 {
+		t.Fatalf("rawCount = %d, want 3 (tool-use turn, tool_result, final turn)", rawCount)
+	}
+	last := lines[len(lines)-1]
+	if last.RequestID != "req_b" {
+		t.Fatalf("last coalesced line RequestID = %q, want req_b (the late final turn)", last.RequestID)
+	}
+	if safeOffset != last.EndOffset {
+		t.Fatalf("safeOffset = %d, want %d (end of final turn)", safeOffset, last.EndOffset)
+	}
+}
+
+// TestReadTranscriptSettled_ReturnsImmediatelyWhenTerminal confirms the common
+// case adds no latency: when the tail is already a complete assistant turn the
+// function returns on the first read without waiting out the settle window.
+func TestReadTranscriptSettled_ReturnsImmediatelyWhenTerminal(t *testing.T) {
+	prev := transcriptSettleWindow
+	transcriptSettleWindow = 5 * time.Second
+	t.Cleanup(func() { transcriptSettleWindow = prev })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	sessionID := "terminal-tail"
+	content := buildHookAssistantJSONL(sessionID, "req_a", "end_turn", "done", 5) + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	lines, safeOffset, rawCount := readTranscriptSettled(context.Background(), path, 0, log.New(io.Discard, "", 0))
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("settled read took %s; expected near-immediate return", elapsed)
+	}
+	if rawCount != 1 || len(lines) != 1 {
+		t.Fatalf("rawCount=%d len(lines)=%d, want 1/1", rawCount, len(lines))
+	}
+	if safeOffset != lines[0].EndOffset {
+		t.Fatalf("safeOffset = %d, want %d", safeOffset, lines[0].EndOffset)
+	}
 }
 
 func TestBuildToolResultMap(t *testing.T) {
