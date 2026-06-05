@@ -56,6 +56,12 @@ export function createSigilClient(
       api: { endpoint: config.endpoint },
       hooks: {
         enabled: config.guards.enabled,
+        // The pi plugin's default hook evaluations are postflight (tool-arg
+        // redaction and deny). The preflight `context` path passes its own
+        // `phases: ["preflight"]` override to `evaluateHook`, which fully
+        // replaces this list for that call (see `SigilClient.evaluateHook`
+        // — `{ ...this.config.hooks, ...override }`), so preflight does not
+        // need to be listed here.
         phases: ["postflight"],
         timeoutMs: config.guards.timeoutMs,
         failOpen: config.guards.failOpen,

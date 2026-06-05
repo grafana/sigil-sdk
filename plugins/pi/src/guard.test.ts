@@ -1,10 +1,36 @@
 import type {
   HookEvaluateRequest,
   HookEvaluateResponse,
+  HookInput,
+  Message,
   SigilClient,
 } from "@grafana/sigil-sdk-js";
 import { describe, expect, it, vi } from "vitest";
-import { type GuardArgs, runToolCallGuard } from "./guard.js";
+import {
+  type GuardArgs,
+  type GuardBlockResult,
+  type GuardResult,
+  type GuardTransformResult,
+  type PreflightTransformArgs,
+  runPreflightTransform,
+  runToolCallGuard,
+} from "./guard.js";
+
+function expectBlock(result: GuardResult): asserts result is GuardBlockResult {
+  if (!result || !("block" in result)) {
+    throw new Error(`expected a block result, got ${JSON.stringify(result)}`);
+  }
+}
+
+function expectTransform(
+  result: GuardResult,
+): asserts result is GuardTransformResult {
+  if (!result || !("transform" in result)) {
+    throw new Error(
+      `expected a transform result, got ${JSON.stringify(result)}`,
+    );
+  }
+}
 
 function makeClient(
   evaluateHook: (
@@ -60,11 +86,12 @@ describe("runToolCallGuard", () => {
     }));
 
     const result = await runToolCallGuard(makeArgs({ client }));
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain("blocked rm -rf");
-    expect(result?.reason).toContain("A Grafana AI Observability policy");
-    expect(result?.reason).toContain('"bash"');
-    expect(result?.reason).toContain("Stop and tell the user");
+    expectBlock(result);
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain("blocked rm -rf");
+    expect(result.reason).toContain("A Grafana AI Observability policy");
+    expect(result.reason).toContain('"bash"');
+    expect(result.reason).toContain("Stop and tell the user");
   });
 
   it("omits the Reason clause when the deny reason is empty", async () => {
@@ -75,11 +102,12 @@ describe("runToolCallGuard", () => {
     }));
 
     const result = await runToolCallGuard(makeArgs({ client }));
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain("A Grafana AI Observability policy");
-    expect(result?.reason).toContain('"bash"');
-    expect(result?.reason).not.toContain("Reason:");
-    expect(result?.reason).toContain("Stop and tell the user");
+    expectBlock(result);
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain("A Grafana AI Observability policy");
+    expect(result.reason).toContain('"bash"');
+    expect(result.reason).not.toContain("Reason:");
+    expect(result.reason).toContain("Stop and tell the user");
   });
 
   it("returns undefined and logs a warning on transport errors when failOpen", async () => {
@@ -123,12 +151,13 @@ describe("runToolCallGuard", () => {
     const result = await runToolCallGuard(
       makeArgs({ client, failOpen: false, logger: { warn } }),
     );
-    expect(result?.block).toBe(true);
-    expect(result?.reason).toContain("could not evaluate");
-    expect(result?.reason).toContain("safety measure");
-    expect(result?.reason).toContain('"bash"');
-    expect(result?.reason).toContain("network down");
-    expect(result?.reason).not.toContain(
+    expectBlock(result);
+    expect(result.block).toBe(true);
+    expect(result.reason).toContain("could not evaluate");
+    expect(result.reason).toContain("safety measure");
+    expect(result.reason).toContain('"bash"');
+    expect(result.reason).toContain("network down");
+    expect(result.reason).not.toContain(
       "A Grafana AI Observability policy blocked",
     );
     expect(warn).toHaveBeenCalledWith(
@@ -172,5 +201,250 @@ describe("runToolCallGuard", () => {
       inputJSON: '{"command":"ls"}',
     });
     expect(override).toEqual({ enabled: true });
+  });
+
+  it("returns a transform result when the server emits redacted tool_call args", async () => {
+    const { client } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+      transformedInput: {
+        output: [
+          {
+            role: "assistant",
+            parts: [
+              {
+                type: "tool_call",
+                toolCall: {
+                  id: "c1",
+                  name: "bash",
+                  inputJSON: '{"command":"echo [REDACTED_KEY]"}',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }));
+
+    const result = await runToolCallGuard(
+      makeArgs({
+        client,
+        toolCallId: "c1",
+        toolName: "bash",
+        input: { command: "echo sk-real-secret" },
+      }),
+    );
+    expectTransform(result);
+    expect(result.transform).toEqual({
+      command: "echo [REDACTED_KEY]",
+    });
+  });
+
+  it("ignores transformed_input that targets a different toolCallId", async () => {
+    const { client } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+      transformedInput: {
+        output: [
+          {
+            role: "assistant",
+            parts: [
+              {
+                type: "tool_call",
+                toolCall: {
+                  id: "different-call-id",
+                  name: "bash",
+                  inputJSON: '{"command":"echo X"}',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }));
+
+    // No matching tool_call id means there is simply no redaction for this
+    // call, so it must stay silent (no warning).
+    const warn = vi.fn();
+    const result = await runToolCallGuard(
+      makeArgs({
+        client,
+        toolCallId: "c1",
+        toolName: "bash",
+        logger: { warn },
+      }),
+    );
+    expect(result).toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("logs and drops a transform whose inputJSON cannot be parsed", async () => {
+    const { client } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+      transformedInput: {
+        output: [
+          {
+            role: "assistant",
+            parts: [
+              {
+                type: "tool_call",
+                toolCall: {
+                  id: "c1",
+                  name: "bash",
+                  inputJSON: "not valid json",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }));
+
+    const warn = vi.fn();
+    const result = await runToolCallGuard(
+      makeArgs({
+        client,
+        toolCallId: "c1",
+        toolName: "bash",
+        logger: { warn },
+      }),
+    );
+    expect(result).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("invalid JSON arguments"),
+    );
+  });
+
+  it("prefers deny over transform when both are present", async () => {
+    const { client } = makeClient(async () => ({
+      action: "deny",
+      reason: "blocked",
+      evaluations: [],
+      transformedInput: {
+        output: [
+          {
+            role: "assistant",
+            parts: [
+              {
+                type: "tool_call",
+                toolCall: {
+                  id: "c1",
+                  name: "bash",
+                  inputJSON: '{"command":"echo redacted"}',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }));
+
+    const result = await runToolCallGuard(
+      makeArgs({ client, toolCallId: "c1", toolName: "bash" }),
+    );
+    expectBlock(result);
+  });
+});
+
+function makePreflightArgs(
+  overrides?: Partial<PreflightTransformArgs>,
+): PreflightTransformArgs {
+  return {
+    client: {} as SigilClient,
+    agentName: "pi",
+    agentVersion: "1.0.0",
+    model: { provider: "anthropic", name: "claude-sonnet-4" },
+    messages: [{ role: "user", parts: [{ type: "text", text: "hi" }] }],
+    ...overrides,
+  };
+}
+
+describe("runPreflightTransform", () => {
+  it("sends a preflight request with phases override", async () => {
+    const { client, calls } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+    }));
+
+    await runPreflightTransform(makePreflightArgs({ client }));
+
+    expect(calls).toHaveLength(1);
+    const { req, override } = calls[0]!;
+    expect(req.phase).toBe("preflight");
+    expect(req.context).toEqual({
+      agentName: "pi",
+      agentVersion: "1.0.0",
+      model: { provider: "anthropic", name: "claude-sonnet-4" },
+    });
+    expect((req.input as HookInput).messages).toEqual([
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+    ]);
+    expect(override).toEqual({ enabled: true, phases: ["preflight"] });
+  });
+
+  it("returns the redacted messages from transformedInput", async () => {
+    const redacted: Message[] = [
+      { role: "user", parts: [{ type: "text", text: "hi [REDACTED]" }] },
+    ];
+    const { client } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+      transformedInput: { messages: redacted },
+    }));
+
+    const result = await runPreflightTransform(makePreflightArgs({ client }));
+    expect(result).toEqual({ messages: redacted });
+  });
+
+  it("returns undefined when the server does not emit transformedInput", async () => {
+    const { client } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+    }));
+
+    const result = await runPreflightTransform(makePreflightArgs({ client }));
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined when the server returns an empty messages list", async () => {
+    const { client } = makeClient(async () => ({
+      action: "allow",
+      evaluations: [],
+      transformedInput: { messages: [] },
+    }));
+
+    const result = await runPreflightTransform(makePreflightArgs({ client }));
+    expect(result).toBeUndefined();
+  });
+
+  it("fails open on transport errors, logging a warning", async () => {
+    const { client } = makeClient(async () => {
+      throw new Error("network down");
+    });
+    const warn = vi.fn();
+
+    const result = await runPreflightTransform(
+      makePreflightArgs({ client, logger: { warn } }),
+    );
+    expect(result).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("preflight transform eval failed"),
+    );
+  });
+
+  it("surfaces a preflight deny without a transform as no-op (cannot block via context)", async () => {
+    // The pi `context` event has no `block` field, so a preflight deny
+    // verdict cannot be enforced at this seam. Without transformedInput
+    // there is nothing to apply, so we surface no transform and let the
+    // original messages flow through.
+    const { client } = makeClient(async () => ({
+      action: "deny",
+      reason: "preflight deny",
+      evaluations: [],
+    }));
+
+    const result = await runPreflightTransform(makePreflightArgs({ client }));
+    expect(result).toBeUndefined();
   });
 });

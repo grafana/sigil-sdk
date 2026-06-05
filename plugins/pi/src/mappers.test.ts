@@ -1,11 +1,15 @@
+import type { Message } from "@grafana/sigil-sdk-js";
 import { describe, expect, it } from "vitest";
 import {
+  applyRedactedText,
   extractRequestControls,
   MAX_TITLE_LEN,
+  mapAgentMessagesForHook,
   mapGenerationResult,
   mapGenerationStart,
   mapTools,
   mapUserMessage,
+  type PiAgentMessage,
   type PiAssistantMessage,
   type PiToolInfo,
   type PiToolResult,
@@ -1054,5 +1058,351 @@ describe("extractRequestControls", () => {
       thinking: { type: "enabled", budget_tokens: "lots" },
     });
     expect(ctrls.thinkingBudgetTokens).toBeUndefined();
+  });
+});
+
+describe("mapAgentMessagesForHook", () => {
+  it("maps user, assistant, and tool result messages 1:1 regardless of contentCapture", () => {
+    const messages: PiAgentMessage[] = [
+      { role: "user", content: "hello secret@example.com", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "hi" },
+          {
+            type: "toolCall",
+            id: "c1",
+            name: "bash",
+            arguments: { cmd: "ls" },
+          },
+        ],
+        provider: "anthropic",
+        model: "claude-sonnet-4",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+        },
+        stopReason: "toolUse",
+        timestamp: 2,
+      },
+      {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "bash",
+        content: [{ type: "text", text: "output" }],
+        isError: false,
+        timestamp: 3,
+      },
+    ];
+    const out = mapAgentMessagesForHook(messages);
+    expect(out).toHaveLength(3);
+    expect(out[0]).toEqual({
+      role: "user",
+      parts: [{ type: "text", text: "hello secret@example.com" }],
+    });
+    expect(out[1]).toMatchObject({
+      role: "assistant",
+      parts: [{ type: "text", text: "hi" }],
+    });
+    expect(out[2]?.role).toBe("tool");
+  });
+
+  it("drops thinking parts from the forward payload but keeps the message slot", () => {
+    const messages: PiAgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "reasoning" },
+          { type: "text", text: "answer" },
+        ],
+        provider: "anthropic",
+        model: "claude-sonnet-4",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+        },
+        stopReason: "stop",
+        timestamp: 1,
+      },
+    ];
+    const out = mapAgentMessagesForHook(messages);
+    expect(out).toHaveLength(1);
+    const parts = out[0]?.parts ?? [];
+    expect(parts.some((p) => p.type === "thinking")).toBe(false);
+    expect(parts).toEqual([{ type: "text", text: "answer" }]);
+  });
+
+  it("emits a placeholder for unknown/custom agent message subtypes", () => {
+    const messages: PiAgentMessage[] = [
+      { role: "user", content: "hi", timestamp: 1 },
+      // Simulated custom AgentMessage (e.g. a UI-only notification).
+      { role: "bash_execution" } as PiAgentMessage,
+    ];
+    const out = mapAgentMessagesForHook(messages);
+    // Alignment must be preserved — unknown roles must not be dropped
+    // because that would break index-aligned write-back.
+    expect(out).toHaveLength(2);
+    expect(out[1]?.role).toBe("bash_execution");
+    expect(out[1]?.parts).toEqual([]);
+  });
+
+  it("emits a placeholder for null/non-object slots so alignment is preserved", () => {
+    const messages = [
+      { role: "user", content: "hi", timestamp: 1 },
+      null,
+      { role: "user", content: "bye", timestamp: 2 },
+    ] as unknown as PiAgentMessage[];
+    const out = mapAgentMessagesForHook(messages);
+    // The null slot must not be dropped, otherwise forward shrinks below
+    // piMessages and the whole transform is discarded on write-back.
+    expect(out).toHaveLength(3);
+    expect(out[1]).toEqual({ role: "unknown", parts: [] });
+  });
+
+  it("emits a user message with an empty parts array when content is image-only", () => {
+    const messages: PiAgentMessage[] = [
+      {
+        role: "user",
+        content: [{ type: "image", data: "x", mimeType: "image/png" }],
+        timestamp: 1,
+      },
+    ];
+    const out = mapAgentMessagesForHook(messages);
+    expect(out[0]).toEqual({ role: "user", parts: [] });
+  });
+});
+
+describe("applyRedactedText", () => {
+  it("overwrites string user content with the redacted text", () => {
+    const pi: PiAgentMessage[] = [
+      {
+        role: "user",
+        content: "my email is leak@example.com",
+        timestamp: 1,
+      },
+    ];
+    const redacted: Message[] = [
+      {
+        role: "user",
+        parts: [{ type: "text", text: "my email is [REDACTED_EMAIL]" }],
+      },
+    ];
+    const ok = applyRedactedText(pi, redacted);
+    expect(ok).toBe(true);
+    expect((pi[0] as PiUserMessage).content).toBe(
+      "my email is [REDACTED_EMAIL]",
+    );
+  });
+
+  it("overwrites the first text block of array-shaped user content and clears the rest", () => {
+    const pi: PiAgentMessage[] = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi leak@example.com" },
+          { type: "image", data: "x", mimeType: "image/png" },
+          { type: "text", text: "bye" },
+        ],
+        timestamp: 1,
+      },
+    ];
+    const redacted: Message[] = [
+      {
+        role: "user",
+        parts: [{ type: "text", text: "hi [REDACTED_EMAIL]\nbye" }],
+      },
+    ];
+    applyRedactedText(pi, redacted);
+    const content = (pi[0] as PiUserMessage).content as Array<{
+      type: string;
+      text?: string;
+    }>;
+    expect(content[0]?.text).toBe("hi [REDACTED_EMAIL]\nbye");
+    // Image must not be touched.
+    expect(content[1]).toEqual({
+      type: "image",
+      data: "x",
+      mimeType: "image/png",
+    });
+    // Trailing text part cleared so the rendered message equals the
+    // redacted payload exactly.
+    expect(content[2]?.text).toBe("");
+  });
+
+  it("leaves provider-signed thinking parts on assistant messages untouched", () => {
+    const pi: PiAgentMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "opaque-sig" },
+          { type: "text", text: "original secret" },
+          {
+            type: "toolCall",
+            id: "c1",
+            name: "bash",
+            arguments: { cmd: "ls" },
+          },
+        ],
+        provider: "anthropic",
+        model: "claude-sonnet-4",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+        },
+        stopReason: "toolUse",
+        timestamp: 1,
+      },
+    ];
+    const redacted: Message[] = [
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "original [REDACTED]" }],
+      },
+    ];
+    applyRedactedText(pi, redacted);
+    const content = (pi[0] as PiAssistantMessage).content;
+    expect(content[0]).toEqual({ type: "thinking", thinking: "opaque-sig" });
+    expect(content[1]).toMatchObject({
+      type: "text",
+      text: "original [REDACTED]",
+    });
+    expect(content[2]).toMatchObject({
+      type: "toolCall",
+      id: "c1",
+      name: "bash",
+      arguments: { cmd: "ls" },
+    });
+  });
+
+  it("returns false when message counts diverge", () => {
+    const pi: PiAgentMessage[] = [
+      { role: "user", content: "a", timestamp: 1 },
+      { role: "user", content: "b", timestamp: 2 },
+    ];
+    const redacted: Message[] = [
+      { role: "user", parts: [{ type: "text", text: "a" }] },
+    ];
+    expect(applyRedactedText(pi, redacted)).toBe(false);
+    // pi unchanged.
+    expect((pi[0] as PiUserMessage).content).toBe("a");
+    expect((pi[1] as PiUserMessage).content).toBe("b");
+  });
+
+  it("skips a null/non-object pi slot and still redacts the rest of the turn", () => {
+    const pi = [
+      { role: "user", content: "leak@example.com", timestamp: 1 },
+      null,
+      { role: "user", content: "also leak@example.com", timestamp: 2 },
+    ] as unknown as PiAgentMessage[];
+    const redacted: Message[] = [
+      { role: "user", parts: [{ type: "text", text: "[REDACTED_EMAIL]" }] },
+      { role: "unknown", parts: [] },
+      {
+        role: "user",
+        parts: [{ type: "text", text: "also [REDACTED_EMAIL]" }],
+      },
+    ];
+    const ok = applyRedactedText(pi, redacted);
+    expect(ok).toBe(true);
+    expect((pi[0] as PiUserMessage).content).toBe("[REDACTED_EMAIL]");
+    expect(pi[1]).toBeNull();
+    expect((pi[2] as PiUserMessage).content).toBe("also [REDACTED_EMAIL]");
+  });
+
+  it("no-ops when redacted message has no extractable text", () => {
+    const pi: PiAgentMessage[] = [
+      {
+        role: "user",
+        content: "hi",
+        timestamp: 1,
+      },
+    ];
+    const redacted: Message[] = [{ role: "user", parts: [] }];
+    const ok = applyRedactedText(pi, redacted);
+    expect(ok).toBe(true);
+    expect((pi[0] as PiUserMessage).content).toBe("hi");
+  });
+
+  it("tolerates the legacy `content` shorthand on the redacted side", () => {
+    const pi: PiAgentMessage[] = [
+      { role: "user", content: "hi leak@example.com", timestamp: 1 },
+    ];
+    const redacted: Message[] = [
+      { role: "user", content: "hi [REDACTED_EMAIL]" },
+    ];
+    applyRedactedText(pi, redacted);
+    expect((pi[0] as PiUserMessage).content).toBe("hi [REDACTED_EMAIL]");
+  });
+
+  it("overwrites tool-result text in place from the redacted tool_result part", () => {
+    // The server keeps the `tool_result` part shape and redacts its
+    // `content` field in place (grafana/sigil
+    // `internal/eval/hooks/transform.go`). The plugin must read the redaction
+    // off the tool_result part, not from a synthetic text part that the
+    // server never emits.
+    const pi: PiAgentMessage[] = [
+      {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "bash",
+        content: [{ type: "text", text: "secret-output sk-XXXX" }],
+        isError: false,
+        timestamp: 1,
+      },
+    ];
+    const redacted: Message[] = [
+      {
+        role: "tool",
+        parts: [
+          {
+            type: "tool_result",
+            toolResult: {
+              toolCallId: "c1",
+              name: "bash",
+              content: "secret-output [REDACTED_API_KEY]",
+              isError: false,
+            },
+          },
+        ],
+      },
+    ];
+    const ok = applyRedactedText(pi, redacted);
+    expect(ok).toBe(true);
+    expect((pi[0] as PiToolResult).content[0]).toMatchObject({
+      type: "text",
+      text: "secret-output [REDACTED_API_KEY]",
+    });
+  });
+
+  it("no-ops a tool-result message when the redacted tool_result part is absent", () => {
+    // Defensive: if the server returns the tool role with no tool_result
+    // part (e.g. a transformed payload that dropped it), leave pi untouched
+    // rather than guessing from any other parts.
+    const pi: PiAgentMessage[] = [
+      {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "bash",
+        content: [{ type: "text", text: "original" }],
+        isError: false,
+        timestamp: 1,
+      },
+    ];
+    const redacted: Message[] = [{ role: "tool", parts: [] }];
+    const ok = applyRedactedText(pi, redacted);
+    expect(ok).toBe(true);
+    expect((pi[0] as PiToolResult).content[0]).toMatchObject({
+      type: "text",
+      text: "original",
+    });
   });
 });
