@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -216,6 +217,174 @@ func (s *Storage) ConversationDetail(id string) (*ConversationDetail, error) {
 		return out.Generations[i].StartedAt.Before(out.Generations[j].StartedAt)
 	})
 	return out, nil
+}
+
+// TokenUsagePoint is one generation's token usage split into five
+// non-overlapping buckets, tagged with the model/provider that produced
+// it and the time it ran. The viewer re-buckets these by time to draw
+// the token-usage chart. The buckets are disjoint (see
+// disjointTokenUsage) so a stacked chart never double-counts.
+type TokenUsagePoint struct {
+	Timestamp  time.Time `json:"t"`
+	Model      string    `json:"model,omitempty"`
+	Provider   string    `json:"provider,omitempty"`
+	FreshInput int64     `json:"fresh_input"`
+	CacheRead  int64     `json:"cache_read"`
+	CacheWrite int64     `json:"cache_write"`
+	Output     int64     `json:"output"`
+	Reasoning  int64     `json:"reasoning"`
+}
+
+// TokenUsagePoints walks every conversation file and returns one point
+// per generation that recorded any token usage, sorted oldest-first.
+// A missing conversations dir yields no points (first-launch case).
+func (s *Storage) TokenUsagePoints() ([]TokenUsagePoint, error) {
+	dir := filepath.Join(s.dir, ConversationsDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []TokenUsagePoint
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".jsonl" {
+			continue
+		}
+		err := scanGenerationRecords(filepath.Join(dir, e.Name()), func(r generationRecord, gen storedGeneration) {
+			if p, ok := tokenUsagePoint(r, gen); ok {
+				out = append(out, p)
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Timestamp.Before(out[j].Timestamp)
+	})
+	return out, nil
+}
+
+// tokenUsagePoint builds a TokenUsagePoint from one record. ok is false
+// when the generation recorded no tokens or has no usable timestamp, so
+// the caller can skip it rather than plot a zero-height bar at the epoch.
+func tokenUsagePoint(r generationRecord, gen storedGeneration) (TokenUsagePoint, bool) {
+	freshInput, cacheRead, cacheWrite, output, reasoning := disjointTokenUsage(gen.Usage.toSDK(), gen.Model.Provider)
+	if freshInput == 0 && cacheRead == 0 && cacheWrite == 0 && output == 0 && reasoning == 0 {
+		return TokenUsagePoint{}, false
+	}
+	when := generationTime(gen, r)
+	if when.IsZero() {
+		return TokenUsagePoint{}, false
+	}
+	return TokenUsagePoint{
+		Timestamp:  when,
+		Model:      gen.modelName(),
+		Provider:   gen.Model.Provider,
+		FreshInput: freshInput,
+		CacheRead:  cacheRead,
+		CacheWrite: cacheWrite,
+		Output:     output,
+		Reasoning:  reasoning,
+	}, true
+}
+
+// generationTime is the wall-clock moment a generation ran, preferring
+// started_at, then completed_at, then the receiver's arrival time.
+func generationTime(gen storedGeneration, r generationRecord) time.Time {
+	if !gen.StartedAt.IsZero() {
+		return gen.StartedAt
+	}
+	if !gen.CompletedAt.IsZero() {
+		return gen.CompletedAt
+	}
+	when, _ := time.Parse(time.RFC3339Nano, r.ReceivedAt)
+	return when
+}
+
+// disjointTokenUsage splits a generation's usage into five buckets that
+// don't overlap, so the viewer can stack them without double-counting.
+//
+// Providers disagree on how cache and reasoning tokens relate to the
+// input/output totals, so both carve-outs are provider-aware:
+//
+//   - cache_read: Anthropic reports input_tokens as the non-cached input,
+//     so cache_read/cache_write are extra on top. OpenAI, Gemini, and
+//     codex fold cached tokens into input_tokens, so cache_read is a
+//     subset that must be carved back out (see cacheReadInsideInput).
+//   - reasoning: OpenAI and codex nest reasoning inside output
+//     (completion) tokens, so it's carved out. Gemini reports thoughts as
+//     additive (output is just the candidate tokens) and Anthropic
+//     doesn't populate it, so for those reasoning stands alone (see
+//     reasoningInsideOutput).
+//
+// cache_write is never folded into input by any provider we map, so it
+// always stands alone.
+//
+// For well-formed usage the buckets sum back to what the provider
+// reported: Anthropic input + cache_read + cache_write + output; OpenAI
+// input + output; Gemini input + output + reasoning (its total also
+// counts tool-use prompt tokens, which the SDK's TokenUsage has no field
+// for). When a subset field exceeds its total, the nonNeg clamps keep
+// the subset and zero the remainder, so the sum can exceed what was
+// reported.
+func disjointTokenUsage(u sigil.TokenUsage, provider string) (freshInput, cacheRead, cacheWrite, output, reasoning int64) {
+	cacheRead = nonNeg(u.CacheReadInputTokens)
+	cacheWrite = nonNeg(u.CacheWriteInputTokens)
+	reasoning = nonNeg(u.ReasoningTokens)
+
+	freshInput = nonNeg(u.InputTokens)
+	if cacheReadInsideInput(provider) {
+		freshInput = nonNeg(freshInput - cacheRead)
+	}
+
+	output = nonNeg(u.OutputTokens)
+	if reasoningInsideOutput(provider) {
+		output = nonNeg(output - reasoning)
+	}
+	return freshInput, cacheRead, cacheWrite, output, reasoning
+}
+
+// cacheReadInsideInput reports whether the provider counts cache_read
+// tokens within input_tokens (subset semantics). Anthropic keeps them
+// separate; OpenAI and Gemini fold them in, and so does codex, the codex
+// agent's fallback provider for model names it can't attribute (its
+// usage comes from the Responses API). Unknown providers default to
+// "separate" so we never subtract tokens we can't account for and end up
+// hiding real input.
+func cacheReadInsideInput(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openai", "azure", "azure-openai", "azureopenai", "codex",
+		"gemini", "google", "googleai", "google-genai", "vertex", "vertexai", "google-vertex":
+		return true
+	default:
+		return false
+	}
+}
+
+// reasoningInsideOutput reports whether the provider counts reasoning
+// tokens within output_tokens (subset semantics). OpenAI and codex nest
+// reasoning inside completion tokens; Gemini reports thoughts as a
+// separate additive count and Anthropic doesn't populate reasoning, so
+// both keep it standalone. Unknown providers default to "separate" so we
+// never subtract reasoning we can't account for and end up hiding real
+// output.
+func reasoningInsideOutput(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openai", "azure", "azure-openai", "azureopenai", "codex":
+		return true
+	default:
+		return false
+	}
+}
+
+func nonNeg(n int64) int64 {
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 // scanGenerationRecords walks one per-conversation JSONL file calling visit
