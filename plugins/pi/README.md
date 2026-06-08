@@ -89,15 +89,28 @@ Before any generation leaves the process, the SDK scrubs known token formats, PE
 
 ## Guards
 
-Guards block tool calls before they execute (e.g. refuse a `bash` invocation matching a deny rule). They're off by default:
+Guards do two things when enabled: block tool calls that match a deny rule, and apply Transform rules to redact sensitive content. They're off by default:
 
 ```sh
 SIGIL_GUARDS_ENABLED=true sigil pi
 ```
 
-By default, transport errors and timeouts let the tool through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block on errors instead. Raise or lower `SIGIL_GUARDS_TIMEOUT_MS` (default `1500`) to trade latency against tolerance for slow evaluators.
+By default, transport errors and timeouts let the request through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block tool calls on errors instead. Raise or lower `SIGIL_GUARDS_TIMEOUT_MS` (default `1500`) to trade latency against tolerance for slow evaluators.
 
 The same three variables are honored by the [Claude Code plugin](../claude-code/README.md); both plugins read them from `~/.config/sigil/config.env`.
+
+### Transform guards (redaction)
+
+When guards are enabled, pi also applies [Transform guards](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/guides/guards/) — regex redaction rules you configure in Grafana — in two places:
+
+- **Preflight (message redaction).** Before each model call, the outgoing conversation is sent to Sigil; redacted text replaces the original, so the placeholder (e.g. `[REDACTED]`) reaches the model instead of the secret.
+- **Postflight (tool-argument redaction).** Before a tool runs, its arguments are sent to Sigil; if a Transform rule matches, the redacted arguments replace what the tool receives.
+
+Limits:
+
+- Each guarded model call adds one synchronous hook round-trip (`SIGIL_GUARDS_TIMEOUT_MS`, default `1500`). Transform redaction always fails open: on a transport error or timeout the original messages or tool arguments pass through unchanged.
+- A preflight deny verdict cannot stop the model call, only the transform output is applied. Enforced blocking happens at the tool-call (postflight) level.
+- Redaction rewrites text content only. `thinking` blocks on assistant messages are left unchanged so multi-turn continuity is preserved.
 
 ## All options
 

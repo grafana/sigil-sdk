@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import registerExtension from "./index.js";
-import { resetSigilDotenvStateForTests } from "./sigilDotenv.js";
+import { restoreEnv, snapshotAndClearTestEnv } from "./testEnv.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = join(
@@ -114,50 +114,6 @@ function closeServer(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
   });
-}
-
-function snapshotAndClearTestEnv(): Record<string, string | undefined> {
-  const keys = new Set<string>(["HOME", "USERPROFILE", "XDG_CONFIG_HOME"]);
-  for (const key of Object.keys(process.env)) {
-    if (
-      key.startsWith("SIGIL_") ||
-      key.startsWith("SIGIL_PI_") ||
-      key.startsWith("OTEL_")
-    ) {
-      keys.add(key);
-    }
-  }
-
-  const saved: Record<string, string | undefined> = {};
-  for (const key of keys) {
-    saved[key] = process.env[key];
-    delete process.env[key];
-  }
-  resetSigilDotenvStateForTests();
-  return saved;
-}
-
-function restoreEnv(saved: Record<string, string | undefined>): void {
-  for (const key of Object.keys(process.env)) {
-    if (
-      key === "HOME" ||
-      key === "USERPROFILE" ||
-      key === "XDG_CONFIG_HOME" ||
-      key.startsWith("SIGIL_") ||
-      key.startsWith("SIGIL_PI_") ||
-      key.startsWith("OTEL_")
-    ) {
-      delete process.env[key];
-    }
-  }
-  for (const [key, value] of Object.entries(saved)) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-  resetSigilDotenvStateForTests();
 }
 
 // piTurnFixture returns the message payloads used by the golden test:
