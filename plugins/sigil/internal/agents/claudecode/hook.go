@@ -246,10 +246,12 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 }
 
 // handlePreToolUse evaluates the tool call against Sigil guards and writes a
-// PreToolUse deny envelope to stdout when the call is blocked. All Sigil
-// transport, credential, fail-open/closed, and local-endpoint placeholder
-// behaviour lives in the shared guard helper so this stays in lockstep with
-// the codex and copilot agents.
+// PreToolUse deny envelope to stdout when the call is blocked, or an
+// allow+updatedInput envelope when a Transform rule redacted the tool
+// arguments. A plain allow stays silent on stdout. All Sigil transport,
+// credential, fail-open/closed, and local-endpoint placeholder behaviour
+// lives in the shared guard helper so this stays in lockstep with the codex
+// and copilot agents.
 func handlePreToolUse(ctx context.Context, stdout io.Writer, input *hookInput, st state.Session, logger *log.Logger) {
 	res := guard.EvaluateToolCall(ctx, envconfig.ResolveGuards(logger), guard.ToolCallInput{
 		AgentName:     AgentName,
@@ -262,6 +264,10 @@ func handlePreToolUse(ctx context.Context, stdout io.Writer, input *hookInput, s
 	}, logger)
 	if res.Blocked() {
 		guard.WriteHookSpecificOutputDeny(stdout, res.Reason)
+		return
+	}
+	if len(res.UpdatedInputJSON) > 0 {
+		guard.WriteHookSpecificOutputUpdatedInput(stdout, res.UpdatedInputJSON)
 	}
 }
 
