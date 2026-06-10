@@ -135,21 +135,44 @@ func PreToolUse(ctx context.Context, stdout io.Writer, p Payload, cfg config.Con
 			}
 		}
 		res := guard.EvaluateToolCall(ctx, cfg.Guards, guard.ToolCallInput{
-			AgentName:     mapper.AgentName,
-			ToolName:      p.ToolName(),
-			ToolInputJSON: toolArgs,
+			AgentName: mapper.AgentName,
+			ToolName:  p.ToolName(),
+			// Copilot delivers tool args as a JSON-encoded string; the Sigil
+			// server only transforms tool-call input that is a JSON object, so
+			// decode the wrapper before evaluating or redaction never happens.
+			ToolInputJSON: decodeStringEncodedToolInput(toolArgs),
 			ModelProvider: provider,
 			ModelName:     modelName,
 		}, logger)
 		if res.Blocked() {
-			// Copilot command hooks (both the CLI and Copilot Chat in VS
-			// Code) read the deny verdict from the nested
-			// hookSpecificOutput.permissionDecision envelope — the same
-			// shape Claude Code and Codex use. A top-level permissionDecision
-			// (the Copilot *SDK* return shape) is silently ignored by VS
-			// Code, so the tool would run anyway. Use the shared writer.
-			guard.WriteHookSpecificOutputDeny(stdout, res.Reason)
+			// The two Copilot surfaces read opposite response shapes: the
+			// CLI honors only the flat top-level permissionDecision
+			// (verified against CLI 1.0.54, which silently ignores the
+			// nested envelope), while Copilot Chat in VS Code honors only
+			// the nested hookSpecificOutput envelope and ignores the flat
+			// fields. Each host skips the shape it does not know, so one
+			// combined object blocks on both.
+			writeDeny(stdout, res.Reason)
 			return
+		}
+		if len(res.UpdatedInputJSON) > 0 {
+			// Transform (redaction) verdicts are applied on the copilot-cli
+			// surface only. The CLI substitutes tool arguments from the flat
+			// {"modifiedArgs": <object>} response (verified against CLI
+			// 1.0.54, which ignores the nested hookSpecificOutput envelope
+			// for argument rewrites). Copilot Chat in VS Code parses only
+			// hookSpecificOutput.updatedInput, and that path is unverified
+			// live, so nothing is written there. A transform the host
+			// silently drops would report redaction that never happened.
+			if p.Surface() == surfaceCopilotCLI {
+				writeModifiedArgs(stdout, res.UpdatedInputJSON)
+				// Record the redacted arguments: they are what the tool
+				// actually runs with, and the originals may hold the very
+				// content the Transform rule strips.
+				toolArgs = res.UpdatedInputJSON
+			} else {
+				logger.Printf("preToolUse: dropping guard transform for tool %q: surface %q is not verified to apply modified arguments", p.ToolName(), p.Surface())
+			}
 		}
 	}
 	turnID, session, err := fragment.EnsureActiveTurn(sessionID, logger, p.ResolvedTimestamp())
@@ -175,6 +198,91 @@ func PreToolUse(ctx context.Context, stdout io.Writer, p Payload, cfg config.Con
 	}); err != nil {
 		logger.Printf("preToolUse: update turn: %v", err)
 	}
+}
+
+// surfaceCopilotCLI is the surface the dispatcher stamps onto the payload
+// when the Copilot CLI (rather than Copilot Chat in VS Code) fired the hook;
+// see copilot/surface.go.
+const surfaceCopilotCLI = "copilot-cli"
+
+// decodeStringEncodedToolInput unwraps tool arguments that the Copilot CLI
+// delivers as a JSON-encoded string (e.g. `"{\"command\":\"…\"}"`) into the
+// underlying JSON object. The Sigil server only applies Transform rules to
+// tool-call input that is a JSON object: given a JSON string it returns no
+// transform at all, so Copilot's arguments are never redacted without this.
+// Returns raw unchanged when it is already an object, or a string that does
+// not wrap a JSON object.
+func decodeStringEncodedToolInput(raw json.RawMessage) json.RawMessage {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return raw
+	}
+	inner := json.RawMessage(s)
+	var obj map[string]any
+	if err := json.Unmarshal(inner, &obj); err != nil || obj == nil {
+		return raw
+	}
+	return inner
+}
+
+// preToolUseModifiedArgs is the flat preToolUse response the Copilot CLI
+// reads to substitute tool arguments. It is unrelated to the nested
+// hookSpecificOutput envelope used for deny verdicts.
+type preToolUseModifiedArgs struct {
+	ModifiedArgs json.RawMessage `json:"modifiedArgs"`
+}
+
+// preToolUseDeny carries the deny verdict in both Copilot response shapes:
+// the flat fields for the CLI and the nested envelope for Copilot Chat in
+// VS Code.
+type preToolUseDeny struct {
+	PermissionDecision       string                 `json:"permissionDecision"`
+	PermissionDecisionReason string                 `json:"permissionDecisionReason"`
+	HookSpecificOutput       preToolUseDenyEnvelope `json:"hookSpecificOutput"`
+}
+
+type preToolUseDenyEnvelope struct {
+	HookEventName            string `json:"hookEventName"`
+	PermissionDecision       string `json:"permissionDecision"`
+	PermissionDecisionReason string `json:"permissionDecisionReason"`
+}
+
+// writeDeny writes the combined PreToolUse deny JSON. The Copilot CLI reads
+// the flat permissionDecision fields and ignores the nested envelope
+// (verified against CLI 1.0.54); Copilot Chat in VS Code reads the nested
+// hookSpecificOutput envelope and ignores the flat fields. The hookEventName
+// must be the PascalCase "PreToolUse"; VS Code drops the envelope on an
+// exact-match failure.
+func writeDeny(stdout io.Writer, reason string) {
+	if stdout == nil {
+		return
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "tool call denied by Sigil guard"
+	}
+	_ = json.NewEncoder(stdout).Encode(preToolUseDeny{
+		PermissionDecision:       "deny",
+		PermissionDecisionReason: reason,
+		HookSpecificOutput: preToolUseDenyEnvelope{
+			HookEventName:            "PreToolUse",
+			PermissionDecision:       "deny",
+			PermissionDecisionReason: reason,
+		},
+	})
+}
+
+// writeModifiedArgs writes the flat modifiedArgs JSON that makes the Copilot
+// CLI run the tool with the substituted arguments. modifiedArgs must be a
+// JSON object, which guard.EvaluateToolCall already guarantees for
+// UpdatedInputJSON; the CLI ignores a JSON-encoded string even though it
+// sends toolArgs in that form. No permissionDecision is included: the CLI applies
+// modifiedArgs without one, and adding "allow" would also skip the user's
+// permission prompt for the tool call.
+func writeModifiedArgs(stdout io.Writer, modifiedArgs json.RawMessage) {
+	if stdout == nil || len(modifiedArgs) == 0 {
+		return
+	}
+	_ = json.NewEncoder(stdout).Encode(preToolUseModifiedArgs{ModifiedArgs: modifiedArgs})
 }
 
 func PostToolUse(p Payload, cfg config.Config, logger *log.Logger, failed bool) {
