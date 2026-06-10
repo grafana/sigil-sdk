@@ -7,6 +7,7 @@ package guard
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -76,6 +77,10 @@ type Result struct {
 	Reason string
 	// RuleID identifies the rule that produced a deny verdict, when known.
 	RuleID string
+	// UpdatedInputJSON carries the transformed (redacted) tool arguments
+	// when Sigil returned a usable Transform verdict for this tool call.
+	// Nil when no transform applies; always nil on deny.
+	UpdatedInputJSON json.RawMessage
 }
 
 // Blocked reports whether the host should refuse to execute the tool call.
@@ -93,7 +98,9 @@ func (r Result) Blocked() bool {
 //   - guards disabled or tool name empty: returns allow.
 //   - credentials missing and fail-open: returns allow.
 //   - credentials missing and fail-closed: returns deny with a credentials reason.
-//   - Sigil returns allow: returns allow.
+//   - Sigil returns allow: returns allow. When the response carries a
+//     transformed_input with redacted arguments for this tool call,
+//     UpdatedInputJSON is set so the host can rewrite the tool input.
 //   - Sigil returns deny: returns deny with the rule reason.
 //   - transport error and fail-open: returns allow (matches SDK behaviour).
 //   - transport error and fail-closed: returns deny with a transport reason.
@@ -230,7 +237,75 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 		}
 	}
 
-	return Result{Action: sigil.HookActionAllow}
+	return Result{
+		Action:           sigil.HookActionAllow,
+		UpdatedInputJSON: extractToolCallTransform(resp, strings.TrimSpace(in.ToolCallID), logger),
+	}
+}
+
+// extractToolCallTransform walks the server-returned transformed_input for
+// the tool_call part matching toolCallID and returns its arguments as raw
+// JSON. Returns nil on any mismatch or parse failure so the caller falls
+// through to the original tool input unchanged. Mirrors pi guard.ts
+// extractToolCallTransform; keep the two in sync.
+func extractToolCallTransform(resp *sigil.HookEvaluateResponse, toolCallID string, logger *log.Logger) json.RawMessage {
+	if resp == nil || resp.TransformedInput == nil {
+		return nil
+	}
+	for _, msg := range resp.TransformedInput.Output {
+		for _, part := range msg.Parts {
+			if part.Kind != sigil.PartKindToolCall || part.ToolCall == nil || part.ToolCall.ID != toolCallID {
+				continue
+			}
+			// A matching tool_call whose args we cannot parse means the
+			// server sent a transform we cannot apply; log it. The no-match
+			// case stays silent, since that just means there is no redaction
+			// for this call.
+			raw := part.ToolCall.InputJSON
+			if len(raw) > 0 {
+				raw = unwrapProtoJSONBytes(raw)
+			}
+			if len(raw) == 0 {
+				if logger != nil {
+					logger.Printf("guard: tool-call transform for %s dropped: empty arguments", toolCallID)
+				}
+				return nil
+			}
+			if !json.Valid(raw) {
+				if logger != nil {
+					logger.Printf("guard: tool-call transform for %s dropped: invalid JSON arguments", toolCallID)
+				}
+				return nil
+			}
+			var obj map[string]any
+			if err := json.Unmarshal(raw, &obj); err != nil || obj == nil {
+				if logger != nil {
+					logger.Printf("guard: tool-call transform for %s dropped: arguments were not a JSON object", toolCallID)
+				}
+				return nil
+			}
+			return raw
+		}
+	}
+	return nil
+}
+
+// unwrapProtoJSONBytes unwraps transform arguments that arrived as a JSON
+// string. The Sigil server marshals the proto `bytes input_json` field with
+// encoding/json, which base64-encodes it; other emitters may put plain JSON
+// text in the string. Values that are not JSON strings pass through
+// unchanged. Same purpose as the JS SDK's maybeDecodeGoProtoJSONBytes, but
+// stricter: decoded bytes are used only when they are valid JSON; otherwise
+// the raw string contents are returned.
+func unwrapProtoJSONBytes(raw json.RawMessage) json.RawMessage {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return raw
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(s); err == nil && json.Valid(decoded) {
+		return decoded
+	}
+	return json.RawMessage(s)
 }
 
 // hookSpecificOutputDeny is the PreToolUse deny envelope shared by Claude
@@ -260,6 +335,36 @@ func WriteHookSpecificOutputDeny(stdout io.Writer, reason string) {
 			HookEventName:            "PreToolUse",
 			PermissionDecision:       "deny",
 			PermissionDecisionReason: reason,
+		},
+	})
+}
+
+// hookSpecificOutputUpdatedInput is the PreToolUse allow+updatedInput
+// envelope shared by Claude Code and Codex. Both hosts replace the tool
+// arguments with updatedInput when permissionDecision is allow.
+type hookSpecificOutputUpdatedInput struct {
+	HookSpecificOutput hookSpecificOutputUpdatedInputBody `json:"hookSpecificOutput"`
+}
+
+type hookSpecificOutputUpdatedInputBody struct {
+	HookEventName      string          `json:"hookEventName"`
+	PermissionDecision string          `json:"permissionDecision"`
+	UpdatedInput       json.RawMessage `json:"updatedInput"`
+}
+
+// WriteHookSpecificOutputUpdatedInput writes the PreToolUse allow JSON that
+// replaces the tool arguments with updatedInput. Claude Code and Codex share
+// the exact wire format, so they share this writer; it writes nothing when
+// updatedInput is empty.
+func WriteHookSpecificOutputUpdatedInput(stdout io.Writer, updatedInput json.RawMessage) {
+	if stdout == nil || len(updatedInput) == 0 {
+		return
+	}
+	_ = json.NewEncoder(stdout).Encode(hookSpecificOutputUpdatedInput{
+		HookSpecificOutput: hookSpecificOutputUpdatedInputBody{
+			HookEventName:      "PreToolUse",
+			PermissionDecision: "allow",
+			UpdatedInput:       updatedInput,
 		},
 	})
 }

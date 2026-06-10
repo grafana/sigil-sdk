@@ -188,11 +188,12 @@ func TestHookEventRouting(t *testing.T) {
 
 // TestHandlePreToolUse covers Claude-Code-specific wiring around the shared
 // guard helper: ensuring the helper is consulted only when guards are
-// enabled, that allow verdicts produce empty stdout, and that deny verdicts
+// enabled, that allow verdicts produce empty stdout, that deny verdicts
 // produce the Claude Code PreToolUse envelope (hookSpecificOutput +
-// hookEventName=PreToolUse). Deep behaviour around fail-open/closed,
-// missing credentials, and transport errors lives in the guard package
-// tests; this test only verifies the integration shape.
+// hookEventName=PreToolUse), and that Transform verdicts produce the
+// allow+updatedInput envelope. Deep behaviour around fail-open/closed,
+// missing credentials, transport errors, and transform extraction lives in
+// the guard package tests; this test only verifies the integration shape.
 func TestHandlePreToolUse(t *testing.T) {
 	var calls atomic.Int32
 	var responseBody atomic.Value
@@ -239,6 +240,25 @@ func TestHandlePreToolUse(t *testing.T) {
 				`A Grafana AI Observability policy`,
 				`blocked tool`,
 			},
+		},
+		{
+			name:             "enabled_allow_transform_writes_updated_input",
+			env:              map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
+			serverResponds:   `{"action":"allow","transformed_input":{"output":[{"role":"assistant","parts":[{"kind":"tool_call","tool_call":{"id":"tu_1","name":"Bash","input_json":{"command":"echo [REDACTED]"}}}]}]}}`,
+			expectServerCall: true,
+			wantStdoutContains: []string{
+				`"hookSpecificOutput"`,
+				`"hookEventName":"PreToolUse"`,
+				`"permissionDecision":"allow"`,
+				`"updatedInput":{"command":"echo [REDACTED]"}`,
+			},
+		},
+		{
+			name:             "enabled_allow_unusable_transform_stays_silent",
+			env:              map[string]string{"SIGIL_GUARDS_ENABLED": "true"},
+			serverResponds:   `{"action":"allow","transformed_input":{"output":[{"role":"assistant","parts":[{"kind":"tool_call","tool_call":{"id":"tu_other","name":"Bash","input_json":{"command":"echo X"}}}]}]}}`,
+			expectServerCall: true,
+			wantStdoutEmpty:  true,
 		},
 	}
 
