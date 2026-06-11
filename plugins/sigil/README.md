@@ -4,9 +4,19 @@ The launcher binary behind the [Claude Code](../claude-code), [Codex](../codex),
 
 ## Install
 
-On macOS use Homebrew; on Linux and Windows (or any platform with Go 1.25+) use `go install`.
+**Quick install (Linux/macOS):**
 
-**macOS** — Homebrew:
+```sh
+curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/sigil/scripts/install.sh | sh
+```
+
+The script downloads the latest [release](https://github.com/grafana/sigil-sdk/releases) for your OS and architecture, verifies its SHA-256 checksum, and installs the binary to `~/.local/bin`. Re-run it to upgrade. Set `INSTALL_DIR` to change the directory and `VERSION` to pin a release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/sigil/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
+**Homebrew (macOS):**
 
 ```sh
 brew install grafana/grafana/sigil
@@ -14,7 +24,9 @@ brew install grafana/grafana/sigil
 
 Upgrade later with `brew upgrade grafana/grafana/sigil`.
 
-**Linux and Windows** — `go install` (also works on macOS):
+**Prebuilt binary (Windows):** download the `windows_amd64` or `windows_arm64` zip from the [releases page](https://github.com/grafana/sigil-sdk/releases), extract `sigil.exe`, and put it on your `PATH`.
+
+**Go install (any platform with Go 1.25+):**
 
 ```sh
 go install github.com/grafana/sigil-sdk/plugins/sigil/cmd/sigil@latest

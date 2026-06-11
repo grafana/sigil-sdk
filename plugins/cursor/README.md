@@ -4,19 +4,25 @@ Sends Cursor agent generations to [Grafana AI Observability](https://grafana.com
 
 ## 1. Install the shared binary
 
-**macOS** (Homebrew):
+**Quick install (Linux/macOS):**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/sigil/scripts/install.sh | sh
+```
+
+**Homebrew (macOS):**
 
 ```sh
 brew install grafana/grafana/sigil
 ```
 
-**Linux and Windows** (or any platform with Go 1.25+):
+**Go install (Windows, or any platform with Go 1.25+):**
 
 ```sh
 go install github.com/grafana/sigil-sdk/plugins/sigil/cmd/sigil@latest
 ```
 
-`go install` puts `sigil` in `go env GOPATH`/bin (or `GOBIN`); add that to `PATH`. See the [`sigil` binary README](../sigil/README.md#install) for details.
+The script installs `sigil` to `~/.local/bin`; `go install` uses `go env GOPATH`/bin (or `GOBIN`). Make sure that directory is on your `PATH`. See the [`sigil` binary README](../sigil/README.md#install) for all install options.
 
 Cursor does not have a `sigil cursor` launcher. Install the binary, register the Cursor plugin, then use `sigil login` or `~/.config/sigil/config.env` for credentials.
 
