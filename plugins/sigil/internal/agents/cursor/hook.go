@@ -36,12 +36,22 @@ var (
 // always writes a response on every evaluation outcome.
 func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Logger) error {
 	var raw []byte
+	var event string
+	parsed := false
 	preToolUseHandled := false
 	defer func() {
-		if bytes.Contains(raw, beforeSubmitMarker) {
+		if !parsed {
+			switch {
+			case bytes.Contains(raw, beforeSubmitMarker):
+				event = "beforeSubmitPrompt"
+			case bytes.Contains(raw, preToolUseMarker):
+				event = "preToolUse"
+			}
+		}
+		if event == "beforeSubmitPrompt" {
 			_, _ = fmt.Fprint(stdout, permissiveResponse)
 		}
-		if !preToolUseHandled && bytes.Contains(raw, preToolUseMarker) {
+		if event == "preToolUse" && !preToolUseHandled {
 			_, _ = fmt.Fprint(stdout, permissiveResponse)
 		}
 	}()
@@ -62,7 +72,8 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 		logger.Printf("dispatch: invalid JSON: %v", err)
 		return nil
 	}
-	event := payload.HookEventName
+	parsed = true
+	event = payload.HookEventName
 	if event == "" {
 		logger.Print("dispatch: missing hook_event_name")
 		return nil

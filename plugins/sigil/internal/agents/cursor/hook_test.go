@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+func TestHookBeforeSubmitPromptIgnoresNestedPreToolUseMarker(t *testing.T) {
+	stdin := `{"hook_event_name":"beforeSubmitPrompt","prompt":"describe hooks","extra":{"hook_event_name":"preToolUse"}}`
+
+	var stdout bytes.Buffer
+	err := Hook(context.Background(), strings.NewReader(stdin), &stdout, log.New(&bytes.Buffer{}, "", 0))
+	if err != nil {
+		t.Fatalf("Hook returned error: %v", err)
+	}
+
+	if got := stdout.String(); got != permissiveResponse {
+		t.Errorf("stdout = %q, want %q", got, permissiveResponse)
+	}
+}
+
 // TestHookPreToolUseDispatch verifies the dispatcher-level contract for
 // preToolUse: the event reaches the guard handler, every terminating path
 // writes exactly one JSON response, and the permissive fallback never
