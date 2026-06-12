@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.12.0] - 2026-06-12
+
+### Features
+
+- **plugins/claude**: apply transform/redact guards (#297)
+
 ## [0.11.0] - 2026-06-06
 
 ### Bug Fixes
