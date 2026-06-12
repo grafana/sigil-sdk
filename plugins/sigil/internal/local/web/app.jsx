@@ -537,6 +537,7 @@
       // chart to show what's left.
       const visible = TOKEN_SERIES.filter(s => !hidden.has(s.key));
       const visibleTotal = d => visible.reduce((acc, s) => acc + (d[s.key] || 0), 0);
+      const visibleGrandTotal = data.reduce((acc, d) => acc + visibleTotal(d), 0);
       const max = Math.max(1, ...data.map(visibleTotal));
       const empty = grandTotal === 0;
       const yLabel = {
@@ -552,7 +553,7 @@
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 12, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {switcher}
-              <span style={{ color: "var(--fg3)", fontFamily: "var(--fontFamilyMonospace)", fontSize: 11 }}>{formatTokens(grandTotal)} tok</span>
+              <span style={{ color: "var(--fg3)", fontFamily: "var(--fontFamilyMonospace)", fontSize: 11 }}>{formatTokens(visibleGrandTotal)} tok</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: "var(--fg3)", fontFamily: "var(--fontFamilyMonospace)", flexWrap: "wrap" }}>
               {legend.map(s => {
