@@ -17,21 +17,28 @@ came from (`hook.surface` = `copilot-cli` or `vscode`).
 
 ## 1. Install and launch
 
-**macOS** (Homebrew):
+**Quick install (Linux/macOS):**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/sigil/scripts/install.sh | sh
+sigil copilot -- <copilot args>
+```
+
+**Homebrew (macOS):**
 
 ```sh
 brew install grafana/grafana/sigil
 sigil copilot -- <copilot args>
 ```
 
-**Linux and Windows** (or any platform with Go 1.25+):
+**Go install (Windows, or any platform with Go 1.25+):**
 
 ```sh
 go install github.com/grafana/sigil-sdk/plugins/sigil/cmd/sigil@latest
 sigil copilot -- <copilot args>
 ```
 
-`go install` puts `sigil` in `go env GOPATH`/bin (or `GOBIN`); add that to `PATH`. See the [`sigil` binary README](../sigil/README.md#install) for details.
+The script installs `sigil` to `~/.local/bin`; `go install` uses `go env GOPATH`/bin (or `GOBIN`). Make sure that directory is on your `PATH`. See the [`sigil` binary README](../sigil/README.md#install) for all install options.
 
 `sigil copilot` writes the shared hooks file to `~/.copilot/hooks/sigil.json`, prompts for missing Grafana Cloud credentials, writes `~/.config/sigil/config.env`, removes any legacy `sigil-copilot` plugin left by older versions, and then launches Copilot CLI.
 

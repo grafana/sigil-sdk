@@ -56,10 +56,11 @@ The user wants Grafana AI observability to capture sessions from their coding ag
 
 Install the `sigil` binary:
 
-- **macOS:** `brew install grafana/grafana/sigil`
-- **Linux, Windows, or any platform with Go 1.25+:** `go install github.com/grafana/sigil-sdk/plugins/sigil/cmd/sigil@latest`
+- **Quick install (Linux/macOS):** `curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/sigil/scripts/install.sh | sh` (downloads the latest release, verifies the checksum, installs to `~/.local/bin`)
+- **Homebrew (macOS):** `brew install grafana/grafana/sigil`
+- **Go install (Windows, or any platform with Go 1.25+):** `go install github.com/grafana/sigil-sdk/plugins/sigil/cmd/sigil@latest`
 
-`go install` puts the binary in `go env GOPATH`/bin (or `GOBIN`); make sure that directory is on your `PATH`.
+The script installs to `~/.local/bin`; `go install` puts the binary in `go env GOPATH`/bin (or `GOBIN`). Make sure that directory is on your `PATH`.
 
 Then launch your agent with `sigil <agent>`, where `<agent>` is `claude`, `codex`, `copilot`, `opencode`, or `pi`. On first run it installs the plugin, prompts for credentials, writes `~/.config/sigil/config.env`, and launches the agent.
 
