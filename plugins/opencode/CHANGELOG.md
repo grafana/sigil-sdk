@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0] - 2026-06-16
+
+### Features
+
+- **plugins/sigil**: add install script for prebuilt binaries (#298)
+
+### Bug Fixes
+
+- **plugins/opencode**: stop re-exporting session history as new generations (#315)
+
+### Documentation
+
+- **plugins**: add go install path for Linux and Windows (#289)
+
 ## [0.11.0] - 2026-06-01
 
 ### Features
