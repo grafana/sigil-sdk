@@ -83,6 +83,25 @@ export function _resetToolExecutionState(): void {
   completedToolExecutions.clear();
 }
 
+/**
+ * Resets every module-level map: the dedup/generation tracking plus the
+ * tool-execution maps. Integration tests that drive the full record path
+ * (`chat.message` -> `message.updated`) need this between cases. Without it, a
+ * reused session/message id hits the dedup early-return in
+ * `recordAssistantMessage`, silently skips recording, and produces a
+ * misleading green.
+ *
+ * @internal Exported for testing.
+ */
+export function _resetHookState(): void {
+  recordedMessages.clear();
+  lastGenerationIdBySession.clear();
+  firstPartAtByMessage.clear();
+  pendingGenerations.clear();
+  sessionContexts.clear();
+  _resetToolExecutionState();
+}
+
 /** @internal Exported for testing. */
 export function _peekToolExecutionState(): {
   active: ToolExecutionRecord[];
@@ -353,7 +372,16 @@ async function recordAssistantMessage(
     assistantParts,
   );
   const hookRecords = completedToolExecutions.get(assistantMsg.sessionID) ?? [];
-  const spanRecords = mergeToolSpanRecords(termRecords, hookRecords);
+  // Tools that started but never fired `tool.execute.after` (errored, denied,
+  // or interrupted) become error records here, so they surface as spans even
+  // in metadata_only and stop leaking from activeToolExecutions. termRecords
+  // win on key collision, so a native tool with an error part keeps the
+  // accurate terminal record while the active entry is still deleted.
+  const drainedRecords = drainActiveToolExecutions(assistantMsg.sessionID);
+  const spanRecords = mergeToolSpanRecords(termRecords, [
+    ...hookRecords,
+    ...drainedRecords,
+  ]);
   const spanOpts = {
     conversationId: assistantMsg.sessionID,
     agentName: buildAgentName(config.agentName, assistantMsg.mode),
@@ -658,6 +686,39 @@ export function toolSpansFromParts(
     }
   }
   return records;
+}
+
+/**
+ * Convert tool executions that started but never completed for this session
+ * into error records, removing them from the active map. opencode skips
+ * `tool.execute.after` when a tool throws or a permission deny aborts it, so
+ * an entry still active when the assistant message goes terminal is a failed,
+ * denied, or interrupted call. Without this it produces no span (in
+ * `metadata_only`, where terminal parts aren't fetched) and leaks from
+ * `activeToolExecutions` until `session.deleted`.
+ *
+ * `startedAt` is the real value from the before hook; `completedAt` is
+ * approximate (we have no real end time) and the reason is generic because the
+ * hook can't tell an error from a deny from an interrupt.
+ *
+ * @internal Exported for testing.
+ */
+export function drainActiveToolExecutions(
+  sessionID: string,
+): ToolExecutionRecord[] {
+  const drained: ToolExecutionRecord[] = [];
+  const now = Date.now();
+  for (const [key, record] of activeToolExecutions) {
+    if (record.sessionID !== sessionID) continue;
+    activeToolExecutions.delete(key);
+    drained.push({
+      ...record,
+      completedAt: now,
+      isError: true,
+      error: "tool did not complete (errored, denied, or interrupted)",
+    });
+  }
+  return drained;
 }
 
 /**
