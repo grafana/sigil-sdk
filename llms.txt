@@ -64,7 +64,7 @@ The script installs to `~/.local/bin`; `go install` puts the binary in `go env G
 
 Then launch your agent with `sigil <agent>`, where `<agent>` is `claude`, `codex`, `copilot`, `opencode`, or `pi`. On first run it installs the plugin, prompts for credentials, writes `~/.config/sigil/config.env`, and launches the agent.
 
-Cursor has no launcher; see [`plugins/cursor/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/cursor) for setup.
+Cursor has no launcher (it is a GUI app). After installing the binary, wire its hooks once with `sigil cursor install` (it merges into `~/.cursor/hooks.json` and prompts for credentials on first run); `sigil cursor uninstall` removes them. See [`plugins/cursor/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/cursor) for details.
 
 To skip the prompt, write the config file by hand:
 

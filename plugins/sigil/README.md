@@ -38,7 +38,7 @@ Verify the install with `sigil --version`.
 
 ## Configure
 
-All hosts read the same config file at `~/.config/sigil/config.env`. The first run of `sigil claude`, `sigil opencode`, or `sigil pi` prompts for your endpoint, tenant ID, token, and OTLP endpoint and writes them there; run `sigil login` to re-enter them later.
+All hosts read the same config file at `~/.config/sigil/config.env`. The first run of `sigil claude`, `sigil opencode`, or `sigil pi` prompts for your endpoint, tenant ID, token, and OTLP endpoint and writes them there; run `sigil login` to re-enter them later. Cursor has no launcher, so wire it once with `sigil cursor install` (which also prompts on first run) and remove it with `sigil cursor uninstall`.
 
 To preconfigure without the prompt, create the file:
 
