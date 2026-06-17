@@ -226,18 +226,23 @@ describe("runToolCallGuard", () => {
       },
     }));
 
+    const warn = vi.fn();
     const result = await runToolCallGuard(
       makeArgs({
         client,
         toolCallId: "c1",
         toolName: "bash",
         input: { command: "echo sk-real-secret" },
+        logger: { warn },
       }),
     );
     expectTransform(result);
     expect(result.transform).toEqual({
       command: "echo [REDACTED_KEY]",
     });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("transform for c1 applied"),
+    );
   });
 
   it("ignores transformed_input that targets a different toolCallId", async () => {
@@ -263,8 +268,9 @@ describe("runToolCallGuard", () => {
       },
     }));
 
-    // No matching tool_call id means there is simply no redaction for this
-    // call, so it must stay silent (no warning).
+    // A transform was present but none of its parts matched this call, so the
+    // original input is left unchanged. Log it so a no-op transform is
+    // distinguishable from a plain allow in the debug log.
     const warn = vi.fn();
     const result = await runToolCallGuard(
       makeArgs({
@@ -275,7 +281,9 @@ describe("runToolCallGuard", () => {
       }),
     );
     expect(result).toBeUndefined();
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("no part matched c1"),
+    );
   });
 
   it("logs and drops a transform whose inputJSON cannot be parsed", async () => {

@@ -209,18 +209,29 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 		}
 	}
 
+	deniedErr := sigil.HookDeniedFromResponse(resp)
+
+	// Resolve any redaction transform before logging so the decision line can
+	// report whether the tool input was rewritten. A deny never carries a
+	// usable transform, so only the allow path looks for one.
+	var updatedInput json.RawMessage
+	if deniedErr == nil {
+		updatedInput = extractToolCallTransform(resp, strings.TrimSpace(in.ToolCallID), logger)
+	}
+
 	if resp != nil && logger != nil {
 		logger.Printf(
-			"guard: tool=%q endpoint=%q action=%q rule_id=%q reason=%q",
+			"guard: tool=%q endpoint=%q action=%q rule_id=%q reason=%q transform_applied=%t",
 			in.ToolName,
 			endpoint,
 			string(resp.Action),
 			resp.RuleID,
 			resp.Reason,
+			len(updatedInput) > 0,
 		)
 	}
 
-	if deniedErr := sigil.HookDeniedFromResponse(resp); deniedErr != nil {
+	if deniedErr != nil {
 		var ruleReason string
 		var denied *sigil.HookDeniedError
 		if errors.As(deniedErr, &denied) {
@@ -239,7 +250,7 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 
 	return Result{
 		Action:           sigil.HookActionAllow,
-		UpdatedInputJSON: extractToolCallTransform(resp, strings.TrimSpace(in.ToolCallID), logger),
+		UpdatedInputJSON: updatedInput,
 	}
 }
 
@@ -249,7 +260,11 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 // through to the original tool input unchanged. Mirrors pi guard.ts
 // extractToolCallTransform; keep the two in sync.
 func extractToolCallTransform(resp *sigil.HookEvaluateResponse, toolCallID string, logger *log.Logger) json.RawMessage {
-	if resp == nil || resp.TransformedInput == nil {
+	// Treat an absent or empty output the same way: there is no transform to
+	// apply, so stay silent. This mirrors pi guard.ts, whose early return also
+	// covers the empty-output case; the no-match line below is reserved for a
+	// transform that carried parts but none for this tool call.
+	if resp == nil || resp.TransformedInput == nil || len(resp.TransformedInput.Output) == 0 {
 		return nil
 	}
 	for _, msg := range resp.TransformedInput.Output {
@@ -284,8 +299,17 @@ func extractToolCallTransform(resp *sigil.HookEvaluateResponse, toolCallID strin
 				}
 				return nil
 			}
+			if logger != nil {
+				logger.Printf("guard: tool-call transform for %s applied", toolCallID)
+			}
 			return raw
 		}
+	}
+	// A transform was present in the response but none of its tool_call parts
+	// matched this call's ID, so the original input is left unchanged. Worth a
+	// line because it is otherwise indistinguishable from a plain allow.
+	if logger != nil {
+		logger.Printf("guard: tool-call transform present but no part matched %s", toolCallID)
 	}
 	return nil
 }

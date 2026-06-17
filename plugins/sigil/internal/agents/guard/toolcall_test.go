@@ -35,6 +35,7 @@ func TestEvaluateToolCall(t *testing.T) {
 		wantReasonSub          string
 		wantUpdatedInput       string
 		wantLogSub             string
+		wantNoLogSub           string
 		wantServerCalled       bool
 	}{
 		{
@@ -55,6 +56,18 @@ func TestEvaluateToolCall(t *testing.T) {
 			serverResponds:   `{"action":"allow"}`,
 			toolName:         "bash",
 			wantAction:       sigil.HookActionAllow,
+			wantLogSub:       "transform_applied=false",
+			wantServerCalled: true,
+		},
+		{
+			// An empty output is treated the same as no transform at all, so it
+			// must stay silent rather than emit the no-match line. Mirrors pi.
+			name:             "empty transform output is ignored",
+			cfg:              envconfig.GuardsConfig{Enabled: true, TimeoutMs: 1500, FailOpen: true},
+			serverResponds:   `{"action":"allow","transformed_input":{"output":[]}}`,
+			toolName:         "bash",
+			wantAction:       sigil.HookActionAllow,
+			wantNoLogSub:     "tool-call transform present but no part matched",
 			wantServerCalled: true,
 		},
 		{
@@ -104,6 +117,7 @@ func TestEvaluateToolCall(t *testing.T) {
 			toolName:         "bash",
 			wantAction:       sigil.HookActionAllow,
 			wantUpdatedInput: `{"cmd":"echo [REDACTED]"}`,
+			wantLogSub:       "transform_applied=true",
 			wantServerCalled: true,
 		},
 		{
@@ -123,6 +137,7 @@ func TestEvaluateToolCall(t *testing.T) {
 			serverResponds:   `{"action":"allow","transformed_input":{"output":[{"role":"assistant","parts":[{"kind":"tool_call","tool_call":{"id":"tu_other","name":"bash","input_json":{"cmd":"echo X"}}}]}]}}`,
 			toolName:         "bash",
 			wantAction:       sigil.HookActionAllow,
+			wantLogSub:       "tool-call transform present but no part matched tu_1",
 			wantServerCalled: true,
 		},
 		{
@@ -233,6 +248,9 @@ func TestEvaluateToolCall(t *testing.T) {
 			}
 			if tt.wantLogSub != "" && !strings.Contains(logBuf.String(), tt.wantLogSub) {
 				t.Errorf("logs missing %q:\n%s", tt.wantLogSub, logBuf.String())
+			}
+			if tt.wantNoLogSub != "" && strings.Contains(logBuf.String(), tt.wantNoLogSub) {
+				t.Errorf("logs contain %q but should not:\n%s", tt.wantNoLogSub, logBuf.String())
 			}
 			if tt.wantServerCalled && calls.Load() == 0 {
 				t.Errorf("expected sigil hook server to be called, got 0 calls")

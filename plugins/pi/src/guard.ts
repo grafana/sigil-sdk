@@ -209,8 +209,7 @@ function extractToolCallTransform(
       const tc = part.toolCall;
       if (!tc || tc.id !== toolCallId) continue;
       // A matching tool_call whose args we cannot parse means the server sent
-      // a transform we cannot apply; log it. The no-match case stays silent,
-      // since that just means there is no redaction for this call.
+      // a transform we cannot apply; log it.
       const raw = tc.inputJSON;
       if (typeof raw !== "string" || raw.length === 0) {
         logger?.warn(
@@ -221,6 +220,7 @@ function extractToolCallTransform(
       try {
         const parsed = JSON.parse(raw) as unknown;
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          logger?.warn(`tool-call transform for ${toolCallId} applied`);
           return parsed as Record<string, unknown>;
         }
         logger?.warn(
@@ -235,5 +235,9 @@ function extractToolCallTransform(
       }
     }
   }
+  // A transform was present in the response but none of its tool_call parts
+  // matched this call's id, so the original input is left unchanged. Worth a
+  // line because it is otherwise indistinguishable from a plain allow.
+  logger?.warn(`tool-call transform present but no part matched ${toolCallId}`);
   return undefined;
 }
