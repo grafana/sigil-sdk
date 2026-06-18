@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0] - 2026-06-18
+
+### Features
+
+- **plugins/sigil**: add doctor diagnostic command (#330)
+- **plugins/sigil**: add sigil cursor install command (#326)
+- **plugins/sigil**: improve design of the local conversation detail view (#331)
+- **plugins/sigil**: add stats cards to the conversations list view (#327)
+- **plugins/mistral-vibe**: add mistral vibe support (#329)
+- **plugins**: add git.branch and cwd built-in tags to pi, opencode, codex, copilot (#328)
+- **plugins/copilot**: apply transform/redact guards (#311)
+- **plugins**: log when a guard redaction transform is applied (#322)
+- **plugins/sigil**: chart token usage in the local viewer (#303)
+
 ## [0.13.0] - 2026-06-16
 
 ### Features
