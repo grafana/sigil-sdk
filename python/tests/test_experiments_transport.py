@@ -14,7 +14,6 @@ from sigil_sdk import (
     AuthConfig,
     Client,
     ClientConfig,
-    ConflictError,
     CreateExperimentRequest,
     ExperimentStatus,
     GenerationExportConfig,
@@ -23,7 +22,6 @@ from sigil_sdk import (
     ScoreItem,
     ScoreSource,
     ScoreValue,
-    UpdateExperimentRequest,
     ValidationError,
 )
 
@@ -269,20 +267,6 @@ def test_get_experiment_maps_not_found() -> None:
     try:
         with pytest.raises(NotFoundError):
             client.get_experiment("run_missing")
-    finally:
-        client.shutdown()
-        server.shutdown()
-        server.server_close()
-
-
-def test_update_experiment_maps_conflict() -> None:
-    recorder = _Recorder()
-    recorder.push(409, {"error": "terminal"})
-    server = _serve(recorder)
-    client = _new_client(server)
-    try:
-        with pytest.raises(ConflictError):
-            client.update_experiment("run_1", UpdateExperimentRequest(status=ExperimentStatus.RUNNING))
     finally:
         client.shutdown()
         server.shutdown()

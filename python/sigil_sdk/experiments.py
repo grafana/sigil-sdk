@@ -1,13 +1,18 @@
 """Experiment lifecycle and score export transport for the Sigil SDK.
 
-This module talks to the Sigil offline-evaluation HTTP API:
+External writes go through the ingest lifecycle on the same tenant token used
+for generation export:
 
-  POST   /api/v1/experiment-runs:upsert         create or claim an external run
-  POST   /api/v1/experiment-runs/{run_id}:finalize  finalize an external run
-  GET    /api/v1/eval/experiments/{run_id}       fetch a run
-  GET    /api/v1/eval/experiments/{run_id}/scores  list run scores (paginated)
-  GET    /api/v1/eval/experiments/{run_id}/report  aggregated run report
-  POST   /api/v1/scores:export                   publish scores (attribute via run_id)
+  POST   /api/v1/experiment-runs:upsert              create or claim an external run
+  POST   /api/v1/experiment-runs/{run_id}:finalize   finalize an external run
+  POST   /api/v1/scores:export                       publish scores (attribute via run_id)
+
+Reads still hit the control-plane query routes (tenant scoped, no actor
+required):
+
+  GET    /api/v1/eval/experiments/{run_id}           fetch a run
+  GET    /api/v1/eval/experiments/{run_id}/scores    list run scores (paginated)
+  GET    /api/v1/eval/experiments/{run_id}/report    aggregated run report
 
 The functions here are thin; :class:`sigil_sdk.client.Client` wraps them with
 resolved endpoint, insecure flag, and auth headers.
@@ -43,7 +48,6 @@ from .models import (
     ExportScoresResponse,
     ScoreItem,
     ScoreValue,
-    UpdateExperimentRequest,
 )
 
 _EVAL_EXPERIMENTS_SUFFIX = "/eval/experiments"
@@ -111,24 +115,6 @@ def get_experiment(
 
     url = _experiment_url(api_endpoint, insecure, run_id, path_prefix)
     body = _request_json("GET", url, headers, None, retry, ExperimentTransportError, "experiment get")
-    return _parse_experiment(body)
-
-
-def update_experiment(
-    *,
-    api_endpoint: str,
-    insecure: bool,
-    headers: dict[str, str],
-    run_id: str,
-    request: UpdateExperimentRequest,
-    path_prefix: str = _DEFAULT_PATH_PREFIX,
-    retry: RetryPolicy | None = None,
-) -> Experiment:
-    """Patches an experiment run (name/description/tags/status/metadata/error/score_count)."""
-
-    url = _experiment_url(api_endpoint, insecure, run_id, path_prefix)
-    payload = _serialize_update_request(request)
-    body = _request_json("PATCH", url, headers, payload, retry, ExperimentTransportError, "experiment update")
     return _parse_experiment(body)
 
 
@@ -252,25 +238,6 @@ def _serialize_upsert_request(request: CreateExperimentRequest) -> dict[str, Any
         out["tags"] = list(request.tags)
     if request.metadata:
         out["metadata"] = dict(request.metadata)
-    return out
-
-
-def _serialize_update_request(request: UpdateExperimentRequest) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    if request.name is not None:
-        out["name"] = request.name
-    if request.description is not None:
-        out["description"] = request.description
-    if request.tags is not None:
-        out["tags"] = list(request.tags)
-    if request.status is not None:
-        out["status"] = _enum_value(request.status)
-    if request.metadata is not None:
-        out["metadata"] = dict(request.metadata)
-    if request.error is not None:
-        out["error"] = request.error
-    if request.score_count is not None:
-        out["score_count"] = request.score_count
     return out
 
 

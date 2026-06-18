@@ -72,7 +72,6 @@ from .models import (
     ToolExecutionEnd,
     ToolExecutionStart,
     ToolResult,
-    UpdateExperimentRequest,
     WorkflowStep,
     _metadata_key_content_capture_mode,
     tool_result_part,
@@ -740,17 +739,6 @@ class Client:
             retry=self._experiment_retry_policy(),
         )
 
-    def update_experiment(self, run_id: str, request: UpdateExperimentRequest) -> Experiment:
-        """Patches an experiment run (name/description/tags/status/metadata/error/score_count)."""
-
-        self._assert_open()
-        return _experiments.update_experiment(
-            **self._experiment_api_args(),
-            run_id=run_id,
-            request=request,
-            retry=self._experiment_retry_policy(),
-        )
-
     def complete_experiment(
         self,
         run_id: str,
@@ -758,12 +746,9 @@ class Client:
         *,
         score_count: int | None = None,
         error: str | None = None,
-        metadata: dict[str, Any] | None = None,
     ) -> Experiment:
         """Finalizes an experiment run as ``succeeded`` or ``failed``."""
 
-        if metadata:
-            self._config.logger.warning("sigil: complete_experiment metadata is ignored by experiment-run ingest")
         self._assert_open()
         return _experiments.finalize_experiment(
             **self._experiment_api_args(include_path_prefix=False),
@@ -855,10 +840,14 @@ class Client:
     def _experiment_api_args(self, *, include_path_prefix: bool = True) -> dict[str, Any]:
         """Connection args for experiment lifecycle, scores, and reports."""
 
+        headers = dict(self._config.generation_export.headers)
+        actor = (self._config.ingest_actor or "").strip()
+        if actor:
+            headers["X-Sigil-Ingest-Actor"] = actor
         args: dict[str, Any] = {
             "api_endpoint": self._config.api.endpoint,
             "insecure": bool(self._config.generation_export.insecure),
-            "headers": dict(self._config.generation_export.headers),
+            "headers": headers,
         }
         if include_path_prefix:
             args["path_prefix"] = "/api/v1"

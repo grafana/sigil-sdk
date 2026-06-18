@@ -623,23 +623,6 @@ class CreateExperimentRequest:
 
 
 @dataclass(slots=True)
-class UpdateExperimentRequest:
-    """Request body for updating editable experiment fields.
-
-    Every field is optional; ``None`` fields are omitted so callers can update
-    only what they intend to change.
-    """
-
-    name: str | None = None
-    description: str | None = None
-    tags: list[str] | None = None
-    status: ExperimentStatus | str | None = None
-    metadata: dict[str, Any] | None = None
-    error: str | None = None
-    score_count: int | None = None
-
-
-@dataclass(slots=True)
 class Experiment:
     """An experiment run as returned by Sigil."""
 

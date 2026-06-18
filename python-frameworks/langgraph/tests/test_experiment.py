@@ -60,7 +60,7 @@ class _FakeClient:
             ]
         )
 
-    def complete_experiment(self, run_id, status, *, score_count=None, error=None, metadata=None):
+    def complete_experiment(self, run_id, status, *, score_count=None, error=None):
         if self.complete_failures > 0:
             self.complete_failures -= 1
             raise RuntimeError("complete failed")

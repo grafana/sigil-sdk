@@ -111,7 +111,7 @@ class _FakeReadClient:
     def export_scores(self, scores):
         return ExportScoresResponse(results=[])
 
-    def complete_experiment(self, run_id, status, *, score_count=None, error=None, metadata=None):
+    def complete_experiment(self, run_id, status, *, score_count=None, error=None):
         return
 
     def cancel_experiment(self, run_id):
