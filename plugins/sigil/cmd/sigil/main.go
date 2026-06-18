@@ -8,6 +8,7 @@
 //	sigil opencode [--local] [--tag k=v] [-- args...] — exec opencode after bootstrapping the @grafana/sigil-opencode plugin
 //	sigil pi       [--local] [--tag k=v] [-- args...] — exec pi after bootstrapping the @grafana/sigil-pi extension
 //	sigil vibe     [--local] [--tag k=v] [-- args...] — exec vibe after installing the sigil hook in vibe's hooks.toml
+//	sigil cursor   install|uninstall                  — wire (or remove) the Cursor hook in ~/.cursor/hooks.json
 //	sigil local start|status|stop                     — manage the local capture daemon
 //	sigil --version                                   — print the build version
 //
@@ -40,6 +41,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/codex"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/copilot"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/cursor"
+	cursorinstall "github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/cursor/install"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/opencode"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/pi"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/vibe"
@@ -76,7 +78,7 @@ func renderLocalBanner(uiURL string) string {
 	return localBannerBox.Render(strings.Join(lines, "\n"))
 }
 
-const usageLine = "usage: sigil login | sigil local start|status|stop | sigil <agent> hook | sigil <claude|codex|copilot|opencode|pi|vibe> [--local] [--tag key=value]... [-- args...]"
+const usageLine = "usage: sigil login | sigil local start|status|stop | sigil cursor install|uninstall | sigil <agent> hook | sigil <claude|codex|copilot|opencode|pi|vibe> [--local] [--tag key=value]... [-- args...]"
 
 // version is overridden via -ldflags at build time.
 var version = "dev"
@@ -122,6 +124,13 @@ var exit = os.Exit
 // loginRun is a package var so tests can stub the interactive login flow
 // without driving the huh TTY. Production code points at login.Run.
 var loginRun = login.Run
+
+// cursorInstall and cursorUninstall are package vars so tests can stub the
+// filesystem-touching `sigil cursor install`/`uninstall` flow.
+var (
+	cursorInstall   = cursorinstall.Run
+	cursorUninstall = cursorinstall.Uninstall
+)
 
 func main() {
 	run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
@@ -236,6 +245,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 		exit(2)
 		return
 	}
+
+	// Cursor has no launcher (it is a GUI app), so `sigil cursor install`
+	// wires its hooks directly. This branch sits before the generic
+	// non-`hook` verb rejection below so `install`/`uninstall` reach the
+	// installer while `sigil cursor hook` still falls through to dispatch.
+	if agent == "cursor" && (verb == "install" || verb == "uninstall") {
+		runCursorInstall(verb, stdout, stderr)
+		return
+	}
+
 	if verb != "hook" {
 		_, _ = fmt.Fprintf(stderr, "sigil: unknown verb %q (only \"hook\" supported)\n", verb)
 		exit(2)
@@ -311,6 +330,55 @@ func runLoginCommand(args []string, stderr io.Writer) {
 		_, _ = fmt.Fprintf(stderr, "sigil: login failed: %v\n", err)
 		exit(1)
 		return
+	}
+}
+
+// runCursorInstall handles `sigil cursor install` and `sigil cursor
+// uninstall`. install wires Sigil's hook into ~/.cursor/hooks.json and, when
+// no credentials are configured yet, chains the interactive login prompt the
+// same way the launchers do; uninstall removes the hook entries.
+func runCursorInstall(verb string, stdout, stderr io.Writer) {
+	// dotenv must run before InitLogger so SIGIL_DEBUG=true set only in
+	// $XDG_CONFIG_HOME/sigil/config.env still enables file logging, and
+	// before HasCredentials so dotenv-supplied credentials are visible.
+	dotenv.ApplyEnv("sigil", nil)
+	logger := cli.InitLogger("sigil", "cursor", "SIGIL_DEBUG")
+
+	if verb == "uninstall" {
+		if err := cursorUninstall(stdout, stderr, logger); err != nil {
+			logger.Printf("cursor uninstall: %v", err)
+			_, _ = fmt.Fprintf(stderr, "sigil: %v\n", err)
+			exit(1)
+		}
+		return
+	}
+
+	if err := cursorInstall(stdout, stderr, logger); err != nil {
+		logger.Printf("cursor install: %v", err)
+		_, _ = fmt.Fprintf(stderr, "sigil: %v\n", err)
+		exit(1)
+		return
+	}
+
+	// Wiring the hook does nothing without credentials, so chain the login
+	// prompt on first install, mirroring the launcher auto-prompt. login.Run
+	// returns ErrNotInteractive when stdin is not a TTY (CI, piped input), in
+	// which case we skip silently and leave `sigil login` for later. A failed
+	// or aborted login never fails the install: the hook is already wired.
+	if !dotenv.HasCredentials() {
+		err := loginRun(context.Background(), login.RunOpts{
+			Stderr: stderr,
+			Logger: logger,
+		})
+		switch {
+		case err == nil, errors.Is(err, login.ErrNotInteractive):
+			// either succeeded or no TTY; nothing to report.
+		case errors.Is(err, login.ErrAborted):
+			_, _ = fmt.Fprintln(stderr, "sigil: setup aborted; run `sigil login` when ready")
+		default:
+			logger.Printf("auto-login: %v", err)
+			_, _ = fmt.Fprintf(stderr, "sigil: setup failed (%v); run `sigil login` when ready\n", err)
+		}
 	}
 }
 

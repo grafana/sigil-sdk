@@ -377,6 +377,136 @@ func TestRun_CodexLauncherErrorExits1(t *testing.T) {
 	}
 }
 
+// `sigil cursor install`/`uninstall` must dispatch to the installer before
+// the generic non-`hook` verb rejection, while `sigil cursor hook` still
+// reaches the hook handler and an unknown cursor verb still exits 2. Each
+// row stubs all three seams with counters so the want* fields pin both the
+// branch that fired and the ones that must stay untouched.
+func TestRun_CursorInstallDispatch(t *testing.T) {
+	exitPtr := func(c int) *int { return &c }
+
+	cases := []struct {
+		name               string
+		verb               string
+		installErr         error
+		wantInstall        int
+		wantUninstall      int
+		wantHook           int
+		wantExit           *int // nil → run must not call exit
+		wantStderrContains string
+	}{
+		{name: "install dispatches to seam", verb: "install", wantInstall: 1},
+		{name: "uninstall dispatches to seam", verb: "uninstall", wantUninstall: 1},
+		{name: "hook verb still dispatches to handler", verb: "hook", wantHook: 1},
+		{name: "unknown cursor verb exits 2", verb: "bogus", wantExit: exitPtr(2), wantStderrContains: `unknown verb "bogus"`},
+		{name: "install error exits 1", verb: "install", installErr: errors.New("boom"), wantInstall: 1, wantExit: exitPtr(1), wantStderrContains: "sigil: boom"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateDotenvHome(t)
+			// Credentials present so install does not chain the login prompt.
+			t.Setenv("SIGIL_ENDPOINT", "https://cloud.example.com")
+			t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+			t.Setenv("SIGIL_AUTH_TOKEN", "token")
+
+			install, uninstall, hook := 0, 0, 0
+			withStubCursorInstall(t, func(_, _ io.Writer, _ *log.Logger) error {
+				install++
+				return tc.installErr
+			})
+			withStubCursorUninstall(t, func(io.Writer, io.Writer, *log.Logger) error {
+				uninstall++
+				return nil
+			})
+			prev := agents
+			t.Cleanup(func() { agents = prev })
+			agents = map[string]agentHook{
+				"cursor": func(context.Context, io.Reader, io.Writer, *log.Logger) error {
+					hook++
+					return nil
+				},
+			}
+
+			var stdout, stderr bytes.Buffer
+			gotExit := withExit(t, func() {
+				run([]string{"cursor", tc.verb}, strings.NewReader(`{}`), &stdout, &stderr)
+			})
+
+			switch {
+			case tc.wantExit == nil && gotExit != nil:
+				t.Fatalf("exit = %d, want no exit (stderr=%q)", *gotExit, stderr.String())
+			case tc.wantExit != nil && (gotExit == nil || *gotExit != *tc.wantExit):
+				t.Fatalf("exit = %v, want %d (stderr=%q)", gotExit, *tc.wantExit, stderr.String())
+			}
+			assert.Equal(t, tc.wantInstall, install, "install calls")
+			assert.Equal(t, tc.wantUninstall, uninstall, "uninstall calls")
+			assert.Equal(t, tc.wantHook, hook, "hook calls")
+			if tc.wantStderrContains != "" {
+				assert.Contains(t, stderr.String(), tc.wantStderrContains)
+			}
+		})
+	}
+}
+
+// On first install (no credentials yet) the login prompt is chained, mirroring
+// the launcher auto-prompt; when credentials are present it is skipped.
+func TestRun_CursorInstallLoginChain(t *testing.T) {
+	cases := []struct {
+		name           string
+		creds          bool
+		wantLoginCalls int
+	}{
+		{name: "chains login when credentials missing", creds: false, wantLoginCalls: 1},
+		{name: "skips login when credentials present", creds: true, wantLoginCalls: 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateDotenvHome(t)
+			if tc.creds {
+				t.Setenv("SIGIL_ENDPOINT", "https://cloud.example.com")
+				t.Setenv("SIGIL_AUTH_TENANT_ID", "tenant")
+				t.Setenv("SIGIL_AUTH_TOKEN", "token")
+			} else {
+				t.Setenv("SIGIL_ENDPOINT", "")
+				t.Setenv("SIGIL_AUTH_TENANT_ID", "")
+				t.Setenv("SIGIL_AUTH_TOKEN", "")
+			}
+
+			withStubCursorInstall(t, func(io.Writer, io.Writer, *log.Logger) error { return nil })
+			loginCalls := 0
+			withStubLoginRun(t, func(context.Context, login.RunOpts) error {
+				loginCalls++
+				return login.ErrNotInteractive
+			})
+
+			var stdout, stderr bytes.Buffer
+			gotExit := withExit(t, func() {
+				run([]string{"cursor", "install"}, strings.NewReader(""), &stdout, &stderr)
+			})
+			require.Nil(t, gotExit, "stderr=%q", stderr.String())
+			assert.Equal(t, tc.wantLoginCalls, loginCalls)
+		})
+	}
+}
+
+// withStubCursorInstall / withStubCursorUninstall replace the cursor install
+// seams so dispatch can be asserted without touching ~/.cursor/hooks.json.
+func withStubCursorInstall(t *testing.T, fn func(io.Writer, io.Writer, *log.Logger) error) {
+	t.Helper()
+	prev := cursorInstall
+	t.Cleanup(func() { cursorInstall = prev })
+	cursorInstall = fn
+}
+
+func withStubCursorUninstall(t *testing.T, fn func(io.Writer, io.Writer, *log.Logger) error) {
+	t.Helper()
+	prev := cursorUninstall
+	t.Cleanup(func() { cursorUninstall = prev })
+	cursorUninstall = fn
+}
+
 // withStubLauncher replaces the launchers map with a single entry for the
 // duration of the test.
 func withStubLauncher(t *testing.T, name string, fn agentLauncher) {
