@@ -236,6 +236,10 @@ def _serialize_upsert_request(request: CreateExperimentRequest) -> dict[str, Any
         out["description"] = request.description
     if request.tags:
         out["tags"] = list(request.tags)
+    if request.collection_id:
+        out["collection_id"] = request.collection_id
+    if request.evaluators:
+        out["evaluators"] = [{"id": ev.id, "selector": ev.selector} for ev in request.evaluators]
     if request.metadata:
         out["metadata"] = dict(request.metadata)
     return out

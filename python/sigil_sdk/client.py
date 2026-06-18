@@ -860,10 +860,14 @@ class Client:
         lifecycle writes.
         """
 
+        headers = dict(self._config.generation_export.headers)
+        actor = (self._config.ingest_actor or "").strip()
+        if actor:
+            headers["X-Sigil-Ingest-Actor"] = actor
         return {
             "api_endpoint": self._config.api.endpoint,
             "insecure": bool(self._config.generation_export.insecure),
-            "headers": self._config.generation_export.headers,
+            "headers": headers,
             "scores_path": "/api/v1/scores:export",
         }
 
