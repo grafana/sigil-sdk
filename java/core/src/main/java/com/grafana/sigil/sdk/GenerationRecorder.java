@@ -129,7 +129,10 @@ public class GenerationRecorder implements AutoCloseable {
                 sanitizerRan = true;
                 try {
                     Generation sanitized = sanitizer.sanitize(generation.copy());
-                    generation = sanitized == null ? new Generation() : sanitized;
+                    if (sanitized == null) {
+                        throw new IllegalStateException("generation sanitizer must return a generation");
+                    }
+                    generation = sanitized;
                 } catch (Throwable throwable) {
                     effectiveContentCaptureMode = ContentCaptureMode.METADATA_ONLY;
                     client.logGenerationSanitizerFailure(throwable);
@@ -160,7 +163,7 @@ public class GenerationRecorder implements AutoCloseable {
             } else {
                 SigilClient.setGenerationSpanAttributes(span, generation);
             }
-            if (sanitizerRan && effectiveContentCaptureMode != ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
+            if (sanitizerRan && contentCaptureMode != ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
                 span.setAttribute(SigilClient.SPAN_ATTR_CONVERSATION_TITLE, generation.getConversationTitle());
             }
 
