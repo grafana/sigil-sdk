@@ -127,7 +127,7 @@ with experiment(client=client, run_id="run-123", name="manual loop",
             rec.set_result(Generation(output=[assistant_text_message(answer)]))
         run.add_scores(my_scores(item, answer), item=item,
                        generation_ids=run.produced_generation_ids)
-# on exit: succeeded; on exception: failed; on Ctrl-C: canceled (all automatic)
+# on exit: succeeded; on exception or Ctrl-C: failed (automatic)
 ```
 
 If you record generations somewhere the run can't see (e.g. a provider wrapper),
@@ -240,9 +240,9 @@ Notes:
   `collection_id`, adds a `collectionId:<id>` tag, and stamps `collection_id`
   into the run metadata (durable even where the tag/field columns aren't yet
   persisted), so the run is discoverable from the collection.
-- Reading collections/conversations uses the protected eval control plane (same
-  `SIGIL_EVAL_*` config as experiments). `limit=` caps how many members are
-  pulled; `skip_empty=False` keeps conversations with no recoverable prompt.
+- Reading collections/conversations uses the configured Sigil API endpoint and
+  auth headers. `limit=` caps how many members are pulled; `skip_empty=False`
+  keeps conversations with no recoverable prompt.
 
 ## Rules / gotchas
 
@@ -259,4 +259,4 @@ Notes:
   end), `manual` (publish + finalize only when you call `run.publish()` /
   `run.finalize()`). Users can delete experiments, so the default is to publish.
 - The run is finalized automatically: `succeeded` on clean exit, `failed` on
-  exception, `canceled` on Ctrl-C.
+  exception or Ctrl-C.

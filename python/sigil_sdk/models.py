@@ -493,11 +493,10 @@ def tool_result_message(tool_call_id: str, content: str) -> Message:
 # ---------------------------------------------------------------------------
 # Offline evaluation: experiments and scores
 #
-# These models map to the Sigil eval control plane (HTTP):
-#   POST   /api/v1/eval/experiments
+# These models map to the Sigil experiment and score APIs (HTTP):
+#   POST   /api/v1/experiment-runs:upsert
+#   POST   /api/v1/experiment-runs/{run_id}:finalize
 #   GET    /api/v1/eval/experiments/{run_id}
-#   PATCH  /api/v1/eval/experiments/{run_id}
-#   POST   /api/v1/eval/experiments/{run_id}:cancel
 #   POST   /api/v1/scores:export
 #   GET    /api/v1/eval/experiments/{run_id}/report
 # ---------------------------------------------------------------------------
@@ -611,7 +610,7 @@ class ExperimentEvaluator:
 
 @dataclass(slots=True)
 class CreateExperimentRequest:
-    """Request body for ``POST /api/v1/eval/experiments``."""
+    """Request body for ``POST /api/v1/experiment-runs:upsert``."""
 
     name: str
     source: ExperimentSource | str = ExperimentSource.EXTERNAL
@@ -625,10 +624,10 @@ class CreateExperimentRequest:
 
 @dataclass(slots=True)
 class UpdateExperimentRequest:
-    """Request body for ``PATCH /api/v1/eval/experiments/{run_id}``.
+    """Request body for updating editable experiment fields.
 
-    Every field is optional; ``None`` fields are omitted from the PATCH body so
-    callers can update only what they intend to change.
+    Every field is optional; ``None`` fields are omitted so callers can update
+    only what they intend to change.
     """
 
     name: str | None = None
@@ -642,7 +641,7 @@ class UpdateExperimentRequest:
 
 @dataclass(slots=True)
 class Experiment:
-    """An experiment run as returned by the Sigil eval control plane."""
+    """An experiment run as returned by Sigil."""
 
     run_id: str
     name: str

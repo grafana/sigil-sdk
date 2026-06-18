@@ -19,14 +19,14 @@ callback.
 
 ## How it works
 
-1. The runner calls `POST /api/v1/eval/experiments` to create an `external` run.
+1. The runner calls `POST /api/v1/experiment-runs:upsert` to create or claim an external run.
 2. For each dataset item it runs the agent inside `run.start_generation(...)`, so
    the generation the agent emits is exported through the normal Sigil path and
    tagged with `experiment.run_id`. The runner captures the produced generation
    id for you.
 3. It flushes generations, runs your scorer(s), and exports the scores with the
    same `run_id` (`POST /api/v1/scores:export`).
-4. When the dataset is done it finalizes the run (`succeeded`/`failed`/`canceled`)
+4. When the dataset is done it finalizes the run (`succeeded`/`failed`)
    and prints a deep link.
 
 A/B testing is just two runs with different `run_id`/`tags` over the same items.
@@ -46,6 +46,7 @@ uv sync
 # Point at your stack (defaults shown)
 export SIGIL_ENDPOINT=http://localhost:8080
 export SIGIL_AUTH_TENANT_ID=fake
+# Use SIGIL_AUTH_TOKEN as well when your Sigil endpoint requires auth.
 # Optional: stable run id for CI retries / a real model
 export RUN_ID=experiment-example-$(git rev-parse --short HEAD 2>/dev/null || echo local)
 # export OPENAI_API_KEY=sk-...
