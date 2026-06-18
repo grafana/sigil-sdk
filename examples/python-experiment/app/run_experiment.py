@@ -9,9 +9,8 @@ supported framework adapter (LangGraph, LangChain, ...):
   3. The runner creates the experiment, runs+grades each item, exports scores
      attributed to the run, finalizes the run, and prints a link.
 
-Config via env: SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID, RUN_ID, GIT_SHA. With no
-OPENAI_API_KEY the agent uses deterministic canned answers so the flow runs
-offline against a local Sigil.
+Config via env: SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID, SIGIL_AUTH_TOKEN, RUN_ID,
+GIT_SHA. With no OPENAI_API_KEY the agent uses deterministic canned answers.
 """
 
 from __future__ import annotations
@@ -66,15 +65,22 @@ CANNED = {str(item.input): str(item.expected) for item in DATASET}
 
 
 def build_client() -> Client:
-    endpoint = os.environ.get("SIGIL_ENDPOINT", "http://localhost:8080")
-    tenant_id = os.environ.get("SIGIL_AUTH_TENANT_ID", "fake")
+    endpoint = os.environ["SIGIL_ENDPOINT"]
+    tenant_id = os.environ["SIGIL_AUTH_TENANT_ID"]
+    token = os.environ["SIGIL_AUTH_TOKEN"]
     return Client(
         ClientConfig(
             api=ApiConfig(endpoint=endpoint),
             generation_export=GenerationExportConfig(
-                protocol="http",
+                protocol=os.environ.get("SIGIL_PROTOCOL", "http"),
                 endpoint=f"{endpoint}/api/v1/generations:export",
-                auth=AuthConfig(mode="tenant", tenant_id=tenant_id),
+                auth=AuthConfig(
+                    mode=os.environ.get("SIGIL_AUTH_MODE", "basic"),
+                    tenant_id=tenant_id,
+                    basic_user=tenant_id,
+                    basic_password=token,
+                    bearer_token=token,
+                ),
             ),
         )
     )
@@ -120,13 +126,13 @@ def exact_match_scorer(item: DatasetItem, result: TargetResult) -> list[ScoreOut
 def main() -> None:
     load_dotenv()
     client = build_client()
-    run_id = os.environ.get("RUN_ID", f"experiment-example-{os.environ.get('GIT_SHA', 'local')}")
+    run_id = os.environ.get("RUN_ID", f"experiment-example-{os.environ.get('GIT_SHA', 'manual')}")
     runner = ExperimentRunner(
         client=client,
         run_id=run_id,
         name="Framework-free example experiment",
         dataset={"id": "experiment-example", "version": "2026-05-30"},
-        candidate={"git_sha": os.environ.get("GIT_SHA", "local")},
+        candidate={"git_sha": os.environ.get("GIT_SHA", "manual")},
         tags=["example"],
         agent_name="example-agent",
     )

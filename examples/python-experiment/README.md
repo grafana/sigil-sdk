@@ -15,7 +15,7 @@ callback.
 | `ExperimentRunner` | Loops a dataset, runs the target, grades, publishes scores, finalizes the run | `app/run_experiment.py` |
 | `run.start_generation(...)` | Records the agent's call tagged with the experiment `run_id`, capturing the generation id | `app/run_experiment.py` (`target`) |
 | User scorer | Local grading returning typed `ScoreOutput`s (swap in LLM-as-judge here) | `app/run_experiment.py` (`exact_match_scorer`) |
-| Tiny agent | A plain function that answers a question (real model or offline canned answers) | `app/agent.py` |
+| Tiny agent | A plain function that answers a question (real model or deterministic canned answers) | `app/agent.py` |
 
 ## How it works
 
@@ -34,21 +34,25 @@ A/B testing is just two runs with different `run_id`/`tags` over the same items.
 ## Prerequisites
 
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- A running Sigil stack (defaults to `http://localhost:8080`)
+- Grafana Cloud AI Observability endpoint, stack ID, and access policy token
 - Optional: `OPENAI_API_KEY` (without it, deterministic canned answers are used
-  so the example runs fully offline)
+  for the agent response)
 
 ## Run it
 
 ```bash
 uv sync
 
-# Point at your stack (defaults shown)
-export SIGIL_ENDPOINT=http://localhost:8080
-export SIGIL_AUTH_TENANT_ID=fake
-# Use SIGIL_AUTH_TOKEN as well when your Sigil endpoint requires auth.
-# Optional: stable run id for CI retries / a real model
-export RUN_ID=experiment-example-$(git rev-parse --short HEAD 2>/dev/null || echo local)
+# Grafana Cloud AI Observability ingest API URL.
+export SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
+export SIGIL_PROTOCOL=http
+export SIGIL_AUTH_MODE=basic
+export SIGIL_AUTH_TENANT_ID=<your-stack-id>
+export SIGIL_AUTH_TOKEN=<your-grafana-cloud-access-policy-token>
+export SIGIL_EXPERIMENT_URL_TEMPLATE=https://<your-stack>.grafana.net/a/grafana-sigil-app/evaluation/experiments/{run_id}
+
+# Optional: stable run id for CI retries / a real model.
+export RUN_ID=experiment-example-${GIT_SHA:-manual}
 # export OPENAI_API_KEY=sk-...
 
 uv run python -m app.run_experiment
@@ -57,14 +61,13 @@ uv run python -m app.run_experiment
 You should see output like:
 
 ```
-Experiment 'experiment-example-local' finished: 3 score(s) accepted.
+Experiment 'experiment-example-manual' finished: 3 score(s) accepted.
 pass_rate=1.00 mean_score=1.00
-View in Sigil: http://localhost:8080/a/grafana-sigil-app/evaluation/experiments/experiment-example-local
+View in Sigil: https://<your-stack>.grafana.net/a/grafana-sigil-app/evaluation/experiments/experiment-example-manual
 ```
 
-> The deep link is derived from `SIGIL_ENDPOINT`. If your Grafana UI is served
-> from a different host, set `SIGIL_EXPERIMENT_URL_TEMPLATE`, e.g.
-> `https://grafana.example.com/a/grafana-sigil-app/evaluation/experiments/{run_id}`.
+> The deep link uses `SIGIL_EXPERIMENT_URL_TEMPLATE`; keep it pointed at your
+> Grafana stack UI host.
 
 ## Adapt it
 

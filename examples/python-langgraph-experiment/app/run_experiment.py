@@ -10,7 +10,7 @@ This is the shape a CI job or local script would take:
 
 Config via env: SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID (or SIGIL_AUTH_* /
 SIGIL_PROTOCOL), RUN_ID, GIT_SHA. With no OPENAI_API_KEY the agent uses a
-deterministic fake model so the flow runs offline against a local Sigil.
+deterministic fake model.
 """
 
 from __future__ import annotations
@@ -53,15 +53,22 @@ DATASET: list[DatasetItem] = [
 
 
 def build_client() -> Client:
-    endpoint = os.environ.get("SIGIL_ENDPOINT", "http://localhost:8080")
-    tenant_id = os.environ.get("SIGIL_AUTH_TENANT_ID", "fake")
+    endpoint = os.environ["SIGIL_ENDPOINT"]
+    tenant_id = os.environ["SIGIL_AUTH_TENANT_ID"]
+    token = os.environ["SIGIL_AUTH_TOKEN"]
     return Client(
         ClientConfig(
             api=ApiConfig(endpoint=endpoint),
             generation_export=GenerationExportConfig(
-                protocol="http",
+                protocol=os.environ.get("SIGIL_PROTOCOL", "http"),
                 endpoint=f"{endpoint}/api/v1/generations:export",
-                auth=AuthConfig(mode="tenant", tenant_id=tenant_id),
+                auth=AuthConfig(
+                    mode=os.environ.get("SIGIL_AUTH_MODE", "basic"),
+                    tenant_id=tenant_id,
+                    basic_user=tenant_id,
+                    basic_password=token,
+                    bearer_token=token,
+                ),
             ),
         )
     )
@@ -92,21 +99,21 @@ def exact_match_scorer(item: DatasetItem, result: TargetResult) -> list[ScoreOut
     ]
 
 
-# Build the graph with canned answers so the offline fake model "answers" each
-# item; a real ChatOpenAI model ignores these.
+# Build the graph with canned answers so the fake model can answer each item; a
+# real ChatOpenAI model ignores these.
 GRAPH = build_graph([str(item.expected) for item in DATASET])
 
 
 def main() -> None:
     load_dotenv()
     client = build_client()
-    run_id = os.environ.get("RUN_ID", f"langgraph-example-{os.environ.get('GIT_SHA', 'local')}")
+    run_id = os.environ.get("RUN_ID", f"langgraph-example-{os.environ.get('GIT_SHA', 'manual')}")
     runner = ExperimentRunner(
         client=client,
         run_id=run_id,
         name="LangGraph example experiment",
         dataset={"id": "langgraph-example", "version": "2026-05-28"},
-        candidate={"git_sha": os.environ.get("GIT_SHA", "local")},
+        candidate={"git_sha": os.environ.get("GIT_SHA", "manual")},
         tags=["example", "langgraph"],
         agent_name="langgraph-example-agent",
         provider_resolver="auto",

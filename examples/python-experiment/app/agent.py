@@ -1,8 +1,7 @@
 """A deliberately tiny, framework-free agent: it answers a question.
 
 When ``OPENAI_API_KEY`` is set, the agent calls a real OpenAI chat model.
-Otherwise it falls back to a deterministic offline "model" (a dict of canned
-answers) so the example runs fully offline against a local Sigil.
+Otherwise it falls back to a deterministic dict of canned answers.
 
 The point of the example is the *experiment plumbing*, not the agent — swap this
 out for your real agent and record its call via ``run.start_generation(...)``.

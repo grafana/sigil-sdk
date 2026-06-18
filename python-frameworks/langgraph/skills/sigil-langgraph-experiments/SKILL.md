@@ -18,7 +18,7 @@ automatically), grade, and export scores under the same `run_id`.
 ## Setup
 
 ```bash
-pip install "sigil-sdk>=0.7.0" "sigil-sdk-langgraph>=0.7.0"
+pip install "sigil-sdk>=0.9.0" "sigil-sdk-langgraph>=0.9.0"
 ```
 
 Configure the client from env (works in CI):
@@ -27,14 +27,22 @@ Configure the client from env (works in CI):
 import os
 from sigil_sdk import ApiConfig, AuthConfig, Client, ClientConfig, GenerationExportConfig
 
-endpoint = os.environ.get("SIGIL_ENDPOINT", "http://localhost:8080")
+endpoint = os.environ["SIGIL_ENDPOINT"]
+tenant_id = os.environ["SIGIL_AUTH_TENANT_ID"]
+token = os.environ["SIGIL_AUTH_TOKEN"]
 client = Client(
     ClientConfig(
         api=ApiConfig(endpoint=endpoint),
         generation_export=GenerationExportConfig(
-            protocol="http",
+            protocol=os.environ.get("SIGIL_PROTOCOL", "http"),
             endpoint=f"{endpoint}/api/v1/generations:export",
-            auth=AuthConfig(mode="tenant", tenant_id=os.environ.get("SIGIL_AUTH_TENANT_ID", "fake")),
+            auth=AuthConfig(
+                mode=os.environ.get("SIGIL_AUTH_MODE", "basic"),
+                tenant_id=tenant_id,
+                basic_user=tenant_id,
+                basic_password=token,
+                bearer_token=token,
+            ),
         ),
     )
 )
