@@ -117,15 +117,31 @@ public class GenerationRecorder implements AutoCloseable {
         try {
             generation = normalize(snapshotResult, completedAt, snapshotCallError, snapshotExtra);
 
-            SigilClient.stampContentCaptureMetadata(generation, contentCaptureMode);
-            if (contentCaptureMode == ContentCaptureMode.METADATA_ONLY) {
-                String errorCategory = SigilClient.errorCategoryFromThrowable(snapshotCallError, false);
-                SigilClient.stripContent(generation, errorCategory);
-            }
-
             if (span.getSpanContext().isValid()) {
                 generation.setTraceId(span.getSpanContext().getTraceId());
                 generation.setSpanId(span.getSpanContext().getSpanId());
+            }
+
+            ContentCaptureMode effectiveContentCaptureMode = contentCaptureMode;
+            boolean sanitizerRan = false;
+            GenerationSanitizer sanitizer = client.getGenerationSanitizer();
+            if (sanitizer != null && effectiveContentCaptureMode != ContentCaptureMode.METADATA_ONLY) {
+                sanitizerRan = true;
+                try {
+                    Generation sanitized = sanitizer.sanitize(generation.copy());
+                    generation = sanitized == null ? new Generation() : sanitized;
+                } catch (Throwable throwable) {
+                    effectiveContentCaptureMode = ContentCaptureMode.METADATA_ONLY;
+                    client.logGenerationSanitizerFailure(throwable);
+                }
+            }
+
+            syncCanonicalMetadataMirrors(generation);
+
+            SigilClient.stampContentCaptureMetadata(generation, effectiveContentCaptureMode);
+            if (effectiveContentCaptureMode == ContentCaptureMode.METADATA_ONLY) {
+                String errorCategory = SigilClient.errorCategoryFromThrowable(snapshotCallError, false);
+                SigilClient.stripContent(generation, errorCategory);
             }
 
             span.updateName(SigilClient.generationSpanName(generation.getOperationName(), generation.getModel().getName()));
@@ -133,7 +149,7 @@ public class GenerationRecorder implements AutoCloseable {
             // span path must drop sigil.conversation.title. `generation` is
             // a local snapshot here, so save the title, zero it for the span
             // attribute call, and restore — no deep copy needed.
-            if (contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
+            if (effectiveContentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
                 String savedTitle = generation.getConversationTitle();
                 generation.setConversationTitle("");
                 try {
@@ -143,6 +159,9 @@ public class GenerationRecorder implements AutoCloseable {
                 }
             } else {
                 SigilClient.setGenerationSpanAttributes(span, generation);
+            }
+            if (sanitizerRan && effectiveContentCaptureMode != ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
+                span.setAttribute(SigilClient.SPAN_ATTR_CONVERSATION_TITLE, generation.getConversationTitle());
             }
 
             try {
@@ -163,8 +182,8 @@ public class GenerationRecorder implements AutoCloseable {
             // export under FULL_WITH_METADATA_SPANS still gets the raw
             // generation.callError; only the OTel span path is redacted.
             boolean redactSpanErrors =
-                    contentCaptureMode == ContentCaptureMode.METADATA_ONLY
-                            || contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS;
+                    effectiveContentCaptureMode == ContentCaptureMode.METADATA_ONLY
+                            || effectiveContentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS;
             if (snapshotCallError != null && !redactSpanErrors) {
                 span.recordException(snapshotCallError);
             }
@@ -347,5 +366,18 @@ public class GenerationRecorder implements AutoCloseable {
 
     private static String normalizeResolvedString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static void syncCanonicalMetadataMirrors(Generation generation) {
+        if (generation.getConversationTitle().isEmpty()) {
+            generation.getMetadata().remove(SigilClient.SPAN_ATTR_CONVERSATION_TITLE);
+        } else {
+            generation.getMetadata().put(SigilClient.SPAN_ATTR_CONVERSATION_TITLE, generation.getConversationTitle());
+        }
+        if (generation.getCallError().isEmpty()) {
+            generation.getMetadata().remove("call_error");
+        } else {
+            generation.getMetadata().put("call_error", generation.getCallError());
+        }
     }
 }

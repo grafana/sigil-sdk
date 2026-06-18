@@ -613,6 +613,14 @@ public final class SigilClient implements AutoCloseable {
         return embeddingCaptureConfig;
     }
 
+    GenerationSanitizer getGenerationSanitizer() {
+        return config.getGenerationSanitizer();
+    }
+
+    void logGenerationSanitizerFailure(Throwable throwable) {
+        logWarn("sigil: generation sanitization failed, falling back to metadata_only", throwable);
+    }
+
     void enqueueGeneration(Generation generation) {
         if (shuttingDown || closed) {
             throw new ClientShutdownException("sigil: client is shutting down");

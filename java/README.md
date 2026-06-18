@@ -198,6 +198,26 @@ Resolution precedence for tool executions (highest to lowest):
 
 User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content.
 
+## Local Secret Redaction
+
+The Java SDK can redact high-confidence secret patterns before generation data is exported. The built-in redactor uses the same hand-curated gitleaks-derived patterns as the other Sigil SDKs and replaces matches with `[REDACTED:<category>]`.
+
+```java
+SigilClient client = new SigilClient(new SigilClientConfig()
+    .setGenerationSanitizer(SecretRedaction.createSecretRedactionSanitizer()));
+```
+
+By default, user-role input messages are left untouched. To also redact user input messages, opt in explicitly:
+
+```java
+SigilClient client = new SigilClient(new SigilClientConfig()
+    .setGenerationSanitizer(SecretRedaction.createSecretRedactionSanitizer(
+        new SecretRedactionOptions()
+            .setRedactInputMessages(true))));
+```
+
+`SecretRedaction.createSecretRedactionSanitizer()` reads `SIGIL_REDACT_INPUT_MESSAGES` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) when `redactInputMessages` is left unset. Explicit options take precedence over the environment variable. Email address redaction is on by default and can be disabled with `setRedactEmailAddresses(false)`.
+
 ## Embedding Observability
 
 Use `startEmbedding(...)` / `withEmbedding(...)` for embedding API calls. Embedding recording emits OTel spans and SDK metrics only, and does not enqueue generation exports.

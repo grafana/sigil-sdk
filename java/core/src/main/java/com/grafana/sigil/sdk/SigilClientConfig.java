@@ -15,6 +15,7 @@ public final class SigilClientConfig {
     private EmbeddingCaptureConfig embeddingCapture = new EmbeddingCaptureConfig();
     private ContentCaptureMode contentCapture = ContentCaptureMode.DEFAULT;
     private ContentCaptureResolver contentCaptureResolver;
+    private GenerationSanitizer generationSanitizer;
     private GenerationExporter generationExporter;
     private Tracer tracer;
     private Meter meter;
@@ -90,6 +91,24 @@ public final class SigilClientConfig {
      */
     public SigilClientConfig setContentCaptureResolver(ContentCaptureResolver contentCaptureResolver) {
         this.contentCaptureResolver = contentCaptureResolver;
+        return this;
+    }
+
+    public GenerationSanitizer getGenerationSanitizer() {
+        return generationSanitizer;
+    }
+
+    /**
+     * Sets a sanitizer invoked on each normalized generation before export.
+     *
+     * <p>The sanitizer runs after generation normalization, but before
+     * content-capture stripping and metadata stamping. It is skipped when the
+     * resolved content-capture mode is {@link ContentCaptureMode#METADATA_ONLY}.
+     * If it throws, the SDK logs a warning and falls back to
+     * {@link ContentCaptureMode#METADATA_ONLY} for that generation.</p>
+     */
+    public SigilClientConfig setGenerationSanitizer(GenerationSanitizer generationSanitizer) {
+        this.generationSanitizer = generationSanitizer;
         return this;
     }
 
@@ -216,6 +235,7 @@ public final class SigilClientConfig {
                 .setEmbeddingCapture(embeddingCapture.copy())
                 .setContentCapture(contentCapture)
                 .setContentCaptureResolver(contentCaptureResolver)
+                .setGenerationSanitizer(generationSanitizer)
                 .setGenerationExporter(generationExporter)
                 .setTracer(tracer)
                 .setMeter(meter)
