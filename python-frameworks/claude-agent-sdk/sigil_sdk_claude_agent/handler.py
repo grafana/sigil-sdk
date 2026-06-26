@@ -81,7 +81,8 @@ class SigilClaudeAgentHandler:
         extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         self._client = client
-        self._conversation_id = conversation_id.strip()
+        self._configured_conversation_id = conversation_id.strip()
+        self._conversation_id = self._configured_conversation_id
         self._agent_name = agent_name.strip()
         self._agent_version = agent_version.strip()
         self._model = model.strip()
@@ -96,6 +97,7 @@ class SigilClaudeAgentHandler:
 
     def _reset_run_state(self) -> None:
         self._run_id = str(uuid4())
+        self._conversation_id = self._configured_conversation_id
         self._recorder: Any | None = None
         self._started = False
         self._finished = False
@@ -358,7 +360,8 @@ class SigilClaudeAgentHandler:
         matchers.append(matcher)
 
     def _resolve_conversation_id(self, options: ClaudeAgentOptions) -> str:
-        if self._conversation_id:
+        if self._configured_conversation_id:
+            self._conversation_id = self._configured_conversation_id
             return self._conversation_id
         if options.session_id:
             self._conversation_id = options.session_id

@@ -222,6 +222,49 @@ async def test_sigil_query_reuses_finished_handler_for_new_generation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reused_handler_resolves_conversation_id_per_run() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    handler = create_sigil_claude_agent_handler(client=client, agent_name="claude-agent")
+
+    async def first_query(**_kwargs) -> AsyncIterator[object]:
+        yield AssistantMessage(content=[TextBlock("First.")], model="claude-sonnet-4-5", session_id="session-1")
+        yield _success_result("session-1")
+
+    async def second_query(**_kwargs) -> AsyncIterator[object]:
+        yield AssistantMessage(content=[TextBlock("Second.")], model="claude-sonnet-4-5", session_id="session-2")
+        yield _success_result("session-2")
+
+    try:
+        _ = [
+            message
+            async for message in sigil_query(
+                prompt="First prompt.",
+                client=client,
+                handler=handler,
+                options=ClaudeAgentOptions(model="claude-sonnet-4-5", session_id="conversation-one"),
+                _query_fn=first_query,
+            )
+        ]
+        _ = [
+            message
+            async for message in sigil_query(
+                prompt="Second prompt.",
+                client=client,
+                handler=handler,
+                options=ClaudeAgentOptions(model="claude-sonnet-4-5", session_id="conversation-two"),
+                _query_fn=second_query,
+            )
+        ]
+
+        client.flush()
+        generations = exporter.requests[0].generations
+        assert [generation.conversation_id for generation in generations] == ["conversation-one", "conversation-two"]
+    finally:
+        client.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_sigil_query_skips_replayed_initial_user_message() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)
