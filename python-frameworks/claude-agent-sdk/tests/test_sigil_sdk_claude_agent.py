@@ -174,6 +174,117 @@ async def test_sigil_query_records_claude_agent_stream() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sigil_query_early_stream_exit_finishes_without_error() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    async def fake_query(**_kwargs) -> AsyncIterator[object]:
+        yield AssistantMessage(content=[TextBlock("Partial.")], model="claude-sonnet-4-5", session_id="session-42")
+        yield AssistantMessage(content=[TextBlock("Unread.")], model="claude-sonnet-4-5", session_id="session-42")
+
+    try:
+        stream = sigil_query(
+            prompt="Inspect the README.",
+            client=client,
+            options=ClaudeAgentOptions(model="claude-sonnet-4-5"),
+            conversation_id="conv-42",
+            agent_name="claude-agent",
+            _query_fn=fake_query,
+        )
+        async for _message in stream:
+            await stream.aclose()
+            break
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.output[0].parts[0].text == "Partial."
+        assert generation.call_error == ""
+    finally:
+        client.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_claude_sdk_client_early_stream_exit_finishes_without_error() -> None:
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+    claude = _FakeClaudeSDKClient()
+    claude.responses.append(
+        [
+            AssistantMessage(content=[TextBlock("Partial.")], model="claude-sonnet-4-5", session_id="session-42"),
+            AssistantMessage(content=[TextBlock("Unread.")], model="claude-sonnet-4-5", session_id="session-42"),
+        ]
+    )
+
+    try:
+        async with SigilClaudeSDKClient(
+            client=client,
+            _claude_client=claude,  # type: ignore[arg-type]
+            options=ClaudeAgentOptions(model="claude-sonnet-4-5"),
+            conversation_id="conv-client",
+            agent_name="claude-agent",
+        ) as sigil_claude:
+            await sigil_claude.query("Inspect the README.")
+            stream = sigil_claude.receive_response()
+            async for _message in stream:
+                await stream.aclose()
+                break
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.output[0].parts[0].text == "Partial."
+        assert generation.call_error == ""
+    finally:
+        client.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_handler_start_failure_can_be_retried() -> None:
+    class _Recorder:
+        def __init__(self) -> None:
+            self.generation = None
+            self.ended = False
+
+        def set_call_error(self, _error) -> None:
+            return
+
+        def set_result(self, generation) -> None:
+            self.generation = generation
+
+        def end(self) -> None:
+            self.ended = True
+
+        def err(self):
+            return None
+
+    class _FlakyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.recorder = _Recorder()
+
+        def start_streaming_generation(self, _start):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("start failed")
+            return self.recorder
+
+    flaky_client = _FlakyClient()
+    handler = SigilClaudeAgentHandler(client=flaky_client, conversation_id="conv-42")  # type: ignore[arg-type]
+    options = ClaudeAgentOptions(model="claude-sonnet-4-5")
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        await handler.start(prompt="First prompt.", options=options)
+
+    await handler.start(prompt="Retry prompt.", options=options)
+    handler.record_message(AssistantMessage(content=[TextBlock("Recovered.")], model="claude-sonnet-4-5"))
+    handler.record_message(_success_result())
+
+    assert flaky_client.calls == 2
+    assert flaky_client.recorder.ended is True
+    assert flaky_client.recorder.generation.input[0].parts[0].text == "Retry prompt."
+    assert flaky_client.recorder.generation.output[0].parts[0].text == "Recovered."
+
+
+@pytest.mark.asyncio
 async def test_sigil_query_reuses_finished_handler_for_new_generation() -> None:
     exporter = _CapturingExporter()
     client = _new_client(exporter)

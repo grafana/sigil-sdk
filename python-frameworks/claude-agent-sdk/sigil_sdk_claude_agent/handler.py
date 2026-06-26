@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from collections.abc import AsyncIterable, AsyncIterator, Callable
@@ -131,7 +132,6 @@ class SigilClaudeAgentHandler:
             return
         if self._finished:
             self._reset_run_state()
-        self._started = True
         self._model = self._model or (options.model or "")
         conversation_id = self._resolve_conversation_id(options)
         metadata = dict(self._extra_metadata)
@@ -160,7 +160,12 @@ class SigilClaudeAgentHandler:
         )
         if start.id == "":
             start.id = f"gen_{secrets.token_hex(8)}"
-        self._recorder = self._client.start_streaming_generation(start)
+        try:
+            self._recorder = self._client.start_streaming_generation(start)
+        except BaseException:
+            self._reset_run_state()
+            raise
+        self._started = True
 
         if self._capture_inputs and isinstance(prompt, str):
             prompt_text = prompt.strip()
@@ -530,6 +535,9 @@ class SigilClaudeSDKClient:
                 if self._active_handler is not None:
                     self._active_handler.record_message(message)
                 yield message
+        except (GeneratorExit, asyncio.CancelledError):
+            self._finish_active()
+            raise
         except BaseException as exc:
             self._finish_active(error=exc)
             raise
@@ -581,6 +589,9 @@ async def sigil_query(
         async for message in query_fn(prompt=prompt, options=instrumented_options):
             handler.record_message(message)
             yield message
+    except (GeneratorExit, asyncio.CancelledError):
+        handler.finish()
+        raise
     except BaseException as exc:
         handler.finish(error=exc)
         raise
