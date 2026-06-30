@@ -86,13 +86,12 @@ type ScoreItem struct {
 	TraceID              string         `json:"trace_id,omitempty"`
 	SpanID               string         `json:"span_id,omitempty"`
 	RuleID               string         `json:"rule_id,omitempty"`
-	ExperimentID         string         `json:"experiment_id,omitempty"`
+	RunID                string         `json:"-"`
 	TrialID              string         `json:"trial_id,omitempty"`
 	TestCaseID           string         `json:"test_case_id,omitempty"`
 	GraderConversationID string         `json:"grader_conversation_id,omitempty"`
 	GraderGenerationID   string         `json:"grader_generation_id,omitempty"`
 	GraderTraceID        string         `json:"grader_trace_id,omitempty"`
-	RunID                string         `json:"-"`
 	Passed               *bool          `json:"passed,omitempty"`
 	Explanation          string         `json:"explanation,omitempty"`
 	Metadata             map[string]any `json:"metadata,omitempty"`
@@ -100,10 +99,7 @@ type ScoreItem struct {
 	Source               *ScoreSource   `json:"source,omitempty"`
 }
 
-func (s ScoreItem) ResolvedExperimentID() string {
-	if strings.TrimSpace(s.ExperimentID) != "" {
-		return strings.TrimSpace(s.ExperimentID)
-	}
+func (s ScoreItem) ResolvedRunID() string {
 	return strings.TrimSpace(s.RunID)
 }
 
@@ -163,20 +159,17 @@ type ExperimentEvaluator struct {
 }
 
 type CreateExperimentRequest struct {
-	RunID        string                `json:"run_id,omitempty"`
-	Name         string                `json:"name"`
-	Source       ExperimentSource      `json:"source"`
-	Description  string                `json:"description,omitempty"`
-	Tags         []string              `json:"tags,omitempty"`
-	CollectionID string                `json:"collection_id,omitempty"`
-	Evaluators   []ExperimentEvaluator `json:"evaluators,omitempty"`
-	Metadata     map[string]any        `json:"metadata,omitempty"`
+	RunID       string           `json:"run_id,omitempty"`
+	Name        string           `json:"name"`
+	Source      ExperimentSource `json:"source"`
+	Description string           `json:"description,omitempty"`
+	Tags        []string         `json:"tags,omitempty"`
+	Metadata    map[string]any   `json:"metadata,omitempty"`
 }
 
 type CompleteExperimentOptions struct {
 	ScoreCount *int
 	Error      string
-	Metadata   map[string]any
 }
 
 type UpsertTrialRequest struct {
@@ -209,8 +202,8 @@ type TestCaseSnapshot struct {
 	Description  string                  `json:"description,omitempty"`
 	Tags         []string                `json:"tags,omitempty"`
 	Category     string                  `json:"category,omitempty"`
-	Input        map[string]any          `json:"input,omitempty"`
-	Expected     map[string]any          `json:"expected,omitempty"`
+	Input        any                     `json:"input,omitempty"`
+	Expected     any                     `json:"expected,omitempty"`
 	Metadata     map[string]any          `json:"metadata,omitempty"`
 	ArtifactRefs []ExperimentArtifactRef `json:"artifact_refs,omitempty"`
 }
@@ -992,8 +985,8 @@ func serializeScore(score ScoreItem) map[string]any {
 	if score.ConversationID != "" {
 		out["conversation_id"] = score.ConversationID
 	}
-	if experimentID := score.ResolvedExperimentID(); experimentID != "" {
-		out["experiment_id"] = experimentID
+	if runID := score.ResolvedRunID(); runID != "" {
+		out["experiment_id"] = runID
 	}
 	if score.TrialID != "" {
 		out["trial_id"] = score.TrialID
