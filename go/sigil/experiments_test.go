@@ -537,6 +537,33 @@ func TestTrialEndUsesCleanupContextAfterCallerContextCanceled(t *testing.T) {
 	}
 }
 
+func TestTrialEndDoesNotFinalizeWhenScoreFlushFails(t *testing.T) {
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-flush-fails"})
+	recorder.push(http.StatusInternalServerError, map[string]any{"error": "score export failed"})
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-flush-fails"})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := newExperimentTestClient(t, server.URL)
+	client.config.GenerationExport.MaxRetries = 0
+	trial := NewTrial(client, TrialRef{ExperimentID: "run-flush-fails", TestCaseID: "case-flush-fails"})
+	if err := trial.Start(context.Background()); err != nil {
+		t.Fatalf("start trial: %v", err)
+	}
+	trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
+
+	if err := trial.End(context.Background(), nil); err == nil {
+		t.Fatal("expected score flush error")
+	}
+	if recorder.requestCount() != 2 {
+		t.Fatalf("expected trial create and score export only, got %d requests", recorder.requestCount())
+	}
+	if req := recorder.request(1); req.Method != http.MethodPost || req.Path != "/api/v1/scores:export" {
+		t.Fatalf("unexpected score export request: %#v", req)
+	}
+}
+
 func TestExperimentRunTrialStringWithoutSuiteDoesNotPanic(t *testing.T) {
 	exp := NewExperimentRun(ExperimentOptions{RunID: "run-no-suite", Name: "no suite"})
 	trial := exp.Trial("case-1")

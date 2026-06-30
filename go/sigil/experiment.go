@@ -740,11 +740,10 @@ func (t *Trial) End(ctx context.Context, err error) error {
 	cleanupCtx, cancel := experimentCleanupContext(ctx)
 	defer cancel()
 	_, flushErr := t.Flush(cleanupCtx)
-	finalizeErr := t.finalizeTrial(cleanupCtx)
 	if flushErr != nil {
 		return flushErr
 	}
-	return finalizeErr
+	return t.finalizeTrial(cleanupCtx)
 }
 
 func (t *Trial) createTrial(ctx context.Context) error {
