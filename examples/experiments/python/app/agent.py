@@ -102,7 +102,12 @@ def _parse_grade(text: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         start = text.find("{")
         end = text.rfind("}")
-        payload = json.loads(text[start : end + 1]) if start >= 0 and end > start else {}
+        payload = {}
+        if start >= 0 and end > start:
+            try:
+                payload = json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                payload = {}
 
     score = float(payload.get("score", 0.0))
     score = max(0.0, min(1.0, score))

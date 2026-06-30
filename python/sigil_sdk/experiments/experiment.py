@@ -233,10 +233,13 @@ class Trial:
             if self._has_final:
                 self.status = TrialStatus.PASSED.value if self._final_passed else TrialStatus.FAILED.value
             else:
-                self.status = TrialStatus.PASSED.value
-        self.flush()
-        self._finalize_trial()
-        self._end_span()
+                self.status = TrialStatus.FAILED.value
+                self.error = "trial exited without a final score"
+        try:
+            self.flush()
+        finally:
+            self._finalize_trial()
+            self._end_span()
         return False  # never suppress
 
     def _finalize_trial(self) -> None:

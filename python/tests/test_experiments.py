@@ -7,6 +7,9 @@ attributes + gen_ai.evaluation.result events) via an in-memory span exporter.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -78,6 +81,11 @@ class FakeClient:
 
     def experiment_url(self, experiment_id: str) -> str:
         return f"http://ui/{experiment_id}"
+
+
+class FailingExportClient(FakeClient):
+    def export_scores(self, scores, *, raise_on_reject: bool = True) -> int:
+        raise RuntimeError("score export failed")
 
 
 def _span_exporter() -> InMemorySpanExporter:
@@ -263,6 +271,27 @@ def test_record_io_mints_real_conversation() -> None:
     assert all(s.conversation_id == conv for s in client.scores)
 
 
+def test_trial_without_final_score_fails() -> None:
+    client = FakeClient()
+    suite = _suite()
+    with Experiment(client, experiment_id="run-no-final", name="x", suite=suite) as exp:
+        with exp.trial(suite.test_cases[0]) as trial:
+            trial.check_score("json_valid", passed=True)
+    assert trial.status == "failed"
+    assert trial.error == "trial exited without a final score"
+    assert client.trial_updates and client.trial_updates[0][2] == "completed"
+
+
+def test_trial_cleanup_runs_when_flush_fails() -> None:
+    client = FailingExportClient()
+    suite = _suite()
+    with pytest.raises(RuntimeError, match="score export failed"):
+        with Experiment(client, experiment_id="run-flush-fail", name="x", suite=suite) as exp:
+            with exp.trial(suite.test_cases[0]) as trial:
+                trial.final_score(1.0, passed=True)
+    assert client.trial_updates and client.trial_updates[0][2] == "completed"
+
+
 def test_score_value_helpers() -> None:
     assert score.number(0.5).number == 0.5
     assert score.boolean(True).boolean is True
@@ -409,3 +438,20 @@ def test_parse_report_matches_backend_shape() -> None:
     assert report.summary.pass_power_k == {"1": 0.5}
     assert report.summary.final_score_avg == 0.71
     assert report.rows and report.rows[0]["test_case_id"] == "add"
+
+
+def test_example_json_fallbacks_handle_malformed_slices() -> None:
+    example_root = Path(__file__).resolve().parents[2] / "examples" / "experiments" / "python"
+    sys.path.insert(0, str(example_root))
+    try:
+        from app.agent import _parse_grade
+        from app.dashboard_agent import _parse_json
+    finally:
+        sys.path.pop(0)
+
+    assert _parse_grade("prefix {not json} suffix") == {
+        "score": 0.0,
+        "passed": False,
+        "explanation": "graded by LLM judge",
+    }
+    assert _parse_json("prefix {not json} suffix") == {}

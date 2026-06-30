@@ -157,5 +157,10 @@ def _parse_json(text: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         start = text.find("{")
         end = text.rfind("}")
-        payload = json.loads(text[start : end + 1]) if start >= 0 and end > start else {}
+        payload = {}
+        if start >= 0 and end > start:
+            try:
+                payload = json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                payload = {}
     return payload if isinstance(payload, dict) else {}
