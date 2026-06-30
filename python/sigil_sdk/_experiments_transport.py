@@ -231,10 +231,7 @@ def update_test_case_trial(
         raise ValidationError("sigil test case trial validation failed: experiment_id is required for trial update")
     quoted_run_id = urllib_parse.quote(run_id, safe="")
     quoted_trial_id = urllib_parse.quote(normalized, safe="")
-    url = (
-        _base_url(api_endpoint, insecure)
-        + f"{_EXPERIMENT_RUNS_PREFIX}/{quoted_run_id}/trials/{quoted_trial_id}"
-    )
+    url = _base_url(api_endpoint, insecure) + f"{_EXPERIMENT_RUNS_PREFIX}/{quoted_run_id}/trials/{quoted_trial_id}"
     body = _request_json("PATCH", url, headers, request, retry, ExperimentTransportError, "test case trial update")
     return body if isinstance(body, dict) else {}
 
