@@ -1097,6 +1097,9 @@ func (t *Trial) Flush(ctx context.Context) (int, error) {
 	if err := t.ensureGeneration(ctx); err != nil {
 		return 0, err
 	}
+	if err := t.client.Flush(ctx); err != nil {
+		return 0, err
+	}
 	pending := append([]ScoreItem(nil), t.buffer...)
 	response, err := t.client.ExportScores(ctx, pending)
 	if err != nil {
