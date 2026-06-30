@@ -41,18 +41,23 @@ class FakeClient:
         self.trials: list[tuple] = []
         self.trial_updates: list[tuple] = []
         self.artifacts: list[tuple] = []
+        self.calls: list[str] = []
 
     def upsert_experiment(self, request: CreateExperimentRequest):
         self.upserts.append(request)
         return None
 
     def export_scores(self, scores, *, raise_on_reject: bool = True) -> int:
+        self.calls.append("export_scores")
         self.scores.extend(scores)
         return len(scores)
 
     def record_generation(self, generation_id, **kwargs) -> str:
         self.generations.append(generation_id)
         return generation_id
+
+    def flush_generations(self) -> None:
+        self.calls.append("flush_generations")
 
     def upsert_trial(self, experiment_id, *, trial_id, **kwargs) -> dict:
         self.trials.append((experiment_id, trial_id, kwargs.get("status")))
@@ -86,6 +91,7 @@ class FakeClient:
 
 class FailingExportClient(FakeClient):
     def export_scores(self, scores, *, raise_on_reject: bool = True) -> int:
+        self.calls.append("export_scores")
         raise RuntimeError("score export failed")
 
 
@@ -292,6 +298,17 @@ def test_trial_cleanup_runs_when_flush_fails() -> None:
                 trial.final_score(1.0, passed=True)
     assert client.trial_updates and client.trial_updates[0][2] == "completed"
     assert len(trial._buffer) == 1
+    assert client.calls[:2] == ["flush_generations", "export_scores"]
+
+
+def test_trial_flush_flushes_generation_client_before_scores() -> None:
+    client = FakeClient()
+    suite = _suite()
+    with Experiment(client, experiment_id="run-flush-order", name="x", suite=suite) as exp:
+        with exp.trial(suite.test_cases[0]) as trial:
+            trial.bind_generation("gen-existing", conversation_id="conv-existing")
+            trial.final_score(1.0, passed=True)
+    assert client.calls[:2] == ["flush_generations", "export_scores"]
 
 
 def test_score_value_helpers() -> None:

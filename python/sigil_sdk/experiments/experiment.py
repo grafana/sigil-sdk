@@ -741,6 +741,9 @@ class Trial:
         if not self._buffer:
             return 0
         self._ensure_generation()
+        flush_generations = getattr(self._client, "flush_generations", None)
+        if callable(flush_generations):
+            flush_generations()
         pending = list(self._buffer)
         accepted = self._client.export_scores(pending)
         del self._buffer[: len(pending)]

@@ -390,6 +390,12 @@ class Client:
 
         return self._ensure_core()
 
+    def flush_generations(self) -> None:
+        """Flushes the underlying generation client, if one was built."""
+
+        if self._core is not None:
+            self._core.flush()
+
     # --- reads ------------------------------------------------------------ #
 
     def get_report(self, experiment_id: str) -> ExperimentReport:
