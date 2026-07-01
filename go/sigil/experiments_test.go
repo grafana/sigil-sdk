@@ -261,6 +261,21 @@ func TestExportScoresUsesExperimentIDAndTrialID(t *testing.T) {
 	}
 }
 
+func TestAcceptedOrErrorDoesNotCountDuplicatesAsAccepted(t *testing.T) {
+	accepted, err := acceptedOrError(&ExportScoresResponse{
+		Results: []ExportScoreResult{
+			{ScoreID: "sc1", Accepted: true, Status: "accepted"},
+			{ScoreID: "sc2", Accepted: false, Status: "duplicate"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("accepted or error: %v", err)
+	}
+	if accepted != 1 {
+		t.Fatalf("expected only newly accepted scores to count, got %d", accepted)
+	}
+}
+
 func TestExperimentErrorsMapNotFoundAndConflict(t *testing.T) {
 	recorder := &experimentRecorder{}
 	recorder.push(http.StatusNotFound, map[string]any{"error": "missing"})
@@ -503,6 +518,57 @@ func TestTrialLifecycleCreatesTypedTrialAndFinalScore(t *testing.T) {
 	updateReq := recorder.request(2)
 	if updateReq.Method != http.MethodPatch || updateReq.Payload["status"] != "completed" {
 		t.Fatalf("unexpected trial update: %#v", updateReq)
+	}
+}
+
+func TestTrialEndCreatesTrialWhenStartWasSkipped(t *testing.T) {
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-no-start"})
+	recorder.push(http.StatusAccepted, map[string]any{"results": []map[string]any{{"score_id": "score-1", "accepted": true}}})
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-no-start"})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := newExperimentTestClient(t, server.URL)
+	trial := NewTrial(client, TrialRef{ExperimentID: "run-no-start", TestCaseID: "case-no-start"})
+	trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
+	if err := trial.End(context.Background(), nil); err != nil {
+		t.Fatalf("end trial without start: %v", err)
+	}
+	if recorder.requestCount() != 3 {
+		t.Fatalf("expected trial create, score export, and update requests, got %d", recorder.requestCount())
+	}
+	if req := recorder.request(0); req.Method != http.MethodPost || req.Path != "/api/v1/experiment-runs/run-no-start/trials" {
+		t.Fatalf("unexpected trial create request: %#v", req)
+	}
+	if req := recorder.request(2); req.Method != http.MethodPatch || req.Path != "/api/v1/experiment-runs/run-no-start/trials/"+trial.trialID {
+		t.Fatalf("unexpected trial update request: %#v", req)
+	}
+}
+
+func TestRecordIOTokensAreIncludedInTrialUpdate(t *testing.T) {
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-usage"})
+	recorder.push(http.StatusAccepted, map[string]any{"results": []map[string]any{{"score_id": "score-1", "accepted": true}}})
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-usage"})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := newExperimentTestClient(t, server.URL)
+	inputTokens := 11
+	outputTokens := 7
+	trial := NewTrial(client, TrialRef{ExperimentID: "run-usage", TestCaseID: "case-usage"})
+	if err := trial.Start(context.Background()); err != nil {
+		t.Fatalf("start trial: %v", err)
+	}
+	trial.RecordIO(RecordIOOptions{Input: "question", Output: "answer", InputTokens: &inputTokens, OutputTokens: &outputTokens})
+	trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
+	if err := trial.End(context.Background(), nil); err != nil {
+		t.Fatalf("end trial: %v", err)
+	}
+	updateReq := recorder.request(2)
+	if updateReq.Payload["input_tokens"] != float64(inputTokens) || updateReq.Payload["output_tokens"] != float64(outputTokens) {
+		t.Fatalf("expected token usage on trial update, got %#v", updateReq.Payload)
 	}
 }
 
@@ -756,6 +822,60 @@ func TestRecordIOWithoutIOOrUsageDoesNotAttachGenerationID(t *testing.T) {
 	scorePayload := req.Payload["scores"].([]any)[0].(map[string]any)
 	if _, ok := scorePayload["generation_id"]; ok {
 		t.Fatalf("score without recorded IO or usage must not send generation_id: %#v", scorePayload)
+	}
+}
+
+func TestBindGenerationWithRecordIOExportsBoundGeneration(t *testing.T) {
+	exporter := &capturingExperimentExporter{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/api/v1/scores:export" {
+			http.NotFound(w, req)
+			return
+		}
+		if !exporter.hasGeneration("gen-recorded") {
+			http.Error(w, "recorded generation was not flushed before score export", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{{"score_id": "score-1", "accepted": true}},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(Config{
+		Tracer: noop.NewTracerProvider().Tracer("sigil-go-bound-record-io-test"),
+		GenerationExport: GenerationExportConfig{
+			Protocol:        GenerationExportProtocolHTTP,
+			Endpoint:        server.URL + "/api/v1/generations:export",
+			Auth:            AuthConfig{Mode: ExportAuthModeTenant, TenantID: "tenant-a"},
+			Insecure:        BoolPtr(true),
+			BatchSize:       10,
+			FlushInterval:   time.Hour,
+			QueueSize:       100,
+			MaxRetries:      0,
+			PayloadMaxBytes: 1 << 20,
+		},
+		API:                    APIConfig{Endpoint: server.URL},
+		testGenerationExporter: exporter,
+	})
+	t.Cleanup(func() { _ = client.Shutdown(context.Background()) })
+
+	trial := NewTrial(client, TrialRef{ExperimentID: "run-recorded", TestCaseID: "case-recorded"})
+	trial.BindGeneration("gen-recorded", "conv-recorded")
+	trial.RecordIO(RecordIOOptions{Input: "question", Output: "answer", ModelProvider: "example", ModelName: "agent"})
+	trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
+	accepted, err := trial.Flush(context.Background())
+	if err != nil {
+		t.Fatalf("flush trial: %v", err)
+	}
+	if accepted != 1 {
+		t.Fatalf("expected one accepted score, got %d", accepted)
+	}
+	generation := exporter.firstGeneration()
+	if generation == nil || generation.GetId() != "gen-recorded" || generation.GetConversationId() != "conv-recorded" {
+		t.Fatalf("expected recorded bound generation, got %#v", generation)
 	}
 }
 

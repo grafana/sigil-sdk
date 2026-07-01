@@ -739,6 +739,9 @@ func (t *Trial) End(ctx context.Context, err error) error {
 	}
 	cleanupCtx, cancel := experimentCleanupContext(ctx)
 	defer cancel()
+	if err := t.createTrial(cleanupCtx); err != nil {
+		return err
+	}
 	_, flushErr := t.Flush(cleanupCtx)
 	if flushErr != nil {
 		return flushErr
@@ -747,6 +750,9 @@ func (t *Trial) End(ctx context.Context, err error) error {
 }
 
 func (t *Trial) createTrial(ctx context.Context) error {
+	if t == nil || t.client == nil {
+		return ErrNilClient
+	}
 	if t.trialCreated {
 		return nil
 	}
@@ -821,7 +827,6 @@ func (t *Trial) BindGeneration(generationID, conversationID string) *Trial {
 	if generationID != "" {
 		t.generationID = generationID
 		t.generationBound = true
-		t.generationExported = true
 		t.hasGeneration = true
 	}
 	if strings.TrimSpace(conversationID) != "" {
@@ -858,9 +863,11 @@ func (t *Trial) RecordIO(opts RecordIOOptions) *Trial {
 	}
 	if opts.InputTokens != nil {
 		t.io["input_tokens"] = *opts.InputTokens
+		t.usage["input_tokens"] = *opts.InputTokens
 	}
 	if opts.OutputTokens != nil {
 		t.io["output_tokens"] = *opts.OutputTokens
+		t.usage["output_tokens"] = *opts.OutputTokens
 	}
 	if t.hasRecordedGenerationData() {
 		t.hasGeneration = true
@@ -1062,7 +1069,7 @@ func (t *Trial) Fail(errorText string) *Trial {
 }
 
 func (t *Trial) ensureGeneration(ctx context.Context) error {
-	if t.generationExported || t.generationBound || !t.hasRecordedGenerationData() {
+	if t.generationExported || !t.hasRecordedGenerationData() {
 		return nil
 	}
 	caseInput := ""
@@ -1169,7 +1176,7 @@ func acceptedOrError(response *ExportScoresResponse) (int, error) {
 	}
 	rejected := response.Rejected()
 	if len(rejected) == 0 {
-		return response.AcceptedCount() + response.DuplicateCount(), nil
+		return response.AcceptedCount(), nil
 	}
 	parts := make([]string, len(rejected))
 	for i, result := range rejected {
