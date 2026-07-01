@@ -291,8 +291,9 @@ func (e *Experiment) UnmarshalJSON(data []byte) error {
 	type alias Experiment
 	var raw struct {
 		alias
-		ExperimentID string `json:"experiment_id"`
-		RunID        string `json:"run_id"`
+		ExperimentID string          `json:"experiment_id"`
+		RunID        string          `json:"run_id"`
+		Source       json.RawMessage `json:"source"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -303,6 +304,22 @@ func (e *Experiment) UnmarshalJSON(data []byte) error {
 	} else {
 		e.RunID = raw.RunID
 	}
+	if len(raw.Source) == 0 || string(raw.Source) == "null" {
+		return nil
+	}
+	var source string
+	if err := json.Unmarshal(raw.Source, &source); err == nil {
+		e.Source = source
+		return nil
+	}
+	var sourceObject struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+	}
+	if err := json.Unmarshal(raw.Source, &sourceObject); err != nil {
+		return err
+	}
+	e.Source = firstNonBlank(sourceObject.Kind, sourceObject.ID)
 	return nil
 }
 

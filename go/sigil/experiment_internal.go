@@ -25,8 +25,15 @@ func acceptedOrError(response *ExportScoresResponse) (int, error) {
 		return 0, fmt.Errorf("%w: empty response", ErrScoreExportFailed)
 	}
 	rejected := response.Rejected()
-	if len(rejected) == 0 {
+	rejectedCount := len(rejected)
+	if response.RejectedCount > rejectedCount {
+		rejectedCount = response.RejectedCount
+	}
+	if rejectedCount == 0 {
 		return response.AcceptedCount(), nil
+	}
+	if len(rejected) == 0 {
+		return 0, fmt.Errorf("%w: rejected %d score(s)", ErrScoreExportFailed, rejectedCount)
 	}
 	parts := make([]string, len(rejected))
 	for i, result := range rejected {
@@ -34,9 +41,13 @@ func acceptedOrError(response *ExportScoresResponse) (int, error) {
 		if detail == "" {
 			detail = "rejected"
 		}
+		if result.ScoreID == "" {
+			parts[i] = detail
+			continue
+		}
 		parts[i] = result.ScoreID + ": " + detail
 	}
-	return 0, fmt.Errorf("%w: rejected %d score(s): %s", ErrScoreExportFailed, len(rejected), strings.Join(parts, "; "))
+	return 0, fmt.Errorf("%w: rejected %d score(s): %s", ErrScoreExportFailed, rejectedCount, strings.Join(parts, "; "))
 }
 
 func cloneTestSuite(in *TestSuite) *TestSuite {

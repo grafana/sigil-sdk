@@ -209,6 +209,28 @@ func TestExperimentRunWithTrialRequiresTestCaseID(t *testing.T) {
 	}
 }
 
+func TestExperimentRunTrialDefaultEvaluatorCanBeOverridden(t *testing.T) {
+	runEvaluator := Evaluator{EvaluatorID: "run-default", Version: "1", Kind: EvaluatorKindCustom}
+	trialEvaluator := Evaluator{EvaluatorID: "trial-default", Version: "2", Kind: EvaluatorKindHuman}
+	exp := NewExperimentRun(ExperimentOptions{
+		RunID:            "run-1",
+		Name:             "run",
+		DefaultEvaluator: &runEvaluator,
+	})
+
+	trial := exp.TrialID("case-1", WithTrialDefaultEvaluator(trialEvaluator))
+	score := trial.Score("quality", BoolScoreValue(true), ScoreOptions{})
+	if score.EvaluatorID != "trial-default" || score.EvaluatorVersion != "2" || score.EvaluatorKind != string(EvaluatorKindHuman) {
+		t.Fatalf("expected trial evaluator override, got %#v", score)
+	}
+
+	trial = exp.TrialID("case-2")
+	score = trial.Score("quality", BoolScoreValue(true), ScoreOptions{})
+	if score.EvaluatorID != "run-default" || score.EvaluatorVersion != "1" || score.EvaluatorKind != string(EvaluatorKindCustom) {
+		t.Fatalf("expected experiment default evaluator, got %#v", score)
+	}
+}
+
 func TestFinalScoreBoolInfersPassed(t *testing.T) {
 	trial := NewTrial(nil, TrialRef{RunID: "run-1", TestCaseID: "case-1"})
 	score := trial.FinalScore(BoolScoreValue(true), ScoreOptions{})

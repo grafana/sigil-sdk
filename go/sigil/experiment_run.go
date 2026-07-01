@@ -252,10 +252,12 @@ func (r *ExperimentRun) trial(testCaseID, testCaseName string, opts ...TrialOpti
 		ref.SuiteVersion = r.suite.Version
 		ref.SuiteName = firstNonBlank(r.suite.Name, r.Name)
 	}
-	t := NewTrial(r.client, ref, opts...)
+	trialOpts := make([]TrialOption, 0, len(opts)+1)
+	trialOpts = append(trialOpts, WithTrialDefaultEvaluator(r.defaultEvaluator))
+	trialOpts = append(trialOpts, opts...)
+	t := NewTrial(r.client, ref, trialOpts...)
 	t.experiment = r
 	t.candidate = r.candidate
-	t.defaultEvaluator = r.defaultEvaluator
 	return t
 }
 

@@ -165,6 +165,28 @@ func TestCreateExperimentUpsertsExternalRun(t *testing.T) {
 	}
 }
 
+func TestCreateExperimentDecodesSourceObject(t *testing.T) {
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"run": experimentBody(map[string]any{
+		"source": map[string]any{"kind": "sdk", "id": "go"},
+	})})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := newExperimentTestClient(t, server.URL)
+	run, err := client.CreateExperiment(context.Background(), CreateExperimentRequest{
+		RunID:  "run_1",
+		Name:   "PR 123",
+		Source: ExperimentSourceExternal,
+	})
+	if err != nil {
+		t.Fatalf("create experiment: %v", err)
+	}
+	if run.Source != "sdk" {
+		t.Fatalf("expected source kind from object response, got %q", run.Source)
+	}
+}
+
 func TestFinalizeExperimentPostsCompleted(t *testing.T) {
 	recorder := &experimentRecorder{}
 	recorder.push(http.StatusOK, map[string]any{"run": experimentBody(map[string]any{"status": "completed", "score_count": float64(3)})})
@@ -272,6 +294,19 @@ func TestAcceptedOrErrorDoesNotCountDuplicatesAsAccepted(t *testing.T) {
 	}
 	if accepted != 1 {
 		t.Fatalf("expected only newly accepted scores to count, got %d", accepted)
+	}
+}
+
+func TestAcceptedOrErrorFailsAggregateRejections(t *testing.T) {
+	accepted, err := acceptedOrError(&ExportScoresResponse{
+		Accepted:      1,
+		RejectedCount: 2,
+	})
+	if !errors.Is(err, ErrScoreExportFailed) {
+		t.Fatalf("expected score export failure, got accepted=%d err=%v", accepted, err)
+	}
+	if accepted != 0 {
+		t.Fatalf("expected no accepted count on rejection, got %d", accepted)
 	}
 }
 
