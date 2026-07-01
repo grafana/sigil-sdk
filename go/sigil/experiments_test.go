@@ -222,7 +222,7 @@ func TestExportScoresUsesExperimentIDAndTrialID(t *testing.T) {
 		{
 			ScoreID:          "sc2",
 			TrialID:          "trial-1",
-			ExperimentID:     "run_1",
+			RunID:            "run_1",
 			EvaluatorID:      "smoke.reward",
 			EvaluatorVersion: "2026-05-28",
 			ScoreKey:         "pass",
@@ -231,7 +231,7 @@ func TestExportScoresUsesExperimentIDAndTrialID(t *testing.T) {
 		{
 			ScoreID:          "sc3",
 			TrialID:          "trial-1",
-			ExperimentID:     "run_1",
+			RunID:            "run_1",
 			EvaluatorID:      "smoke.reward",
 			EvaluatorVersion: "2026-05-28",
 			ScoreKey:         "bad",
@@ -367,7 +367,8 @@ func TestGetExperimentReportParsesTypedTrialSummary(t *testing.T) {
 			"test_case_snapshot": map[string]any{
 				"test_case_id": "t1",
 				"name":         "Case 1",
-				"input":        map[string]any{"prompt": "2+2"},
+				"input":        "2+2",
+				"expected":     "4",
 			},
 			"summary": map[string]any{
 				"trial_count":     float64(1),
@@ -425,7 +426,7 @@ func TestGetExperimentReportParsesTypedTrialSummary(t *testing.T) {
 		t.Fatalf("unexpected report: %#v", report)
 	}
 	row := report.Rows[0]
-	if row.TestCaseID != "t1" || row.TestCaseSnapshot == nil || row.TestCaseSnapshot.Name != "Case 1" {
+	if row.TestCaseID != "t1" || row.TestCaseSnapshot == nil || row.TestCaseSnapshot.Name != "Case 1" || row.TestCaseSnapshot.Input != "2+2" || row.TestCaseSnapshot.Expected != "4" {
 		t.Fatalf("unexpected typed row: %#v", row)
 	}
 	if len(row.Trials) != 1 || row.Trials[0].Trial.TrialID != "trial-1" || row.Trials[0].FinalScore == nil {
@@ -554,7 +555,7 @@ func TestTrialEndCreatesTrialWhenStartWasSkipped(t *testing.T) {
 	defer server.Close()
 
 	client := newExperimentTestClient(t, server.URL)
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-no-start", TestCaseID: "case-no-start"})
+	trial := NewTrial(client, TrialRef{RunID: "run-no-start", TestCaseID: "case-no-start"})
 	trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
 	if err := trial.End(context.Background(), nil); err != nil {
 		t.Fatalf("end trial without start: %v", err)
@@ -581,7 +582,7 @@ func TestRecordIOTokensAreIncludedInTrialUpdate(t *testing.T) {
 	client := newExperimentTestClient(t, server.URL)
 	inputTokens := 11
 	outputTokens := 7
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-usage", TestCaseID: "case-usage"})
+	trial := NewTrial(client, TrialRef{RunID: "run-usage", TestCaseID: "case-usage"})
 	if err := trial.Start(context.Background()); err != nil {
 		t.Fatalf("start trial: %v", err)
 	}
@@ -605,7 +606,7 @@ func TestTrialEndUsesCleanupContextAfterCallerContextCanceled(t *testing.T) {
 	defer server.Close()
 
 	client := newExperimentTestClient(t, server.URL)
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-canceled", TestCaseID: "case-canceled"})
+	trial := NewTrial(client, TrialRef{RunID: "run-canceled", TestCaseID: "case-canceled"})
 	if err := trial.Start(context.Background()); err != nil {
 		t.Fatalf("start trial: %v", err)
 	}
@@ -637,7 +638,7 @@ func TestTrialEndDoesNotFinalizeWhenScoreFlushFails(t *testing.T) {
 
 	client := newExperimentTestClient(t, server.URL)
 	client.config.GenerationExport.MaxRetries = 0
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-flush-fails", TestCaseID: "case-flush-fails"})
+	trial := NewTrial(client, TrialRef{RunID: "run-flush-fails", TestCaseID: "case-flush-fails"})
 	if err := trial.Start(context.Background()); err != nil {
 		t.Fatalf("start trial: %v", err)
 	}
@@ -654,9 +655,9 @@ func TestTrialEndDoesNotFinalizeWhenScoreFlushFails(t *testing.T) {
 	}
 }
 
-func TestExperimentRunTrialStringWithoutSuiteDoesNotPanic(t *testing.T) {
+func TestExperimentRunTrialIDWithoutSuiteDoesNotPanic(t *testing.T) {
 	exp := NewExperimentRun(ExperimentOptions{RunID: "run-no-suite", Name: "no suite"})
-	trial := exp.Trial("case-1")
+	trial := exp.TrialID("case-1")
 	if trial == nil {
 		t.Fatal("expected trial")
 	}
@@ -665,8 +666,82 @@ func TestExperimentRunTrialStringWithoutSuiteDoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestExperimentRunCopiesSuiteAtBoundary(t *testing.T) {
+	suite := &TestSuite{
+		SuiteID: "suite-1",
+		TestCases: []TestCase{{
+			TestCaseID: "case-1",
+			Tags:       []string{"original"},
+			Metadata:   map[string]any{"key": "value"},
+		}},
+	}
+	exp := NewExperimentRun(ExperimentOptions{RunID: "run-1", Suite: suite})
+
+	suite.TestCases[0].TestCaseID = "mutated"
+	suite.TestCases[0].Tags[0] = "mutated"
+	suite.TestCases[0].Metadata["key"] = "mutated"
+
+	cases := exp.Suite().Cases()
+	if len(cases) != 1 || cases[0].TestCaseID != "case-1" || cases[0].Tags[0] != "original" || cases[0].Metadata["key"] != "value" {
+		t.Fatalf("experiment retained caller-owned suite data: %#v", cases)
+	}
+
+	cases[0].Tags[0] = "caller-mutated"
+	cases[0].Metadata["key"] = "caller-mutated"
+	fresh := exp.Suite().Cases()
+	if fresh[0].Tags[0] != "original" || fresh[0].Metadata["key"] != "value" {
+		t.Fatalf("suite accessor returned mutable internals: %#v", fresh)
+	}
+}
+
+func TestExperimentRunWithTrialEndsLifecycle(t *testing.T) {
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-1"})
+	recorder.push(http.StatusAccepted, map[string]any{"results": []map[string]any{{"score_id": "score-1", "accepted": true}}})
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-1"})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := newExperimentTestClient(t, server.URL)
+	testCase := TestCase{TestCaseID: "case-1", Name: "Case 1", Metadata: map[string]any{"task": "demo"}}
+	exp := NewExperimentRun(ExperimentOptions{Client: client, RunID: "run-1", Name: "run"})
+	evaluator := Evaluator{EvaluatorID: "exact", Version: "1", Kind: EvaluatorKindDeterministic}
+	err := exp.WithTrial(context.Background(), testCase, func(ctx context.Context, trial *Trial) error {
+		run, ok := experimentRunFromContext(ctx)
+		if !ok || run.RunID != "run-1" {
+			t.Fatalf("expected experiment-aware callback context, got run=%#v ok=%v", run, ok)
+		}
+		trial.FinalScore(BoolScoreValue(true), ScoreOptions{Evaluator: &evaluator})
+		return nil
+	}, WithTrialMetadata(testCase.Metadata))
+	if err != nil {
+		t.Fatalf("with trial: %v", err)
+	}
+	if recorder.requestCount() != 3 {
+		t.Fatalf("expected create, score export, update; got %d request(s)", recorder.requestCount())
+	}
+	if got := exp.AcceptedScores(); got != 1 {
+		t.Fatalf("expected one accepted score, got %d", got)
+	}
+	updateReq := recorder.request(2)
+	if updateReq.Payload["status"] != "completed" {
+		t.Fatalf("expected completed trial update, got %#v", updateReq.Payload)
+	}
+}
+
+func TestExperimentRunWithTrialRequiresTestCaseID(t *testing.T) {
+	client := newExperimentTestClient(t, "http://example.invalid")
+	exp := NewExperimentRun(ExperimentOptions{Client: client, RunID: "run-1", Name: "run"})
+	err := exp.WithTrial(context.Background(), TestCase{}, func(context.Context, *Trial) error {
+		return nil
+	})
+	if !errors.Is(err, ErrExperimentValidationFailed) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
 func TestFinalScoreBoolInfersPassed(t *testing.T) {
-	trial := NewTrial(nil, TrialRef{ExperimentID: "run-1", TestCaseID: "case-1"})
+	trial := NewTrial(nil, TrialRef{RunID: "run-1", TestCaseID: "case-1"})
 	score := trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
 	if score.Passed == nil || !*score.Passed {
 		t.Fatalf("expected bool final score to infer passed, got %#v", score.Passed)
@@ -675,7 +750,7 @@ func TestFinalScoreBoolInfersPassed(t *testing.T) {
 		t.Fatalf("expected trial final verdict to be true, got %#v", trial.finalPassed)
 	}
 
-	trial = NewTrial(nil, TrialRef{ExperimentID: "run-1", TestCaseID: "case-2"})
+	trial = NewTrial(nil, TrialRef{RunID: "run-1", TestCaseID: "case-2"})
 	score = trial.Score("final", BoolScoreValue(false), ScoreOptions{})
 	if score.Passed == nil || *score.Passed {
 		t.Fatalf("expected Score(\"final\", bool) to infer failed, got %#v", score.Passed)
@@ -686,7 +761,7 @@ func TestFinalScoreBoolInfersPassed(t *testing.T) {
 }
 
 func TestFinalScoreNumberRequiresExplicitPassed(t *testing.T) {
-	trial := NewTrial(nil, TrialRef{ExperimentID: "run-1", TestCaseID: "case-1"})
+	trial := NewTrial(nil, TrialRef{RunID: "run-1", TestCaseID: "case-1"})
 	score := trial.FinalScore(NumberScoreValue(0.2), ScoreOptions{})
 	if score.Passed != nil {
 		t.Fatalf("expected numeric final score to require explicit passed, got %#v", score.Passed)
@@ -755,7 +830,7 @@ func TestWithExperimentFinalizesWithCleanupContextAfterCancel(t *testing.T) {
 }
 
 func TestTrialRefEnvRoundTrip(t *testing.T) {
-	ref := TrialRef{ExperimentID: "run-4", TestCaseID: "c1", Attempt: 3, SuiteID: "s", SuiteVersion: "2.0.0"}
+	ref := TrialRef{RunID: "run-4", TestCaseID: "c1", Attempt: 3, SuiteID: "s", SuiteVersion: "2.0.0"}
 	env := ref.ToEnv()
 	if env[EnvExperimentID] != "run-4" || env[EnvAttempt] != "3" {
 		t.Fatalf("unexpected env: %#v", env)
@@ -766,7 +841,7 @@ func TestTrialRefEnvRoundTrip(t *testing.T) {
 	t.Setenv(EnvSuiteID, env[EnvSuiteID])
 	t.Setenv(EnvSuiteVersion, env[EnvSuiteVersion])
 	restored, ok := TrialRefFromEnv()
-	if !ok || restored.ExperimentID != "run-4" || restored.TestCaseID != "c1" || restored.Attempt != 3 {
+	if !ok || restored.RunID != "run-4" || restored.TestCaseID != "c1" || restored.Attempt != 3 {
 		t.Fatalf("unexpected ref: %#v ok=%v", restored, ok)
 	}
 }
@@ -835,7 +910,7 @@ func TestRecordIOWithoutIOOrUsageDoesNotAttachGenerationID(t *testing.T) {
 	defer server.Close()
 
 	client := newExperimentTestClient(t, server.URL)
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-empty-io", TestCaseID: "case-empty-io"})
+	trial := NewTrial(client, TrialRef{RunID: "run-empty-io", TestCaseID: "case-empty-io"})
 	trial.RecordIO(RecordIOOptions{
 		ModelProvider: "example",
 		ModelName:     "agent",
@@ -900,7 +975,7 @@ func TestBindGenerationWithRecordIOExportsBoundGeneration(t *testing.T) {
 	})
 	t.Cleanup(func() { _ = client.Shutdown(context.Background()) })
 
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-recorded", TestCaseID: "case-recorded"})
+	trial := NewTrial(client, TrialRef{RunID: "run-recorded", TestCaseID: "case-recorded"})
 	trial.BindGeneration("gen-recorded", "conv-recorded")
 	trial.RecordIO(RecordIOOptions{Input: "question", Output: "answer", ModelProvider: "example", ModelName: "agent"})
 	trial.FinalScore(BoolScoreValue(true), ScoreOptions{})
@@ -968,7 +1043,7 @@ func TestTrialFlushFlushesBoundGenerationBeforeScores(t *testing.T) {
 	}, nil)
 	recorder.End()
 
-	trial := NewTrial(client, TrialRef{ExperimentID: "run-bound", TestCaseID: "case-bound"})
+	trial := NewTrial(client, TrialRef{RunID: "run-bound", TestCaseID: "case-bound"})
 	trial.BindGeneration("gen-bound", "conv-bound")
 	trial.RecordIO(RecordIOOptions{Input: "question", Output: "answer", ModelProvider: "example", ModelName: "agent"})
 	trial.FinalScore(BoolScoreValue(true), ScoreOptions{Evaluator: &Evaluator{EvaluatorID: "exact", Version: "1", Kind: EvaluatorKindDeterministic}})

@@ -67,7 +67,7 @@ func main() {
 		log.Fatalf("run experiment: %v", err)
 	}
 
-	log.Printf("Experiment %q finished: %d score(s) accepted.", run.ExperimentID, run.AcceptedScores())
+	log.Printf("Experiment %q finished: %d score(s) accepted.", run.RunID, run.AcceptedScores())
 	if report, err := run.Report(ctx); err == nil {
 		log.Printf("pass_rate=%.2f final_score_avg=%.2f", report.Summary.PassRate, report.Summary.FinalScoreAvg)
 	}
@@ -75,23 +75,15 @@ func main() {
 }
 
 func runTestCase(ctx context.Context, client *sigil.Client, exp *sigil.ExperimentRun, testCase sigil.TestCase, evaluator sigil.Evaluator) (err error) {
-	trial := exp.Trial(testCase, sigil.WithTrialMetadata(testCase.Metadata))
-	if err := trial.Start(ctx); err != nil {
-		return err
-	}
-	defer func() {
-		if endErr := trial.End(ctx, err); err == nil {
-			err = endErr
+	return exp.WithTrial(ctx, testCase, func(ctx context.Context, trial *sigil.Trial) error {
+		response, err := callRemoteInstrumentedAgent(ctx, client, exp.RunID, testCase)
+		if err != nil {
+			return err
 		}
-	}()
-
-	response, err := callRemoteInstrumentedAgent(ctx, client, exp.ExperimentID, testCase)
-	if err != nil {
-		return err
-	}
-	trial.BindGeneration(response.GenerationID, response.ConversationID)
-	exactMatchScore(trial, testCase, response.Answer, evaluator)
-	return nil
+		trial.BindGeneration(response.GenerationID, response.ConversationID)
+		exactMatchScore(trial, testCase, response.Answer, evaluator)
+		return nil
+	}, sigil.WithTrialMetadata(testCase.Metadata))
 }
 
 func buildClient() *sigil.Client {

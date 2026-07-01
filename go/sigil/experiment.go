@@ -75,19 +75,19 @@ func (s *TestSuite) Cases() []TestCase {
 	if s == nil {
 		return nil
 	}
-	return s.TestCases
+	return cloneTestCases(s.TestCases)
 }
 
-func (s *TestSuite) Case(testCaseID string) *TestCase {
+func (s *TestSuite) Case(testCaseID string) (TestCase, bool) {
 	if s == nil {
-		return nil
+		return TestCase{}, false
 	}
 	for i := range s.TestCases {
 		if s.TestCases[i].TestCaseID == testCaseID {
-			return &s.TestCases[i]
+			return cloneTestCase(s.TestCases[i]), true
 		}
 	}
-	return nil
+	return TestCase{}, false
 }
 
 type Candidate struct {
@@ -155,7 +155,7 @@ func NormalizeEvaluatorKind(kind string) EvaluatorKind {
 }
 
 type TrialRef struct {
-	ExperimentID string
+	RunID        string
 	TestCaseID   string
 	Attempt      int
 	SuiteID      string
@@ -165,17 +165,13 @@ type TrialRef struct {
 	TrajectoryID string
 }
 
-func (r TrialRef) RunID() string {
-	return r.ExperimentID
-}
-
 func (r TrialRef) ToJSON() map[string]any {
 	attempt := r.Attempt
-	if attempt == 0 {
+	if attempt <= 0 {
 		attempt = 1
 	}
 	return map[string]any{
-		"experiment_id":  r.ExperimentID,
+		"experiment_id":  r.RunID,
 		"test_case_id":   r.TestCaseID,
 		"attempt":        attempt,
 		"suite_id":       r.SuiteID,
@@ -198,8 +194,11 @@ func TrialRefFromJSON(payload map[string]any) TrialRef {
 			attempt = parsed
 		}
 	}
+	if attempt <= 0 {
+		attempt = 1
+	}
 	return TrialRef{
-		ExperimentID: strings.TrimSpace(firstString(payload["experiment_id"], payload["run_id"])),
+		RunID:        strings.TrimSpace(firstString(payload["experiment_id"], payload["run_id"])),
 		TestCaseID:   strings.TrimSpace(firstString(payload["test_case_id"])),
 		Attempt:      attempt,
 		SuiteID:      strings.TrimSpace(firstString(payload["suite_id"])),
@@ -212,11 +211,11 @@ func TrialRefFromJSON(payload map[string]any) TrialRef {
 
 func (r TrialRef) ToEnv() map[string]string {
 	attempt := r.Attempt
-	if attempt == 0 {
+	if attempt <= 0 {
 		attempt = 1
 	}
 	env := map[string]string{
-		EnvExperimentID: r.ExperimentID,
+		EnvExperimentID: r.RunID,
 		EnvTestCaseID:   r.TestCaseID,
 		EnvAttempt:      strconv.Itoa(attempt),
 	}
@@ -243,7 +242,7 @@ func TrialRefFromEnv() (*TrialRef, bool) {
 		attempt = parsed
 	}
 	return &TrialRef{
-		ExperimentID: experimentID,
+		RunID:        experimentID,
 		TestCaseID:   testCaseID,
 		Attempt:      attempt,
 		SuiteID:      strings.TrimSpace(os.Getenv(EnvSuiteID)),
@@ -253,25 +252,23 @@ func TrialRefFromEnv() (*TrialRef, bool) {
 }
 
 type ExperimentOptions struct {
-	Client              *Client
-	ExperimentID        string
-	RunID               string
-	Name                string
-	Suite               *TestSuite
-	Candidate           *Candidate
-	DefaultEvaluator    *Evaluator
-	Description         string
-	Tags                []string
-	Metadata            map[string]any
-	AutoFinalize        *bool
-	UseExperimentalOTel bool
+	Client           *Client
+	RunID            string
+	Name             string
+	Suite            *TestSuite
+	Candidate        *Candidate
+	DefaultEvaluator *Evaluator
+	Description      string
+	Tags             []string
+	Metadata         map[string]any
+	AutoFinalize     *bool
 }
 
 type ExperimentRun struct {
 	client           *Client
-	ExperimentID     string
+	RunID            string
 	Name             string
-	Suite            *TestSuite
+	suite            *TestSuite
 	candidate        *Candidate
 	defaultEvaluator Evaluator
 	description      string
@@ -289,13 +286,13 @@ type ExperimentRun struct {
 }
 
 func NewExperimentRun(opts ExperimentOptions) *ExperimentRun {
-	experimentID := firstNonBlank(opts.ExperimentID, opts.RunID)
-	if experimentID == "" {
-		experimentID = StableID("exp", opts.Name, experimentRandomHex(8))
+	runID := strings.TrimSpace(opts.RunID)
+	if runID == "" {
+		runID = StableID("exp", opts.Name, experimentRandomHex(8))
 	}
 	name := opts.Name
 	if name == "" {
-		name = experimentID
+		name = runID
 	}
 	defaultEvaluator := Evaluator{EvaluatorID: "sdk", Version: "0", Kind: EvaluatorKindCustom}
 	if opts.DefaultEvaluator != nil {
@@ -307,10 +304,10 @@ func NewExperimentRun(opts ExperimentOptions) *ExperimentRun {
 	}
 	return &ExperimentRun{
 		client:           opts.Client,
-		ExperimentID:     experimentID,
+		RunID:            runID,
 		Name:             name,
-		Suite:            opts.Suite,
-		candidate:        opts.Candidate,
+		suite:            cloneTestSuite(opts.Suite),
+		candidate:        cloneCandidate(opts.Candidate),
 		defaultEvaluator: defaultEvaluator,
 		description:      opts.Description,
 		tags:             append([]string(nil), opts.Tags...),
@@ -328,19 +325,19 @@ func (r *ExperimentRun) Enter(ctx context.Context) error {
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	if r.Suite != nil {
-		if r.Suite.SuiteID != "" {
-			metadata["suite_id"] = r.Suite.SuiteID
+	if r.suite != nil {
+		if r.suite.SuiteID != "" {
+			metadata["suite_id"] = r.suite.SuiteID
 		}
-		if r.Suite.Version != "" {
-			metadata["suite_version"] = r.Suite.Version
+		if r.suite.Version != "" {
+			metadata["suite_version"] = r.suite.Version
 		}
 	}
 	if r.candidate != nil {
 		maps.Copy(metadata, r.candidate.AsMetadata())
 	}
 	_, err := r.client.CreateExperiment(ctx, CreateExperimentRequest{
-		RunID:       r.ExperimentID,
+		RunID:       r.RunID,
 		Name:        r.Name,
 		Source:      ExperimentSourceExternal,
 		Description: r.description,
@@ -375,7 +372,7 @@ func WithExperiment(ctx context.Context, opts ExperimentOptions, fn func(context
 	defer cancel()
 	if err != nil {
 		if finalizeErr := run.Finalize(finalizeCtx, ExperimentStatusFailed, err.Error()); finalizeErr != nil {
-			return run, errors.Join(err, finalizeErr)
+			return run, errors.Join(err, fmt.Errorf("finalize experiment %q: %w", run.RunID, finalizeErr))
 		}
 		return run, err
 	}
@@ -402,47 +399,89 @@ func (r *ExperimentRun) Context(ctx context.Context) context.Context {
 	return withExperimentRun(ctx, r)
 }
 
-func (r *ExperimentRun) Trial(testCase any, opts ...TrialOption) *Trial {
-	testCaseID, testCaseName := r.resolveTestCase(testCase)
+func (r *ExperimentRun) Suite() *TestSuite {
+	if r == nil {
+		return nil
+	}
+	return cloneTestSuite(r.suite)
+}
+
+func (r *ExperimentRun) Trial(testCase TestCase, opts ...TrialOption) *Trial {
+	testCaseID := strings.TrimSpace(testCase.TestCaseID)
+	testCaseName := firstNonBlank(testCase.Name, testCaseID)
+	return r.trial(testCaseID, testCaseName, opts...)
+}
+
+func (r *ExperimentRun) TrialID(testCaseID string, opts ...TrialOption) *Trial {
+	testCaseID = strings.TrimSpace(testCaseID)
+	testCaseName := testCaseID
+	if r != nil && r.suite != nil {
+		if existing, ok := r.suite.Case(testCaseID); ok {
+			testCaseName = firstNonBlank(existing.Name, testCaseID)
+		}
+	}
+	return r.trial(testCaseID, testCaseName, opts...)
+}
+
+func (r *ExperimentRun) WithTrial(ctx context.Context, testCase TestCase, fn func(context.Context, *Trial) error, opts ...TrialOption) (err error) {
+	if fn == nil {
+		return fmt.Errorf("%w: trial callback is required", ErrExperimentValidationFailed)
+	}
+	ctx = r.Context(ctx)
+	trial := r.Trial(testCase, opts...)
+	if err := trial.Start(ctx); err != nil {
+		return fmt.Errorf("start trial %q: %w", trial.ref.TestCaseID, err)
+	}
+	defer func() {
+		if endErr := trial.End(ctx, err); endErr != nil {
+			err = errors.Join(err, fmt.Errorf("end trial %q: %w", trial.ref.TestCaseID, endErr))
+		}
+	}()
+	return fn(ctx, trial)
+}
+
+func (r *ExperimentRun) WithTrialID(ctx context.Context, testCaseID string, fn func(context.Context, *Trial) error, opts ...TrialOption) (err error) {
+	if fn == nil {
+		return fmt.Errorf("%w: trial callback is required", ErrExperimentValidationFailed)
+	}
+	ctx = r.Context(ctx)
+	trial := r.TrialID(testCaseID, opts...)
+	if err := trial.Start(ctx); err != nil {
+		return fmt.Errorf("start trial %q: %w", trial.ref.TestCaseID, err)
+	}
+	defer func() {
+		if endErr := trial.End(ctx, err); endErr != nil {
+			err = errors.Join(err, fmt.Errorf("end trial %q: %w", trial.ref.TestCaseID, endErr))
+		}
+	}()
+	return fn(ctx, trial)
+}
+
+func (r *ExperimentRun) trial(testCaseID, testCaseName string, opts ...TrialOption) *Trial {
+	if r == nil {
+		return NewTrial(nil, TrialRef{
+			TestCaseID:   strings.TrimSpace(testCaseID),
+			Attempt:      1,
+			TestCaseName: firstNonBlank(testCaseName, strings.TrimSpace(testCaseID)),
+		}, opts...)
+	}
 	ref := TrialRef{
-		ExperimentID: r.ExperimentID,
-		TestCaseID:   testCaseID,
+		RunID:        r.RunID,
+		TestCaseID:   strings.TrimSpace(testCaseID),
 		Attempt:      1,
 		SuiteName:    r.Name,
-		TestCaseName: testCaseName,
+		TestCaseName: firstNonBlank(testCaseName, strings.TrimSpace(testCaseID)),
 	}
-	if r.Suite != nil {
-		ref.SuiteID = r.Suite.SuiteID
-		ref.SuiteVersion = r.Suite.Version
-		ref.SuiteName = firstNonBlank(r.Suite.Name, r.Name)
+	if r.suite != nil {
+		ref.SuiteID = r.suite.SuiteID
+		ref.SuiteVersion = r.suite.Version
+		ref.SuiteName = firstNonBlank(r.suite.Name, r.Name)
 	}
 	t := NewTrial(r.client, ref, opts...)
 	t.experiment = r
 	t.candidate = r.candidate
 	t.defaultEvaluator = r.defaultEvaluator
 	return t
-}
-
-func (r *ExperimentRun) resolveTestCase(testCase any) (string, string) {
-	switch tc := testCase.(type) {
-	case TestCase:
-		return tc.TestCaseID, firstNonBlank(tc.Name, tc.TestCaseID)
-	case *TestCase:
-		if tc == nil {
-			return "", ""
-		}
-		return tc.TestCaseID, firstNonBlank(tc.Name, tc.TestCaseID)
-	case string:
-		if r != nil && r.Suite != nil {
-			if existing := r.Suite.Case(tc); existing != nil {
-				return tc, firstNonBlank(existing.Name, tc)
-			}
-		}
-		return tc, tc
-	default:
-		id := fmt.Sprint(testCase)
-		return id, id
-	}
 }
 
 func (r *ExperimentRun) Finalize(ctx context.Context, status ExperimentStatus, errorText string) error {
@@ -457,7 +496,7 @@ func (r *ExperimentRun) Finalize(ctx context.Context, status ExperimentStatus, e
 	scoreCount := r.accepted
 	r.status = string(status)
 	r.mu.Unlock()
-	_, err := r.client.FinalizeExperiment(ctx, r.ExperimentID, status, CompleteExperimentOptions{ScoreCount: &scoreCount, Error: errorText})
+	_, err := r.client.FinalizeExperiment(ctx, r.RunID, status, CompleteExperimentOptions{ScoreCount: &scoreCount, Error: errorText})
 	if err != nil {
 		return err
 	}
@@ -471,14 +510,14 @@ func (r *ExperimentRun) Report(ctx context.Context) (*ExperimentReport, error) {
 	if r == nil || r.client == nil {
 		return nil, ErrNilClient
 	}
-	return r.client.GetExperimentReport(ctx, r.ExperimentID)
+	return r.client.GetExperimentReport(ctx, r.RunID)
 }
 
 func (r *ExperimentRun) URL() string {
 	if r == nil || r.client == nil {
 		return ""
 	}
-	return r.client.ExperimentURL(r.ExperimentID)
+	return r.client.ExperimentURL(r.RunID)
 }
 
 func (r *ExperimentRun) AcceptedScores() int {
@@ -574,7 +613,7 @@ func (r *ExperimentRun) prepareGeneration(start GenerationStart) GenerationStart
 		conversationID = strings.TrimSpace(r.activeConversationID)
 	}
 	if conversationID == "" {
-		conversationID = StableID("conv", r.ExperimentID, experimentRandomHex(8))
+		conversationID = StableID("conv", r.RunID, experimentRandomHex(8))
 	}
 	r.activeConversationID = conversationID
 	r.mu.Unlock()
@@ -584,14 +623,14 @@ func (r *ExperimentRun) prepareGeneration(start GenerationStart) GenerationStart
 	if tags == nil {
 		tags = map[string]string{}
 	}
-	tags[ExperimentRunIDTag] = r.ExperimentID
+	tags[ExperimentRunIDTag] = r.RunID
 	start.Tags = tags
 
 	metadata := cloneMetadata(start.Metadata)
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	metadata[ExperimentRunIDMetadataKey] = r.ExperimentID
+	metadata[ExperimentRunIDMetadataKey] = r.RunID
 	start.Metadata = metadata
 
 	if start.AgentName == "" && r.candidate != nil {
@@ -630,8 +669,8 @@ func WithTrialAttempt(attempt int) TrialOption {
 	return func(t *Trial) {
 		if attempt > 0 {
 			t.ref.Attempt = attempt
-			t.trialID = StableID("trial", t.ref.ExperimentID, t.ref.TestCaseID, t.ref.Attempt)
-			t.generationID = StableID("gen", t.ref.ExperimentID, t.ref.TestCaseID, t.ref.Attempt)
+			t.trialID = StableID("trial", t.ref.RunID, t.ref.TestCaseID, t.ref.Attempt)
+			t.generationID = StableID("gen", t.ref.RunID, t.ref.TestCaseID, t.ref.Attempt)
 		}
 	}
 }
@@ -681,7 +720,9 @@ type Trial struct {
 }
 
 func NewTrial(client *Client, ref TrialRef, opts ...TrialOption) *Trial {
-	if ref.Attempt == 0 {
+	ref.RunID = strings.TrimSpace(ref.RunID)
+	ref.TestCaseID = strings.TrimSpace(ref.TestCaseID)
+	if ref.Attempt <= 0 {
 		ref.Attempt = 1
 	}
 	t := &Trial{
@@ -689,9 +730,9 @@ func NewTrial(client *Client, ref TrialRef, opts ...TrialOption) *Trial {
 		ref:              ref,
 		defaultEvaluator: Evaluator{EvaluatorID: "sdk", Version: "0", Kind: EvaluatorKindCustom},
 		metadata:         map[string]any{},
-		trialID:          StableID("trial", ref.ExperimentID, ref.TestCaseID, ref.Attempt),
+		trialID:          StableID("trial", ref.RunID, ref.TestCaseID, ref.Attempt),
 		status:           TrialStatusRunning,
-		generationID:     StableID("gen", ref.ExperimentID, ref.TestCaseID, ref.Attempt),
+		generationID:     StableID("gen", ref.RunID, ref.TestCaseID, ref.Attempt),
 		io:               map[string]any{},
 		usage:            map[string]any{},
 	}
@@ -713,6 +754,12 @@ func NewTrialFromRef(client *Client, ref *TrialRef, opts ...TrialOption) (*Trial
 func (t *Trial) Start(ctx context.Context) error {
 	if t == nil || t.client == nil {
 		return ErrNilClient
+	}
+	if t.ref.RunID == "" {
+		return fmt.Errorf("%w: run_id is required", ErrExperimentValidationFailed)
+	}
+	if t.ref.TestCaseID == "" {
+		return fmt.Errorf("%w: test_case_id is required", ErrExperimentValidationFailed)
 	}
 	t.started = time.Now()
 	return t.createTrial(ctx)
@@ -744,6 +791,8 @@ func (t *Trial) End(ctx context.Context, err error) error {
 	}
 	_, flushErr := t.Flush(cleanupCtx)
 	if flushErr != nil {
+		t.status = TrialStatusErrored
+		t.errorText = flushErr.Error()
 		return flushErr
 	}
 	return t.finalizeTrial(cleanupCtx)
@@ -766,7 +815,7 @@ func (t *Trial) createTrial(ctx context.Context) error {
 	if len(metadata) == 0 {
 		metadata = nil
 	}
-	_, err := t.client.UpsertTrial(ctx, t.ref.ExperimentID, UpsertTrialRequest{
+	_, err := t.client.UpsertTrial(ctx, t.ref.RunID, UpsertTrialRequest{
 		TrialID:        t.trialID,
 		TestCaseID:     t.ref.TestCaseID,
 		Attempt:        t.ref.Attempt,
@@ -810,7 +859,7 @@ func (t *Trial) finalizeTrial(ctx context.Context) error {
 		ms := int(time.Since(t.started).Milliseconds())
 		req.DurationMillis = &ms
 	}
-	_, err := t.client.UpdateTrial(ctx, t.ref.ExperimentID, t.trialID, req)
+	_, err := t.client.UpdateTrial(ctx, t.ref.RunID, t.trialID, req)
 	return err
 }
 
@@ -875,7 +924,7 @@ func (t *Trial) RecordIO(opts RecordIOOptions) *Trial {
 	if t.hasRecordedGenerationData() {
 		t.hasGeneration = true
 		if t.conversationID == "" {
-			t.conversationID = StableID("conv", t.ref.ExperimentID, t.ref.TestCaseID, t.ref.Attempt)
+			t.conversationID = StableID("conv", t.ref.RunID, t.ref.TestCaseID, t.ref.Attempt)
 		}
 	}
 	return t
@@ -924,7 +973,7 @@ func (t *Trial) Score(scoreKey string, value ScoreValue, opts ScoreOptions) Scor
 	if opts.Evaluator != nil {
 		ev = opts.Evaluator.normalized()
 	}
-	scoreID := StableID("score", t.ref.ExperimentID, t.trialID, scoreKey, ev.EvaluatorID)
+	scoreID := StableID("score", t.ref.RunID, t.trialID, scoreKey, ev.EvaluatorID)
 	metadata := map[string]any{}
 	maps.Copy(metadata, t.metadata)
 	maps.Copy(metadata, opts.Metadata)
@@ -947,7 +996,7 @@ func (t *Trial) Score(scoreKey string, value ScoreValue, opts ScoreOptions) Scor
 		ConversationID:       t.conversationID,
 		TraceID:              t.traceID,
 		SpanID:               t.spanID,
-		ExperimentID:         t.ref.ExperimentID,
+		RunID:                t.ref.RunID,
 		TestCaseID:           t.ref.TestCaseID,
 		GraderConversationID: opts.GraderConversationID,
 		GraderGenerationID:   opts.GraderGenerationID,
@@ -955,7 +1004,7 @@ func (t *Trial) Score(scoreKey string, value ScoreValue, opts ScoreOptions) Scor
 		Passed:               opts.Passed,
 		Explanation:          opts.Explanation,
 		Metadata:             metadata,
-		Source:               &ScoreSource{Kind: "experiment", ID: t.ref.ExperimentID},
+		Source:               &ScoreSource{Kind: "experiment", ID: t.ref.RunID},
 	}
 	t.buffer = append(t.buffer, item)
 	if scoreKey == "final" {
@@ -1040,7 +1089,7 @@ func (t *Trial) Artifact(ctx context.Context, opts ArtifactOptions) (*TrialArtif
 			mime = "text/plain"
 		}
 	}
-	record, err := t.client.UploadTrialArtifact(ctx, t.ref.ExperimentID, t.trialID, TrialArtifactUpload{
+	record, err := t.client.UploadTrialArtifact(ctx, t.ref.RunID, t.trialID, TrialArtifactUpload{
 		Name:    opts.Name,
 		Kind:    kind,
 		MIME:    mime,
@@ -1082,8 +1131,8 @@ func (t *Trial) ensureGeneration(ctx context.Context) error {
 		return nil
 	}
 	caseInput := ""
-	if t.experiment != nil && t.experiment.Suite != nil {
-		if tc := t.experiment.Suite.Case(t.ref.TestCaseID); tc != nil && tc.Input != nil {
+	if t.experiment != nil && t.experiment.suite != nil {
+		if tc, ok := t.experiment.suite.Case(t.ref.TestCaseID); ok && tc.Input != nil {
 			caseInput = fmt.Sprint(tc.Input)
 		}
 	}
@@ -1096,9 +1145,9 @@ func (t *Trial) ensureGeneration(ctx context.Context) error {
 		Model:          ModelRef{Provider: provider, Name: model},
 		AgentName:      agentName,
 		OperationName:  "invoke_agent",
-		Tags:           map[string]string{"experiment.run_id": t.ref.ExperimentID, "task_id": t.ref.TestCaseID},
+		Tags:           map[string]string{"experiment.run_id": t.ref.RunID, "task_id": t.ref.TestCaseID},
 		Metadata: map[string]any{
-			"experiment_run_id": t.ref.ExperimentID,
+			"experiment_run_id": t.ref.RunID,
 			"task_id":           t.ref.TestCaseID,
 			"trial_id":          t.trialID,
 			"attempt":           t.ref.Attempt,
@@ -1196,6 +1245,41 @@ func acceptedOrError(response *ExportScoresResponse) (int, error) {
 		parts[i] = result.ScoreID + ": " + detail
 	}
 	return 0, fmt.Errorf("%w: rejected %d score(s): %s", ErrScoreExportFailed, len(rejected), strings.Join(parts, "; "))
+}
+
+func cloneTestSuite(in *TestSuite) *TestSuite {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Tags = append([]string(nil), in.Tags...)
+	out.TestCases = cloneTestCases(in.TestCases)
+	return &out
+}
+
+func cloneTestCases(in []TestCase) []TestCase {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]TestCase, len(in))
+	for i := range in {
+		out[i] = cloneTestCase(in[i])
+	}
+	return out
+}
+
+func cloneTestCase(in TestCase) TestCase {
+	in.Tags = append([]string(nil), in.Tags...)
+	in.Metadata = cloneMetadata(in.Metadata)
+	return in
+}
+
+func cloneCandidate(in *Candidate) *Candidate {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 func experimentRandomHex(n int) string {
