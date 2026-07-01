@@ -809,6 +809,9 @@ func (t *Trial) End(ctx context.Context, err error) error {
 	if flushErr != nil {
 		t.status = TrialStatusErrored
 		t.errorText = flushErr.Error()
+		if finalizeErr := t.finalizeTrial(cleanupCtx); finalizeErr != nil {
+			return errors.Join(flushErr, fmt.Errorf("finalize trial %q: %w", t.trialID, finalizeErr))
+		}
 		return flushErr
 	}
 	return t.finalizeTrial(cleanupCtx)

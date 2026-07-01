@@ -628,7 +628,7 @@ func TestTrialEndUsesCleanupContextAfterCallerContextCanceled(t *testing.T) {
 	}
 }
 
-func TestTrialEndDoesNotFinalizeWhenScoreFlushFails(t *testing.T) {
+func TestTrialEndFinalizesFailedWhenScoreFlushFails(t *testing.T) {
 	recorder := &experimentRecorder{}
 	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-flush-fails"})
 	recorder.push(http.StatusInternalServerError, map[string]any{"error": "score export failed"})
@@ -647,11 +647,18 @@ func TestTrialEndDoesNotFinalizeWhenScoreFlushFails(t *testing.T) {
 	if err := trial.End(context.Background(), nil); err == nil {
 		t.Fatal("expected score flush error")
 	}
-	if recorder.requestCount() != 2 {
-		t.Fatalf("expected trial create and score export only, got %d requests", recorder.requestCount())
+	if recorder.requestCount() != 3 {
+		t.Fatalf("expected trial create, score export, and failed update, got %d requests", recorder.requestCount())
 	}
 	if req := recorder.request(1); req.Method != http.MethodPost || req.Path != "/api/v1/scores:export" {
 		t.Fatalf("unexpected score export request: %#v", req)
+	}
+	updateReq := recorder.request(2)
+	if updateReq.Method != http.MethodPatch || updateReq.Path != "/api/v1/experiment-runs/run-flush-fails/trials/"+trial.trialID {
+		t.Fatalf("unexpected trial update request: %#v", updateReq)
+	}
+	if updateReq.Payload["status"] != "failed" || updateReq.Payload["error"] == "" {
+		t.Fatalf("expected failed trial update with error, got %#v", updateReq.Payload)
 	}
 }
 
