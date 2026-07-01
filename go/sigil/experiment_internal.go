@@ -25,10 +25,7 @@ func acceptedOrError(response *ExportScoresResponse) (int, error) {
 		return 0, fmt.Errorf("%w: empty response", ErrScoreExportFailed)
 	}
 	rejected := response.Rejected()
-	rejectedCount := len(rejected)
-	if response.RejectedCount > rejectedCount {
-		rejectedCount = response.RejectedCount
-	}
+	rejectedCount := max(len(rejected), response.RejectedCount)
 	if rejectedCount == 0 {
 		return response.AcceptedCount(), nil
 	}
