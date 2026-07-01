@@ -729,6 +729,68 @@ func TestExperimentRunWithTrialEndsLifecycle(t *testing.T) {
 	}
 }
 
+func TestExperimentRunWithTrialFinalizesFailedOnPanic(t *testing.T) {
+	type trialRunner func(*ExperimentRun, context.Context, TestCase, func(context.Context, *Trial) error) error
+	tests := []struct {
+		name string
+		run  trialRunner
+	}{
+		{
+			name: "WithTrial",
+			run: func(exp *ExperimentRun, ctx context.Context, testCase TestCase, fn func(context.Context, *Trial) error) error {
+				return exp.WithTrial(ctx, testCase, fn)
+			},
+		},
+		{
+			name: "WithTrialID",
+			run: func(exp *ExperimentRun, ctx context.Context, testCase TestCase, fn func(context.Context, *Trial) error) error {
+				return exp.WithTrialID(ctx, testCase.TestCaseID, fn)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := &experimentRecorder{}
+			recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-1"})
+			recorder.push(http.StatusAccepted, map[string]any{"results": []map[string]any{{"score_id": "score-1", "accepted": true}}})
+			recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-1"})
+			server := httptest.NewServer(recorder.handler(t))
+			defer server.Close()
+
+			client := newExperimentTestClient(t, server.URL)
+			exp := NewExperimentRun(ExperimentOptions{Client: client, RunID: "run-1", Name: "run"})
+			testCase := TestCase{TestCaseID: "case-1", Name: "Case 1"}
+			evaluator := Evaluator{EvaluatorID: "exact", Version: "1", Kind: EvaluatorKindDeterministic}
+
+			var recovered any
+			func() {
+				defer func() {
+					recovered = recover()
+				}()
+				_ = tt.run(exp, context.Background(), testCase, func(_ context.Context, trial *Trial) error {
+					trial.FinalScore(BoolScoreValue(true), ScoreOptions{Evaluator: &evaluator})
+					panic("boom")
+				})
+			}()
+
+			if recovered != "boom" {
+				t.Fatalf("expected panic to be rethrown, got %#v", recovered)
+			}
+			if recorder.requestCount() != 3 {
+				t.Fatalf("expected create, score export, update; got %d request(s)", recorder.requestCount())
+			}
+			updateReq := recorder.request(2)
+			if updateReq.Payload["status"] != "failed" {
+				t.Fatalf("expected failed trial update, got %#v", updateReq.Payload)
+			}
+			if updateReq.Payload["error"] != "trial callback panic: boom" {
+				t.Fatalf("expected panic error in trial update, got %#v", updateReq.Payload)
+			}
+		})
+	}
+}
+
 func TestExperimentRunWithTrialRequiresTestCaseID(t *testing.T) {
 	client := newExperimentTestClient(t, "http://example.invalid")
 	exp := NewExperimentRun(ExperimentOptions{Client: client, RunID: "run-1", Name: "run"})

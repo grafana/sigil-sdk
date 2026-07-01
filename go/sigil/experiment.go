@@ -433,8 +433,16 @@ func (r *ExperimentRun) WithTrial(ctx context.Context, testCase TestCase, fn fun
 		return fmt.Errorf("start trial %q: %w", trial.ref.TestCaseID, err)
 	}
 	defer func() {
-		if endErr := trial.End(ctx, err); endErr != nil {
+		recovered := recover()
+		trialErr := err
+		if recovered != nil {
+			trialErr = fmt.Errorf("trial callback panic: %v", recovered)
+		}
+		if endErr := trial.End(ctx, trialErr); endErr != nil {
 			err = errors.Join(err, fmt.Errorf("end trial %q: %w", trial.ref.TestCaseID, endErr))
+		}
+		if recovered != nil {
+			panic(recovered)
 		}
 	}()
 	return fn(ctx, trial)
@@ -450,8 +458,16 @@ func (r *ExperimentRun) WithTrialID(ctx context.Context, testCaseID string, fn f
 		return fmt.Errorf("start trial %q: %w", trial.ref.TestCaseID, err)
 	}
 	defer func() {
-		if endErr := trial.End(ctx, err); endErr != nil {
+		recovered := recover()
+		trialErr := err
+		if recovered != nil {
+			trialErr = fmt.Errorf("trial callback panic: %v", recovered)
+		}
+		if endErr := trial.End(ctx, trialErr); endErr != nil {
 			err = errors.Join(err, fmt.Errorf("end trial %q: %w", trial.ref.TestCaseID, endErr))
+		}
+		if recovered != nil {
+			panic(recovered)
 		}
 	}()
 	return fn(ctx, trial)
