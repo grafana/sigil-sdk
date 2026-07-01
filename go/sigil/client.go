@@ -304,6 +304,9 @@ type Client struct {
 	workerOnce   sync.Once
 	shutdownOnce sync.Once
 	workerDone   chan struct{}
+
+	generationMu  sync.RWMutex
+	generationIDs map[string]struct{}
 }
 
 // GenerationRecorder records and closes one in-flight generation span.
@@ -448,9 +451,10 @@ func NewClient(config Config) *Client {
 	}
 
 	client := &Client{
-		config:     cfg,
-		flushReq:   make(chan chan error),
-		workerDone: make(chan struct{}),
+		config:        cfg,
+		flushReq:      make(chan chan error),
+		workerDone:    make(chan struct{}),
+		generationIDs: make(map[string]struct{}),
 	}
 
 	if cfg.Tracer != nil {
@@ -1443,7 +1447,30 @@ func (c *Client) persistGeneration(generation Generation) error {
 	if err := c.enqueueGeneration(generation); err != nil {
 		return fmt.Errorf("%w: %w", errGenerationEnqueue, err)
 	}
+	c.recordGenerationID(generation.ID)
 	return nil
+}
+
+func (c *Client) recordGenerationID(generationID string) {
+	if c == nil || generationID == "" {
+		return
+	}
+	c.generationMu.Lock()
+	defer c.generationMu.Unlock()
+	if c.generationIDs == nil {
+		c.generationIDs = make(map[string]struct{})
+	}
+	c.generationIDs[generationID] = struct{}{}
+}
+
+func (c *Client) hasRecordedGenerationID(generationID string) bool {
+	if c == nil || generationID == "" {
+		return false
+	}
+	c.generationMu.RLock()
+	defer c.generationMu.RUnlock()
+	_, ok := c.generationIDs[generationID]
+	return ok
 }
 
 func (c *Client) now() time.Time {

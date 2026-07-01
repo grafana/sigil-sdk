@@ -814,6 +814,20 @@ func (e *capturingExperimentExporter) hasGeneration(generationID string) bool {
 	return false
 }
 
+func (e *capturingExperimentExporter) generationCount(generationID string) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	count := 0
+	for _, request := range e.requests {
+		for _, generation := range request.GetGenerations() {
+			if generation.GetId() == generationID {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func TestRecordIOWithoutIOOrUsageDoesNotAttachGenerationID(t *testing.T) {
 	recorder := &experimentRecorder{}
 	recorder.push(http.StatusAccepted, map[string]any{"results": []map[string]any{{"score_id": "score-1", "accepted": true}}})
@@ -956,6 +970,7 @@ func TestTrialFlushFlushesBoundGenerationBeforeScores(t *testing.T) {
 
 	trial := NewTrial(client, TrialRef{ExperimentID: "run-bound", TestCaseID: "case-bound"})
 	trial.BindGeneration("gen-bound", "conv-bound")
+	trial.RecordIO(RecordIOOptions{Input: "question", Output: "answer", ModelProvider: "example", ModelName: "agent"})
 	trial.FinalScore(BoolScoreValue(true), ScoreOptions{Evaluator: &Evaluator{EvaluatorID: "exact", Version: "1", Kind: EvaluatorKindDeterministic}})
 	accepted, err := trial.Flush(ctx)
 	if err != nil {
@@ -966,6 +981,9 @@ func TestTrialFlushFlushesBoundGenerationBeforeScores(t *testing.T) {
 	}
 	if !exporter.hasGeneration("gen-bound") {
 		t.Fatal("expected bound generation to be flushed")
+	}
+	if got := exporter.generationCount("gen-bound"); got != 1 {
+		t.Fatalf("expected bound generation to be exported once, got %d", got)
 	}
 }
 

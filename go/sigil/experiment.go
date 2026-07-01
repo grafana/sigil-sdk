@@ -1074,6 +1074,13 @@ func (t *Trial) ensureGeneration(ctx context.Context) error {
 	if t.generationExported || !t.hasRecordedGenerationData() {
 		return nil
 	}
+	if t.generationBound && t.client.hasRecordedGenerationID(t.generationID) {
+		if err := t.client.Flush(ctx); err != nil {
+			return err
+		}
+		t.generationExported = true
+		return nil
+	}
 	caseInput := ""
 	if t.experiment != nil && t.experiment.Suite != nil {
 		if tc := t.experiment.Suite.Case(t.ref.TestCaseID); tc != nil && tc.Input != nil {
