@@ -296,6 +296,61 @@ func TestTrialFlushUsesRecordedGenerationWithoutDuplicate(t *testing.T) {
 	}
 }
 
+func TestTrialEndFlushesGenerationWithoutScores(t *testing.T) {
+	exporter := &capturingExperimentExporter{}
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-empty-flush"})
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-empty-flush"})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := NewClient(Config{
+		Tracer: noop.NewTracerProvider().Tracer("sigil-go-empty-trial-flush-test"),
+		GenerationExport: GenerationExportConfig{
+			Protocol:        GenerationExportProtocolHTTP,
+			Endpoint:        server.URL + "/api/v1/generations:export",
+			Auth:            AuthConfig{Mode: ExportAuthModeTenant, TenantID: "tenant-a"},
+			Insecure:        BoolPtr(true),
+			BatchSize:       10,
+			FlushInterval:   time.Hour,
+			QueueSize:       100,
+			MaxRetries:      0,
+			PayloadMaxBytes: 1 << 20,
+		},
+		API:                    APIConfig{Endpoint: server.URL},
+		testGenerationExporter: exporter,
+	})
+	t.Cleanup(func() { _ = client.Shutdown(context.Background()) })
+
+	trial := NewTrial(client, TrialRef{RunID: "run-empty-flush", TestCaseID: "case-empty-flush"})
+	if err := trial.Start(context.Background()); err != nil {
+		t.Fatalf("start trial: %v", err)
+	}
+	ctx, generationRecorder := client.StartGeneration(context.Background(), GenerationStart{
+		ID:             "gen-empty-flush",
+		ConversationID: "conv-empty-flush",
+		Model:          ModelRef{Provider: "example", Name: "agent"},
+	})
+	generationRecorder.SetResult(Generation{
+		ID:             "gen-empty-flush",
+		ConversationID: "conv-empty-flush",
+		Model:          ModelRef{Provider: "example", Name: "agent"},
+		Input:          []Message{UserTextMessage("question")},
+		Output:         []Message{AssistantTextMessage("answer")},
+	}, nil)
+	generationRecorder.End()
+
+	if err := trial.End(ctx, nil); err != nil {
+		t.Fatalf("end trial: %v", err)
+	}
+	if !exporter.hasGeneration("gen-empty-flush") {
+		t.Fatal("expected generation to be flushed when trial ends without scores")
+	}
+	if recorder.requestCount() != 2 {
+		t.Fatalf("expected trial create and update requests, got %d", recorder.requestCount())
+	}
+}
+
 func TestExperimentContextTagsExistingInstrumentationAndCapturesIDs(t *testing.T) {
 	exporter := &capturingExperimentExporter{}
 	client := NewClient(Config{

@@ -119,16 +119,16 @@ func (t *Trial) End(ctx context.Context, err error) error {
 	if err != nil {
 		t.status = TrialStatusErrored
 		t.errorText = err.Error()
+	} else if !t.hasFinal {
+		t.status = TrialStatusFailed
+		if t.errorText == "" {
+			t.errorText = "trial exited without a final score"
+		}
 	} else if t.status == TrialStatusRunning {
-		if t.hasFinal {
-			if t.finalPassed != nil && *t.finalPassed {
-				t.status = TrialStatusPassed
-			} else {
-				t.status = TrialStatusFailed
-			}
+		if t.finalPassed != nil && *t.finalPassed {
+			t.status = TrialStatusPassed
 		} else {
 			t.status = TrialStatusFailed
-			t.errorText = "trial exited without a final score"
 		}
 	}
 	cleanupCtx, cancel := experimentCleanupContext(ctx)
@@ -535,6 +535,12 @@ func (t *Trial) Flush(ctx context.Context) (int, error) {
 		return 0, ErrNilClient
 	}
 	if len(t.buffer) == 0 {
+		if err := t.ensureGeneration(ctx); err != nil {
+			return 0, err
+		}
+		if err := t.client.Flush(ctx); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	}
 	if err := t.ensureGeneration(ctx); err != nil {

@@ -185,3 +185,31 @@ func TestTrialEndFinalizesFailedWhenScoreFlushFails(t *testing.T) {
 		t.Fatalf("expected failed trial update with error, got %#v", updateReq.Payload)
 	}
 }
+
+func TestTrialSucceedWithoutFinalScoreFinalizesFailed(t *testing.T) {
+	recorder := &experimentRecorder{}
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-succeed-no-score"})
+	recorder.push(http.StatusOK, map[string]any{"trial_id": "trial-succeed-no-score"})
+	server := httptest.NewServer(recorder.handler(t))
+	defer server.Close()
+
+	client := newExperimentTestClient(t, server.URL)
+	trial := NewTrial(client, TrialRef{RunID: "run-succeed-no-score", TestCaseID: "case-succeed-no-score"})
+	if err := trial.Start(context.Background()); err != nil {
+		t.Fatalf("start trial: %v", err)
+	}
+	trial.Succeed()
+	if err := trial.End(context.Background(), nil); err != nil {
+		t.Fatalf("end trial: %v", err)
+	}
+	if recorder.requestCount() != 2 {
+		t.Fatalf("expected trial create and update requests, got %d", recorder.requestCount())
+	}
+	updateReq := recorder.request(1)
+	if updateReq.Method != http.MethodPatch || updateReq.Path != "/api/v1/experiment-runs/run-succeed-no-score/trials/"+trial.trialID {
+		t.Fatalf("unexpected trial update request: %#v", updateReq)
+	}
+	if updateReq.Payload["error"] != "trial exited without a final score" {
+		t.Fatalf("expected missing final score error, got %#v", updateReq.Payload)
+	}
+}

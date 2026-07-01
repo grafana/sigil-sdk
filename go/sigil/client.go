@@ -174,6 +174,7 @@ const (
 	defaultGRPCMaxSendMessageBytes    = 16 << 20
 	defaultGRPCMaxReceiveMessageBytes = 16 << 20
 	defaultGenerationPayloadMaxBytes  = 16 << 20
+	minRecordedGenerationIDs          = 1024
 
 	sdkMetadataKeyName  = "sigil.sdk.name"
 	metadataUserIDKey   = "sigil.user.id"
@@ -305,8 +306,9 @@ type Client struct {
 	shutdownOnce sync.Once
 	workerDone   chan struct{}
 
-	generationMu  sync.RWMutex
-	generationIDs map[string]struct{}
+	generationMu      sync.RWMutex
+	generationIDs     map[string]struct{}
+	generationIDOrder []string
 }
 
 // GenerationRecorder records and closes one in-flight generation span.
@@ -1460,7 +1462,17 @@ func (c *Client) recordGenerationID(generationID string) {
 	if c.generationIDs == nil {
 		c.generationIDs = make(map[string]struct{})
 	}
+	if _, ok := c.generationIDs[generationID]; ok {
+		return
+	}
 	c.generationIDs[generationID] = struct{}{}
+	c.generationIDOrder = append(c.generationIDOrder, generationID)
+	for len(c.generationIDOrder) > c.recordedGenerationLimit() {
+		oldest := c.generationIDOrder[0]
+		c.generationIDOrder[0] = ""
+		c.generationIDOrder = c.generationIDOrder[1:]
+		delete(c.generationIDs, oldest)
+	}
 }
 
 func (c *Client) hasRecordedGenerationID(generationID string) bool {
@@ -1471,6 +1483,17 @@ func (c *Client) hasRecordedGenerationID(generationID string) bool {
 	defer c.generationMu.RUnlock()
 	_, ok := c.generationIDs[generationID]
 	return ok
+}
+
+func (c *Client) recordedGenerationLimit() int {
+	if c == nil {
+		return minRecordedGenerationIDs
+	}
+	limit := c.config.GenerationExport.QueueSize * 2
+	if limit < minRecordedGenerationIDs {
+		return minRecordedGenerationIDs
+	}
+	return limit
 }
 
 func (c *Client) now() time.Time {
