@@ -493,12 +493,25 @@ func TestTrialLifecycleCreatesTypedTrialAndFinalScore(t *testing.T) {
 	client := newExperimentTestClient(t, server.URL)
 	suite := &TestSuite{SuiteID: "smoke", Name: "Smoke", Version: "1.2.0", TestCases: []TestCase{{TestCaseID: "add", Name: "Addition", Input: "2+2"}}}
 	exp := NewExperimentRun(ExperimentOptions{Client: client, RunID: "run-1", Name: "smoke run", Suite: suite})
-	trial := exp.Trial(suite.TestCases[0])
+	trial := exp.Trial(suite.TestCases[0], WithTrialMetadata(map[string]any{
+		"task_category": "math",
+		"task_id":       "caller-task",
+		"trial_id":      "caller-trial",
+		"attempt":       99,
+	}))
 	if err := trial.Start(context.Background()); err != nil {
 		t.Fatalf("start trial: %v", err)
 	}
 	verifier := Evaluator{EvaluatorID: "exact", Version: "1", Kind: EvaluatorKindDeterministic}
-	trial.FinalScore(NumberScoreValue(1), ScoreOptions{Passed: BoolPtr(true), Explanation: "matched", Evaluator: &verifier})
+	trial.FinalScore(NumberScoreValue(1), ScoreOptions{
+		Passed:      BoolPtr(true),
+		Explanation: "matched",
+		Evaluator:   &verifier,
+		Metadata: map[string]any{
+			"trial_id": "score-option-trial",
+			"attempt":  42,
+		},
+	})
 	if err := trial.End(context.Background(), nil); err != nil {
 		t.Fatalf("end trial: %v", err)
 	}
@@ -507,10 +520,21 @@ func TestTrialLifecycleCreatesTypedTrialAndFinalScore(t *testing.T) {
 	if createReq.Method != http.MethodPost || createReq.Path != "/api/v1/experiment-runs/run-1/trials" {
 		t.Fatalf("unexpected trial create: %#v", createReq)
 	}
+	createMetadata := createReq.Payload["metadata"].(map[string]any)
+	if createMetadata["task_category"] != "math" || createMetadata["task_id"] != "caller-task" || createMetadata["test_case_name"] != "Addition" {
+		t.Fatalf("trial metadata omitted from upsert: %#v", createMetadata)
+	}
 	scoreReq := recorder.request(1)
 	score := scoreReq.Payload["scores"].([]any)[0].(map[string]any)
 	if score["experiment_id"] != "run-1" || score["test_case_id"] != "add" || score["trial_id"] == "" {
 		t.Fatalf("unexpected score: %#v", score)
+	}
+	scoreMetadata := score["metadata"].(map[string]any)
+	if scoreMetadata["task_id"] != "add" || scoreMetadata["trial_id"] != trial.trialID || scoreMetadata["attempt"] != float64(1) {
+		t.Fatalf("score metadata must keep SDK identifiers authoritative: %#v", scoreMetadata)
+	}
+	if scoreMetadata["task_category"] != "math" {
+		t.Fatalf("score metadata omitted caller metadata: %#v", scoreMetadata)
 	}
 	if _, ok := score["generation_id"]; ok {
 		t.Fatalf("score without RecordIO/BindGeneration must not send generation_id: %#v", score)

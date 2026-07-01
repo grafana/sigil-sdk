@@ -756,7 +756,10 @@ func (t *Trial) createTrial(ctx context.Context) error {
 	if t.trialCreated {
 		return nil
 	}
-	metadata := map[string]any{}
+	metadata := cloneMetadata(t.metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
 	if t.ref.TestCaseName != "" {
 		metadata["test_case_name"] = t.ref.TestCaseName
 	}
@@ -922,13 +925,12 @@ func (t *Trial) Score(scoreKey string, value ScoreValue, opts ScoreOptions) Scor
 		ev = opts.Evaluator.normalized()
 	}
 	scoreID := StableID("score", t.ref.ExperimentID, t.trialID, scoreKey, ev.EvaluatorID)
-	metadata := map[string]any{
-		"task_id":  t.ref.TestCaseID,
-		"trial_id": t.trialID,
-		"attempt":  t.ref.Attempt,
-	}
+	metadata := map[string]any{}
 	maps.Copy(metadata, t.metadata)
 	maps.Copy(metadata, opts.Metadata)
+	metadata["task_id"] = t.ref.TestCaseID
+	metadata["trial_id"] = t.trialID
+	metadata["attempt"] = t.ref.Attempt
 	generationID := strings.TrimSpace(opts.GenerationID)
 	if generationID == "" && t.hasGeneration {
 		generationID = t.generationID
