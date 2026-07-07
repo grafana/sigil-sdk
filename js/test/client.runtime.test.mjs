@@ -218,6 +218,25 @@ test('workflow step enqueue validates raw input before defaulting timestamps', a
   }
 });
 
+test('workflow step enqueue rejection does not record the step in the debug snapshot', async () => {
+  const exporter = new MockGenerationExporter();
+  const client = newClient(exporter, { batchSize: 10, flushIntervalMs: 60_000, queueSize: 1 });
+
+  try {
+    client.enqueueWorkflowStep({ id: 'wfs-1', conversationId: 'c1', stepName: 'route' });
+    // Queue size is 1 and the worker has not flushed, so the second enqueue
+    // is rejected. The rejected step must not appear in the debug snapshot.
+    assert.throws(
+      () => client.enqueueWorkflowStep({ id: 'wfs-2', conversationId: 'c1', stepName: 'answer' }),
+      /workflow step queue is full/,
+    );
+    assert.equal(client.debugSnapshot().workflowSteps.length, 1);
+    assert.equal(client.debugSnapshot().workflowSteps[0].id, 'wfs-1');
+  } finally {
+    await client.shutdown();
+  }
+});
+
 test('flush retries failed workflow step exports with backoff and succeeds', async () => {
   const exporter = new MockGenerationExporter();
   exporter.workflowStepFailuresBeforeSuccess = 2;

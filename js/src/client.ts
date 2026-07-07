@@ -291,8 +291,12 @@ export class SigilClient {
       throw new Error(`sigil workflow step validation failed: ${validationError.message}`);
     }
     const normalized = this.normalizeWorkflowStep(step);
-    this.workflowSteps.push(cloneWorkflowStep(normalized));
+    // Enqueue first: internalEnqueueWorkflowStep throws on a payload/queue
+    // rejection, and enqueueWorkflowStep propagates it. Recording into the
+    // debug buffer only after a successful enqueue keeps debugSnapshot from
+    // listing a step the caller was told failed to enqueue.
     this.internalEnqueueWorkflowStep(normalized);
+    this.workflowSteps.push(cloneWorkflowStep(normalized));
   }
 
   /**

@@ -946,7 +946,7 @@ func (c *Client) enqueueWorkflowStep(step WorkflowStep) error {
 	case c.workflowStepQueue <- queuedWorkflowStep{workflowStep: protoStep}:
 		return nil
 	default:
-		return ErrQueueFull
+		return ErrWorkflowStepQueueFull
 	}
 }
 

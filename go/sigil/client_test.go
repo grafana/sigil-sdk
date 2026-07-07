@@ -1814,6 +1814,32 @@ func TestEnqueueWorkflowStepValidationErrorIsMatchable(t *testing.T) {
 	}
 }
 
+func TestEnqueueWorkflowStepQueueFullMessageNamesWorkflowStep(t *testing.T) {
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport:  GenerationExportConfig{QueueSize: 1},
+		testDisableWorker: true,
+	})
+
+	step := WorkflowStep{ID: "wfs", ConversationID: "conv-workflow", StepName: "route"}
+	if err := client.EnqueueWorkflowStep(step); err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	// Worker is disabled, so the second enqueue fills the queue of size 1.
+	err := client.EnqueueWorkflowStep(step)
+	if err == nil {
+		t.Fatal("expected queue-full error")
+	}
+	if !errors.Is(err, ErrWorkflowStepQueueFull) {
+		t.Fatalf("expected errors.Is(err, ErrWorkflowStepQueueFull), got %v", err)
+	}
+	if !errors.Is(err, ErrWorkflowStepEnqueueFailed) {
+		t.Fatalf("expected errors.Is(err, ErrWorkflowStepEnqueueFailed), got %v", err)
+	}
+	if strings.Contains(err.Error(), "generation queue") {
+		t.Fatalf("queue-full message should not name the generation queue, got %q", err.Error())
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
