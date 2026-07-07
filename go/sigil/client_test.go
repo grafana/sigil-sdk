@@ -1840,6 +1840,58 @@ func TestEnqueueWorkflowStepQueueFullMessageNamesWorkflowStep(t *testing.T) {
 	}
 }
 
+func TestFlushReportsBothGenerationAndWorkflowStepAsyncErrors(t *testing.T) {
+	genErr := errors.New("generation boom")
+	wfErr := errors.New("workflow step boom")
+	exporter := &capturingGenerationExporter{err: genErr, workflowStepErr: wfErr}
+
+	// BatchSize 1 makes each enqueue flush asynchronously in the worker, so
+	// both the generation and the workflow-step export fail before the
+	// explicit Flush. Both async failures must survive to the Flush result.
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			BatchSize:      1,
+			MaxRetries:     0,
+			FlushInterval:  time.Hour,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     time.Millisecond,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	ctx, rec := client.StartGeneration(context.Background(), GenerationStart{
+		ConversationID: "conv-async",
+		Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-6"},
+	})
+	rec.SetResult(Generation{
+		Input:  []Message{UserTextMessage("hi")},
+		Output: []Message{AssistantTextMessage("yo")},
+	}, nil)
+	rec.End()
+	_ = ctx
+
+	if err := client.EnqueueWorkflowStep(WorkflowStep{
+		ID:             "wfs-async",
+		ConversationID: "conv-async",
+		StepName:       "route",
+	}); err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+
+	flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := client.Flush(flushCtx)
+	if err == nil {
+		t.Fatal("expected Flush to report async export failures")
+	}
+	if !errors.Is(err, genErr) {
+		t.Fatalf("Flush error should include the generation failure, got %v", err)
+	}
+	if !errors.Is(err, wfErr) {
+		t.Fatalf("Flush error should include the workflow-step failure, got %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

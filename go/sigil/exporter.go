@@ -551,17 +551,20 @@ func (c *Client) runExportWorker() {
 		return errors.Join(flushGenerations(), flushWorkflowSteps())
 	}
 
-	// pendingErr captures the first failure from an async flush (timer or
-	// batch-size triggered) since the last explicit Flush call. It's
-	// returned to and cleared by the next flushReq handler so callers who
-	// use Flush as a durability checkpoint can detect silent data loss
-	// instead of treating an empty post-failure batch as success.
+	// pendingErr captures failures from async flushes (timer or batch-size
+	// triggered) since the last explicit Flush call. It's returned to and
+	// cleared by the next flushReq handler so callers who use Flush as a
+	// durability checkpoint can detect silent data loss instead of treating an
+	// empty post-failure batch as success. Errors are joined rather than
+	// keeping only the first: a single timer tick flushes the generation and
+	// workflow-step queues separately, so both can fail in the same cycle and
+	// neither failure should be dropped.
 	var pendingErr error
 	recordAsyncErr := func(err error) {
-		if err == nil || pendingErr != nil {
+		if err == nil {
 			return
 		}
-		pendingErr = err
+		pendingErr = errors.Join(pendingErr, err)
 	}
 
 	generationQueue := c.queue
