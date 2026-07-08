@@ -397,6 +397,7 @@ class Trial:
         model_provider: str = "",
         model_name: str = "",
         agent_name: str = "",
+        agent_version: str = "",
         input_tokens: int | None = None,
         output_tokens: int | None = None,
     ) -> Trial:
@@ -420,6 +421,8 @@ class Trial:
             self._io["model_name"] = model_name
         if agent_name:
             self._io["agent_name"] = agent_name
+        if agent_version:
+            self._io["agent_version"] = agent_version
         if input_tokens is not None:
             self._io["input_tokens"] = int(input_tokens)
         if output_tokens is not None:
@@ -726,6 +729,7 @@ class Trial:
             model_provider=self._io.get("model_provider", (cand.model_provider if cand else "") or "eval"),
             model_name=self._io.get("model_name", (cand.model_name if cand else "") or "experiment"),
             agent_name=self._io.get("agent_name", (cand.agent_name if cand else "")),
+            agent_version=self._io.get("agent_version", (cand.agent_version if cand else "")),
             input_tokens=self._io.get("input_tokens"),
             output_tokens=self._io.get("output_tokens"),
             tags={"experiment.run_id": self.ref.experiment_id, "task_id": self.ref.test_case_id},
