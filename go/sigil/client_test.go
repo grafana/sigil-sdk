@@ -2058,6 +2058,49 @@ func TestFlushReturnsErrorOnRejectedGenerationResult(t *testing.T) {
 	}
 }
 
+func TestFlushTreatsDuplicateGenerationResultAsSuccess(t *testing.T) {
+	exporter := &capturingGenerationExporter{
+		response: &sigilv1.ExportGenerationsResponse{
+			Results: []*sigilv1.ExportGenerationResult{
+				{
+					GenerationId: "gen-duplicate",
+					Accepted:     false,
+					Error:        "generation already exists",
+				},
+			},
+		},
+	}
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			MaxRetries:     1,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     10 * time.Millisecond,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		ID:    "gen-duplicate",
+		Model: ModelRef{Provider: "openai", Name: "gpt-5.4"},
+	})
+	rec.SetResult(Generation{
+		Output: []Message{AssistantTextMessage("hello")},
+	}, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("unexpected recorder error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Flush(ctx); err != nil {
+		t.Fatalf("expected duplicate generation result to succeed, got %v", err)
+	}
+	if got := exporter.requestCount(); got != 1 {
+		t.Fatalf("requestCount = %d, want 1", got)
+	}
+}
+
 func TestFlushReturnsErrorOnNilGenerationExportResponse(t *testing.T) {
 	exporter := &capturingGenerationExporter{
 		export: func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
