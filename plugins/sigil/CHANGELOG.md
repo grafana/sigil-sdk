@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.18.0] - 2026-07-13
+
+_No user-facing changes._
+
 ## [0.17.0] - 2026-06-23
 
 ### Features
