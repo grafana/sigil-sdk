@@ -815,7 +815,7 @@ func isRetryableExportValidationError(err error) bool {
 
 func logRejectedExportResults(c *Client, response *sigilv1.ExportGenerationsResponse) {
 	for _, result := range response.GetResults() {
-		if result == nil || result.Accepted {
+		if result == nil || result.Accepted || duplicateGenerationExportResult(result) {
 			continue
 		}
 		c.logf("sigil generation rejected id=%s error=%s", result.GenerationId, result.Error)
@@ -850,6 +850,9 @@ func validateExportResponse(request *sigilv1.ExportGenerationsRequest, response 
 		if result.Accepted {
 			continue
 		}
+		if duplicateGenerationExportResult(result) {
+			continue
+		}
 		msg := strings.TrimSpace(result.Error)
 		if msg == "" {
 			msg = "rejected without error"
@@ -863,6 +866,16 @@ func validateExportResponse(request *sigilv1.ExportGenerationsRequest, response 
 		return &exportValidationError{err: fmt.Errorf("generation export malformed response: %s", strings.Join(malformed, "; ")), retryable: true}
 	}
 	return nil
+}
+
+func duplicateGenerationExportResult(result *sigilv1.ExportGenerationResult) bool {
+	if result == nil || result.Accepted {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(result.Error))
+	return msg == "generation already exists" ||
+		strings.Contains(msg, "generation already exists") ||
+		strings.Contains(msg, "duplicate entry")
 }
 
 func validateWorkflowStepExportResponse(request *sigilv1.ExportWorkflowStepsRequest, response *sigilv1.ExportWorkflowStepsResponse) error {
