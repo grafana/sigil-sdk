@@ -216,6 +216,7 @@ class Client:
         model_provider: str = "eval",
         model_name: str = "experiment",
         agent_name: str = "",
+        agent_version: str = "",
         operation_name: str = "invoke_agent",
         tags: dict[str, str] | None = None,
         metadata: dict[str, Any] | None = None,
@@ -237,6 +238,8 @@ class Client:
         }
         if agent_name:
             generation["agent_name"] = agent_name
+        if agent_version:
+            generation["agent_version"] = agent_version
         if input_text:
             generation["input"] = [{"role": "MESSAGE_ROLE_USER", "parts": [{"text": input_text}]}]
         if output_text:
@@ -307,6 +310,7 @@ class Client:
         model_provider: str = "eval",
         model_name: str = "experiment",
         agent_name: str = "",
+        agent_version: str = "",
         operation_name: str = "invoke_agent",
         input_tokens: int | None = None,
         output_tokens: int | None = None,
@@ -339,6 +343,7 @@ class Client:
                 conversation_id=conversation_id,
                 model=model,
                 agent_name=agent_name,
+                agent_version=agent_version,
                 operation_name=operation_name,
                 tags=dict(tags or {}),
                 metadata=dict(metadata or {}),
@@ -350,6 +355,7 @@ class Client:
                     conversation_id=conversation_id,
                     model=model,
                     agent_name=agent_name,
+                    agent_version=agent_version,
                     input=[user_text_message(input_text)] if input_text else [],
                     output=[assistant_text_message(output_text)] if output_text else [],
                     usage=usage,

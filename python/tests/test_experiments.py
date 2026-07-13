@@ -38,6 +38,7 @@ class FakeClient:
         self.scores: list[ScoreItem] = []
         self.finalized: list[tuple[str, str, int]] = []
         self.generations: list[str] = []
+        self.generation_calls: list[tuple] = []
         self.trials: list[tuple] = []
         self.trial_updates: list[tuple] = []
         self.artifacts: list[tuple] = []
@@ -54,6 +55,7 @@ class FakeClient:
 
     def record_generation(self, generation_id, **kwargs) -> str:
         self.generations.append(generation_id)
+        self.generation_calls.append((generation_id, kwargs))
         return generation_id
 
     def flush_generations(self) -> None:
@@ -276,6 +278,36 @@ def test_record_io_mints_real_conversation() -> None:
     assert conv != ""
     assert client.generations == [trial.generation_id]
     assert all(s.conversation_id == conv for s in client.scores)
+
+
+def test_recorded_generation_carries_candidate_agent_version() -> None:
+    # Regression: the candidate's declared agent_version must reach the ingested
+    # generation, or Sigil auto-derives a version from the prompt hash and version
+    # comparison on the agent's Quality view is impossible.
+    client = FakeClient()
+    suite = _suite()
+    candidate = {"agent_name": "adder", "agent_version": "v3"}
+    with Experiment(client, experiment_id="run-v", name="v", suite=suite, candidate=candidate) as exp:
+        with exp.trial(suite.test_cases[0]) as trial:
+            trial.record_io(input="2+2", output="4")
+            trial.final_score(1.0, passed=True)
+    assert client.generation_calls, "expected a recorded generation"
+    _, kwargs = client.generation_calls[0]
+    assert kwargs.get("agent_version") == "v3"
+    assert kwargs.get("agent_name") == "adder"
+
+
+def test_record_io_agent_version_overrides_candidate() -> None:
+    # A per-trial record_io(agent_version=...) takes precedence over the candidate's.
+    client = FakeClient()
+    suite = _suite()
+    candidate = {"agent_name": "adder", "agent_version": "v3"}
+    with Experiment(client, experiment_id="run-v2", name="v2", suite=suite, candidate=candidate) as exp:
+        with exp.trial(suite.test_cases[0]) as trial:
+            trial.record_io(input="2+2", output="4", agent_version="v4-local")
+            trial.final_score(1.0, passed=True)
+    _, kwargs = client.generation_calls[0]
+    assert kwargs.get("agent_version") == "v4-local"
 
 
 def test_trial_without_final_score_fails() -> None:
