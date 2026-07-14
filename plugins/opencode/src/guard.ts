@@ -172,7 +172,8 @@ function extractToolCallTransform(
       try {
         const parsed = JSON.parse(raw) as unknown;
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          logger?.warn(`tool-call transform for ${toolCallId} applied`);
+          // Extraction only — the caller logs whether the transform was
+          // actually applied, so a parse here is never mistaken for success.
           return parsed as Record<string, unknown>;
         }
         logger?.warn(

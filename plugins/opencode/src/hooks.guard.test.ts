@@ -136,7 +136,7 @@ describe("opencode guards", () => {
     await hooks.event({ event: { type: "global.disposed", properties: {} } });
   });
 
-  it("rewrites tool.execute.before args in place when Sigil returns a transform", async () => {
+  it("replaces frozen tool.execute.before args with the redacted set", async () => {
     const hookServer = await startHookServer({
       action: "allow",
       evaluations: [],
@@ -165,22 +165,26 @@ describe("opencode guards", () => {
     } as any);
     if (!hooks) throw new Error("expected hooks");
 
-    // A secret key alongside the command; the server drops it and rewrites
-    // command, so the applied args must contain only the redacted command.
-    const args: Record<string, unknown> = {
-      command: "echo sonia@grafana.com",
-      apiKey: "sk-secret",
+    // opencode >=1.14 freezes output.args. A secret key sits alongside the
+    // command; the server drops it and rewrites command. The redacted set must
+    // replace output.args even though the original is frozen — an in-place
+    // mutation would throw and silently leak the original.
+    const output = {
+      args: Object.freeze({
+        command: "echo sonia@grafana.com",
+        apiKey: "sk-secret",
+      }) as Record<string, unknown>,
     };
 
     // Must not throw (allow + transform, not a block).
     await hooks.toolExecuteBefore(
       { sessionID: "sess-1", callID: "call-1", tool: "bash" },
-      { args },
+      output,
     );
 
-    // Wholesale replacement: dropped key gone, command redacted, same object.
-    expect(args).toEqual({ command: "echo [REDACTED]" });
-    expect(args.apiKey).toBeUndefined();
+    // Wholesale replacement: dropped key gone, command redacted.
+    expect(output.args).toEqual({ command: "echo [REDACTED]" });
+    expect(output.args.apiKey).toBeUndefined();
 
     await hooks.event({ event: { type: "global.disposed", properties: {} } });
   });
@@ -233,14 +237,16 @@ describe("opencode guards", () => {
     } as any);
     if (!hooks) throw new Error("expected hooks");
 
-    const args: Record<string, unknown> = { command: "secret", apiKey: "x" };
+    const output: { args: Record<string, unknown> } = {
+      args: { command: "secret", apiKey: "x" },
+    };
     await hooks.toolExecuteBefore(
       { sessionID: "sess-1", callID: "call-1", tool: "bash" },
-      { args },
+      output,
     );
 
     // An intentional "strip all arguments" transform empties the object.
-    expect(args).toEqual({});
+    expect(output.args).toEqual({});
 
     await hooks.event({ event: { type: "global.disposed", properties: {} } });
   });

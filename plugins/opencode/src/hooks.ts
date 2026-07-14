@@ -620,29 +620,32 @@ async function handleToolExecuteBefore(
     throw new Error(res.reason);
   }
   // Postflight transform: the server returned the complete redacted argument
-  // set, so replace the tool input wholesale. A plain Object.assign would merge
-  // instead, leaving any key the server dropped (an unredacted original) in
-  // place. opencode reads the mutated `output.args` at execution time. Redaction
-  // fails open: if the patch cannot be applied (args not a plain object, frozen,
-  // etc.) log and let the original arguments through rather than throwing, which
-  // opencode would treat as a tool failure.
+  // set. Replace `output.args` with a fresh object rather than mutating the
+  // existing one in place: opencode freezes `output.args` on newer versions
+  // (>=1.14), so an in-place `delete`/`Object.assign` would throw and, caught
+  // below, silently run the ORIGINAL unredacted arguments. Reassigning the
+  // property on the (unfrozen) `output` container sidesteps that and still
+  // gives opencode the redacted set at execution time. A fresh object also
+  // enforces wholesale replacement — keys the server dropped do not survive.
+  //
+  // Redaction fails open: if the args aren't a plain object or reassignment
+  // throws, log and let the original arguments through rather than throwing,
+  // which opencode would treat as a tool failure. Because a silently-skipped
+  // redaction is indistinguishable from a leak, only log success once the
+  // replacement has actually happened (not when the transform was parsed).
+  const args = output.args;
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    debugLog(
+      `tool-call transform for ${input.callID} dropped: args are not a plain object`,
+    );
+    return;
+  }
   try {
-    const args = output.args;
-    if (args && typeof args === "object" && !Array.isArray(args)) {
-      const argsObj = args as Record<string, unknown>;
-      for (const argKey of Object.keys(argsObj)) {
-        if (!Object.hasOwn(res.transform, argKey)) {
-          delete argsObj[argKey];
-        }
-      }
-      Object.assign(argsObj, res.transform);
-      // Keep the recorded span consistent with what actually runs.
-      record.input = argsObj;
-    } else {
-      debugLog(
-        `tool-call transform for ${input.callID} dropped: args are not a plain object`,
-      );
-    }
+    const redacted = { ...res.transform };
+    output.args = redacted;
+    // Keep the recorded span consistent with what actually runs.
+    record.input = redacted;
+    debugLog(`tool-call transform for ${input.callID} applied`);
   } catch (err) {
     debugLog(`tool-call transform apply failed for ${input.callID}`, err);
   }
