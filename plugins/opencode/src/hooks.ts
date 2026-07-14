@@ -35,6 +35,25 @@ const recordedMessages = new Map<string, Set<string>>();
 // dedups.
 const lastGenerationIdBySession = new Map<string, string>();
 
+// Maps a child (subagent) session id to the parent generation its first
+// assistant turn should link to. opencode runs a subagent in a fresh session
+// whose `Session.parentID` points at the spawning session, surfaced via the
+// `session.created` event. We resolve the parent generation *at creation time*
+// — the spawning session's latest recorded generation — and freeze it here.
+//
+// Freezing at creation (rather than at child-record time) is deliberate: a
+// subagent is launched from a tool call inside the parent's assistant turn, so
+// the parent's *current* turn is still in flight and unrecorded when the child
+// runs. The already-recorded prior parent generation is the turn the subagent
+// was spawned from, which is the meaningful link. Resolving lazily at
+// child-record time would usually find no parent generation yet and drop the
+// edge.
+//
+// `AssistantMessage.parentID` is a message-level pointer within one session and
+// is NOT the same as `Session.parentID`; only the latter crosses the
+// parent/subagent boundary.
+const parentGenerationByChildSession = new Map<string, string>();
+
 // First streamed assistant part time per message, keyed by
 // `${sessionID}\x00${messageID}`. Captured from `message.part.updated`
 // before the message completes so it survives `metadata_only` (where we
@@ -98,6 +117,7 @@ export function _resetToolExecutionState(): void {
 export function _resetHookState(): void {
   recordedMessages.clear();
   lastGenerationIdBySession.clear();
+  parentGenerationByChildSession.clear();
   firstPartAtByMessage.clear();
   pendingGenerations.clear();
   sessionContexts.clear();
@@ -164,6 +184,10 @@ async function handleEvent(
   projectDir: string,
   event: { type: string; properties: unknown },
 ): Promise<void> {
+  if (event.type === "session.created") {
+    recordSessionParent(event.properties);
+    return;
+  }
   if (event.type === "message.part.updated") {
     await handleMessagePartUpdated(
       sigil,
@@ -322,7 +346,7 @@ async function recordAssistantMessage(
     assistantMsg.sessionID,
     assistantMsg.id,
   );
-  const parent = lastGenerationIdBySession.get(assistantMsg.sessionID);
+  const parent = resolveParentGenerationId(assistantMsg.sessionID);
   lastGenerationIdBySession.set(assistantMsg.sessionID, genId);
 
   // Look up pending generation (user-side data)
@@ -452,6 +476,47 @@ function isTerminalMessageUpdate(msg: MessageUpdatedInfo): boolean {
   return Boolean(msg.finish || msg.error || msg.time?.completed);
 }
 
+/**
+ * Record the parent/subagent link from a `session.created` event. opencode
+ * sets `Session.parentID` on a subagent's session to the spawning session;
+ * root sessions omit it. We resolve the spawning session's latest
+ * already-recorded generation now and freeze it as the child's parent (see
+ * `parentGenerationByChildSession`).
+ *
+ * `session.created` fires exactly once, at spawn time, so the frozen edge
+ * always points at the parent turn the subagent was launched from. We
+ * deliberately do NOT listen on `session.updated`: it fires repeatedly over a
+ * session's life, and freezing on a late update could capture a parent turn
+ * recorded *after* the spawning one. If the parent has no recorded generation
+ * yet at creation (rare — the spawning turn's predecessor is normally already
+ * recorded), we skip: an unlinked child is better than a wrong link. The
+ * `has(id)` guard is defensive against a duplicate `session.created`.
+ */
+function recordSessionParent(properties: unknown): void {
+  const info = recordField(properties, "info");
+  if (!info) return;
+  const id = stringField(info, "id");
+  const parentID = stringField(info, "parentID");
+  if (!id || !parentID || id === parentID) return;
+  if (parentGenerationByChildSession.has(id)) return;
+  const parentGeneration = lastGenerationIdBySession.get(parentID);
+  if (!parentGeneration) return;
+  parentGenerationByChildSession.set(id, parentGeneration);
+}
+
+/**
+ * Resolve the parent generation id for a session's next assistant generation.
+ * Prefer the previous assistant generation recorded for this same session
+ * (intra-session chain). When this is the session's first generation and the
+ * session is a subagent child, fall back to the parent generation frozen at
+ * `session.created`, linking the subagent run to the turn it was spawned from.
+ */
+function resolveParentGenerationId(sessionID: string): string | undefined {
+  const intra = lastGenerationIdBySession.get(sessionID);
+  if (intra) return intra;
+  return parentGenerationByChildSession.get(sessionID);
+}
+
 async function handleLifecycle(
   sigil: SigilClient,
   telemetry: TelemetryProviders | null,
@@ -483,6 +548,7 @@ async function handleLifecycle(
     if (sessionId) {
       recordedMessages.delete(sessionId);
       lastGenerationIdBySession.delete(sessionId);
+      parentGenerationByChildSession.delete(sessionId);
       pendingGenerations.delete(sessionId);
       sessionContexts.delete(sessionId);
       completedToolExecutions.delete(sessionId);
