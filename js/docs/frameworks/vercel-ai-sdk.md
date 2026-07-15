@@ -1,12 +1,13 @@
 # Vercel AI SDK Hooks (`@grafana/sigil-sdk-js/vercel-ai-sdk`)
 
-Use `createSigilVercelAiSdk(...)` to instrument Vercel AI SDK v5 calls with Sigil generation export, spans, metrics, tool execution spans, and streaming TTFT.
+Use `createSigilVercelAiSdk(...)` to instrument Vercel AI SDK v5 and v6 calls with Sigil generation export, spans, metrics, tool execution spans, and streaming TTFT.
 
 Supported AI SDK line:
 
-- `ai` v5 (`generateText`, `streamText`)
-- Baseline generation export uses `onStepFinish` (and `onError` for streams). This path is v5-compatible and records tool executions from step `toolResults`.
-- When `experimental_onStepStart`, `experimental_onToolCallStart`, and `experimental_onToolCallFinish` are available (v6+), Sigil also captures richer per-step input messages and tool timing correlation.
+- `generateText` and `streamText` on `ai` v5 and v6
+- `ToolLoopAgent` on `ai` v6
+- Baseline input capture uses `prepareStep`; generation export uses `onStepFinish` (and `onError` for streams). This path is v5/v6-compatible and records tool executions from step `toolResults`.
+- When `experimental_onStepStart`, `experimental_onToolCallStart`, and `experimental_onToolCallFinish` are available (v6.0.97+ across all three supported surfaces), Sigil also captures output schemas and richer tool timing correlation.
 - Experimental callbacks can change in patch releases. Keep `ai` pinned to a tested minor line (`v5.x` or `v6.x`) in production.
 
 ## Install
@@ -118,7 +119,7 @@ const result = await generateText({
 Each model step emits one generation with:
 
 - `metadata["sigil.framework.step_type"]` (`initial`, `continue`, `tool-result`)
-- per-step input captured when `experimental_onStepStart` is available (including prior tool result messages)
+- per-step input captured through `prepareStep` (including prior tool result messages)
 
 ## Streaming (`streamText`) and TTFT
 

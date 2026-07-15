@@ -12,7 +12,7 @@ export interface StepStartModelRef {
 export interface StepStartEvent {
   stepNumber?: unknown;
   messages?: unknown;
-  model?: StepStartModelRef;
+  model?: StepStartModelRef | string;
   /**
    * Output configuration the AI SDK passes through (e.g. `Output.object(...)`).
    * Not declared on the public AI SDK type — surfaced at runtime on the step-start
@@ -122,6 +122,11 @@ export interface CallOptions {
 }
 
 export interface GenerateTextHooks {
+  /**
+   * Stable AI SDK v5/v6 callback invoked before every model step.
+   * Sigil observes the step without overriding any per-step settings.
+   */
+  prepareStep?: (event: StepStartEvent) => Record<string, never>;
   experimental_onStepStart?: (event: StepStartEvent) => HookResult;
   onStepFinish?: (event: StepFinishEvent) => HookResult;
   experimental_onToolCallStart?: (event: ToolCallStartEvent) => HookResult;

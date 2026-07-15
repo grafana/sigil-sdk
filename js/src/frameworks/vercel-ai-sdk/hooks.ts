@@ -252,6 +252,44 @@ export class SigilVercelAiSdkInstrumentation {
       );
       stepState.outputSchemaPromise = promise;
     };
+    const captureStepStart = (
+      event: StepStartEvent,
+      observedAt: Date,
+    ): { stepNumber: number; stepState: StepState; inputMessages: Message[] } => {
+      noteStreamObservedStartAt(observedAt);
+      const stepNumber = extractStepNumber(event, state.nextSyntheticStepNumber);
+      state.nextSyntheticStepNumber = Math.max(state.nextSyntheticStepNumber, stepNumber + 1);
+      const inputMessages = mapInputMessages(event.messages);
+      const existingState = state.stepStates.get(stepNumber);
+      if (existingState === undefined) {
+        return {
+          stepNumber,
+          stepState: createStepState({
+            stepNumber,
+            stepStartEvent: event,
+            startedAt: observedAt,
+            inputMessages: this.captureInputs ? inputMessages : [],
+          }),
+          inputMessages,
+        };
+      }
+
+      const previousOutput = existingState.stepStartEvent.output;
+      existingState.stepStartEvent = {
+        ...existingState.stepStartEvent,
+        ...event,
+      };
+      if (event.messages !== undefined) {
+        existingState.inputMessages = this.captureInputs ? inputMessages : [];
+      }
+      if (event.output !== undefined && event.output !== previousOutput) {
+        existingState.outputSchemaPromise = undefined;
+        existingState.outputSchemaTool = undefined;
+        existingState.outputSchemaResolved = false;
+        kickOffOutputSchemaExtraction(existingState);
+      }
+      return { stepNumber, stepState: existingState, inputMessages };
+    };
     const resolveOrCreateStepStateForFinish = (params: {
       eventStepNumber: unknown;
       responseModel: string | undefined;
@@ -526,26 +564,19 @@ export class SigilVercelAiSdkInstrumentation {
     };
 
     const hooks: StreamTextHooks = {
+      // prepareStep is available throughout AI SDK v5 and v6. Returning an
+      // empty result observes the step without changing the model request.
+      prepareStep: (event) => {
+        captureStepStart(event, new Date());
+        return {};
+      },
       // Returns Promise<void> when preflight is enabled, void otherwise.
       // The Vercel AI SDK awaits both shapes; keeping the sync path avoids
       // microtask scheduling for callers that don't use hooks.
       experimental_onStepStart: (event) => {
-        noteStreamObservedStartAt(new Date());
-        const fallbackStep = state.nextSyntheticStepNumber;
-        const stepNumber = extractStepNumber(event, fallbackStep);
-        state.nextSyntheticStepNumber = Math.max(state.nextSyntheticStepNumber + 1, stepNumber + 1);
-        if (state.stepStates.has(stepNumber)) {
-          return;
-        }
-
-        const inputMessages = mapInputMessages(event.messages);
+        const { stepState, inputMessages } = captureStepStart(event, new Date());
         const finalize = (resolvedMessages: Message[]): void => {
-          createStepState({
-            stepNumber,
-            stepStartEvent: event,
-            startedAt: new Date(),
-            inputMessages: this.captureInputs ? resolvedMessages : [],
-          });
+          stepState.inputMessages = this.captureInputs ? resolvedMessages : [];
         };
 
         if (!this.preflightEnabled()) {

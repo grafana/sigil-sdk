@@ -75,6 +75,30 @@ test('vercel ai sdk generateText hooks record single-step success', async () => 
   assert.equal(generation.metadata['sigil.framework.reasoning_text'], 'reasoning detail');
 });
 
+test('vercel ai sdk captures step input through the v5 and early-v6 prepareStep lifecycle', async () => {
+  const generation = await captureSingleGeneration(async (client) => {
+    const sigil = createSigilVercelAiSdk(client, { agentName: 'prepare-step-agent' });
+    const hooks = sigil.generateTextHooks({ conversationId: 'conv-prepare-step' });
+
+    const prepareResult = hooks.prepareStep?.({
+      stepNumber: 0,
+      model: { provider: 'openai', modelId: 'gpt-5' },
+      messages: [{ role: 'user', content: 'captured before the model call' }],
+    });
+    assert.deepEqual(prepareResult, {});
+
+    await hooks.onStepFinish?.({
+      stepNumber: 0,
+      finishReason: 'stop',
+      text: 'captured after the model call',
+      response: { id: 'resp-prepare-step', modelId: 'gpt-5' },
+    });
+  });
+
+  assert.equal(generation.input[0].content, 'captured before the model call');
+  assert.equal(generation.output[0].content, 'captured after the model call');
+});
+
 test('vercel ai sdk generateText hooks record single-step error', async () => {
   const { generations } = await captureSession(async (client) => {
     const sigil = createSigilVercelAiSdk(client);
@@ -394,6 +418,11 @@ test('vercel ai sdk streamText hooks capture TTFT once and record streaming resu
       const sigil = createSigilVercelAiSdk(client);
       const hooks = sigil.streamTextHooks({ conversationId: 'conv-stream' });
 
+      hooks.prepareStep?.({
+        stepNumber: 0,
+        model: { modelId: 'claude-sonnet-4-5' },
+        messages: [{ role: 'user', content: 'stream hello' }],
+      });
       hooks.experimental_onStepStart?.({
         stepNumber: 0,
         model: { modelId: 'claude-sonnet-4-5' },
@@ -1146,6 +1175,11 @@ test('vercel ai sdk captures Output.object schema into Generation.tools', async 
   const { generations } = await captureSession(async (client) => {
     const sigil = createSigilVercelAiSdk(client, { agentName: 'structured-agent' });
     const hooks = sigil.generateTextHooks({ conversationId: 'conv-output-schema' });
+    hooks.prepareStep?.({
+      stepNumber: 0,
+      model: { provider: 'openai', modelId: 'gpt-5' },
+      messages: [{ role: 'user', content: 'generate a question' }],
+    });
     hooks.experimental_onStepStart?.({
       stepNumber: 0,
       model: { provider: 'openai', modelId: 'gpt-5' },
@@ -1177,6 +1211,7 @@ test('vercel ai sdk captures Output.object schema into Generation.tools', async 
   assert.equal(tool.type, 'output_schema');
   assert.equal(tool.description, 'Question with associated skills');
   assert.deepEqual(JSON.parse(tool.inputSchemaJSON), schema);
+  assert.equal(generation.input[0].content, 'generate a question');
 });
 
 test('vercel ai sdk omits tools entry when no output schema is configured', async () => {
