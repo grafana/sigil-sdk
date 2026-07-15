@@ -17,6 +17,7 @@ const (
 	PartKindThinking   PartKind = "thinking"
 	PartKindToolCall   PartKind = "tool_call"
 	PartKindToolResult PartKind = "tool_result"
+	PartKindMedia      PartKind = "media"
 )
 
 type Message struct {
@@ -31,6 +32,7 @@ type Part struct {
 	Thinking   string      `json:"thinking,omitempty"`
 	ToolCall   *ToolCall   `json:"tool_call,omitempty"`
 	ToolResult *ToolResult `json:"tool_result,omitempty"`
+	Media      *Media      `json:"media,omitempty"`
 	// Metadata is a value-type struct where `omitempty` has no effect; the
 	// field is always emitted in JSON form.
 	Metadata PartMetadata `json:"metadata"`
@@ -53,4 +55,11 @@ type ToolResult struct {
 	IsError     bool            `json:"is_error,omitempty"`
 	Content     string          `json:"content,omitempty"`
 	ContentJSON json.RawMessage `json:"content_json,omitempty"`
+}
+
+type Media struct {
+	Kind     string `json:"kind,omitempty"`
+	URL      string `json:"url,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
+	Name     string `json:"name,omitempty"`
 }

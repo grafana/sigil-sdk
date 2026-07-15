@@ -154,6 +154,9 @@ func stripMessageContent(m *Message) {
 			m.Parts[i].ToolResult.Content = ""
 			m.Parts[i].ToolResult.ContentJSON = nil
 		}
+		if m.Parts[i].Media != nil {
+			m.Parts[i].Media.URL = ""
+		}
 	}
 }
 

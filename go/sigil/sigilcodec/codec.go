@@ -220,6 +220,16 @@ func partsToProto(parts []sigilmodel.Part) []*sigilv1.Part {
 				ContentJson: append([]byte(nil), parts[i].ToolResult.ContentJSON...),
 				IsError:     parts[i].ToolResult.IsError,
 			}}
+		case sigilmodel.PartKindMedia:
+			if parts[i].Media == nil {
+				continue
+			}
+			part.Payload = &sigilv1.Part_Media{Media: &sigilv1.Media{
+				Kind:     parts[i].Media.Kind,
+				Url:      parts[i].Media.URL,
+				MimeType: parts[i].Media.MIMEType,
+				Name:     parts[i].Media.Name,
+			}}
 		}
 
 		out = append(out, part)

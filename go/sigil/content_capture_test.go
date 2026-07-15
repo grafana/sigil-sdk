@@ -22,7 +22,10 @@ func TestStripContent(t *testing.T) {
 			Model:             ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 			SystemPrompt:      "You are helpful.",
 			Input: []Message{
-				{Role: RoleUser, Parts: []Part{{Kind: PartKindText, Text: "What is the weather?"}}},
+				{Role: RoleUser, Parts: []Part{
+					{Kind: PartKindText, Text: "What is the weather?"},
+					{Kind: PartKindMedia, Media: &Media{Kind: "image", URL: "data:image/png;base64,abc123", MIMEType: "image/png", Name: "weather-map.png"}},
+				}},
 				{Role: RoleTool, Parts: []Part{{Kind: PartKindToolResult, ToolResult: &ToolResult{
 					ToolCallID:  "call_1",
 					Name:        "weather",
@@ -67,6 +70,9 @@ func TestStripContent(t *testing.T) {
 		if gen.Output[0].Parts[2].Text != "" {
 			t.Fatal("Output text not stripped")
 		}
+		if gen.Input[0].Parts[1].Media.URL != "" {
+			t.Fatal("Media URL not stripped")
+		}
 		if gen.Input[1].Parts[0].ToolResult.Content != "" {
 			t.Fatal("ToolResult.Content not stripped")
 		}
@@ -105,6 +111,12 @@ func TestStripContent(t *testing.T) {
 		}
 		if gen.Input[0].Role != RoleUser {
 			t.Fatal("Input role changed")
+		}
+		if gen.Input[0].Parts[1].Kind != PartKindMedia {
+			t.Fatal("Media part kind changed")
+		}
+		if gen.Input[0].Parts[1].Media.Kind != "image" || gen.Input[0].Parts[1].Media.MIMEType != "image/png" {
+			t.Fatal("Media metadata lost")
 		}
 		if gen.Output[0].Parts[0].Kind != PartKindThinking {
 			t.Fatal("Part kind changed")

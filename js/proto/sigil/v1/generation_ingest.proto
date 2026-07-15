@@ -58,6 +58,13 @@ message ToolResult {
   bool is_error = 5;
 }
 
+message Media {
+  string kind = 1;
+  string url = 2;
+  string mime_type = 3;
+  string name = 4;
+}
+
 message Part {
   PartMetadata metadata = 1;
 
@@ -66,6 +73,7 @@ message Part {
     string thinking = 3;
     ToolCall tool_call = 4;
     ToolResult tool_result = 5;
+    Media media = 6;
   }
 }
 
