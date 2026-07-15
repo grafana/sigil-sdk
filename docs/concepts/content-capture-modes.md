@@ -11,7 +11,7 @@ Each SDK README links here for language-specific examples.
 | `default` | Inherit from the next layer in the resolution chain. At the client level this resolves to `no_tool_content`. |
 | `full` | Export all content: generation messages, thinking, system prompts, tool arguments and results, embedding input texts. |
 | `no_tool_content` | Export full generation content but omit tool-execution arguments and results from span attributes. Matches the pre-`ContentCaptureMode` SDK default. |
-| `metadata_only` | Preserve structure (message roles, part kinds, tool names, model, token usage, timing, IDs) and strip text, tool arguments, tool results, thinking, system prompts, conversation titles, raw artifacts, tool descriptions, tool input schemas, and detailed error messages. |
+| `metadata_only` | Preserve structure (message roles, part kinds, tool names, media kind/MIME metadata, model, token usage, timing, IDs) and strip text, tool arguments, tool results, media URLs/data URLs, thinking, system prompts, conversation titles, raw artifacts, tool descriptions, tool input schemas, and detailed error messages. |
 | `full_with_metadata_spans` | Send full content over the gRPC/HTTP generation ingest, but omit content fields from OTel spans. Useful when ingest is private but traces and metrics are shared. |
 
 `default` is never written into telemetry. It is the placeholder for "inherit"; the SDK resolves it to one of the four concrete modes before exporting anything.
@@ -22,7 +22,7 @@ Each SDK README links here for language-specific examples.
 | --- | --- | --- | --- | --- |
 | `full` | Full content. | Content attributes included. | Arguments and results included. | Input texts included when `EmbeddingCapture.CaptureInput` is on. |
 | `no_tool_content` | Full content. | Content attributes included. | Arguments and results omitted. | Input texts included when `EmbeddingCapture.CaptureInput` is on. |
-| `metadata_only` | Structure only. Messages, tool args/results, thinking, system prompts, conversation titles, artifacts, error text removed. | Content attributes omitted. | Arguments and results omitted. | Input texts omitted. |
+| `metadata_only` | Structure only. Messages, tool args/results, media URLs/data URLs, thinking, system prompts, conversation titles, artifacts, error text removed. | Content attributes omitted. | Arguments and results omitted. | Input texts omitted. |
 | `full_with_metadata_spans` | Full content. | Content attributes omitted (`sigil.conversation.title` and related fields). | Arguments and results omitted. Equivalent to `metadata_only` for tool spans because there is no separate gRPC export for tool executions. | Input texts omitted. Equivalent to `metadata_only` for embedding spans for the same reason. |
 
 Embedding input text capture is gated by both the effective capture mode and `EmbeddingCapture.CaptureInput` / `embeddingCapture.captureInput`. Setting the flag does not bypass `metadata_only` or `full_with_metadata_spans`.

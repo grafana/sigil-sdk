@@ -115,7 +115,7 @@ func validateMessage(path string, index int, message Message, contentStripped bo
 
 func validatePart(path string, messageIndex, partIndex int, role Role, part Part, contentStripped bool) error {
 	switch part.Kind {
-	case PartKindText, PartKindThinking, PartKindToolCall, PartKindToolResult:
+	case PartKindText, PartKindThinking, PartKindToolCall, PartKindToolResult, PartKindMedia:
 	default:
 		return fmt.Errorf("%s[%d].parts[%d].kind is invalid", path, messageIndex, partIndex)
 	}
@@ -131,6 +131,9 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 		fieldCount++
 	}
 	if part.ToolResult != nil {
+		fieldCount++
+	}
+	if part.Media != nil {
 		fieldCount++
 	}
 
@@ -169,6 +172,13 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 		}
 		if strings.TrimSpace(part.ToolResult.ToolCallID) == "" && strings.TrimSpace(part.ToolResult.Name) == "" {
 			return fmt.Errorf("%s[%d].parts[%d].tool_result.tool_call_id or name is required", path, messageIndex, partIndex)
+		}
+	case PartKindMedia:
+		if part.Media == nil {
+			return fmt.Errorf("%s[%d].parts[%d].media is required", path, messageIndex, partIndex)
+		}
+		if !contentStripped && strings.TrimSpace(part.Media.URL) == "" {
+			return fmt.Errorf("%s[%d].parts[%d].media.url is required", path, messageIndex, partIndex)
 		}
 	}
 

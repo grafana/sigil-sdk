@@ -160,6 +160,7 @@ type storedPart struct {
 	Thinking   *string            `json:"thinking,omitempty"`
 	ToolCall   *storedToolCall    `json:"tool_call,omitempty"`
 	ToolResult *storedToolResult  `json:"tool_result,omitempty"`
+	Media      *sigil.Media       `json:"media,omitempty"`
 	Metadata   sigil.PartMetadata `json:"metadata,omitzero"`
 }
 
@@ -188,6 +189,13 @@ func (p storedPart) toSDK() (sigil.Part, bool) {
 		}
 		part.Kind = sigil.PartKindToolResult
 		part.ToolResult = p.ToolResult.toSDK()
+	case p.Kind == sigil.PartKindMedia || p.Media != nil:
+		if p.Media == nil {
+			return sigil.Part{}, false
+		}
+		part.Kind = sigil.PartKindMedia
+		media := *p.Media
+		part.Media = &media
 	default:
 		return sigil.Part{}, false
 	}

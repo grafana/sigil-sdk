@@ -42,6 +42,12 @@ func TestToProtoRolesAndParts(t *testing.T) {
 			Role: sigilmodel.RoleUser,
 			Parts: []sigilmodel.Part{
 				{Kind: sigilmodel.PartKindText, Text: "hi"},
+				{Kind: sigilmodel.PartKindMedia, Media: &sigilmodel.Media{
+					Kind:     "image",
+					URL:      "data:image/png;base64,abc123",
+					MIMEType: "image/png",
+					Name:     "prompt.png",
+				}},
 			},
 		}},
 		Output: []sigilmodel.Message{{
@@ -85,6 +91,10 @@ func TestToProtoRolesAndParts(t *testing.T) {
 	textPart := got.GetInput()[0].GetParts()[0]
 	if textPart.GetText() != "hi" {
 		t.Errorf("expected text part %q, got %q", "hi", textPart.GetText())
+	}
+	mediaPart := got.GetInput()[0].GetParts()[1]
+	if media := mediaPart.GetMedia(); media == nil || media.GetKind() != "image" || media.GetUrl() != "data:image/png;base64,abc123" || media.GetMimeType() != "image/png" || media.GetName() != "prompt.png" {
+		t.Errorf("media mismatch: %+v", media)
 	}
 	thinkPart := got.GetOutput()[0].GetParts()[0]
 	if thinkPart.GetThinking() != "let me think" {

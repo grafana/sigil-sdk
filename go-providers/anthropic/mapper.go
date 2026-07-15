@@ -198,6 +198,9 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	if block.OfRedactedThinking != nil {
 		return thinkingPart(block.OfRedactedThinking.Data, "redacted_thinking")
 	}
+	if block.OfImage != nil {
+		return imageBlockPart(block.OfImage)
+	}
 	if block.OfToolUse != nil {
 		inputJSON, _ := marshalAny(block.OfToolUse.Input)
 		part := sigil.ToolCallPart(sigil.ToolCall{
@@ -316,6 +319,8 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 		return thinkingPart(derefString(block.GetThinking()), typ)
 	case "redacted_thinking":
 		return thinkingPart(derefString(block.GetData()), typ)
+	case "image":
+		return imageBlockPart(block.OfImage)
 	case "tool_use", "server_tool_use", "mcp_tool_use":
 		inputJSON, _ := marshalAny(derefAny(block.GetInput()))
 		providerType := providerTypeForToolUse(typ, derefString(block.GetName()))
@@ -347,6 +352,37 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	default:
 		return sigil.Part{}, false
 	}
+}
+
+func imageBlockPart(block *asdk.BetaImageBlockParam) (sigil.Part, bool) {
+	if block == nil {
+		return sigil.Part{}, false
+	}
+	return imagePartFromSource(
+		derefString(block.Source.GetData()),
+		derefString(block.Source.GetMediaType()),
+		derefString(block.Source.GetURL()),
+	)
+}
+
+func imagePartFromSource(base64Data, mediaType, sourceURL string) (sigil.Part, bool) {
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	url := strings.TrimSpace(sourceURL)
+	if url == "" {
+		data := strings.TrimSpace(base64Data)
+		if mediaType == "" || data == "" {
+			return sigil.Part{}, false
+		}
+		url = "data:" + mediaType + ";base64," + data
+	}
+
+	part := sigil.MediaPart(sigil.Media{
+		Kind:     "image",
+		URL:      url,
+		MIMEType: mediaType,
+	})
+	part.Metadata.ProviderType = "image"
+	return part, true
 }
 
 func mapResponseBlock(block asdk.BetaContentBlockUnion) (sigil.Part, bool) {
