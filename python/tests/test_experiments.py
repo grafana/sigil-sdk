@@ -246,6 +246,62 @@ def test_trial_ref_env_round_trip() -> None:
     assert restored.attempt == 3
 
 
+def test_trial_ref_to_env_dual_writes_both_prefixes() -> None:
+    ref = TrialRef(
+        experiment_id="run-5",
+        test_case_id="c1",
+        attempt=2,
+        suite_id="s",
+        suite_version="2.0.0",
+        trajectory_id="traj-1",
+    )
+    env = ref.to_env()
+    for suffix in ("EXPERIMENT_ID", "TEST_CASE_ID", "ATTEMPT", "SUITE_ID", "SUITE_VERSION", "TRAJECTORY_ID"):
+        assert env[f"AGENTO11Y_{suffix}"] == env[f"SIGIL_{suffix}"]
+    assert env["AGENTO11Y_EXPERIMENT_ID"] == "run-5"
+    assert env["SIGIL_EXPERIMENT_ID"] == "run-5"
+    assert env["SIGIL_ATTEMPT"] == "2"
+
+
+def test_trial_ref_from_env_reads_legacy_only_writer() -> None:
+    env = {"SIGIL_EXPERIMENT_ID": "run-old", "SIGIL_TEST_CASE_ID": "c1", "SIGIL_ATTEMPT": "4"}
+    ref = TrialRef.from_env(env)
+    assert ref is not None
+    assert ref.experiment_id == "run-old"
+    assert ref.test_case_id == "c1"
+    assert ref.attempt == 4
+
+
+@pytest.mark.parametrize(
+    "env,expected_experiment_id",
+    [
+        pytest.param(
+            {"AGENTO11Y_EXPERIMENT_ID": "run-new", "SIGIL_EXPERIMENT_ID": "run-old", "AGENTO11Y_TEST_CASE_ID": "c1"},
+            "run-new",
+            id="preferred wins over legacy",
+        ),
+        pytest.param(
+            {"AGENTO11Y_EXPERIMENT_ID": "   ", "SIGIL_EXPERIMENT_ID": "run-old", "SIGIL_TEST_CASE_ID": "c1"},
+            "run-old",
+            id="blank preferred falls through",
+        ),
+        pytest.param(
+            {"SIGIL_RUN_ID": "run-tertiary", "SIGIL_TEST_CASE_ID": "c1"},
+            "run-tertiary",
+            id="SIGIL_RUN_ID tertiary fallback",
+        ),
+    ],
+)
+def test_trial_ref_from_env_precedence(env: dict[str, str], expected_experiment_id: str) -> None:
+    ref = TrialRef.from_env(env)
+    assert ref is not None
+    assert ref.experiment_id == expected_experiment_id
+
+
+def test_trial_ref_from_env_ignores_agento11y_run_id() -> None:
+    assert TrialRef.from_env({"AGENTO11Y_RUN_ID": "run-x", "AGENTO11Y_TEST_CASE_ID": "c1"}) is None
+
+
 def test_trial_from_ref_requires_ref() -> None:
     with pytest.raises(ValueError, match="trial ref is required"):
         Trial.from_ref(FakeClient(), None)
@@ -426,6 +482,70 @@ def test_experiment_factory_uses_supplied_client() -> None:
         with exp.trial(suite.test_cases[0]) as trial:
             trial.score("final", value=True)
     assert client.finalized and client.finalized[0][0] == "run-f"
+
+
+@pytest.mark.parametrize(
+    "env,expected",
+    [
+        pytest.param(
+            {
+                "AGENTO11Y_ENDPOINT": "https://preferred",
+                "SIGIL_ENDPOINT": "https://legacy",
+                "SIGIL_API_ENDPOINT": "https://api-legacy",
+                "AGENTO11Y_AUTH_TENANT_ID": "1",
+                "SIGIL_AUTH_TENANT_ID": "2",
+                "SIGIL_TENANT_ID": "3",
+                "AGENTO11Y_AUTH_TOKEN": "tok-preferred",
+                "SIGIL_AUTH_TOKEN": "tok-legacy",
+            },
+            ("https://preferred", "1", "tok-preferred"),
+            id="preferred wins per field",
+        ),
+        pytest.param(
+            {"SIGIL_API_ENDPOINT": "https://api-legacy", "SIGIL_TENANT_ID": "3", "SIGIL_AUTH_TOKEN": "tok"},
+            ("https://api-legacy", "3", "tok"),
+            id="oldest legacy spellings still resolve",
+        ),
+        pytest.param(
+            {"AGENTO11Y_ENDPOINT": "   ", "SIGIL_ENDPOINT": "https://legacy", "SIGIL_AUTH_TOKEN": "tok"},
+            ("https://legacy", "", "tok"),
+            id="blank preferred endpoint falls through",
+        ),
+    ],
+)
+def test_experiment_factory_connection_env_precedence(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: tuple[str, str, str]
+) -> None:
+    from sigil_sdk.experiments import experiment as experiment_factory
+
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    exp = experiment_factory("conn")
+    client = exp.client
+    assert (client.endpoint, client.tenant_id, client.ingest_token) == expected
+
+
+def test_experiment_factory_ignores_agento11y_api_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sigil_sdk.experiments import experiment as experiment_factory
+
+    monkeypatch.setenv("AGENTO11Y_API_ENDPOINT", "https://nope")
+    monkeypatch.setenv("SIGIL_AUTH_TOKEN", "tok")
+    with pytest.raises(ValueError, match="endpoint is required"):
+        experiment_factory("conn")
+
+
+def test_experiments_client_env_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sigil_sdk.experiments.client import Client as IngestClient
+
+    monkeypatch.setenv("AGENTO11Y_AUTH_TOKEN", "tok-preferred")
+    monkeypatch.setenv("SIGIL_AUTH_TOKEN", "tok-legacy")
+    monkeypatch.setenv("AGENTO11Y_GRAFANA_URL", "https://g.example/")
+    monkeypatch.setenv("AGENTO11Y_USE_EXPERIMENTAL_OTEL", "false")
+    monkeypatch.setenv("SIGIL_USE_EXPERIMENTAL_OTEL", "true")
+    client = IngestClient("https://sigil.example")
+    assert client.ingest_token == "tok-preferred"
+    assert client.grafana_url == "https://g.example"
+    assert client.use_experimental_otel is False
 
 
 def test_final_score_primitive_derives_boolean_verdict() -> None:

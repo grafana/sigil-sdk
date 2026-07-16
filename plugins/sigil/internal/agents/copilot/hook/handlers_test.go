@@ -91,7 +91,7 @@ func TestStopLocalEndpointAllowsMissingCredentials(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("XDG_STATE_HOME", t.TempDir())
-			t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+			envconfig.PinAliasEnvBlank(t)
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 			logger := log.New(io.Discard, "", 0)
 			var gotAuth string
@@ -620,7 +620,7 @@ func TestPreToolUseGuardBehavior(t *testing.T) {
 			name:                "fail-closed missing credentials denies tool and skips record",
 			guards:              envconfig.GuardsConfig{Enabled: true, TimeoutMs: 1500, FailOpen: false},
 			clearCreds:          true,
-			wantStdoutContains:  []string{`{"permissionDecision":"deny"`, `"hookSpecificOutput"`, `could not evaluate`, `missing SIGIL_ENDPOINT`},
+			wantStdoutContains:  []string{`{"permissionDecision":"deny"`, `"hookSpecificOutput"`, `could not evaluate`, `missing AGENTO11Y_ENDPOINT`},
 			wantToolRecordCount: 0,
 		},
 	}

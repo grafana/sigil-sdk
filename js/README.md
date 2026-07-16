@@ -32,7 +32,7 @@ mise run sdk:conformance
 
 ## Quick Start
 
-The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+The snippet below configures the SDK explicitly. As an alternative, set `AGENTO11Y_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
 
 ```ts
 import { SigilClient } from "@grafana/sigil-sdk-js";
@@ -43,8 +43,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
     },
   },
   api: {
@@ -147,7 +147,7 @@ import {
 
 const client = new SigilClient({
   generationSanitizer: createSecretRedactionSanitizer({
-    redactInputMessages: false, // omit to fall back to SIGIL_REDACT_INPUT_MESSAGES, then false
+    redactInputMessages: false, // omit to fall back to AGENTO11Y_REDACT_INPUT_MESSAGES, then false
     redactEmailAddresses: true,
   }),
 });
@@ -172,7 +172,7 @@ const client = new SigilClient({
 
 ### Configuring redaction via environment variables
 
-`createSecretRedactionSanitizer()` reads `SIGIL_REDACT_INPUT_MESSAGES` (accepts
+`createSecretRedactionSanitizer()` reads `AGENTO11Y_REDACT_INPUT_MESSAGES` (accepts
 `1/0`, `true/false`, `yes/no`, `on/off`) when `redactInputMessages` is omitted.
 Precedence is explicit option > env var > `false`. An unrecognised env value is
 warned and falls back to the next layer, so a typo cannot silently flip
@@ -184,7 +184,7 @@ import {
   SigilClient,
 } from "@grafana/sigil-sdk-js";
 
-// Omit redactInputMessages so SIGIL_REDACT_INPUT_MESSAGES decides.
+// Omit redactInputMessages so AGENTO11Y_REDACT_INPUT_MESSAGES decides.
 const client = new SigilClient({
   generationSanitizer: createSecretRedactionSanitizer(),
 });
@@ -468,8 +468,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
     },
   },
   api: {
@@ -489,8 +489,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
     },
   },
 });
@@ -501,15 +501,15 @@ If your deployment requires a distinct username, set `basicUser` explicitly:
 ```ts
 auth: {
   mode: "basic",
-  tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-  basicUser: process.env.SIGIL_AUTH_TENANT_ID,
-  basicPassword: process.env.SIGIL_AUTH_TOKEN,
+  tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+  basicUser: process.env.AGENTO11Y_AUTH_TENANT_ID,
+  basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
 },
 ```
 
 ## Wiring custom env vars
 
-The SDK only auto-loads `SIGIL_*` env vars (`SIGIL_ENDPOINT`, `SIGIL_PROTOCOL`, `SIGIL_AUTH_MODE`, `SIGIL_AUTH_TOKEN`, etc.) when you call `new SigilClient()`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
+The SDK only auto-loads `AGENTO11Y_*` env vars (`AGENTO11Y_ENDPOINT`, `AGENTO11Y_PROTOCOL`, `AGENTO11Y_AUTH_MODE`, `AGENTO11Y_AUTH_TOKEN`, etc.) when you call `new SigilClient()`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
 
 ```ts
 const generationBearerToken = (process.env.MY_APP_SIGIL_TOKEN ?? "").trim();
@@ -523,8 +523,8 @@ const client = new SigilClient({
         ? { mode: "bearer", bearerToken: generationBearerToken }
         : {
             mode: "basic",
-            tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-            basicPassword: process.env.SIGIL_AUTH_TOKEN,
+            tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+            basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
           },
   },
   api: {

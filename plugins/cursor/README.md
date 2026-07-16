@@ -58,15 +58,15 @@ Do not use both. `/add-plugin` and `sigil cursor install` write to the same `~/.
 You need values from three Grafana Cloud pages:
 
 1. **AI Observability → Configuration**
-   - **API URL** → `SIGIL_ENDPOINT`
-   - **Instance ID** → `SIGIL_AUTH_TENANT_ID`
+   - **API URL** → `AGENTO11Y_ENDPOINT`
+   - **Instance ID** → `AGENTO11Y_AUTH_TENANT_ID`
 
 2. **Administration → Users and access → Cloud access policies**
    - Create a policy with scopes `sigil:write`, `metrics:write`, `traces:write`.
-   - Add a token. The `glc_…` value is shown once → `SIGIL_AUTH_TOKEN`.
+   - Add a token. The `glc_…` value is shown once → `AGENTO11Y_AUTH_TOKEN`.
 
 3. **Grafana Cloud Portal → your stack → OpenTelemetry card**
-   - **OTLP endpoint URL** → `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT`
+   - **OTLP endpoint URL** → `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT`
 
 <details>
 <summary>Non-interactive config.env</summary>
@@ -74,10 +74,10 @@ You need values from three Grafana Cloud pages:
 Create or update `~/.config/sigil/config.env`:
 
 ```dotenv
-SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-SIGIL_AUTH_TENANT_ID=<instance-id>
-SIGIL_AUTH_TOKEN=glc_...
-SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
+AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_AUTH_TENANT_ID=<instance-id>
+AGENTO11Y_AUTH_TOKEN=glc_...
+AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 ```
 
 </details>
@@ -85,7 +85,7 @@ SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net
 To also send the conversation text, add this to `~/.config/sigil/config.env`:
 
 ```dotenv
-SIGIL_CONTENT_CAPTURE_MODE=full
+AGENTO11Y_CONTENT_CAPTURE_MODE=full
 ```
 
 Cursor content is not passed through the shared redactor before export. Avoid `full` when prompts, replies, or tool output may contain secrets.
@@ -94,7 +94,7 @@ Cursor content is not passed through the shared redactor before export. Avoid `f
 
 Use Cursor's agent for one turn, then open **AI Observability → Conversations** in Grafana Cloud. A new generation should appear within a few seconds.
 
-If nothing shows up, add `SIGIL_DEBUG=true` to `~/.config/sigil/config.env` (Cursor launches from the GUI, so a shell env var won't reach the hooks) and tail the log:
+If nothing shows up, add `AGENTO11Y_DEBUG=true` to `~/.config/sigil/config.env` (Cursor launches from the GUI, so a shell env var won't reach the hooks) and tail the log:
 
 ```sh
 tail -f ~/.local/state/sigil/logs/sigil.log
@@ -104,18 +104,18 @@ tail -f ~/.local/state/sigil/logs/sigil.log
 
 | Variable | Default | Description |
 |---|---|---|
-| `SIGIL_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
-| `SIGIL_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
-| `SIGIL_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
-| `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
-| `SIGIL_OTEL_AUTH_TOKEN` | `SIGIL_AUTH_TOKEN` | Override the OTel password. |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `metadata_only` | `metadata_only`, `no_tool_content`, `full`, or `full_with_metadata_spans`. See [Content Capture Modes](../../docs/concepts/content-capture-modes.md). |
-| `SIGIL_TAGS` | — | `key=value,key=value` tags on every generation and as `sigil.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). Built-ins (`git.branch`, `cwd`, `subagent`) win on generation-export tag collision. |
-| `SIGIL_USER_ID` | from Cursor | Override the user id. |
-| `SIGIL_DEBUG` | `false` | Log to `~/.local/state/sigil/logs/sigil.log`. |
-| `SIGIL_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Cursor `preToolUse` hook is evaluated against Sigil: tool calls denied by guard rules are blocked, and Transform rules rewrite the tool arguments before execution. |
-| `SIGIL_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
-| `SIGIL_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
-| `SIGIL_BIN` | auto | Override the binary path if you installed `sigil` somewhere unusual. |
+| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
+| `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
+| `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
+| `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
+| `AGENTO11Y_OTEL_AUTH_TOKEN` | `AGENTO11Y_AUTH_TOKEN` | Override the OTel password. |
+| `AGENTO11Y_CONTENT_CAPTURE_MODE` | `metadata_only` | `metadata_only`, `no_tool_content`, `full`, or `full_with_metadata_spans`. See [Content Capture Modes](../../docs/concepts/content-capture-modes.md). |
+| `AGENTO11Y_TAGS` | — | `key=value,key=value` tags on every generation and as `sigil.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). Built-ins (`git.branch`, `cwd`, `subagent`) win on generation-export tag collision. |
+| `AGENTO11Y_USER_ID` | from Cursor | Override the user id. |
+| `AGENTO11Y_DEBUG` | `false` | Log to `~/.local/state/sigil/logs/sigil.log`. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Cursor `preToolUse` hook is evaluated against Sigil: tool calls denied by guard rules are blocked, and Transform rules rewrite the tool arguments before execution. |
+| `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
+| `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
+| `AGENTO11Y_BIN` | auto | Override the binary path if you installed `sigil` somewhere unusual. |
 
 If your OTLP **Instance ID** (on the OpenTelemetry card) differs from your AI Observability Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.

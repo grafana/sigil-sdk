@@ -5,9 +5,10 @@ import { isMissingFileError } from "./fsErrors.js";
 import { logger } from "./logger.js";
 
 // Mirror plugins/sigil/internal/dotenv/dotenv.go::AllowedDotenvKey so the
-// allow-list stays in sync with the Go launcher. Anything outside the SIGIL_*
-// prefix and this small OTEL_* set is ignored, including innocent-looking
-// vars like PATH that happen to appear in a shared config.env.
+// allow-list stays in sync with the Go launcher. Anything outside the
+// AGENTO11Y_*/SIGIL_* prefixes and this small OTEL_* set is ignored,
+// including innocent-looking vars like PATH that happen to appear in a
+// shared config.env.
 const ALLOWED_OTEL_KEYS = new Set([
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_EXPORTER_OTLP_HEADERS",
@@ -16,7 +17,46 @@ const ALLOWED_OTEL_KEYS = new Set([
 ]);
 
 function allowedDotenvKey(key: string): boolean {
-  return key.startsWith("SIGIL_") || ALLOWED_OTEL_KEYS.has(key);
+  return (
+    key.startsWith("AGENTO11Y_") ||
+    key.startsWith("SIGIL_") ||
+    ALLOWED_OTEL_KEYS.has(key)
+  );
+}
+
+// Alias families this plugin resolves source-aware: everything pi itself
+// reads (config.ts, logger.ts) plus everything the in-process JS SDK
+// dual-reads from env. Each suffix is one logical variable readable under
+// the preferred AGENTO11Y_<suffix> spelling with a SIGIL_<suffix> legacy
+// fallback. Keys outside this list keep exact-key semantics.
+const ALIAS_SUFFIXES = [
+  "ENDPOINT",
+  "PROTOCOL",
+  "INSECURE",
+  "HEADERS",
+  "AUTH_MODE",
+  "AUTH_TENANT_ID",
+  "AUTH_TOKEN",
+  "AGENT_NAME",
+  "AGENT_VERSION",
+  "USER_ID",
+  "TAGS",
+  "CONTENT_CAPTURE_MODE",
+  "DEBUG",
+  "REDACT_INPUT_MESSAGES",
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
+  "OTEL_AUTH_TOKEN",
+  "GUARDS_ENABLED",
+  "GUARDS_TIMEOUT_MS",
+  "GUARDS_FAIL_OPEN",
+] as const;
+
+function preferredKey(suffix: string): string {
+  return `AGENTO11Y_${suffix}`;
+}
+
+function legacyKey(suffix: string): string {
+  return `SIGIL_${suffix}`;
 }
 
 /**
@@ -118,8 +158,8 @@ export function loadSigilDotenv(path: string): Record<string, string> {
   return readSigilDotenv(path).env;
 }
 
-// Maps each key this function has copied from config.env to the exact
-// value it wrote into process.env on the last call. We track the value
+// Maps each non-family key this function has copied from config.env to the
+// exact value it wrote into process.env on the last call. We track the value
 // (not just the key) so a later writer — a shell-style assignment from
 // another loader, an extension, or test setup — can be distinguished from
 // our own previously-written value. Once process.env[key] no longer
@@ -127,22 +167,57 @@ export function loadSigilDotenv(path: string): Record<string, string> {
 // OS-supplied: OS env wins per key, on every call, not just the first.
 const ownedValues = new Map<string, string>();
 
+// Family-level ownership for the alias suffixes. `value` is what we last
+// materialized under BOTH spellings; `shell` records the values that were in
+// process.env before that write (the true shell/runtime layer), so repeated
+// calls can re-run source-aware resolution without mistaking our own writes
+// for shell exports.
+interface OwnedFamily {
+  value: string;
+  shell: { preferred: string | undefined; legacy: string | undefined };
+}
+
+const ownedFamilies = new Map<string, OwnedFamily>();
+
 /**
  * Read the sigil dotenv file and synchronize its contents with `process.env`.
  *
- * Per-call, OS env wins per key: if `process.env[key]` is non-empty and
- * was not written by an earlier call of this function, it is left alone —
- * that's the same "shell export beats file" guarantee as the Go launcher's
- * `dotenv.ApplyEnv`, extended to hold across repeated `session_start`
- * events in the same Pi process. Keys this function copied from the file
- * are refreshed (edits propagate) or cleared (removals propagate) on every
- * call, but only while the value in `process.env` is still the one we
- * wrote; the moment another writer replaces it, we relinquish ownership.
+ * Alias families (see ALIAS_SUFFIXES) resolve source-first, spelling-second:
+ *
+ *   shell AGENTO11Y_* > shell SIGIL_* > file AGENTO11Y_* > file SIGIL_*
+ *
+ * so a shell export always beats a config.env entry even across spellings —
+ * the same guarantee as the Go launcher's `dotenv.ApplyEnv`, extended to
+ * hold across repeated `session_start` events in the same Pi process. Blank
+ * or whitespace-only values count as unset at every step, and the winning
+ * value is materialized under BOTH spellings so downstream readers (this
+ * plugin and the in-process SDK, which itself dual-reads) observe one
+ * consistent value.
+ *
+ * Ownership is family-level: values this function materialized are refreshed
+ * (edits propagate) or cleared under both spellings (removals propagate) on
+ * every call, but only while process.env still holds what we wrote; the
+ * moment another writer replaces either spelling, the writer's value becomes
+ * the shell layer for the whole family and the file no longer clobbers it.
+ *
+ * Keys outside the alias families (the standard OTEL_* passthroughs) keep
+ * exact-key semantics: OS env wins per key.
  */
 export function applySigilDotenv(): void {
   const loaded = readSigilDotenv(sigilConfigEnvPath());
   if (!loaded.reliable) return;
   const fileEnv = loaded.env;
+
+  // Immutable snapshot of the pre-existing process env, taken before any
+  // write below, so resolution never reads back our own materializations.
+  const envSnapshot: Record<string, string | undefined> = { ...process.env };
+
+  const familyKeys = new Set<string>();
+  for (const suffix of ALIAS_SUFFIXES) {
+    familyKeys.add(preferredKey(suffix));
+    familyKeys.add(legacyKey(suffix));
+    applyFamily(suffix, envSnapshot, fileEnv);
+  }
 
   // Release ownership for any key whose value in process.env no longer
   // matches what we wrote. Some other writer (shell-style assignment from
@@ -165,6 +240,7 @@ export function applySigilDotenv(): void {
   }
 
   for (const [key, value] of Object.entries(fileEnv)) {
+    if (familyKeys.has(key)) continue;
     if (!ownedValues.has(key)) {
       // We don't own this key — defer to a non-empty OS env value (shell
       // export, runtime assignment by any other writer) and leave it
@@ -178,6 +254,59 @@ export function applySigilDotenv(): void {
   }
 }
 
+// applyFamily resolves one alias family against the env snapshot and the
+// parsed file map, then materializes the winner under both spellings. Env
+// values still equal to our last write are ours and are replaced by the
+// recorded pre-write shell values for resolution; anything else is a
+// shell/runtime-writer value and wins over the file.
+function applyFamily(
+  suffix: string,
+  envSnapshot: Record<string, string | undefined>,
+  fileEnv: Record<string, string>,
+): void {
+  const pKey = preferredKey(suffix);
+  const lKey = legacyKey(suffix);
+  const curPreferred = envSnapshot[pKey];
+  const curLegacy = envSnapshot[lKey];
+  const rec = ownedFamilies.get(suffix);
+  const shellPreferred =
+    rec && curPreferred === rec.value ? rec.shell.preferred : curPreferred;
+  const shellLegacy =
+    rec && curLegacy === rec.value ? rec.shell.legacy : curLegacy;
+
+  let winner: string | undefined;
+  for (const candidate of [
+    shellPreferred,
+    shellLegacy,
+    fileEnv[pKey],
+    fileEnv[lKey],
+  ]) {
+    const trimmed = (candidate ?? "").trim();
+    if (trimmed !== "") {
+      winner = trimmed;
+      break;
+    }
+  }
+
+  if (winner === undefined) {
+    // No source supplies a value anymore. Withdraw only what we wrote —
+    // a value some other writer changed is not ours to delete.
+    if (rec) {
+      if (curPreferred === rec.value) delete process.env[pKey];
+      if (curLegacy === rec.value) delete process.env[lKey];
+      ownedFamilies.delete(suffix);
+    }
+    return;
+  }
+
+  process.env[pKey] = winner;
+  process.env[lKey] = winner;
+  ownedFamilies.set(suffix, {
+    value: winner,
+    shell: { preferred: shellPreferred, legacy: shellLegacy },
+  });
+}
+
 /**
  * Forget which keys `applySigilDotenv` has previously written into
  * `process.env`. Intended for tests that mutate `process.env` between cases
@@ -185,4 +314,5 @@ export function applySigilDotenv(): void {
  */
 export function resetSigilDotenvStateForTests(): void {
   ownedValues.clear();
+  ownedFamilies.clear();
 }

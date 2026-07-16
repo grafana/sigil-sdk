@@ -3,6 +3,7 @@ package local
 import (
 	"testing"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -184,12 +185,13 @@ func TestSettingsUpdates(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// None of these cases set connection fields, so Updates always emits
-			// empty (delete) markers for them and no token key.
+			// empty (delete) markers for them and no token key. Every managed
+			// key is written and deleted under both spellings.
 			want := tc.want
 			want["SIGIL_ENDPOINT"] = ""
 			want["SIGIL_AUTH_TENANT_ID"] = ""
 			want["SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
-			assert.Equal(t, want, tc.in.Updates())
+			assert.Equal(t, envconfig.ExpandAliases(want), tc.in.Updates())
 		})
 	}
 }

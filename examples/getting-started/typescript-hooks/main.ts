@@ -26,11 +26,7 @@ import type {
 } from "@grafana/sigil-sdk-js";
 
 function sigilApiEndpoint(): string {
-  const explicit = (process.env.SIGIL_API_ENDPOINT ?? "").trim();
-  if (explicit) {
-    return explicit;
-  }
-  const url = new URL(process.env.SIGIL_ENDPOINT!);
+  const url = new URL(process.env.AGENTO11Y_ENDPOINT!);
   return `${url.protocol}//${url.host}`;
 }
 
@@ -83,11 +79,11 @@ const model = "gpt-4.1-mini";
 const sigil = createSigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: process.env.SIGIL_ENDPOINT!,
+    endpoint: process.env.AGENTO11Y_ENDPOINT!,
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID!,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN!,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID!,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN!,
     },
   },
   api: { endpoint: sigilApiEndpoint() },

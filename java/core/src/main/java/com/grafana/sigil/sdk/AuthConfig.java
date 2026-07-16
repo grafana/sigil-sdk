@@ -6,7 +6,8 @@ public final class AuthConfig {
      * Auth mode. {@code null} means "not set" — the env layer or
      * {@link AuthHeaders} resolves it to {@link AuthMode#NONE}. Explicit
      * {@code setMode(AuthMode.NONE)} is preserved (caller-wins) and not
-     * overridden by {@code SIGIL_AUTH_MODE}.
+     * overridden by {@code AGENTO11Y_AUTH_MODE} (legacy
+     * {@code SIGIL_AUTH_MODE}).
      */
     private AuthMode mode;
     private String tenantId = "";

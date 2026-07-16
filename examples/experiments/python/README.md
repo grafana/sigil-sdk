@@ -42,7 +42,7 @@ The dashboard example follows the same flow, but the candidate output is a JSON
 dashboard spec. The script renders that spec with `matplotlib.pyplot` and uploads
 the PNG as a `dashboard-image` artifact on the trial.
 
-A/B testing is just two runs with different `SIGIL_EXPERIMENT_ID`/`tags` over the same items.
+A/B testing is just two runs with different `AGENTO11Y_EXPERIMENT_ID`/`tags` over the same items.
 
 ## Prerequisites
 
@@ -56,14 +56,14 @@ A/B testing is just two runs with different `SIGIL_EXPERIMENT_ID`/`tags` over th
 uv sync
 
 # Grafana Cloud AI Observability ingest API URL.
-export SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-export SIGIL_PROTOCOL=http
-export SIGIL_AUTH_TENANT_ID=<your-stack-id>
-export SIGIL_AUTH_TOKEN=<your-grafana-cloud-access-policy-token>
-export SIGIL_GRAFANA_URL=https://<your-stack>.grafana.net
+export AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+export AGENTO11Y_PROTOCOL=http
+export AGENTO11Y_AUTH_TENANT_ID=<your-stack-id>
+export AGENTO11Y_AUTH_TOKEN=<your-grafana-cloud-access-policy-token>
+export AGENTO11Y_GRAFANA_URL=https://<your-stack>.grafana.net
 
 # Optional: stable experiment id for CI retries / a real model.
-export SIGIL_EXPERIMENT_ID=experiment-example-${GIT_SHA:-manual}
+export AGENTO11Y_EXPERIMENT_ID=experiment-example-${GIT_SHA:-manual}
 export ANTHROPIC_API_KEY=<your-anthropic-api-key>
 export AGENT_MODEL=${AGENT_MODEL:-claude-3-5-haiku-latest}
 export GRADER_MODEL=${GRADER_MODEL:-$AGENT_MODEL}
@@ -75,7 +75,7 @@ For the dashboard/image artifact example, use a different experiment id if you
 already finalized the easy run:
 
 ```bash
-export SIGIL_EXPERIMENT_ID=dashboard-example-${GIT_SHA:-manual}
+export AGENTO11Y_EXPERIMENT_ID=dashboard-example-${GIT_SHA:-manual}
 uv run python -m app.run_dashboard_experiment
 ```
 
@@ -87,8 +87,8 @@ pass_rate=1.00 mean_score=1.00
 View in Sigil: https://<your-stack>.grafana.net/a/grafana-sigil-app/offline-experiments/experiments/experiment-example-manual
 ```
 
-> The deep link uses `SIGIL_GRAFANA_URL`; keep it pointed at your Grafana stack
-> UI host. This can differ from `SIGIL_ENDPOINT` when API and UI hosts differ.
+> The deep link uses `AGENTO11Y_GRAFANA_URL`; keep it pointed at your Grafana stack
+> UI host. This can differ from `AGENTO11Y_ENDPOINT` when API and UI hosts differ.
 
 ## Adapt it
 

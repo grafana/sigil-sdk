@@ -65,6 +65,7 @@ from .types import (
     TestSuite,
     TrialRef,
     TrialStatus,
+    _first_nonblank,
 )
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
@@ -211,7 +212,7 @@ class Trial:
         """Opens a standalone trial bound to ``client`` (no parent Experiment)."""
 
         if ref is None:
-            raise ValueError("trial ref is required; set SIGIL_EXPERIMENT_ID and SIGIL_TEST_CASE_ID")
+            raise ValueError("trial ref is required; set AGENTO11Y_EXPERIMENT_ID and AGENTO11Y_TEST_CASE_ID")
         return cls(
             client,
             ref,
@@ -947,9 +948,10 @@ def experiment(
 
     The headline entry point: wrap an already-instrumented run and publish to your
     Grafana Cloud Sigil instance. When ``client`` is omitted one is built from
-    ``endpoint``/``ingest_token``/``tenant_id``/``actor``, falling back to
-    ``SIGIL_ENDPOINT``, ``SIGIL_AUTH_TOKEN``, ``SIGIL_AUTH_TENANT_ID`` or
-    ``SIGIL_TENANT_ID``, and ``SIGIL_INGEST_ACTOR`` environment variables, and
+    ``endpoint``/``ingest_token``/``tenant_id``/``actor``, falling back to the
+    ``AGENTO11Y_ENDPOINT``, ``AGENTO11Y_AUTH_TOKEN``, ``AGENTO11Y_AUTH_TENANT_ID``,
+    and ``AGENTO11Y_INGEST_ACTOR`` environment variables (with their ``SIGIL_*``
+    legacy fallbacks, plus ``SIGIL_API_ENDPOINT`` and ``SIGIL_TENANT_ID``), and
     closed on exit. ``endpoint`` and the ingestion token are required::
 
         with experiment("nightly", suite=suite, candidate={"model_name": "gpt-5"}) as exp:
@@ -964,23 +966,26 @@ def experiment(
         from .client import Client
 
         resolved_endpoint = (
-            endpoint or os.environ.get("SIGIL_ENDPOINT") or os.environ.get("SIGIL_API_ENDPOINT") or ""
+            endpoint or _first_nonblank(os.environ, "AGENTO11Y_ENDPOINT", "SIGIL_ENDPOINT", "SIGIL_API_ENDPOINT")
         ).strip()
         if not resolved_endpoint:
             raise ValueError(
-                "Sigil endpoint is required: pass endpoint= or set SIGIL_ENDPOINT to your Grafana Cloud Sigil URL"
+                "Sigil endpoint is required: pass endpoint= or set AGENTO11Y_ENDPOINT to your Grafana Cloud Sigil URL"
             )
         resolved_tenant = (
-            tenant_id or os.environ.get("SIGIL_AUTH_TENANT_ID") or os.environ.get("SIGIL_TENANT_ID") or ""
+            tenant_id
+            or _first_nonblank(os.environ, "AGENTO11Y_AUTH_TENANT_ID", "SIGIL_AUTH_TENANT_ID", "SIGIL_TENANT_ID")
         ).strip()
-        resolved_token = (ingest_token or os.environ.get("SIGIL_AUTH_TOKEN") or "").strip()
+        resolved_token = (
+            ingest_token or _first_nonblank(os.environ, "AGENTO11Y_AUTH_TOKEN", "SIGIL_AUTH_TOKEN")
+        ).strip()
         if not resolved_token:
-            raise ValueError("ingest_token is required: pass ingest_token= or set SIGIL_AUTH_TOKEN")
+            raise ValueError("ingest_token is required: pass ingest_token= or set AGENTO11Y_AUTH_TOKEN")
         client = Client(
             resolved_endpoint,
             tenant_id=resolved_tenant,
             ingest_token=resolved_token,
-            actor=actor or os.environ.get("SIGIL_INGEST_ACTOR", ""),
+            actor=actor or _first_nonblank(os.environ, "AGENTO11Y_INGEST_ACTOR", "SIGIL_INGEST_ACTOR"),
             grafana_url=grafana_url,
             use_experimental_otel=use_experimental_otel,
         )

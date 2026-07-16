@@ -67,17 +67,17 @@ def setup_otel() -> tuple[TracerProvider, MeterProvider]:
 
 async def main() -> None:
     tracer_provider, meter_provider = setup_otel()
-    tenant_id = required_env("SIGIL_AUTH_TENANT_ID")
+    tenant_id = required_env("AGENTO11Y_AUTH_TENANT_ID")
     sigil = Client(
         ClientConfig(
             generation_export=GenerationExportConfig(
-                protocol=os.getenv("SIGIL_PROTOCOL", "http"),
-                endpoint=required_env("SIGIL_ENDPOINT"),
+                protocol=os.getenv("AGENTO11Y_PROTOCOL", "http"),
+                endpoint=required_env("AGENTO11Y_ENDPOINT"),
                 auth=AuthConfig(
                     mode="basic",
                     tenant_id=tenant_id,
                     basic_user=tenant_id,
-                    basic_password=required_env("SIGIL_AUTH_TOKEN"),
+                    basic_password=required_env("AGENTO11Y_AUTH_TOKEN"),
                 ),
             ),
             meter=meter_provider.get_meter("sigil-claude-agent-sdk-example"),
@@ -92,9 +92,9 @@ async def main() -> None:
                 permission_mode="default",
                 allowed_tools=["Read", "Glob", "Grep"],
             ),
-            conversation_id=env("SIGIL_CONVERSATION_ID", "sigil-claude-agent-sdk-demo"),
+            conversation_id=env("AGENTO11Y_CONVERSATION_ID", "sigil-claude-agent-sdk-demo"),
             agent_name="claude-agent-sdk-demo",
-            agent_version=env("SIGIL_AGENT_VERSION", "dev"),
+            agent_version=env("AGENTO11Y_AGENT_VERSION", "dev"),
         ) as claude:
             await claude.query("Use read-only tools if needed, then explain what this repository is in one sentence.")
             async for message in claude.receive_response():

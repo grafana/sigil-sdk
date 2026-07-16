@@ -108,7 +108,7 @@ func TestEvaluateToolCall(t *testing.T) {
 			clearCreds:    true,
 			toolName:      "bash",
 			wantAction:    sigil.HookActionDeny,
-			wantReasonSub: "missing SIGIL_ENDPOINT",
+			wantReasonSub: "missing AGENTO11Y_ENDPOINT",
 		},
 		{
 			name:             "allow with transform returns redacted args",

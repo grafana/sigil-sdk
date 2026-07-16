@@ -14,16 +14,14 @@ Add more patterns when concrete unredacted secrets are observed.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass
 
-from .config import GenerationSanitizer
+from .config import GenerationSanitizer, _env
 from .models import Generation, Message, MessageRole, Part, PartKind
 
 _logger = logging.getLogger("sigil_sdk")
 
-_ENV_REDACT_INPUT_MESSAGES = "SIGIL_REDACT_INPUT_MESSAGES"
 _TRUE_TOKENS = frozenset({"1", "true", "yes", "on"})
 _FALSE_TOKENS = frozenset({"0", "false", "no", "off"})
 
@@ -40,8 +38,9 @@ class SecretRedactionOptions:
     Options for the built-in secret redaction sanitizer.
 
     `redact_input_messages` is None by default, which falls back to
-    SIGIL_REDACT_INPUT_MESSAGES and then to False (the current opencode plugin
-    behavior). Set it explicitly to override the env var.
+    AGENTO11Y_REDACT_INPUT_MESSAGES (legacy SIGIL_REDACT_INPUT_MESSAGES) and
+    then to False (the current opencode plugin behavior). Set it explicitly to
+    override the env var.
 
     `redact_email_addresses` defaults to True. Callers can opt out when email
     addresses should be preserved.
@@ -121,32 +120,23 @@ def _resolve_redact_input_messages(
 ) -> bool:
     """Resolve input-message redaction: explicit > env > ``False``.
 
-    ``SIGIL_REDACT_INPUT_MESSAGES`` accepts ``1/0``, ``true/false``,
-    ``yes/no``, ``on/off`` (case-insensitive) and is consulted only when
-    ``explicit`` is ``None``. An unrecognised env value logs a warning through
-    the ``sigil_sdk`` logger and falls back to ``False``, so a typo cannot
-    silently flip redaction.
+    ``AGENTO11Y_REDACT_INPUT_MESSAGES`` (legacy ``SIGIL_REDACT_INPUT_MESSAGES``)
+    accepts ``1/0``, ``true/false``, ``yes/no``, ``on/off`` (case-insensitive)
+    and is consulted only when ``explicit`` is ``None``. An unrecognised env
+    value logs a warning naming the selected key and falls back to ``False``,
+    never to the other spelling, so a typo cannot silently flip redaction.
     """
 
     if explicit is not None:
         return explicit
-    raw = _env_lookup(env, _ENV_REDACT_INPUT_MESSAGES)
+    raw, key = _env(env, "REDACT_INPUT_MESSAGES")
     if raw is None:
         return False
     parsed = _parse_strict_bool(raw)
     if parsed is None:
-        _logger.warning("sigil: ignoring invalid %s: %s", _ENV_REDACT_INPUT_MESSAGES, raw)
+        _logger.warning("sigil: ignoring invalid %s: %s", key, raw)
         return False
     return parsed
-
-
-def _env_lookup(env: dict[str, str] | None, key: str) -> str | None:
-    src = env if env is not None else os.environ
-    raw = src.get(key)
-    if raw is None:
-        return None
-    val = raw.strip()
-    return val or None
 
 
 def _parse_strict_bool(raw: str) -> bool | None:

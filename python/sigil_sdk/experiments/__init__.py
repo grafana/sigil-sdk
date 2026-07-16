@@ -3,7 +3,8 @@
 This is the high-level surface for evaluation harnesses. It writes over the v1
 one-token ingest path (run upsert, generation export, score export, finalize).
 Experimental OpenTelemetry GenAI eval telemetry is available only when
-``use_experimental_otel=True`` or ``SIGIL_USE_EXPERIMENTAL_OTEL=true``.
+``use_experimental_otel=True`` or ``AGENTO11Y_USE_EXPERIMENTAL_OTEL=true``
+(legacy ``SIGIL_USE_EXPERIMENTAL_OTEL``).
 
 Quick start (``endpoint`` is your Grafana Cloud Sigil URL, ``tenant_id`` your
 stack id, and ``ingest_token`` your Cloud ingestion API key)::
@@ -12,9 +13,9 @@ stack id, and ``ingest_token`` your Cloud ingestion API key)::
     from sigil_sdk.experiments import Client, Experiment, TestSuite, TestCase, Evaluator
 
     client = Client(
-        os.environ["SIGIL_ENDPOINT"],
-        tenant_id=os.environ.get("SIGIL_AUTH_TENANT_ID", ""),
-        ingest_token=os.environ["SIGIL_AUTH_TOKEN"],
+        os.environ["AGENTO11Y_ENDPOINT"],
+        tenant_id=os.environ.get("AGENTO11Y_AUTH_TENANT_ID", ""),
+        ingest_token=os.environ["AGENTO11Y_AUTH_TOKEN"],
     )
     suite = TestSuite(suite_id="smoke", name="Smoke", test_cases=[
         TestCase(test_case_id="add", input="2+2", expected="4"),

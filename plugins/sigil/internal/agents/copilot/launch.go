@@ -234,7 +234,7 @@ func renderUserHooks() ([]byte, error) {
 				Command: "sigil copilot hook",
 				// This single file is read by BOTH Copilot Chat in VS Code and
 				// the copilot CLI, so it deliberately does NOT pin
-				// SIGIL_COPILOT_HOOK_SURFACE — the dispatcher infers the
+				// AGENTO11Y_COPILOT_HOOK_SURFACE — the dispatcher infers the
 				// surface (vscode vs copilot-cli) at runtime from the process
 				// tree. Pinning it here would mislabel one of the two hosts.
 				Env:     map[string]string{"SIGIL_COPILOT_HOOK_EVENT": e.name},

@@ -22,4 +22,4 @@ You also need Claude Code authentication available to the Claude Agent SDK. Use 
 python main.py
 ```
 
-When the response prints, followed by `Done`, open Grafana Cloud AI Observability to inspect the recorded generation. The example configures both Sigil SDK traces and metrics; `SIGIL_AGENT_VERSION` defaults to `dev` so version-scoped analytics can join generation exports to Prometheus metrics. If `CLAUDE_CODE_ENABLE_TELEMETRY=1` is set, the Claude Code CLI also exports its native spans, metrics, and log events to the configured OTLP endpoint.
+When the response prints, followed by `Done`, open Grafana Cloud AI Observability to inspect the recorded generation. The example configures both Sigil SDK traces and metrics; `AGENTO11Y_AGENT_VERSION` defaults to `dev` so version-scoped analytics can join generation exports to Prometheus metrics. If `CLAUDE_CODE_ENABLE_TELEMETRY=1` is set, the Claude Code CLI also exports its native spans, metrics, and log events to the configured OTLP endpoint.

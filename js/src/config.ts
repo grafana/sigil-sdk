@@ -15,6 +15,36 @@ const authorizationHeaderName = 'Authorization';
 
 const validAuthModes: ExportAuthConfig['mode'][] = ['none', 'tenant', 'bearer', 'basic'];
 
+// EnvPair is one logical config field readable under the preferred
+// AGENTO11Y_* name with a SIGIL_* legacy fallback. Selection happens before
+// parsing: a nonblank preferred value always wins, even when it later fails
+// validation, so stale legacy config cannot silently resurface.
+export interface EnvPair {
+  preferred: string;
+  legacy: string;
+}
+
+function brandedPair(suffix: string): EnvPair {
+  return { preferred: `AGENTO11Y_${suffix}`, legacy: `SIGIL_${suffix}` };
+}
+
+// canonical env-var names: preferred AGENTO11Y_* with SIGIL_* fallback.
+const envEndpoint = brandedPair('ENDPOINT');
+const envProtocol = brandedPair('PROTOCOL');
+const envInsecure = brandedPair('INSECURE');
+const envHeaders = brandedPair('HEADERS');
+const envAuthMode = brandedPair('AUTH_MODE');
+const envAuthTenantId = brandedPair('AUTH_TENANT_ID');
+const envAuthToken = brandedPair('AUTH_TOKEN');
+const envAgentName = brandedPair('AGENT_NAME');
+const envAgentVersion = brandedPair('AGENT_VERSION');
+const envUserId = brandedPair('USER_ID');
+// The two TAGS spellings are never merged; the selected value is used whole.
+const envTags = brandedPair('TAGS');
+const envContentCaptureMode = brandedPair('CONTENT_CAPTURE_MODE');
+const envDebug = brandedPair('DEBUG');
+export const envRedactInputMessages = brandedPair('REDACT_INPUT_MESSAGES');
+
 const defaultExportAuthConfig: ExportAuthConfig = {
   mode: 'none',
 };
@@ -75,7 +105,8 @@ export function defaultConfig(): SigilSdkConfig {
 }
 
 /**
- * Build a SigilSdkConfig from canonical SIGIL_* environment variables.
+ * Build a SigilSdkConfig from canonical AGENTO11Y_* environment variables
+ * (with SIGIL_* fallbacks).
  *
  * Most callers should use `new SigilClient()` (env reading is automatic).
  * Use `configFromEnv()` for tests, debugging, or advanced layering.
@@ -132,33 +163,34 @@ function envOverrides(env: Record<string, string | undefined>, logger: SigilLogg
   const generationExport: Partial<GenerationExportConfig> = {};
   const auth: Partial<ExportAuthConfig> = {};
 
-  const endpoint = trimmed(env, 'SIGIL_ENDPOINT');
-  if (endpoint !== undefined) generationExport.endpoint = endpoint;
-  const protocol = trimmed(env, 'SIGIL_PROTOCOL');
-  if (protocol !== undefined) generationExport.protocol = protocol.toLowerCase() as GenerationExportConfig['protocol'];
-  const insecure = trimmed(env, 'SIGIL_INSECURE');
-  if (insecure !== undefined) generationExport.insecure = parseBool(insecure);
-  const headers = trimmed(env, 'SIGIL_HEADERS');
-  if (headers !== undefined) generationExport.headers = parseCsvKv(headers);
+  const endpoint = envTrimmed(env, envEndpoint);
+  if (endpoint !== undefined) generationExport.endpoint = endpoint.value;
+  const protocol = envTrimmed(env, envProtocol);
+  if (protocol !== undefined)
+    generationExport.protocol = protocol.value.toLowerCase() as GenerationExportConfig['protocol'];
+  const insecure = envTrimmed(env, envInsecure);
+  if (insecure !== undefined) generationExport.insecure = parseBool(insecure.value);
+  const headers = envTrimmed(env, envHeaders);
+  if (headers !== undefined) generationExport.headers = parseCsvKv(headers.value);
 
-  const authMode = trimmed(env, 'SIGIL_AUTH_MODE');
+  const authMode = envTrimmed(env, envAuthMode);
   if (authMode !== undefined) {
-    const normalized = authMode.toLowerCase();
+    const normalized = authMode.value.toLowerCase();
     if (validAuthModes.includes(normalized as ExportAuthConfig['mode'])) {
       auth.mode = normalized as ExportAuthConfig['mode'];
     } else {
-      logger.warn?.(`sigil: ignoring invalid SIGIL_AUTH_MODE: ${authMode}`);
+      logger.warn?.(`sigil: ignoring invalid ${authMode.key}: ${authMode.value}`);
     }
   }
-  const tenantId = trimmed(env, 'SIGIL_AUTH_TENANT_ID');
-  if (tenantId !== undefined) auth.tenantId = tenantId;
+  const tenantId = envTrimmed(env, envAuthTenantId);
+  if (tenantId !== undefined) auth.tenantId = tenantId.value;
   // Set both fields; resolveHeadersWithAuth uses only the one matching the
   // final mode. Lets env's token fill a caller-supplied mode without env
-  // declaring SIGIL_AUTH_MODE.
-  const token = trimmed(env, 'SIGIL_AUTH_TOKEN');
+  // declaring an AUTH_MODE.
+  const token = envTrimmed(env, envAuthToken);
   if (token !== undefined) {
-    auth.bearerToken = token;
-    auth.basicPassword = token;
+    auth.bearerToken = token.value;
+    auth.basicPassword = token.value;
   }
   if (auth.mode === 'basic' && !auth.basicUser && auth.tenantId) {
     auth.basicUser = auth.tenantId;
@@ -169,25 +201,25 @@ function envOverrides(env: Record<string, string | undefined>, logger: SigilLogg
   }
   if (Object.keys(generationExport).length > 0) out.generationExport = generationExport;
 
-  const agentName = trimmed(env, 'SIGIL_AGENT_NAME');
-  if (agentName !== undefined) out.agentName = agentName;
-  const agentVersion = trimmed(env, 'SIGIL_AGENT_VERSION');
-  if (agentVersion !== undefined) out.agentVersion = agentVersion;
-  const userId = trimmed(env, 'SIGIL_USER_ID');
-  if (userId !== undefined) out.userId = userId;
-  const tags = trimmed(env, 'SIGIL_TAGS');
-  if (tags !== undefined) out.tags = parseCsvKv(tags);
-  const ccm = trimmed(env, 'SIGIL_CONTENT_CAPTURE_MODE');
+  const agentName = envTrimmed(env, envAgentName);
+  if (agentName !== undefined) out.agentName = agentName.value;
+  const agentVersion = envTrimmed(env, envAgentVersion);
+  if (agentVersion !== undefined) out.agentVersion = agentVersion.value;
+  const userId = envTrimmed(env, envUserId);
+  if (userId !== undefined) out.userId = userId.value;
+  const tags = envTrimmed(env, envTags);
+  if (tags !== undefined) out.tags = parseCsvKv(tags.value);
+  const ccm = envTrimmed(env, envContentCaptureMode);
   if (ccm !== undefined) {
-    const normalized = ccm.toLowerCase();
+    const normalized = ccm.value.toLowerCase();
     if (['full', 'no_tool_content', 'metadata_only', 'full_with_metadata_spans'].includes(normalized)) {
       out.contentCapture = normalized as ContentCaptureMode;
     } else {
-      logger.warn?.(`sigil: ignoring invalid SIGIL_CONTENT_CAPTURE_MODE: ${ccm}`);
+      logger.warn?.(`sigil: ignoring invalid ${ccm.key}: ${ccm.value}`);
     }
   }
-  const debug = trimmed(env, 'SIGIL_DEBUG');
-  if (debug !== undefined) out.debug = parseBool(debug);
+  const debug = envTrimmed(env, envDebug);
+  if (debug !== undefined) out.debug = parseBool(debug.value);
 
   return out;
 }
@@ -235,11 +267,21 @@ function mergeAuthInput(
   };
 }
 
-function trimmed(env: Record<string, string | undefined>, key: string): string | undefined {
-  const raw = env[key];
-  if (raw === undefined) return undefined;
-  const v = raw.trim();
-  return v.length === 0 ? undefined : v;
+// envTrimmed selects the pair's first nonblank value (preferred, then legacy)
+// and returns it with the env-var name it came from, so warnings can name the
+// key the user actually set.
+export function envTrimmed(
+  env: Record<string, string | undefined>,
+  pair: EnvPair,
+): { value: string; key: string } | undefined {
+  for (const key of [pair.preferred, pair.legacy]) {
+    const raw = env[key];
+    if (raw === undefined) continue;
+    const value = raw.trim();
+    if (value.length === 0) continue;
+    return { value, key };
+  }
+  return undefined;
 }
 
 function parseBool(raw: string): boolean {

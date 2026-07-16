@@ -19,20 +19,21 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/otel"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/timeutil"
 )
 
-// ExportEndpoint returns the generations export URL derived from SIGIL_ENDPOINT
-// (trailing slash trimmed) plus the SDK's `/api/v1/generations:export` path.
+// ExportEndpoint returns the generations export URL derived from the branded
+// ENDPOINT family (trailing slash trimmed) plus the SDK's
+// `/api/v1/generations:export` path.
 func ExportEndpoint() string {
-	return strings.TrimRight(os.Getenv("SIGIL_ENDPOINT"), "/") + "/api/v1/generations:export"
+	return strings.TrimRight(envconfig.Getenv("ENDPOINT"), "/") + "/api/v1/generations:export"
 }
 
 // ClientOptions configures NewClient.

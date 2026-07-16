@@ -57,27 +57,34 @@ type Settings struct {
 }
 
 // ParseSettings hydrates Settings from a dotenv map (as returned by
-// dotenv.LoadDotenv). Unset or unrecognised values fall back to the same
-// effective defaults the plugins apply at runtime, so a config.env with none
-// of these keys yields the default configuration. Boolean parsing reuses
+// dotenv.LoadDotenv). Each field resolves its alias family preferred-first
+// (AGENTO11Y_* over SIGIL_*). Unset or unrecognised values fall back to the
+// same effective defaults the plugins apply at runtime, so a config.env with
+// none of these keys yields the default configuration. Boolean parsing reuses
 // envconfig so the viewer and the hook runtime agree on what counts as
 // enabled.
 func ParseSettings(env map[string]string) Settings {
+	fam := func(suffix string) string {
+		if v := strings.TrimSpace(env[envconfig.PreferredKey(suffix)]); v != "" {
+			return v
+		}
+		return strings.TrimSpace(env[envconfig.LegacyKey(suffix)])
+	}
 	return Settings{
-		Endpoint:     strings.TrimSpace(env["SIGIL_ENDPOINT"]),
-		TenantID:     strings.TrimSpace(env["SIGIL_AUTH_TENANT_ID"]),
-		OtlpEndpoint: strings.TrimSpace(env["SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT"]),
-		TokenSet:     strings.TrimSpace(env["SIGIL_AUTH_TOKEN"]) != "",
+		Endpoint:     fam("ENDPOINT"),
+		TenantID:     fam("AUTH_TENANT_ID"),
+		OtlpEndpoint: fam("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		TokenSet:     fam("AUTH_TOKEN") != "",
 		// Token is intentionally left empty: the stored token is never read back.
-		Capture:      parseCaptureMode(env["SIGIL_CONTENT_CAPTURE_MODE"]),
-		Tags:         parseTags(env["SIGIL_TAGS"]),
-		Guards:       seedGuards(env["SIGIL_GUARDS_ENABLED"], env["SIGIL_GUARDS_FAIL_OPEN"]),
-		GuardTimeout: strings.TrimSpace(env["SIGIL_GUARDS_TIMEOUT_MS"]),
-		Debug:        envconfig.ParseBoolDefault(env["SIGIL_DEBUG"], false),
-		// SIGIL_AUTO_UPDATE is opt-out: unset means enabled. This matches
+		Capture:      parseCaptureMode(fam("CONTENT_CAPTURE_MODE")),
+		Tags:         parseTags(fam("TAGS")),
+		Guards:       seedGuards(fam("GUARDS_ENABLED"), fam("GUARDS_FAIL_OPEN")),
+		GuardTimeout: fam("GUARDS_TIMEOUT_MS"),
+		Debug:        envconfig.ParseBoolDefault(fam("DEBUG"), false),
+		// AUTO_UPDATE is opt-out: unset means enabled. This matches
 		// updatecheck.Disabled (only explicit falsey values disable updates).
-		AutoUpdate: envconfig.ParseBoolDefault(env["SIGIL_AUTO_UPDATE"], true),
-		UserID:     strings.TrimSpace(env["SIGIL_USER_ID"]),
+		AutoUpdate: envconfig.ParseBoolDefault(fam("AUTO_UPDATE"), true),
+		UserID:     fam("USER_ID"),
 	}
 }
 
@@ -147,18 +154,22 @@ func (s Settings) Updates() map[string]string {
 
 	u["SIGIL_USER_ID"] = strings.TrimSpace(s.UserID)
 
-	return u
+	// Managed values are written and deleted under both branded spellings so
+	// old binaries that only read SIGIL_* keep working.
+	return envconfig.ExpandAliases(u)
 }
 
 // previewUpdates returns the keys to render in the live config.env preview. It
 // mirrors Updates but never exposes the auth token: a stored or freshly
-// entered token is shown masked so the panel signals the key is present
-// without leaking the value.
+// entered token is shown masked (under both spellings) so the panel signals
+// the key is present without leaking the value.
 func (s Settings) previewUpdates() map[string]string {
 	u := s.Updates()
 	if !s.TokenCleared && (strings.TrimSpace(s.Token) != "" || s.TokenSet) {
+		u["AGENTO11Y_AUTH_TOKEN"] = tokenMask
 		u["SIGIL_AUTH_TOKEN"] = tokenMask
 	} else {
+		delete(u, "AGENTO11Y_AUTH_TOKEN")
 		delete(u, "SIGIL_AUTH_TOKEN")
 	}
 	return u

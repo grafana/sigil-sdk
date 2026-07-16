@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/xdg"
 )
 
@@ -54,9 +55,10 @@ func Record(agent, sigilVersion string) {
 	_ = os.Chtimes(path, t, t)
 }
 
-// Disabled reports whether SIGIL_AUTO_UPDATE opts out of periodic refreshes.
+// Disabled reports whether AGENTO11Y_AUTO_UPDATE (SIGIL_ fallback) opts out
+// of periodic refreshes.
 func Disabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("SIGIL_AUTO_UPDATE"))) {
+	switch strings.ToLower(envconfig.Getenv("AUTO_UPDATE")) {
 	case "0", "false", "no", "off":
 		return true
 	default:

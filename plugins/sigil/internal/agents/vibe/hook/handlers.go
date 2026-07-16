@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -70,15 +69,15 @@ func PostAgentTurn(ctx context.Context, p Payload, logger *log.Logger) {
 	// Sigil creds (e.g. during testing) shouldn't have their session
 	// crash; we just log and bail without advancing the offset.
 	envconfig.ApplyLocalAuthPlaceholders()
-	endpoint := os.Getenv("SIGIL_ENDPOINT")
-	tenantID := os.Getenv("SIGIL_AUTH_TENANT_ID")
-	authToken := os.Getenv("SIGIL_AUTH_TOKEN")
+	endpoint := envconfig.Getenv("ENDPOINT")
+	tenantID := envconfig.Getenv("AUTH_TENANT_ID")
+	authToken := envconfig.Getenv("AUTH_TOKEN")
 	missing := envconfig.MissingEnvVars(
-		[]string{"SIGIL_ENDPOINT", "SIGIL_AUTH_TENANT_ID", "SIGIL_AUTH_TOKEN"},
+		[]string{"AGENTO11Y_ENDPOINT", "AGENTO11Y_AUTH_TENANT_ID", "AGENTO11Y_AUTH_TOKEN"},
 		map[string]string{
-			"SIGIL_ENDPOINT":       endpoint,
-			"SIGIL_AUTH_TENANT_ID": tenantID,
-			"SIGIL_AUTH_TOKEN":     authToken,
+			"AGENTO11Y_ENDPOINT":       endpoint,
+			"AGENTO11Y_AUTH_TENANT_ID": tenantID,
+			"AGENTO11Y_AUTH_TOKEN":     authToken,
 		},
 	)
 	if len(missing) > 0 {

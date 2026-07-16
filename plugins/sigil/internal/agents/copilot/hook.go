@@ -51,7 +51,7 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 	// The Copilot payload carries no host identifier and one shared
 	// ~/.copilot/hooks file is read by both the CLI and VS Code, so the
 	// surface (vscode vs copilot-cli) is resolved at runtime: an explicit
-	// SIGIL_COPILOT_HOOK_SURFACE env wins, otherwise it is inferred from the
+	// AGENTO11Y_COPILOT_HOOK_SURFACE env wins, otherwise it is inferred from the
 	// process tree. Stamp it onto the payload so handlers persist it.
 	payload.SurfaceMarker = surfaceDetect()
 	surfaceLog := payload.SurfaceMarker

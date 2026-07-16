@@ -35,7 +35,7 @@ agent has a clean function seam or needs a harness / full stack. For deeper run-
   does not create tenant-level evaluators/rules/guards — but only do it via Step 6.)
 - Do not rewrite the agent's prompt, optimize, or redeploy.
 - Never run the experiment without asking first (Step 6). Never run against a target the
-  developer did not configure — use their `SIGIL_ENDPOINT` + credentials (Grafana Cloud); if
+  developer did not configure — use their `AGENTO11Y_ENDPOINT` + credentials (Grafana Cloud); if
   they are not set, ask for them, do not invent an endpoint.
 - Never mint, generate, or store credentials. The developer owns their Grafana Cloud
   ingestion token; read it from the environment or ask them to paste it — do not create one.
@@ -228,13 +228,13 @@ Keep the header verbatim, and be honest in it about what still needs doing:
 Runs <agent> over evals/<agent>-starter.yaml as a Sigil experiment and publishes scores.
 
 You still need to: (1) fill run_agent(case) to call YOUR agent; (2) tune the sketched
-judge; (3) set real credentials — SIGIL_ENDPOINT + SIGIL_AUTH_TOKEN for your Grafana Cloud
+judge; (3) set real credentials — AGENTO11Y_ENDPOINT + AGENTO11Y_AUTH_TOKEN for your Grafana Cloud
 stack. The SDK stores scores; it does not run the agent or the judge.
 
-Set SIGIL_INGEST_ACTOR to a stable value: the run and its trials must share one actor, or
+Set AGENTO11Y_INGEST_ACTOR to a stable value: the run and its trials must share one actor, or
 trial creation fails with "401: experiment is owned by another actor".
 
-    SIGIL_ENDPOINT=... SIGIL_AUTH_TOKEN=... SIGIL_INGEST_ACTOR=ingest:sdk/python \
+    AGENTO11Y_ENDPOINT=... AGENTO11Y_AUTH_TOKEN=... AGENTO11Y_INGEST_ACTOR=ingest:sdk/python \
         python evals/run_experiment.py
 """
 import json, os, time
@@ -279,7 +279,7 @@ def main() -> None:
     }
     with sigil.experiment(name="<agent> starter", experiment_id=f"<agent>-starter-{int(time.time())}",
                           suite=suite, candidate=candidate, tags=["starter"],
-                          actor=os.getenv("SIGIL_INGEST_ACTOR", "ingest:sdk/python")) as exp:
+                          actor=os.getenv("AGENTO11Y_INGEST_ACTOR", "ingest:sdk/python")) as exp:
         for case in suite.test_cases:
             with exp.trial(case) as trial:
                 out = run_agent(case)
@@ -310,7 +310,7 @@ Output, in this order:
    and add real ones.
 3. The three things they still do to run it: fill `run_agent(case)`, tune the sketched judge
    (and add the other recommended evaluators the same way), and set credentials
-   (`SIGIL_ENDPOINT` + `SIGIL_AUTH_TOKEN`). State the boundary explicitly: this skill only
+   (`AGENTO11Y_ENDPOINT` + `AGENTO11Y_AUTH_TOKEN`). State the boundary explicitly: this skill only
    bootstraps the first run; for anything past that — binding an already-instrumented agent's
    real generations, auditable LLM-judge grading, cross-process verifiers, repeated-sampling
    metrics — the `agento11y-experiments` skill is the reference.
@@ -331,13 +331,13 @@ If they accept:
 1. Help fill `run_agent(case)` — wire it to the real entrypoint from Step 1, so the runner
    actually calls their agent.
 2. Preflight the environment and stop with a clear ask if anything is missing:
-   - `SIGIL_ENDPOINT` + `SIGIL_AUTH_TOKEN`. If either is unset, ask the developer for it
-     proactively — `SIGIL_AUTH_TOKEN` is their Grafana Cloud ingestion API key (Cloud portal →
-     stack → API keys), `SIGIL_ENDPOINT` their stack endpoint. **Never mint, generate, or
+   - `AGENTO11Y_ENDPOINT` + `AGENTO11Y_AUTH_TOKEN`. If either is unset, ask the developer for it
+     proactively — `AGENTO11Y_AUTH_TOKEN` is their Grafana Cloud ingestion API key (Cloud portal →
+     stack → API keys), `AGENTO11Y_ENDPOINT` their stack endpoint. **Never mint, generate, or
      fabricate a token yourself, and never invent an endpoint** — the developer owns the
      credential and supplies it; you only read it from the environment or ask for it.
    - `MODEL_NAME` is a live model (dead model ids fail with a 404 not_found).
-   - A stable `SIGIL_INGEST_ACTOR` so run and trials share one actor (else `401: owned by
+   - A stable `AGENTO11Y_INGEST_ACTOR` so run and trials share one actor (else `401: owned by
      another actor`).
    - A declared `AGENT_VERSION` (in the candidate). Without it Sigil auto-derives a version
      from the system-prompt hash, and the developer can't attribute scores to a version or

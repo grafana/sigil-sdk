@@ -81,17 +81,17 @@ def create_model():
 
 
 meter_provider = setup_metrics()
-tenant_id = required_env("SIGIL_AUTH_TENANT_ID")
+tenant_id = required_env("AGENTO11Y_AUTH_TENANT_ID")
 sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
-            protocol=os.getenv("SIGIL_PROTOCOL", "http"),
-            endpoint=required_env("SIGIL_ENDPOINT"),
+            protocol=os.getenv("AGENTO11Y_PROTOCOL", "http"),
+            endpoint=required_env("AGENTO11Y_ENDPOINT"),
             auth=AuthConfig(
                 mode="basic",
                 tenant_id=tenant_id,
                 basic_user=tenant_id,
-                basic_password=required_env("SIGIL_AUTH_TOKEN"),
+                basic_password=required_env("AGENTO11Y_AUTH_TOKEN"),
             ),
         ),
         meter=meter_provider.get_meter("sigil-strands-example"),
@@ -113,7 +113,7 @@ try:
 
     result = agent(
         "Use the add_numbers tool to add 19 and 23, then answer in one sentence.",
-        invocation_state={"conversation_id": env("SIGIL_CONVERSATION_ID", "sigil-strands-demo")},
+        invocation_state={"conversation_id": env("AGENTO11Y_CONVERSATION_ID", "sigil-strands-demo")},
     )
 
     print(result.message)

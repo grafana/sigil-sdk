@@ -5,20 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 )
 
 // resolveUserID returns the user id to attach to every emitted generation.
-// SIGIL_USER_ID wins when set to a non-whitespace value; otherwise we read
-// ~/.claude.json using the field selected by SIGIL_USER_ID_SOURCE (default
-// "email", falling back to "email" on any unrecognized value).
-// Any failure resolves to "" — telemetry is best-effort.
+// The branded USER_ID family wins when set to a non-whitespace value;
+// otherwise we read ~/.claude.json using the field selected by the
+// USER_ID_SOURCE family (default "email", falling back to "email" on any
+// unrecognized value). Any failure resolves to "" — telemetry is best-effort.
 func resolveUserID() string {
-	if v := strings.TrimSpace(os.Getenv("SIGIL_USER_ID")); v != "" {
+	if v := envconfig.Getenv("USER_ID"); v != "" {
 		return v
 	}
 
-	source := strings.TrimSpace(os.Getenv("SIGIL_USER_ID_SOURCE"))
+	source := envconfig.Getenv("USER_ID_SOURCE")
 
 	home, err := os.UserHomeDir()
 	if err != nil {

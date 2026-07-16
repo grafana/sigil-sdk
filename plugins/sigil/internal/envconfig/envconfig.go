@@ -1,9 +1,12 @@
 // Package envconfig collects small helpers for reading the sigil plugin's
-// canonical SIGIL_* environment variables.
+// branded environment variables. Every supported variable is an alias family:
+// the preferred AGENTO11Y_<suffix> spelling with a SIGIL_<suffix> legacy
+// fallback kept during the compatibility period.
 package envconfig
 
 import (
 	"log"
+	"maps"
 	"net/url"
 	"os"
 	"strconv"
@@ -11,6 +14,106 @@ import (
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 )
+
+// PreferredKey and LegacyKey are the two spellings of one branded variable.
+func PreferredKey(suffix string) string { return "AGENTO11Y_" + suffix }
+func LegacyKey(suffix string) string    { return "SIGIL_" + suffix }
+
+// AliasSuffixes is the launcher's supported alias families. Dotenv resolution
+// materializes exactly these; keys outside this list keep exact-key semantics.
+var AliasSuffixes = []string{
+	"ENDPOINT",
+	"PROTOCOL",
+	"INSECURE",
+	"HEADERS",
+	"AUTH_MODE",
+	"AUTH_TENANT_ID",
+	"AUTH_TOKEN",
+	"AGENT_NAME",
+	"AGENT_VERSION",
+	"USER_ID",
+	"TAGS",
+	"CONTENT_CAPTURE_MODE",
+	"DEBUG",
+	"REDACT_INPUT_MESSAGES",
+	"OTEL_EXPORTER_OTLP_ENDPOINT",
+	"OTEL_EXPORTER_OTLP_INSECURE",
+	"OTEL_AUTH_TOKEN",
+	"GUARDS_ENABLED",
+	"GUARDS_FAIL_OPEN",
+	"GUARDS_TIMEOUT_MS",
+	"AUTO_UPDATE",
+	"USER_ID_SOURCE",
+	"BIN",
+	"COPILOT_HOOK_SURFACE",
+}
+
+// LookupEnv resolves a branded variable from the process env: the first
+// nonblank of AGENTO11Y_<suffix>, SIGIL_<suffix>. Blank or whitespace-only
+// values are treated as unset. The returned key names the spelling the value
+// came from so diagnostics can report what the user actually set.
+func LookupEnv(suffix string) (value, key string, ok bool) {
+	for _, k := range []string{PreferredKey(suffix), LegacyKey(suffix)} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v, k, true
+		}
+	}
+	return "", "", false
+}
+
+// Getenv returns the resolved branded value, or "" when neither spelling is
+// set.
+func Getenv(suffix string) string {
+	v, _, _ := LookupEnv(suffix)
+	return v
+}
+
+// SetBothEnv writes value under both spellings so old and new readers (and
+// child processes) observe the same configuration.
+func SetBothEnv(suffix, value string) {
+	_ = os.Setenv(PreferredKey(suffix), value)
+	_ = os.Setenv(LegacyKey(suffix), value)
+}
+
+// EnvSetter is the subset of testing.TB PinAliasEnvBlank needs. Declared
+// locally so this package does not import testing.
+type EnvSetter interface {
+	Setenv(key, value string)
+}
+
+// PinAliasEnvBlank pins both spellings of every alias family to "" for the
+// duration of a test. Materialization helpers (dotenv.ApplyEnv, SetBothEnv)
+// write through os.Setenv with no cleanup, so without pinning a value from an
+// earlier test in the same process would leak into later ones.
+func PinAliasEnvBlank(t EnvSetter) {
+	for _, suffix := range AliasSuffixes {
+		t.Setenv(PreferredKey(suffix), "")
+		t.Setenv(LegacyKey(suffix), "")
+	}
+}
+
+// ExpandAliases returns updates with every branded key mirrored under its
+// other spelling carrying the same value. Managed writers use this to write
+// both names at once; an empty value deletes both. Keys already present in
+// updates are not overwritten; non-branded keys pass through unchanged.
+func ExpandAliases(updates map[string]string) map[string]string {
+	out := make(map[string]string, len(updates)*2)
+	maps.Copy(out, updates)
+	for k, v := range updates {
+		var mirror string
+		if suffix, ok := strings.CutPrefix(k, "AGENTO11Y_"); ok {
+			mirror = LegacyKey(suffix)
+		} else if suffix, ok := strings.CutPrefix(k, "SIGIL_"); ok {
+			mirror = PreferredKey(suffix)
+		} else {
+			continue
+		}
+		if _, exists := out[mirror]; !exists {
+			out[mirror] = v
+		}
+	}
+	return out
+}
 
 // ParseBool mirrors the SDK's parseBool whitelist (1/true/yes/on).
 func ParseBool(raw string) bool {
@@ -83,15 +186,17 @@ func LocalAuthPlaceholders(endpoint, tenantID, authToken string) (string, string
 
 // ApplyLocalAuthPlaceholders writes local endpoint auth placeholders to the
 // process environment. Use this after dotenv loading and before credential
-// checks or SDK client construction.
+// checks or SDK client construction. Any resolved (or placeholder) value is
+// materialized under both branded spellings so a consumer that reads only one
+// spelling — such as an older SDK — sees the same credential.
 func ApplyLocalAuthPlaceholders() {
-	endpoint := os.Getenv("SIGIL_ENDPOINT")
-	tenantID, authToken := LocalAuthPlaceholders(endpoint, os.Getenv("SIGIL_AUTH_TENANT_ID"), os.Getenv("SIGIL_AUTH_TOKEN"))
-	if tenantID != os.Getenv("SIGIL_AUTH_TENANT_ID") {
-		_ = os.Setenv("SIGIL_AUTH_TENANT_ID", tenantID)
+	endpoint := Getenv("ENDPOINT")
+	tenantID, authToken := LocalAuthPlaceholders(endpoint, Getenv("AUTH_TENANT_ID"), Getenv("AUTH_TOKEN"))
+	if tenantID != "" {
+		SetBothEnv("AUTH_TENANT_ID", tenantID)
 	}
-	if authToken != os.Getenv("SIGIL_AUTH_TOKEN") {
-		_ = os.Setenv("SIGIL_AUTH_TOKEN", authToken)
+	if authToken != "" {
+		SetBothEnv("AUTH_TOKEN", authToken)
 	}
 }
 
@@ -135,24 +240,25 @@ func ParseExtraTags(s string) map[string]string {
 }
 
 // ResolveContentMode returns the effective ContentCaptureMode from
-// SIGIL_CONTENT_CAPTURE_MODE. Empty values and the Default zero-value enum
-// resolve to metadata_only so the explicit fall-back is the same regardless
-// of whether the caller forgot to set the variable or set it to an unknown
-// label.
+// AGENTO11Y_CONTENT_CAPTURE_MODE (SIGIL_ fallback). Empty values and the
+// Default zero-value enum resolve to metadata_only so the explicit fall-back
+// is the same regardless of whether the caller forgot to set the variable or
+// set it to an unknown label. An invalid preferred value never falls back to
+// the legacy spelling.
 //
 // Invalid (non-empty, unparseable) values are reported via logger when
 // non-nil so a typo doesn't silently downgrade behaviour. Hooks must not
 // write to stderr, so callers pass their adapter logger here — the helper
 // never touches stderr itself.
 func ResolveContentMode(logger *log.Logger) sigil.ContentCaptureMode {
-	v := strings.TrimSpace(os.Getenv("SIGIL_CONTENT_CAPTURE_MODE"))
-	if v == "" {
+	v, key, ok := LookupEnv("CONTENT_CAPTURE_MODE")
+	if !ok {
 		return sigil.ContentCaptureModeMetadataOnly
 	}
 	var mode sigil.ContentCaptureMode
 	if err := mode.UnmarshalText([]byte(v)); err != nil {
 		if logger != nil {
-			logger.Printf("config: unknown SIGIL_CONTENT_CAPTURE_MODE=%q; using metadata_only", v)
+			logger.Printf("config: unknown %s=%q; using metadata_only", key, v)
 		}
 		return sigil.ContentCaptureModeMetadataOnly
 	}
@@ -182,24 +288,25 @@ const (
 	defaultGuardsFailOpen = true
 )
 
-// ResolveGuards reads SIGIL_GUARDS_ENABLED / _TIMEOUT_MS / _FAIL_OPEN and
-// returns the effective guard configuration. Unset or empty values fall back
-// to the defaults (off / 1500ms / fail-open). Unrecognised boolean values and
-// non-numeric, zero, or negative timeout values are reported via logger when
-// non-nil and fall back to the default — matching pi's resolveGuards behaviour
-// so the shared config.env produces identical results across plugins. Hooks
-// must not write to stderr, so callers pass their adapter logger here.
+// ResolveGuards reads the GUARDS_ENABLED / GUARDS_TIMEOUT_MS / GUARDS_FAIL_OPEN
+// alias families and returns the effective guard configuration. Unset or empty
+// values fall back to the defaults (off / 1500ms / fail-open). Unrecognised
+// boolean values and non-numeric, zero, or negative timeout values are
+// reported via logger when non-nil and fall back to the default — matching
+// pi's resolveGuards behaviour so the shared config.env produces identical
+// results across plugins. Hooks must not write to stderr, so callers pass
+// their adapter logger here.
 func ResolveGuards(logger *log.Logger) GuardsConfig {
 	cfg := GuardsConfig{
-		Enabled:   resolveGuardsBool(logger, "SIGIL_GUARDS_ENABLED", defaultGuardsEnabled),
+		Enabled:   resolveGuardsBool(logger, "GUARDS_ENABLED", defaultGuardsEnabled),
 		TimeoutMs: DefaultGuardsTimeoutMs,
-		FailOpen:  resolveGuardsBool(logger, "SIGIL_GUARDS_FAIL_OPEN", defaultGuardsFailOpen),
+		FailOpen:  resolveGuardsBool(logger, "GUARDS_FAIL_OPEN", defaultGuardsFailOpen),
 	}
-	if v := strings.TrimSpace(os.Getenv("SIGIL_GUARDS_TIMEOUT_MS")); v != "" {
+	if v, key, ok := LookupEnv("GUARDS_TIMEOUT_MS"); ok {
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {
 			if logger != nil {
-				logger.Printf("config: invalid SIGIL_GUARDS_TIMEOUT_MS=%q; using %d", v, DefaultGuardsTimeoutMs)
+				logger.Printf("config: invalid %s=%q; using %d", key, v, DefaultGuardsTimeoutMs)
 			}
 		} else {
 			cfg.TimeoutMs = n
@@ -208,9 +315,9 @@ func ResolveGuards(logger *log.Logger) GuardsConfig {
 	return cfg
 }
 
-func resolveGuardsBool(logger *log.Logger, key string, def bool) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
+func resolveGuardsBool(logger *log.Logger, suffix string, def bool) bool {
+	raw, key, ok := LookupEnv(suffix)
+	if !ok {
 		return def
 	}
 	switch strings.ToLower(raw) {

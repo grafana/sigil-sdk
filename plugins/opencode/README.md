@@ -2,7 +2,7 @@
 
 [OpenCode](https://opencode.ai) plugin that sends LLM generations to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/).
 
-By default only metadata is sent (token counts, cost, model, tool names, durations). Set `SIGIL_CONTENT_CAPTURE_MODE` to `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans` to control what is sent. `default` is accepted as an alias for `metadata_only`. See [Content Capture Modes](../../docs/concepts/content-capture-modes.md) for the full reference.
+By default only metadata is sent (token counts, cost, model, tool names, durations). Set `AGENTO11Y_CONTENT_CAPTURE_MODE` to `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans` to control what is sent. `default` is accepted as an alias for `metadata_only`. See [Content Capture Modes](../../docs/concepts/content-capture-modes.md) for the full reference.
 
 ## 1. Install and launch
 
@@ -50,15 +50,15 @@ When `sigil opencode` or `sigil login` prompts, copy values from `https://<your-
 You need values from three Grafana Cloud pages:
 
 1. **AI Observability → Configuration**
-   - **API URL** → `SIGIL_ENDPOINT`
-   - **Instance ID** → `SIGIL_AUTH_TENANT_ID`
+   - **API URL** → `AGENTO11Y_ENDPOINT`
+   - **Instance ID** → `AGENTO11Y_AUTH_TENANT_ID`
 
 2. **Administration → Users and access → Cloud access policies**
    - Create a policy with scopes `sigil:write`, `metrics:write`, `traces:write`.
-   - Add a token. The `glc_…` value is shown once → `SIGIL_AUTH_TOKEN`.
+   - Add a token. The `glc_…` value is shown once → `AGENTO11Y_AUTH_TOKEN`.
 
 3. **Grafana Cloud Portal → your stack → OpenTelemetry card**
-   - **OTLP endpoint URL** → `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT`
+   - **OTLP endpoint URL** → `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT`
 
 Run `sigil login` later to update saved credentials.
 
@@ -68,20 +68,20 @@ Run `sigil login` later to update saved credentials.
 Create or update `~/.config/sigil/config.env`:
 
 ```dotenv
-SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-SIGIL_AUTH_TENANT_ID=<instance-id>
-SIGIL_AUTH_TOKEN=glc_...
-SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
+AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_AUTH_TENANT_ID=<instance-id>
+AGENTO11Y_AUTH_TOKEN=glc_...
+AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 ```
 
 </details>
 
-When `SIGIL_AUTH_TENANT_ID` and `SIGIL_AUTH_TOKEN` are set, the plugin uses them for Sigil and OTLP auth. If the OpenTelemetry card shows a different Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
+When `AGENTO11Y_AUTH_TENANT_ID` and `AGENTO11Y_AUTH_TOKEN` are set, the plugin uses them for Sigil and OTLP auth. If the OpenTelemetry card shows a different Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
 
 To include conversation text, add this to `~/.config/sigil/config.env`:
 
 ```dotenv
-SIGIL_CONTENT_CAPTURE_MODE=full
+AGENTO11Y_CONTENT_CAPTURE_MODE=full
 ```
 
 OpenCode redacts assistant and tool content before export. User prompt text is sent as-is when content capture allows it.
@@ -90,7 +90,7 @@ OpenCode redacts assistant and tool content before export. User prompt text is s
 
 Run one OpenCode turn, then open **AI Observability → Conversations** in Grafana Cloud. A new generation should appear within a few seconds.
 
-If nothing shows up, set `SIGIL_DEBUG=true` in `~/.config/sigil/config.env`, run another turn, and check OpenCode stderr.
+If nothing shows up, set `AGENTO11Y_DEBUG=true` in `~/.config/sigil/config.env`, run another turn, and check OpenCode stderr.
 
 ## Tagging sessions
 
@@ -102,7 +102,7 @@ sigil opencode --tag project=hackathon --tag team=ai
 sigil opencode --tag team=ai -- run "say hi"
 ```
 
-`--tag` is shorthand for `SIGIL_TAGS`; flag tags merge onto (and override) any `SIGIL_TAGS` already in the environment or `~/.config/sigil/config.env`. The merge happens in the SDK, so user tags reach every generation without the plugin reparsing them.
+`--tag` is shorthand for `AGENTO11Y_TAGS`; flag tags merge onto (and override) any `AGENTO11Y_TAGS` already in the environment or `~/.config/sigil/config.env`. The merge happens in the SDK, so user tags reach every generation without the plugin reparsing them.
 
 The plugin always attaches two built-in tags to every generation:
 
@@ -117,20 +117,20 @@ Built-in tags win collisions with user tags, matching the claude-code and cursor
 
 | Variable | Default | Description |
 |---|---|---|
-| `SIGIL_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. Empty value disables the plugin. |
-| `SIGIL_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
-| `SIGIL_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
-| `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
-| `SIGIL_OTEL_AUTH_TOKEN` | `SIGIL_AUTH_TOKEN` | Override the OTLP password. |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `metadata_only` | One of `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans`. `default` is accepted as an alias for `metadata_only`. |
-| `SIGIL_GUARDS_ENABLED` | `false` | Evaluate OpenCode tool calls against Sigil guards before execution. |
-| `SIGIL_GUARDS_TIMEOUT_MS` | `1500` | Per-evaluation guard timeout in milliseconds. |
-| `SIGIL_GUARDS_FAIL_OPEN` | `true` | Allow tool calls if guard evaluation fails. Set to `false` to fail closed. |
-| `SIGIL_AGENT_NAME` | `opencode` | Agent name reported to Sigil. The plugin appends `:<mode>` for OpenCode's UI mode, such as `build` or `plan`. |
-| `SIGIL_AGENT_VERSION` | OpenCode version | Version string reported with the agent. |
-| `SIGIL_DEBUG` | `false` | Log lifecycle events to stderr. |
+| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. Empty value disables the plugin. |
+| `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
+| `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
+| `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
+| `AGENTO11Y_OTEL_AUTH_TOKEN` | `AGENTO11Y_AUTH_TOKEN` | Override the OTLP password. |
+| `AGENTO11Y_CONTENT_CAPTURE_MODE` | `metadata_only` | One of `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans`. `default` is accepted as an alias for `metadata_only`. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Evaluate OpenCode tool calls against Sigil guards before execution. |
+| `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-evaluation guard timeout in milliseconds. |
+| `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | Allow tool calls if guard evaluation fails. Set to `false` to fail closed. |
+| `AGENTO11Y_AGENT_NAME` | `opencode` | Agent name reported to Sigil. The plugin appends `:<mode>` for OpenCode's UI mode, such as `build` or `plan`. |
+| `AGENTO11Y_AGENT_VERSION` | OpenCode version | Version string reported with the agent. |
+| `AGENTO11Y_DEBUG` | `false` | Log lifecycle events to stderr. |
 
-File format: one `KEY=value` per line, `#` line comments, optional `export ` prefix, optional matching single or double quotes around the value. Only `SIGIL_*` keys plus `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_INSECURE`, and `OTEL_SERVICE_NAME` are honored — anything else (including stray `PATH=…` lines) is ignored.
+File format: one `KEY=value` per line, `#` line comments, optional `export ` prefix, optional matching single or double quotes around the value. Only `AGENTO11Y_*` and `SIGIL_*` keys plus `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_INSECURE`, and `OTEL_SERVICE_NAME` are honored — anything else (including stray `PATH=…` lines) is ignored.
 
 A non-empty OS env value always wins over the file; an empty or whitespace-only OS value is treated as unset and gets filled from `config.env`. Missing files are silent.
 

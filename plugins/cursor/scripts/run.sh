@@ -6,7 +6,8 @@
 # launchd's default (/usr/bin:/bin:/usr/sbin:/sbin) and on Linux desktop
 # launches is whatever the .desktop launcher set — neither contains the
 # usual `go install` target ($HOME/go/bin) or Homebrew's bin. We probe the
-# common locations directly. Set SIGIL_BIN to override.
+# common locations directly. Set AGENTO11Y_BIN (or the legacy SIGIL_BIN) to
+# override.
 set -u
 
 # Save the original stdin (the JSON payload from Cursor) before the heredoc
@@ -18,6 +19,7 @@ exec 3<&0
 while IFS= read -r b; do
   [ -n "$b" ] && [ -x "$b" ] && exec "$b" cursor hook "$@" <&3
 done <<EOF
+${AGENTO11Y_BIN:-}
 ${SIGIL_BIN:-}
 ${HOME:-}/go/bin/sigil
 /opt/homebrew/bin/sigil

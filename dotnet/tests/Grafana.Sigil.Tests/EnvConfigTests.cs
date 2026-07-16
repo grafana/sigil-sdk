@@ -342,4 +342,194 @@ public sealed class EnvConfigTests
         Assert.Equal("alice", baseConfig.UserId);
         Assert.Equal("base-agent", baseConfig.AgentName);
     }
+
+    [Fact]
+    public void PreferredOnlyEnvMatchesLegacyOnlyResolution()
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["ENDPOINT"] = "https://env:4318",
+            ["PROTOCOL"] = "http",
+            ["INSECURE"] = "true",
+            ["HEADERS"] = "X-A=1,X-B=two",
+            ["AUTH_MODE"] = "basic",
+            ["AUTH_TENANT_ID"] = "42",
+            ["AUTH_TOKEN"] = "glc_xxx",
+            ["AGENT_NAME"] = "planner",
+            ["AGENT_VERSION"] = "1.2.3",
+            ["USER_ID"] = "alice@example.com",
+            ["TAGS"] = "service=orchestrator,env=prod",
+            ["CONTENT_CAPTURE_MODE"] = "metadata_only",
+            ["DEBUG"] = "true",
+        };
+        var preferredEnv = values.ToDictionary(kv => "AGENTO11Y_" + kv.Key, kv => kv.Value);
+        var legacyEnv = values.ToDictionary(kv => "SIGIL_" + kv.Key, kv => kv.Value);
+
+        var (preferred, preferredWarnings) = EnvConfig.ResolveFromEnv(MapLookup(preferredEnv), new SigilClientConfig());
+        var (legacy, legacyWarnings) = EnvConfig.ResolveFromEnv(MapLookup(legacyEnv), new SigilClientConfig());
+
+        Assert.Empty(preferredWarnings);
+        Assert.Empty(legacyWarnings);
+        Assert.Equal("https://env:4318", preferred.GenerationExport.Endpoint);
+        Assert.Equal(legacy.GenerationExport.Endpoint, preferred.GenerationExport.Endpoint);
+        Assert.Equal(legacy.GenerationExport.Protocol, preferred.GenerationExport.Protocol);
+        Assert.Equal(legacy.GenerationExport.Insecure, preferred.GenerationExport.Insecure);
+        Assert.Equal(legacy.GenerationExport.Headers, preferred.GenerationExport.Headers);
+        Assert.Equal(legacy.GenerationExport.Auth.Mode, preferred.GenerationExport.Auth.Mode);
+        Assert.Equal(legacy.GenerationExport.Auth.TenantId, preferred.GenerationExport.Auth.TenantId);
+        Assert.Equal(legacy.GenerationExport.Auth.BasicUser, preferred.GenerationExport.Auth.BasicUser);
+        Assert.Equal(legacy.GenerationExport.Auth.BasicPassword, preferred.GenerationExport.Auth.BasicPassword);
+        Assert.Equal(legacy.GenerationExport.Auth.BearerToken, preferred.GenerationExport.Auth.BearerToken);
+        Assert.Equal(legacy.AgentName, preferred.AgentName);
+        Assert.Equal(legacy.AgentVersion, preferred.AgentVersion);
+        Assert.Equal(legacy.UserId, preferred.UserId);
+        Assert.Equal(legacy.Tags, preferred.Tags);
+        Assert.Equal(legacy.ContentCapture, preferred.ContentCapture);
+        Assert.Equal(legacy.Debug, preferred.Debug);
+    }
+
+    [Fact]
+    public void PreferredWinsOverLegacyOnConflict()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_ENDPOINT"] = "preferred.example:4318",
+            ["SIGIL_ENDPOINT"] = "legacy.example:4318",
+        };
+
+        var (cfg, _) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+
+        Assert.Equal("preferred.example:4318", cfg.GenerationExport.Endpoint);
+    }
+
+    [Fact]
+    public void BlankPreferredFallsThroughToLegacy()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_ENDPOINT"] = "   ",
+            ["SIGIL_ENDPOINT"] = "legacy.example:4318",
+        };
+
+        var (cfg, _) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+
+        Assert.Equal("legacy.example:4318", cfg.GenerationExport.Endpoint);
+    }
+
+    [Fact]
+    public void InvalidPreferredContentCaptureModeBlocksValidLegacy()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_CONTENT_CAPTURE_MODE"] = "bogus",
+            ["SIGIL_CONTENT_CAPTURE_MODE"] = "metadata_only",
+        };
+
+        var (cfg, warnings) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+
+        Assert.Equal(ContentCaptureMode.Default, cfg.ContentCapture);
+        Assert.Contains(warnings, w => w.Contains("AGENTO11Y_CONTENT_CAPTURE_MODE"));
+    }
+
+    [Fact]
+    public void InvalidPreferredAuthModeBlocksValidLegacy()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_AUTH_MODE"] = "garbage",
+            ["SIGIL_AUTH_MODE"] = "bearer",
+        };
+
+        var (cfg, warnings) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+
+        Assert.Equal(ExportAuthMode.None, cfg.GenerationExport.Auth.Mode);
+        Assert.Contains(warnings, w => w.Contains("AGENTO11Y_AUTH_MODE"));
+    }
+
+    [Fact]
+    public void CallerValueBeatsBothSpellings()
+    {
+        var baseConfig = new SigilClientConfig();
+        baseConfig.GenerationExport.Endpoint = "https://caller-host";
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_ENDPOINT"] = "preferred.example:4318",
+            ["SIGIL_ENDPOINT"] = "legacy.example:4318",
+        };
+
+        var (cfg, _) = EnvConfig.ResolveFromEnv(MapLookup(env), baseConfig);
+
+        Assert.Equal("https://caller-host", cfg.GenerationExport.Endpoint);
+    }
+
+    [Fact]
+    public void MixedPrefixAuthFieldsResolvePerField()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_AUTH_MODE"] = "basic",
+            ["SIGIL_AUTH_TENANT_ID"] = "42",
+            ["SIGIL_AUTH_TOKEN"] = "glc_xxx",
+        };
+
+        var (cfg, _) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+        var auth = cfg.GenerationExport.Auth;
+
+        Assert.Equal(ExportAuthMode.Basic, auth.Mode);
+        Assert.Equal("42", auth.TenantId);
+        Assert.Equal("42", auth.BasicUser);
+        Assert.Equal("glc_xxx", auth.BasicPassword);
+    }
+
+    [Fact]
+    public void PreferredTagsReplaceLegacyTagsWithoutMerging()
+    {
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_TAGS"] = "team=ai",
+            ["SIGIL_TAGS"] = "service=orch,env=prod",
+        };
+
+        var (cfg, _) = EnvConfig.ResolveFromEnv(MapLookup(env), new SigilClientConfig());
+
+        Assert.Equal("ai", cfg.Tags["team"]);
+        Assert.False(cfg.Tags.ContainsKey("service"));
+        Assert.Single(cfg.Tags);
+    }
+
+    [Fact]
+    public void LegacyConstantsKeepSigilValues()
+    {
+        Assert.Equal("SIGIL_ENDPOINT", EnvConfig.EnvEndpoint);
+        Assert.Equal("SIGIL_PROTOCOL", EnvConfig.EnvProtocol);
+        Assert.Equal("SIGIL_INSECURE", EnvConfig.EnvInsecure);
+        Assert.Equal("SIGIL_HEADERS", EnvConfig.EnvHeaders);
+        Assert.Equal("SIGIL_AUTH_MODE", EnvConfig.EnvAuthMode);
+        Assert.Equal("SIGIL_AUTH_TENANT_ID", EnvConfig.EnvAuthTenantId);
+        Assert.Equal("SIGIL_AUTH_TOKEN", EnvConfig.EnvAuthToken);
+        Assert.Equal("SIGIL_AGENT_NAME", EnvConfig.EnvAgentName);
+        Assert.Equal("SIGIL_AGENT_VERSION", EnvConfig.EnvAgentVersion);
+        Assert.Equal("SIGIL_USER_ID", EnvConfig.EnvUserId);
+        Assert.Equal("SIGIL_TAGS", EnvConfig.EnvTags);
+        Assert.Equal("SIGIL_CONTENT_CAPTURE_MODE", EnvConfig.EnvContentCaptureMode);
+        Assert.Equal("SIGIL_DEBUG", EnvConfig.EnvDebug);
+    }
+
+    [Fact]
+    public void PreferredConstantsUseAgentO11yValues()
+    {
+        Assert.Equal("AGENTO11Y_ENDPOINT", EnvConfig.PreferredEnvEndpoint);
+        Assert.Equal("AGENTO11Y_PROTOCOL", EnvConfig.PreferredEnvProtocol);
+        Assert.Equal("AGENTO11Y_INSECURE", EnvConfig.PreferredEnvInsecure);
+        Assert.Equal("AGENTO11Y_HEADERS", EnvConfig.PreferredEnvHeaders);
+        Assert.Equal("AGENTO11Y_AUTH_MODE", EnvConfig.PreferredEnvAuthMode);
+        Assert.Equal("AGENTO11Y_AUTH_TENANT_ID", EnvConfig.PreferredEnvAuthTenantId);
+        Assert.Equal("AGENTO11Y_AUTH_TOKEN", EnvConfig.PreferredEnvAuthToken);
+        Assert.Equal("AGENTO11Y_AGENT_NAME", EnvConfig.PreferredEnvAgentName);
+        Assert.Equal("AGENTO11Y_AGENT_VERSION", EnvConfig.PreferredEnvAgentVersion);
+        Assert.Equal("AGENTO11Y_USER_ID", EnvConfig.PreferredEnvUserId);
+        Assert.Equal("AGENTO11Y_TAGS", EnvConfig.PreferredEnvTags);
+        Assert.Equal("AGENTO11Y_CONTENT_CAPTURE_MODE", EnvConfig.PreferredEnvContentCaptureMode);
+        Assert.Equal("AGENTO11Y_DEBUG", EnvConfig.PreferredEnvDebug);
+    }
 }

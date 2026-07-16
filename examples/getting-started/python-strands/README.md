@@ -15,15 +15,15 @@ cp .env.example .env
 Configure Sigil and OTel endpoints from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find each value:
 
 ```bash
-SIGIL_PROTOCOL=http
-SIGIL_AUTH_MODE=basic
-SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-SIGIL_AUTH_TENANT_ID=...
-SIGIL_AUTH_TOKEN=...
-SIGIL_CONVERSATION_ID=sigil-strands-demo
+AGENTO11Y_PROTOCOL=http
+AGENTO11Y_AUTH_MODE=basic
+AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_AUTH_TENANT_ID=...
+AGENTO11Y_AUTH_TOKEN=...
+AGENTO11Y_CONVERSATION_ID=sigil-strands-demo
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=
-OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64 of OTLP_INSTANCE_ID:SIGIL_AUTH_TOKEN>"
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64 of OTLP_INSTANCE_ID:AGENTO11Y_AUTH_TOKEN>"
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_METRIC_EXPORT_INTERVAL_MILLIS=1000
 OTEL_SERVICE_NAME=sigil-strands-example
@@ -33,7 +33,7 @@ OPENAI_API_KEY=...
 ```
 
 The example also configures an OpenTelemetry `MeterProvider` and passes its meter
-to the Sigil client. Generations go to `SIGIL_ENDPOINT`; SDK metrics go to
+to the Sigil client. Generations go to `AGENTO11Y_ENDPOINT`; SDK metrics go to
 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, or to `OTEL_EXPORTER_OTLP_ENDPOINT` with
 `/v1/metrics` appended when the metrics-specific endpoint is unset.
 

@@ -48,22 +48,31 @@ const (
 	sourceConfig = "config.env"
 )
 
-// trackedKeys are the env vars doctor attributes to a source (OS env vs
-// config.env). SnapshotEnv records their OS-env values before dotenv merge so
+// trackedSuffixes are the branded alias families doctor attributes to a
+// source (OS env vs config.env) under both their AGENTO11Y_* and SIGIL_*
+// spellings. SnapshotEnv records their OS-env values before dotenv merge so
 // Collect can tell where each effective value came from.
-var trackedKeys = []string{
-	"SIGIL_ENDPOINT",
-	"SIGIL_INSECURE",
-	"SIGIL_AUTH_TENANT_ID",
-	"SIGIL_AUTH_TOKEN",
-	"SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT",
+var trackedSuffixes = []string{
+	"ENDPOINT",
+	"INSECURE",
+	"AUTH_TENANT_ID",
+	"AUTH_TOKEN",
 	"OTEL_EXPORTER_OTLP_ENDPOINT",
-	"OTEL_EXPORTER_OTLP_HEADERS",
-	"SIGIL_OTEL_AUTH_TOKEN",
-	"SIGIL_CONTENT_CAPTURE_MODE",
-	"SIGIL_TAGS",
-	"SIGIL_AUTO_UPDATE",
+	"OTEL_AUTH_TOKEN",
+	"CONTENT_CAPTURE_MODE",
+	"TAGS",
+	"AUTO_UPDATE",
 }
+
+// trackedKeys is the full key set SnapshotEnv records: both spellings of the
+// tracked families plus the standard (unbranded) OTel vars.
+var trackedKeys = func() []string {
+	keys := make([]string, 0, len(trackedSuffixes)*2+2)
+	for _, suffix := range trackedSuffixes {
+		keys = append(keys, envconfig.PreferredKey(suffix), envconfig.LegacyKey(suffix))
+	}
+	return append(keys, "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS")
+}()
 
 // Options are the parsed doctor flags.
 type Options struct {
@@ -98,19 +107,25 @@ type SigilSection struct {
 }
 
 // envValue is a non-secret resolved env var: endpoints and tenant IDs are safe
-// to print, so Value is populated.
+// to print, so Value is populated. Key is the spelling the value came from
+// (AGENTO11Y_* or SIGIL_*); Conflict reports the two spellings disagree.
 type envValue struct {
-	Set    bool   `json:"set"`
-	Value  string `json:"value,omitempty"`
-	Source string `json:"source,omitempty"`
+	Set      bool   `json:"set"`
+	Value    string `json:"value,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Conflict bool   `json:"conflict,omitempty"`
 }
 
-// tokenValue is a resolved secret. The value is never recorded; only presence
-// and an optional non-sensitive scheme prefix (e.g. "glc_") are.
+// tokenValue is a resolved secret. The value is never recorded; only presence,
+// an optional non-sensitive scheme prefix (e.g. "glc_"), the selected key,
+// and the conflict flag are.
 type tokenValue struct {
-	Set    bool   `json:"set"`
-	Prefix string `json:"prefix,omitempty"`
-	Source string `json:"source,omitempty"`
+	Set      bool   `json:"set"`
+	Prefix   string `json:"prefix,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Conflict bool   `json:"conflict,omitempty"`
 }
 
 // ConfigSection reports config.env validity and the resolved feature settings
@@ -304,9 +319,9 @@ func (r *Report) exitCode() int {
 }
 
 func collectConversations(osEnv, fileEnv map[string]string) ConversationsSection {
-	endpoint := resolveEnv("SIGIL_ENDPOINT", osEnv, fileEnv)
-	tenant := resolveEnv("SIGIL_AUTH_TENANT_ID", osEnv, fileEnv)
-	token := resolveEnv("SIGIL_AUTH_TOKEN", osEnv, fileEnv)
+	endpoint := resolveFamily("ENDPOINT", osEnv, fileEnv)
+	tenant := resolveFamily("AUTH_TENANT_ID", osEnv, fileEnv)
+	token := resolveFamily("AUTH_TOKEN", osEnv, fileEnv)
 
 	sec := ConversationsSection{
 		Endpoint: endpoint.envValue(),
@@ -319,33 +334,43 @@ func collectConversations(osEnv, fileEnv map[string]string) ConversationsSection
 	case 0:
 		sec.Health = HealthWarn
 		sec.Messages = append(sec.Messages,
-			"not configured — run `sigil login` or set SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID and SIGIL_AUTH_TOKEN")
+			"not configured — run `sigil login` or set AGENTO11Y_ENDPOINT, AGENTO11Y_AUTH_TENANT_ID and AGENTO11Y_AUTH_TOKEN")
 	default:
 		sec.Health = HealthError
 		var missing []string
 		if !endpoint.set {
-			missing = append(missing, "SIGIL_ENDPOINT")
+			missing = append(missing, "AGENTO11Y_ENDPOINT")
 		}
 		if !tenant.set {
-			missing = append(missing, "SIGIL_AUTH_TENANT_ID")
+			missing = append(missing, "AGENTO11Y_AUTH_TENANT_ID")
 		}
 		if !token.set {
-			missing = append(missing, "SIGIL_AUTH_TOKEN")
+			missing = append(missing, "AGENTO11Y_AUTH_TOKEN")
 		}
 		sec.Messages = append(sec.Messages, "incomplete credentials; missing "+strings.Join(missing, ", "))
+	}
+	for _, r := range []resolved{endpoint, tenant, token} {
+		if r.conflict {
+			sec.Messages = append(sec.Messages, fmt.Sprintf(
+				"%s and its other spelling are both set with different values; using %s", r.key, r.key))
+		}
+	}
+	if endpoint.legacyWon() || tenant.legacyWon() || token.legacyWon() {
+		sec.Messages = append(sec.Messages,
+			"configured via legacy SIGIL_* names — these keep working, but the preferred names are AGENTO11Y_*")
 	}
 	return sec
 }
 
 func collectAnalytics(osEnv, fileEnv map[string]string, conversationsConfigured bool) AnalyticsSection {
-	sigilOTLP := resolveEnv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", osEnv, fileEnv)
+	brandedOTLP := resolveFamily("OTEL_EXPORTER_OTLP_ENDPOINT", osEnv, fileEnv)
 	stdOTLP := resolveEnv("OTEL_EXPORTER_OTLP_ENDPOINT", osEnv, fileEnv)
 
 	sec := AnalyticsSection{}
 	switch {
-	case sigilOTLP.set:
-		sec.Endpoint = sigilOTLP.envValue()
-		sec.EndpointVar = "SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT"
+	case brandedOTLP.set:
+		sec.Endpoint = brandedOTLP.envValue()
+		sec.EndpointVar = brandedOTLP.key
 	case stdOTLP.set:
 		sec.Endpoint = stdOTLP.envValue()
 		sec.EndpointVar = "OTEL_EXPORTER_OTLP_ENDPOINT"
@@ -357,27 +382,36 @@ func collectAnalytics(osEnv, fileEnv map[string]string, conversationsConfigured 
 		sec.Health = HealthError
 		sec.Messages = append(sec.Messages,
 			"no OTLP endpoint set — metrics and traces will not be exported even though conversations are configured. "+
-				"Set SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT (e.g. https://otlp-gateway-prod-<region>.grafana.net/otlp).")
+				"Set AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT (e.g. https://otlp-gateway-prod-<region>.grafana.net/otlp).")
 		return sec
 	default:
 		sec.Health = HealthWarn
 		sec.Messages = append(sec.Messages, "no OTLP endpoint set; analytics export is disabled")
 		return sec
 	}
+	if brandedOTLP.conflict {
+		sec.Messages = append(sec.Messages, fmt.Sprintf(
+			"%s and its other spelling are both set with different values; using %s", brandedOTLP.key, brandedOTLP.key))
+	}
+	if brandedOTLP.legacyWon() {
+		sec.Messages = append(sec.Messages,
+			"configured via legacy SIGIL_* names — these keep working, but the preferred names are AGENTO11Y_*")
+	}
 
 	// The endpoint is set, but OTLP export still needs auth (unless the
 	// collector is open). Mirror internal/otel: auth is an explicit
 	// Authorization entry in OTEL_EXPORTER_OTLP_HEADERS, or synthesized from
-	// SIGIL_AUTH_TENANT_ID + (SIGIL_OTEL_AUTH_TOKEN or SIGIL_AUTH_TOKEN). Don't
-	// report ok when none of those resolve, otherwise doctor shows a healthy
-	// analytics pipeline that exports nothing.
+	// the AUTH_TENANT_ID family + (the OTEL_AUTH_TOKEN family or the
+	// AUTH_TOKEN family). Don't report ok when none of those resolve,
+	// otherwise doctor shows a healthy analytics pipeline that exports
+	// nothing.
 	if analyticsAuthResolvable(osEnv, fileEnv) {
 		sec.Health = HealthOK
 	} else {
 		sec.Health = HealthWarn
 		sec.Messages = append(sec.Messages,
-			"OTLP endpoint set but no auth resolved — set SIGIL_AUTH_TENANT_ID and SIGIL_OTEL_AUTH_TOKEN "+
-				"(or SIGIL_AUTH_TOKEN), or an Authorization entry in OTEL_EXPORTER_OTLP_HEADERS. "+
+			"OTLP endpoint set but no auth resolved — set AGENTO11Y_AUTH_TENANT_ID and AGENTO11Y_OTEL_AUTH_TOKEN "+
+				"(or AGENTO11Y_AUTH_TOKEN), or an Authorization entry in OTEL_EXPORTER_OTLP_HEADERS. "+
 				"Export will be unauthenticated unless the collector is open.")
 	}
 	return sec
@@ -391,10 +425,10 @@ func analyticsAuthResolvable(osEnv, fileEnv map[string]string) bool {
 	if headersHaveAuthorization(resolveEnv("OTEL_EXPORTER_OTLP_HEADERS", osEnv, fileEnv).value) {
 		return true
 	}
-	tenant := resolveEnv("SIGIL_AUTH_TENANT_ID", osEnv, fileEnv)
-	token := resolveEnv("SIGIL_OTEL_AUTH_TOKEN", osEnv, fileEnv)
+	tenant := resolveFamily("AUTH_TENANT_ID", osEnv, fileEnv)
+	token := resolveFamily("OTEL_AUTH_TOKEN", osEnv, fileEnv)
 	if !token.set {
-		token = resolveEnv("SIGIL_AUTH_TOKEN", osEnv, fileEnv)
+		token = resolveFamily("AUTH_TOKEN", osEnv, fileEnv)
 	}
 	return tenant.set && token.set
 }
@@ -444,10 +478,11 @@ func collectConfig(osEnv, fileEnv map[string]string) ConfigSection {
 	sec.GuardsFailOpen = guards.FailOpen
 	sec.GuardsFellBack = guardBuf.Len() > 0
 
-	// SIGIL_TAGS attaches key=value tags to every generation. They aren't
-	// secret, so surface the resolved set (and where it came from) to make a
-	// mis-set or forgotten tag visible.
-	if tags := resolveEnv("SIGIL_TAGS", osEnv, fileEnv); tags.set {
+	// The TAGS family attaches key=value tags to every generation. They
+	// aren't secret, so surface the resolved set (and where it came from) to
+	// make a mis-set or forgotten tag visible.
+	tags := resolveFamily("TAGS", osEnv, fileEnv)
+	if tags.set {
 		if parsed := envconfig.ParseExtraTags(tags.value); len(parsed) > 0 {
 			sec.Tags = parsed
 			sec.TagsSource = tags.source
@@ -462,20 +497,28 @@ func collectConfig(osEnv, fileEnv map[string]string) ConfigSection {
 	if sec.ContentModeFellBack {
 		sec.Health = HealthWarn
 		sec.Messages = append(sec.Messages,
-			fmt.Sprintf("SIGIL_CONTENT_CAPTURE_MODE is invalid; using %s", mode))
+			fmt.Sprintf("the CONTENT_CAPTURE_MODE value is invalid; using %s", mode))
 	}
 	if sec.GuardsFellBack {
 		sec.Health = HealthWarn
 		sec.Messages = append(sec.Messages,
-			"a SIGIL_GUARDS_* value is invalid; falling back to defaults")
+			"a GUARDS_* value is invalid; falling back to defaults")
+	}
+	if tags.conflict {
+		sec.Messages = append(sec.Messages, fmt.Sprintf(
+			"%s and its other spelling are both set with different values; using %s", tags.key, tags.key))
+	}
+	if tags.legacyWon() {
+		sec.Messages = append(sec.Messages,
+			"tags set via legacy SIGIL_TAGS — this keeps working, but the preferred name is AGENTO11Y_TAGS")
 	}
 	return sec
 }
 
 func runProbes(ctx context.Context, r *Report, osEnv, fileEnv map[string]string) {
 	if r.Conversations.configured() {
-		token := resolveEnv("SIGIL_AUTH_TOKEN", osEnv, fileEnv).value
-		insecure := envconfig.ParseBool(resolveEnv("SIGIL_INSECURE", osEnv, fileEnv).value)
+		token := resolveFamily("AUTH_TOKEN", osEnv, fileEnv).value
+		insecure := envconfig.ParseBool(resolveFamily("INSECURE", osEnv, fileEnv).value)
 		res := probeConversationsFn(ctx, r.Conversations.Endpoint.Value, r.Conversations.TenantID.Value, token, insecure)
 		r.Conversations.Probe = res
 		switch {
@@ -506,31 +549,64 @@ func runProbes(ctx context.Context, r *Report, osEnv, fileEnv map[string]string)
 	}
 }
 
-// resolved is the effective value of an env var plus where it came from.
+// resolved is the effective value of an env var plus where it came from:
+// key is the spelling that won (AGENTO11Y_* or SIGIL_*), and conflict reports
+// that the other spelling also resolves — to a different value — under the
+// same source precedence.
 type resolved struct {
-	set    bool
-	value  string
-	source string
+	set      bool
+	value    string
+	source   string
+	key      string
+	conflict bool
 }
 
 func (r resolved) envValue() envValue {
-	return envValue{Set: r.set, Value: r.value, Source: r.source}
+	return envValue{Set: r.set, Value: r.value, Source: r.source, Key: r.key, Conflict: r.conflict}
 }
 
 func (r resolved) tokenValue() tokenValue {
-	return tokenValue{Set: r.set, Prefix: tokenPrefix(r.value), Source: r.source}
+	return tokenValue{Set: r.set, Prefix: tokenPrefix(r.value), Source: r.source, Key: r.key, Conflict: r.conflict}
 }
 
-// resolveEnv mirrors dotenv.ApplyEnv precedence: a non-empty OS-env value wins
-// over config.env. The OS-env snapshot must predate the dotenv merge.
+// legacyWon reports that the value came from the legacy SIGIL_* spelling.
+func (r resolved) legacyWon() bool {
+	return r.set && strings.HasPrefix(r.key, "SIGIL_")
+}
+
+// resolveEnv mirrors dotenv.ApplyEnv precedence for one exact key: a
+// non-empty OS-env value wins over config.env. The OS-env snapshot must
+// predate the dotenv merge.
 func resolveEnv(key string, osEnv, fileEnv map[string]string) resolved {
 	if v, ok := osEnv[key]; ok && strings.TrimSpace(v) != "" {
-		return resolved{set: true, value: strings.TrimSpace(v), source: sourceEnv}
+		return resolved{set: true, value: strings.TrimSpace(v), source: sourceEnv, key: key}
 	}
 	if v, ok := fileEnv[key]; ok && strings.TrimSpace(v) != "" {
-		return resolved{set: true, value: strings.TrimSpace(v), source: sourceConfig}
+		return resolved{set: true, value: strings.TrimSpace(v), source: sourceConfig, key: key}
 	}
 	return resolved{}
+}
+
+// resolveFamily mirrors dotenv.ApplyEnv's alias-family precedence — shell
+// preferred > shell legacy > file preferred > file legacy — and reports the
+// selected key, its source, and whether the two spellings disagree.
+func resolveFamily(suffix string, osEnv, fileEnv map[string]string) resolved {
+	preferred := resolveEnv(envconfig.PreferredKey(suffix), osEnv, fileEnv)
+	legacy := resolveEnv(envconfig.LegacyKey(suffix), osEnv, fileEnv)
+
+	winner, other := preferred, legacy
+	// Source precedence outranks spelling precedence: a shell legacy value
+	// beats a file preferred value.
+	if !preferred.set || (legacy.set && legacy.source == sourceEnv && preferred.source == sourceConfig) {
+		if legacy.set {
+			winner, other = legacy, preferred
+		}
+	}
+	if !winner.set {
+		return resolved{}
+	}
+	winner.conflict = other.set && other.value != winner.value
+	return winner
 }
 
 // tokenPrefix returns the non-sensitive scheme marker of a token (everything

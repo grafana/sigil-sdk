@@ -569,6 +569,11 @@ func TestResolveRedactInputMessages(t *testing.T) {
 		{name: "env off parses false", env: map[string]string{"SIGIL_REDACT_INPUT_MESSAGES": "off"}, want: false},
 		{name: "blank env falls back to false", env: map[string]string{"SIGIL_REDACT_INPUT_MESSAGES": "   "}, want: false},
 		{name: "invalid env falls back to false", env: map[string]string{"SIGIL_REDACT_INPUT_MESSAGES": "maybe"}, want: false},
+		{name: "preferred env true when option nil", env: map[string]string{"AGENTO11Y_REDACT_INPUT_MESSAGES": "true"}, want: true},
+		{name: "preferred false wins over legacy true", env: map[string]string{"AGENTO11Y_REDACT_INPUT_MESSAGES": "false", "SIGIL_REDACT_INPUT_MESSAGES": "true"}, want: false},
+		{name: "blank preferred falls through to legacy true", env: map[string]string{"AGENTO11Y_REDACT_INPUT_MESSAGES": "   ", "SIGIL_REDACT_INPUT_MESSAGES": "true"}, want: true},
+		{name: "invalid preferred blocks valid legacy fallback", env: map[string]string{"AGENTO11Y_REDACT_INPUT_MESSAGES": "maybe", "SIGIL_REDACT_INPUT_MESSAGES": "true"}, want: false},
+		{name: "explicit false wins over preferred true", explicit: boolPtr(false), env: map[string]string{"AGENTO11Y_REDACT_INPUT_MESSAGES": "true"}, want: false},
 	}
 
 	for _, tc := range cases {

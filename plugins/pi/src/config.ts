@@ -35,25 +35,21 @@ export interface SigilPiConfig {
 
 export async function loadConfig(): Promise<SigilPiConfig | null> {
   // Read the shared sigil dotenv file so plain `pi` and `sigil pi --` resolve
-  // credentials from the same place. Values in process.env always win —
-  // applySigilDotenv only fills empty/whitespace entries.
+  // credentials from the same place. Shell values in process.env always beat
+  // config.env values, across both env-var spellings.
   applySigilDotenv();
   return resolveConfig();
 }
 
 export function resolveConfig(): SigilPiConfig | null {
-  const endpoint = normalizeBaseEndpoint((env("SIGIL_ENDPOINT") ?? "").trim());
+  const endpoint = normalizeBaseEndpoint(brandedEnv("ENDPOINT")?.value ?? "");
   if (!endpoint) return null;
 
-  const configuredAgentName = (env("SIGIL_AGENT_NAME") ?? "pi").trim();
-  const agentName = configuredAgentName.length > 0 ? configuredAgentName : "pi";
-
-  const configuredAgentVersion = (env("SIGIL_AGENT_VERSION") ?? "").trim();
-  const agentVersion =
-    configuredAgentVersion.length > 0 ? configuredAgentVersion : undefined;
+  const agentName = brandedEnv("AGENT_NAME")?.value ?? "pi";
+  const agentVersion = brandedEnv("AGENT_VERSION")?.value;
 
   const contentCapture = resolveContentCapture();
-  const redactInputMessages = envBoolOr("SIGIL_REDACT_INPUT_MESSAGES", true);
+  const redactInputMessages = envBoolOr("REDACT_INPUT_MESSAGES", true);
 
   return {
     endpoint,
@@ -68,8 +64,8 @@ export function resolveConfig(): SigilPiConfig | null {
 }
 
 function resolveAuth(): SigilAuthConfig {
-  const tenant = (env("SIGIL_AUTH_TENANT_ID") ?? "").trim();
-  const token = (env("SIGIL_AUTH_TOKEN") ?? "").trim();
+  const tenant = brandedEnv("AUTH_TENANT_ID")?.value ?? "";
+  const token = brandedEnv("AUTH_TOKEN")?.value ?? "";
   if (tenant && token) {
     return {
       mode: "basic",
@@ -82,20 +78,20 @@ function resolveAuth(): SigilAuthConfig {
 }
 
 function resolveOtlp(): OtlpConfig | undefined {
-  const endpoint = (
-    env("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT") ??
-    env("OTEL_EXPORTER_OTLP_ENDPOINT") ??
-    ""
-  ).trim();
+  // brandedEnv treats whitespace-only values as unset, so a blank branded
+  // endpoint (either spelling) falls through to the standard
+  // OTEL_EXPORTER_OTLP_ENDPOINT instead of suppressing it.
+  const endpoint =
+    brandedEnv("OTEL_EXPORTER_OTLP_ENDPOINT")?.value ??
+    (env("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "").trim();
   if (!endpoint) return undefined;
 
   const headers = parseOtelHeaders(env("OTEL_EXPORTER_OTLP_HEADERS") ?? "");
-  const tenant = (env("SIGIL_AUTH_TENANT_ID") ?? "").trim();
-  const token = (
-    env("SIGIL_OTEL_AUTH_TOKEN") ??
-    env("SIGIL_AUTH_TOKEN") ??
-    ""
-  ).trim();
+  const tenant = brandedEnv("AUTH_TENANT_ID")?.value ?? "";
+  const token =
+    brandedEnv("OTEL_AUTH_TOKEN")?.value ??
+    brandedEnv("AUTH_TOKEN")?.value ??
+    "";
   if (tenant && token && !hasAuthorizationHeader(headers)) {
     headers.Authorization = `Basic ${Buffer.from(`${tenant}:${token}`).toString("base64")}`;
   }
@@ -121,18 +117,18 @@ function hasAuthorizationHeader(headers: Record<string, string>): boolean {
 }
 
 function resolveContentCapture(): ContentCaptureMode {
-  const envVal = env("SIGIL_CONTENT_CAPTURE_MODE");
-  if (envVal !== undefined) {
-    return parseContentCaptureMode(envVal);
+  const resolved = brandedEnv("CONTENT_CAPTURE_MODE");
+  if (resolved !== undefined) {
+    return parseContentCaptureMode(resolved.value, resolved.key);
   }
   return "metadata_only";
 }
 
 function resolveGuards(): GuardsFeatureConfig {
   return {
-    enabled: envBoolOr("SIGIL_GUARDS_ENABLED", false),
-    timeoutMs: envPositiveIntOr("SIGIL_GUARDS_TIMEOUT_MS", 1500),
-    failOpen: envBoolOr("SIGIL_GUARDS_FAIL_OPEN", true),
+    enabled: envBoolOr("GUARDS_ENABLED", false),
+    timeoutMs: envPositiveIntOr("GUARDS_TIMEOUT_MS", 1500),
+    failOpen: envBoolOr("GUARDS_FAIL_OPEN", true),
   };
 }
 
@@ -149,7 +145,10 @@ const VALID_CAPTURE_MODES: ContentCaptureMode[] = [
   "full_with_metadata_spans",
 ];
 
-function parseContentCaptureMode(value: string): ContentCaptureMode {
+function parseContentCaptureMode(
+  value: string,
+  key: string,
+): ContentCaptureMode {
   const normalized = value.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return "full";
   if (["0", "false", "no", "off"].includes(normalized)) return "metadata_only";
@@ -160,7 +159,7 @@ function parseContentCaptureMode(value: string): ContentCaptureMode {
     return normalized as ContentCaptureMode;
   }
   logger.warn(
-    `unsupported contentCapture value "${value}", defaulting to metadata_only`,
+    `unsupported contentCapture value "${value}" for ${key}, defaulting to metadata_only`,
   );
   return "metadata_only";
 }
@@ -170,28 +169,47 @@ function env(key: string): string | undefined {
   return v !== undefined && v !== "" ? v : undefined;
 }
 
-function envBoolOr(envKey: string, defaultValue: boolean): boolean {
-  const raw = env(envKey);
-  if (raw === undefined) return defaultValue;
-  const parsed = toBool(raw);
+interface BrandedEnv {
+  value: string;
+  key: string;
+}
+
+// brandedEnv resolves one alias family from the process env: the first
+// nonblank of AGENTO11Y_<suffix>, SIGIL_<suffix>. Blank or whitespace-only
+// values count as unset. The returned key names the spelling the value came
+// from so warnings can report what the user actually set. Selection happens
+// before parsing: an invalid selected value never falls back to the other
+// spelling.
+function brandedEnv(suffix: string): BrandedEnv | undefined {
+  for (const key of [`AGENTO11Y_${suffix}`, `SIGIL_${suffix}`]) {
+    const value = (process.env[key] ?? "").trim();
+    if (value !== "") return { value, key };
+  }
+  return undefined;
+}
+
+function envBoolOr(suffix: string, defaultValue: boolean): boolean {
+  const resolved = brandedEnv(suffix);
+  if (resolved === undefined) return defaultValue;
+  const parsed = toBool(resolved.value);
   if (parsed === undefined) {
     logger.warn(
-      `invalid boolean value for ${envKey}: "${raw}" — using default ${defaultValue}`,
+      `invalid boolean value for ${resolved.key}: "${resolved.value}" — using default ${defaultValue}`,
     );
     return defaultValue;
   }
   return parsed;
 }
 
-function envPositiveIntOr(envKey: string, defaultValue: number): number {
+function envPositiveIntOr(suffix: string, defaultValue: number): number {
   // 0 is rejected: the SDK interprets timeoutMs <= 0 as "use built-in default
   // (15000ms)", which would silently override the plugin's documented 1500ms.
-  const raw = env(envKey);
-  if (raw === undefined) return defaultValue;
-  const n = Number(raw);
+  const resolved = brandedEnv(suffix);
+  if (resolved === undefined) return defaultValue;
+  const n = Number(resolved.value);
   if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
     logger.warn(
-      `invalid integer value for ${envKey}: "${raw}" — using default ${defaultValue}`,
+      `invalid integer value for ${resolved.key}: "${resolved.value}" — using default ${defaultValue}`,
     );
     return defaultValue;
   }

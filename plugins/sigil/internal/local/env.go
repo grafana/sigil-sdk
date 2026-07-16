@@ -3,12 +3,14 @@ package local
 import (
 	"os"
 	"strings"
+
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 )
 
 // LaunchEnv encodes the env-var contract between the sigil launcher and
 // a local-mode agent process. Endpoint and OTLPEndpoint are required;
-// the agent reads them via SIGIL_ENDPOINT and
-// SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT.
+// the agent reads them via the branded ENDPOINT and
+// OTEL_EXPORTER_OTLP_ENDPOINT families (either spelling).
 type LaunchEnv struct {
 	Endpoint     string
 	OTLPEndpoint string
@@ -25,32 +27,40 @@ func Environ(e *LaunchEnv) []string {
 	return e.Apply(env)
 }
 
-// Apply returns env with local-mode overrides applied. SIGIL_ENDPOINT,
-// SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT, and SIGIL_CONTENT_CAPTURE_MODE are
-// always overridden: the agent points at the local receiver and always
-// captures full content on this machine. The configured capture mode is a
-// Cloud-forwarding setting that applies to non-local sessions, so any value
-// in config.env is kept on disk but never downgrades local capture.
-// SIGIL_AUTH_TENANT_ID and SIGIL_AUTH_TOKEN are only set when the user hasn't
-// already configured them, so a user with Cloud credentials in their shell
-// doesn't get them clobbered by `sigil <agent> --local`.
+// Apply returns env with local-mode overrides applied. The ENDPOINT,
+// OTEL_EXPORTER_OTLP_ENDPOINT, and CONTENT_CAPTURE_MODE families are always
+// overridden — under both branded spellings, so an inherited AGENTO11Y_* or
+// SIGIL_* Cloud value can never leak past local mode: the agent points at
+// the local receiver and always captures full content on this machine. The
+// configured capture mode is a Cloud-forwarding setting that applies to
+// non-local sessions, so any value in config.env is kept on disk but never
+// downgrades local capture. The AUTH_TENANT_ID and AUTH_TOKEN families are
+// only filled when the user hasn't already configured either spelling, so a
+// user with Cloud credentials in their shell doesn't get them clobbered by
+// `sigil <agent> --local`.
 //
 // Placeholder auth values are injected so existing hook code (which
-// short-circuits when SIGIL_AUTH_TENANT_ID / SIGIL_AUTH_TOKEN are
-// empty) still exports to the local receiver. The local server doesn't
-// validate auth; any non-empty value works.
+// short-circuits when the tenant / token families are empty) still exports
+// to the local receiver. The local server doesn't validate auth; any
+// non-empty value works.
 func (e LaunchEnv) Apply(env []string) []string {
-	overrides := map[string]string{
-		"SIGIL_ENDPOINT":                    e.Endpoint,
-		"SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT": e.OTLPEndpoint,
-		"SIGIL_CONTENT_CAPTURE_MODE":        "full",
+	overrides := map[string]string{}
+	for suffix, v := range map[string]string{
+		"ENDPOINT":                    e.Endpoint,
+		"OTEL_EXPORTER_OTLP_ENDPOINT": e.OTLPEndpoint,
+		"CONTENT_CAPTURE_MODE":        "full",
+	} {
+		overrides[envconfig.PreferredKey(suffix)] = v
+		overrides[envconfig.LegacyKey(suffix)] = v
 	}
-	defaults := map[string]string{
-		"SIGIL_AUTH_TENANT_ID": "local",
-		"SIGIL_AUTH_TOKEN":     "local",
+	defaultFamilies := []string{"AUTH_TENANT_ID", "AUTH_TOKEN"}
+	defaultKeys := map[string]string{}
+	for _, suffix := range defaultFamilies {
+		defaultKeys[envconfig.PreferredKey(suffix)] = suffix
+		defaultKeys[envconfig.LegacyKey(suffix)] = suffix
 	}
-	keptDefaults := map[string]bool{}
-	out := make([]string, 0, len(env)+len(overrides)+len(defaults))
+	keptFamilies := map[string]bool{}
+	out := make([]string, 0, len(env)+len(overrides)+len(defaultKeys))
 	for _, kv := range env {
 		key, value, ok := strings.Cut(kv, "=")
 		if !ok {
@@ -60,20 +70,21 @@ func (e LaunchEnv) Apply(env []string) []string {
 		if _, ok := overrides[key]; ok {
 			continue
 		}
-		if _, ok := defaults[key]; ok {
+		if family, ok := defaultKeys[key]; ok {
 			if strings.TrimSpace(value) == "" {
 				continue
 			}
-			keptDefaults[key] = true
+			keptFamilies[family] = true
 		}
 		out = append(out, kv)
 	}
 	for k, v := range overrides {
 		out = append(out, k+"="+v)
 	}
-	for k, v := range defaults {
-		if !keptDefaults[k] {
-			out = append(out, k+"="+v)
+	for _, suffix := range defaultFamilies {
+		if !keptFamilies[suffix] {
+			out = append(out, envconfig.PreferredKey(suffix)+"=local")
+			out = append(out, envconfig.LegacyKey(suffix)+"=local")
 		}
 	}
 	return out

@@ -18,8 +18,9 @@ const (
 	scoresExportPath         = "/api/v1/scores:export"
 	maxEvalResponseBytes     = 8 << 20
 
-	envExperimentURLTemplate      = "SIGIL_EXPERIMENT_URL_TEMPLATE"
-	defaultExperimentRetryTimeout = 30 * time.Second
+	envExperimentURLTemplatePreferred = "AGENTO11Y_EXPERIMENT_URL_TEMPLATE"
+	envExperimentURLTemplate          = "SIGIL_EXPERIMENT_URL_TEMPLATE"
+	defaultExperimentRetryTimeout     = 30 * time.Second
 )
 
 type experimentRetryPolicy struct {
@@ -304,7 +305,7 @@ func (c *Client) ExperimentURL(runID string) string {
 	if err != nil {
 		base = ""
 	}
-	template := strings.TrimSpace(os.Getenv(envExperimentURLTemplate))
+	template := firstNonBlank(os.Getenv(envExperimentURLTemplatePreferred), os.Getenv(envExperimentURLTemplate))
 	if template != "" {
 		out := strings.ReplaceAll(template, "{run_id}", normalized)
 		return strings.ReplaceAll(out, "{base}", base)

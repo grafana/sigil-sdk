@@ -166,8 +166,9 @@ func redactTier1Bytes(src []byte) []byte {
 	return out
 }
 
-// resolveRedactInputMessages applies precedence explicit > env > false.
-// An unrecognised SIGIL_REDACT_INPUT_MESSAGES value is logged and ignored.
+// resolveRedactInputMessages applies precedence explicit > env > false, where
+// env reads AGENTO11Y_REDACT_INPUT_MESSAGES with SIGIL_REDACT_INPUT_MESSAGES
+// fallback. An unrecognised value is logged with the selected key and ignored.
 func resolveRedactInputMessages(lookup envLookup, explicit *bool) bool {
 	if explicit != nil {
 		return *explicit
@@ -175,11 +176,11 @@ func resolveRedactInputMessages(lookup envLookup, explicit *bool) bool {
 	if lookup == nil {
 		lookup = defaultLookup
 	}
-	if v, ok := envTrimmed(lookup, envRedactInputMessages); ok {
+	if v, key, ok := envTrimmed(lookup, envRedactInputMessages); ok {
 		if parsed, valid := parseStrictBool(v); valid {
 			return parsed
 		}
-		log.Default().Printf("sigil: ignoring invalid %s %q", envRedactInputMessages, v)
+		log.Default().Printf("sigil: ignoring invalid %s %q", key, v)
 	}
 	return false
 }

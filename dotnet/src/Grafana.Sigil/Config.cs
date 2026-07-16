@@ -21,7 +21,8 @@ public sealed class AuthConfig
     /// Auth mode. <c>null</c> means "not set" — the env layer or
     /// <c>ConfigResolver</c> resolves it to <see cref="ExportAuthMode.None"/>.
     /// Explicit <c>Mode = ExportAuthMode.None</c> is preserved (caller-wins)
-    /// and not overridden by <c>SIGIL_AUTH_MODE</c>.
+    /// and not overridden by <c>AGENTO11Y_AUTH_MODE</c> (legacy
+    /// <c>SIGIL_AUTH_MODE</c>).
     /// </summary>
     public ExportAuthMode? Mode { get; set; }
     public string TenantId { get; set; } = string.Empty;
@@ -39,14 +40,14 @@ public sealed class GenerationExportConfig
     /// <c>ConfigResolver</c> resolves it to
     /// <see cref="GenerationExportProtocol.Grpc"/>. An explicit
     /// <c>Protocol = ...</c> assignment is preserved (caller-wins) and not
-    /// overridden by <c>SIGIL_PROTOCOL</c>.
+    /// overridden by <c>AGENTO11Y_PROTOCOL</c> (legacy <c>SIGIL_PROTOCOL</c>).
     /// </summary>
     public GenerationExportProtocol? Protocol { get; set; }
     /// <summary>
     /// Export endpoint. Empty string means "not set" — env layer or
-    /// <c>ConfigResolver</c> resolves it from <c>SIGIL_ENDPOINT</c> when configured. An explicit
-    /// non-empty value is preserved (caller-wins) and not overridden by
-    /// <c>SIGIL_ENDPOINT</c>.
+    /// <c>ConfigResolver</c> resolves it from <c>AGENTO11Y_ENDPOINT</c> (legacy
+    /// <c>SIGIL_ENDPOINT</c>) when configured. An explicit non-empty value is
+    /// preserved (caller-wins) and not overridden by env.
     /// </summary>
     public string Endpoint { get; set; } = "";
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -54,9 +55,10 @@ public sealed class GenerationExportConfig
 
     /// <summary>
     /// Tri-state insecure flag. <c>null</c> means "not set" — the resolved
-    /// value is <c>false</c> (TLS on) unless <c>SIGIL_INSECURE</c> provides a
-    /// value or the caller explicitly sets one. Matches Go's <c>*bool</c>
-    /// semantics so explicit <c>false</c> overrides <c>SIGIL_INSECURE=true</c>.
+    /// value is <c>false</c> (TLS on) unless <c>AGENTO11Y_INSECURE</c> (legacy
+    /// <c>SIGIL_INSECURE</c>) provides a value or the caller explicitly sets
+    /// one. Matches Go's <c>*bool</c> semantics so explicit <c>false</c>
+    /// overrides <c>AGENTO11Y_INSECURE=true</c>.
     /// </summary>
     public bool? Insecure { get; set; }
     public int BatchSize { get; set; } = 100;
@@ -93,18 +95,20 @@ public sealed class SigilClientConfig
 
     /// <summary>
     /// Default <c>gen_ai.agent.name</c> for generations that don't supply one
-    /// per-call. Filled from <c>SIGIL_AGENT_NAME</c> when the caller leaves
-    /// this empty.
+    /// per-call. Filled from <c>AGENTO11Y_AGENT_NAME</c> (legacy
+    /// <c>SIGIL_AGENT_NAME</c>) when the caller leaves this empty.
     /// </summary>
     public string AgentName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Default <c>gen_ai.agent.version</c>. Filled from <c>SIGIL_AGENT_VERSION</c>.
+    /// Default <c>gen_ai.agent.version</c>. Filled from
+    /// <c>AGENTO11Y_AGENT_VERSION</c> (legacy <c>SIGIL_AGENT_VERSION</c>).
     /// </summary>
     public string AgentVersion { get; set; } = string.Empty;
 
     /// <summary>
-    /// Default <c>user.id</c>. Filled from <c>SIGIL_USER_ID</c>.
+    /// Default <c>user.id</c>. Filled from <c>AGENTO11Y_USER_ID</c> (legacy
+    /// <c>SIGIL_USER_ID</c>).
     /// </summary>
     public string UserId { get; set; } = string.Empty;
 
@@ -112,7 +116,8 @@ public sealed class SigilClientConfig
 
     /// <summary>
     /// Tags merged into every <see cref="GenerationStart"/>'s tags. Per-call
-    /// tags win on key collision. Filled from <c>SIGIL_TAGS</c>.
+    /// tags win on key collision. Filled from <c>AGENTO11Y_TAGS</c> (legacy
+    /// <c>SIGIL_TAGS</c>).
     /// </summary>
     /// <remarks>
     /// The setter takes a defensive copy so caller-side mutations after
@@ -127,9 +132,9 @@ public sealed class SigilClientConfig
 
     /// <summary>
     /// Tri-state debug flag mirroring Go's <c>*bool</c>. <c>null</c> means
-    /// "not set" — filled from <c>SIGIL_DEBUG</c> when the caller hasn't
-    /// supplied a value. Explicit <c>false</c> overrides
-    /// <c>SIGIL_DEBUG=true</c>.
+    /// "not set" — filled from <c>AGENTO11Y_DEBUG</c> (legacy
+    /// <c>SIGIL_DEBUG</c>) when the caller hasn't supplied a value. Explicit
+    /// <c>false</c> overrides <c>AGENTO11Y_DEBUG=true</c>.
     /// </summary>
     public bool? Debug { get; set; }
 }
@@ -158,8 +163,9 @@ internal static class ConfigResolver
         var callerLogger = resolved.Logger;
         resolved.Logger ??= _ => { };
         // Always surface env-resolve warnings to stderr so a typo in
-        // SIGIL_AUTH_MODE / SIGIL_PROTOCOL / SIGIL_CONTENT_CAPTURE_MODE has
-        // operator-visible signal even when the caller didn't supply a Logger.
+        // AGENTO11Y_AUTH_MODE / AGENTO11Y_PROTOCOL / AGENTO11Y_CONTENT_CAPTURE_MODE
+        // (or the SIGIL_* legacy spellings) has operator-visible signal even
+        // when the caller didn't supply a Logger.
         // When the caller provided a Logger, route warnings through it as well.
         EnvConfig.LogWarnings(callerLogger ?? Console.Error.WriteLine, warnings);
 

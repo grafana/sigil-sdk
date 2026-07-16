@@ -10,25 +10,47 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Reads canonical {@code SIGIL_*} environment variables and layers them under
- * caller-supplied {@link SigilClientConfig} values.
+ * Reads canonical {@code AGENTO11Y_*} environment variables (with legacy
+ * {@code SIGIL_*} fallbacks) and layers them under caller-supplied
+ * {@link SigilClientConfig} values.
  *
  * <p>Resolution order (highest precedence first):
  *
  * <ol>
  *   <li>Caller-supplied {@code SigilClientConfig} field (when not at its
  *       default/unset state).</li>
- *   <li>Canonical {@code SIGIL_*} env var.</li>
+ *   <li>Canonical {@code AGENTO11Y_*} env var, falling back to the legacy
+ *       {@code SIGIL_*} spelling when the preferred one is unset or blank.</li>
  *   <li>SDK schema default (the field initializer on
  *       {@link SigilClientConfig} / {@link GenerationExportConfig} /
  *       {@link AuthConfig}).</li>
  * </ol>
+ *
+ * <p>Per field, the first nonblank value of the preferred then legacy name is
+ * selected before parsing: a nonblank preferred value always wins, even when
+ * it later fails validation, so stale legacy config cannot silently
+ * resurface.</p>
  *
  * <p>Mirrors the Go reference implementation in {@code go/sigil/env.go}.
  * Invalid env values are skipped with a warning so a single typo does not
  * discard the rest of the env layer.</p>
  */
 public final class SigilEnvConfig {
+    public static final String ENV_ENDPOINT_PREFERRED = "AGENTO11Y_ENDPOINT";
+    public static final String ENV_PROTOCOL_PREFERRED = "AGENTO11Y_PROTOCOL";
+    public static final String ENV_INSECURE_PREFERRED = "AGENTO11Y_INSECURE";
+    public static final String ENV_HEADERS_PREFERRED = "AGENTO11Y_HEADERS";
+    public static final String ENV_AUTH_MODE_PREFERRED = "AGENTO11Y_AUTH_MODE";
+    public static final String ENV_AUTH_TENANT_ID_PREFERRED = "AGENTO11Y_AUTH_TENANT_ID";
+    public static final String ENV_AUTH_TOKEN_PREFERRED = "AGENTO11Y_AUTH_TOKEN";
+    public static final String ENV_AGENT_NAME_PREFERRED = "AGENTO11Y_AGENT_NAME";
+    public static final String ENV_AGENT_VERSION_PREFERRED = "AGENTO11Y_AGENT_VERSION";
+    public static final String ENV_USER_ID_PREFERRED = "AGENTO11Y_USER_ID";
+    public static final String ENV_TAGS_PREFERRED = "AGENTO11Y_TAGS";
+    public static final String ENV_CONTENT_CAPTURE_MODE_PREFERRED = "AGENTO11Y_CONTENT_CAPTURE_MODE";
+    public static final String ENV_DEBUG_PREFERRED = "AGENTO11Y_DEBUG";
+
+    // Legacy SIGIL_* spellings, still honored as fallbacks.
     public static final String ENV_ENDPOINT = "SIGIL_ENDPOINT";
     public static final String ENV_PROTOCOL = "SIGIL_PROTOCOL";
     public static final String ENV_INSECURE = "SIGIL_INSECURE";
@@ -66,14 +88,14 @@ public final class SigilEnvConfig {
     }
 
     /**
-     * Applies canonical {@code SIGIL_*} env values onto {@code base},
-     * preserving caller-supplied fields. The returned config is a fresh copy;
-     * {@code base} is not mutated.
+     * Applies canonical {@code AGENTO11Y_*} env values (with legacy
+     * {@code SIGIL_*} fallbacks) onto {@code base}, preserving caller-supplied
+     * fields. The returned config is a fresh copy; {@code base} is not
+     * mutated.
      *
-     * <p>Invalid {@code SIGIL_AUTH_MODE}, {@code SIGIL_PROTOCOL}, or
-     * {@code SIGIL_CONTENT_CAPTURE_MODE} values are skipped — the base value
-     * is kept and the warning is appended to the result so other valid env
-     * vars still apply.</p>
+     * <p>Invalid auth-mode, protocol, or content-capture-mode values are
+     * skipped — the base value is kept and a warning naming the selected env
+     * var is appended to the result so other valid env vars still apply.</p>
      */
     public static EnvResolveResult resolveFromEnv(Function<String, String> lookup, SigilClientConfig base) {
         Function<String, String> source = lookup == null ? System::getenv : lookup;
@@ -82,57 +104,57 @@ public final class SigilEnvConfig {
 
         GenerationExportConfig export = cfg.getGenerationExport();
 
-        String endpoint = envTrimmed(source, ENV_ENDPOINT);
+        EnvValue endpoint = envTrimmed(source, ENV_ENDPOINT_PREFERRED, ENV_ENDPOINT);
         if (endpoint != null && export.getEndpoint().isEmpty()) {
-            export.setEndpoint(endpoint);
+            export.setEndpoint(endpoint.value());
         }
 
-        String protocol = envTrimmed(source, ENV_PROTOCOL);
+        EnvValue protocol = envTrimmed(source, ENV_PROTOCOL_PREFERRED, ENV_PROTOCOL);
         if (protocol != null && export.getProtocol() == null) {
-            GenerationExportProtocol parsed = parseProtocol(protocol);
+            GenerationExportProtocol parsed = parseProtocol(protocol.value());
             if (parsed != null) {
                 export.setProtocol(parsed);
             } else {
-                warnings.add("sigil: ignoring invalid " + ENV_PROTOCOL + " " + protocol);
+                warnings.add("sigil: ignoring invalid " + protocol.key() + " " + protocol.value());
             }
         }
 
-        String insecureRaw = envTrimmed(source, ENV_INSECURE);
+        EnvValue insecureRaw = envTrimmed(source, ENV_INSECURE_PREFERRED, ENV_INSECURE);
         if (insecureRaw != null && export.getInsecure() == null) {
-            export.setInsecure(parseBool(insecureRaw));
+            export.setInsecure(parseBool(insecureRaw.value()));
         }
 
-        String headersRaw = envTrimmed(source, ENV_HEADERS);
+        EnvValue headersRaw = envTrimmed(source, ENV_HEADERS_PREFERRED, ENV_HEADERS);
         if (headersRaw != null && export.getHeaders().isEmpty()) {
-            export.setHeaders(parseCsvKv(headersRaw));
+            export.setHeaders(parseCsvKv(headersRaw.value()));
         }
 
         AuthConfig auth = export.getAuth();
-        String authModeRaw = envTrimmed(source, ENV_AUTH_MODE);
+        EnvValue authModeRaw = envTrimmed(source, ENV_AUTH_MODE_PREFERRED, ENV_AUTH_MODE);
         if (authModeRaw != null && auth.getMode() == null) {
-            AuthMode parsed = parseAuthMode(authModeRaw);
+            AuthMode parsed = parseAuthMode(authModeRaw.value());
             if (parsed != null) {
                 auth.setMode(parsed);
             } else {
-                warnings.add("sigil: ignoring invalid " + ENV_AUTH_MODE + " " + authModeRaw);
+                warnings.add("sigil: ignoring invalid " + authModeRaw.key() + " " + authModeRaw.value());
             }
         }
 
-        String tenantId = envTrimmed(source, ENV_AUTH_TENANT_ID);
+        EnvValue tenantId = envTrimmed(source, ENV_AUTH_TENANT_ID_PREFERRED, ENV_AUTH_TENANT_ID);
         if (tenantId != null && auth.getTenantId().isEmpty()) {
-            auth.setTenantId(tenantId);
+            auth.setTenantId(tenantId.value());
         }
 
-        String token = envTrimmed(source, ENV_AUTH_TOKEN);
+        EnvValue token = envTrimmed(source, ENV_AUTH_TOKEN_PREFERRED, ENV_AUTH_TOKEN);
         if (token != null) {
             // Set both fields when empty; AuthHeaders.resolve uses only the one
             // matching the final mode. Lets env's token populate a caller-set
-            // mode without env declaring SIGIL_AUTH_MODE.
+            // mode without env declaring an AUTH_MODE.
             if (auth.getBearerToken().isEmpty()) {
-                auth.setBearerToken(token);
+                auth.setBearerToken(token.value());
             }
             if (auth.getBasicPassword().isEmpty()) {
-                auth.setBasicPassword(token);
+                auth.setBasicPassword(token.value());
             }
         }
         if (auth.getMode() == AuthMode.BASIC && auth.getBasicUser().isEmpty() && !auth.getTenantId().isEmpty()) {
@@ -151,41 +173,41 @@ public final class SigilEnvConfig {
             auth.setMode(AuthMode.NONE);
         }
 
-        String agentName = envTrimmed(source, ENV_AGENT_NAME);
+        EnvValue agentName = envTrimmed(source, ENV_AGENT_NAME_PREFERRED, ENV_AGENT_NAME);
         if (agentName != null && cfg.getAgentName().isEmpty()) {
-            cfg.setAgentName(agentName);
+            cfg.setAgentName(agentName.value());
         }
-        String agentVersion = envTrimmed(source, ENV_AGENT_VERSION);
+        EnvValue agentVersion = envTrimmed(source, ENV_AGENT_VERSION_PREFERRED, ENV_AGENT_VERSION);
         if (agentVersion != null && cfg.getAgentVersion().isEmpty()) {
-            cfg.setAgentVersion(agentVersion);
+            cfg.setAgentVersion(agentVersion.value());
         }
-        String userId = envTrimmed(source, ENV_USER_ID);
+        EnvValue userId = envTrimmed(source, ENV_USER_ID_PREFERRED, ENV_USER_ID);
         if (userId != null && cfg.getUserId().isEmpty()) {
-            cfg.setUserId(userId);
+            cfg.setUserId(userId.value());
         }
 
-        String tagsRaw = envTrimmed(source, ENV_TAGS);
+        EnvValue tagsRaw = envTrimmed(source, ENV_TAGS_PREFERRED, ENV_TAGS);
         if (tagsRaw != null) {
-            Map<String, String> envTags = parseCsvKv(tagsRaw);
+            Map<String, String> envTags = parseCsvKv(tagsRaw.value());
             // Env tags act as a base layer; caller tags win on collision.
             Map<String, String> merged = new LinkedHashMap<>(envTags);
             merged.putAll(cfg.getTags());
             cfg.setTags(merged);
         }
 
-        String ccmRaw = envTrimmed(source, ENV_CONTENT_CAPTURE_MODE);
+        EnvValue ccmRaw = envTrimmed(source, ENV_CONTENT_CAPTURE_MODE_PREFERRED, ENV_CONTENT_CAPTURE_MODE);
         if (ccmRaw != null && cfg.getContentCapture() == ContentCaptureMode.DEFAULT) {
-            ContentCaptureMode parsed = parseContentCaptureMode(ccmRaw);
+            ContentCaptureMode parsed = parseContentCaptureMode(ccmRaw.value());
             if (parsed != null) {
                 cfg.setContentCapture(parsed);
             } else {
-                warnings.add("sigil: ignoring invalid " + ENV_CONTENT_CAPTURE_MODE + " " + ccmRaw);
+                warnings.add("sigil: ignoring invalid " + ccmRaw.key() + " " + ccmRaw.value());
             }
         }
 
-        String debugRaw = envTrimmed(source, ENV_DEBUG);
+        EnvValue debugRaw = envTrimmed(source, ENV_DEBUG_PREFERRED, ENV_DEBUG);
         if (debugRaw != null && cfg.getDebug() == null) {
-            cfg.setDebug(parseBool(debugRaw));
+            cfg.setDebug(parseBool(debugRaw.value()));
         }
 
         return new EnvResolveResult(cfg, warnings);
@@ -201,18 +223,33 @@ public final class SigilEnvConfig {
         }
     }
 
-    private static String envTrimmed(Function<String, String> lookup, String key) {
-        String raw;
-        try {
-            raw = lookup.apply(key);
-        } catch (SecurityException ex) {
-            return null;
+    /** A trimmed env value together with the env-var name it was read from. */
+    private record EnvValue(String value, String key) {
+    }
+
+    /**
+     * Selects the first nonblank value of {@code preferred} then {@code legacy}
+     * and returns it with the env-var name it came from, so validation warnings
+     * can name the key the user actually set. Returns {@code null} when both
+     * are unset or blank.
+     */
+    private static EnvValue envTrimmed(Function<String, String> lookup, String preferred, String legacy) {
+        for (String key : new String[] {preferred, legacy}) {
+            String raw;
+            try {
+                raw = lookup.apply(key);
+            } catch (SecurityException ex) {
+                continue;
+            }
+            if (raw == null) {
+                continue;
+            }
+            String v = raw.trim();
+            if (!v.isEmpty()) {
+                return new EnvValue(v, key);
+            }
         }
-        if (raw == null) {
-            return null;
-        }
-        String v = raw.trim();
-        return v.isEmpty() ? null : v;
+        return null;
     }
 
     static boolean parseBool(String raw) {

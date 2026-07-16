@@ -319,6 +319,23 @@ describe("pi plugin: real-SDK golden export", () => {
     assertGoldenJSON(GOLDEN_PATH, exports);
   });
 
+  it("matches the same golden when configured via AGENTO11Y_* only", async () => {
+    for (const suffix of [
+      "ENDPOINT",
+      "AUTH_TENANT_ID",
+      "AUTH_TOKEN",
+      "AGENT_NAME",
+      "AGENT_VERSION",
+      "CONTENT_CAPTURE_MODE",
+    ]) {
+      process.env[`AGENTO11Y_${suffix}`] = process.env[`SIGIL_${suffix}`];
+      delete process.env[`SIGIL_${suffix}`];
+    }
+
+    const { exports } = await runFullTurn();
+    assertGoldenJSON(GOLDEN_PATH, exports);
+  });
+
   it("keeps user SIGIL_TAGS and lets built-in git.branch win collisions", async () => {
     // Drive the user-tag merge path: SIGIL_TAGS becomes a client-level
     // tag (js/src/config.ts) that the SDK merges under the per-generation

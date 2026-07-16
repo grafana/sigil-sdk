@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/local"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/login"
 	"github.com/stretchr/testify/assert"
@@ -539,6 +540,10 @@ func isolateDotenvHome(t *testing.T) string {
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	// Pin both spellings of every alias family blank: the developer's shell
+	// and materialization from earlier tests (which writes os.Setenv without
+	// cleanup) must not leak into launcher dispatch.
+	envconfig.PinAliasEnvBlank(t)
 	return dir
 }
 
@@ -1050,10 +1055,11 @@ func TestRun_LauncherTagFlagSetsSigilTags(t *testing.T) {
 			// not leak into other tests.
 			t.Setenv("SIGIL_TAGS", tc.existingTag)
 
-			var gotTags string
+			var gotTags, gotPreferredTags string
 			var gotArgs []string
 			withStubLauncher(t, "claude", func(_ context.Context, args []string, _ *local.LaunchEnv, _ io.Reader, _, _ io.Writer, _ *log.Logger, _ string) error {
 				gotTags = os.Getenv("SIGIL_TAGS")
+				gotPreferredTags = os.Getenv("AGENTO11Y_TAGS")
 				gotArgs = args
 				return nil
 			})
@@ -1064,6 +1070,7 @@ func TestRun_LauncherTagFlagSetsSigilTags(t *testing.T) {
 			})
 			require.Nil(t, gotExit, "stderr=%q", stderr.String())
 			assert.Equal(t, tc.wantTags, gotTags)
+			assert.Equal(t, tc.wantTags, gotPreferredTags, "--tag must write both spellings")
 			assert.Equal(t, tc.wantArgs, gotArgs)
 		})
 	}

@@ -22,8 +22,8 @@ var client = new SigilClient(new SigilClientConfig
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
-            TenantId = Environment.GetEnvironmentVariable("SIGIL_AUTH_TENANT_ID"),
-            BasicPassword = Environment.GetEnvironmentVariable("SIGIL_AUTH_TOKEN"),
+            TenantId = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID"),
+            BasicPassword = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TOKEN"),
         },
         BatchSize = 100,
         FlushInterval = TimeSpan.FromSeconds(1),
@@ -103,7 +103,7 @@ var client = new SigilClient(new SigilClientConfig
 });
 ```
 
-You can also set `SIGIL_REDACT_INPUT_MESSAGES=true`. Explicit options take
+You can also set `AGENTO11Y_REDACT_INPUT_MESSAGES=true`. Explicit options take
 precedence over the environment variable.
 
 ## Manual generation instrumentation (sync)
@@ -300,8 +300,8 @@ For Grafana Cloud, use `Basic` auth mode. The username is your Grafana Cloud ins
 Auth = new AuthConfig
 {
     Mode = ExportAuthMode.Basic,
-    TenantId = Environment.GetEnvironmentVariable("SIGIL_AUTH_TENANT_ID") ?? "",
-    BasicPassword = Environment.GetEnvironmentVariable("SIGIL_AUTH_TOKEN") ?? "",
+    TenantId = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID") ?? "",
+    BasicPassword = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TOKEN") ?? "",
 },
 ```
 
@@ -311,9 +311,9 @@ If your deployment requires a distinct username, set `BasicUser` explicitly:
 Auth = new AuthConfig
 {
     Mode = ExportAuthMode.Basic,
-    TenantId = Environment.GetEnvironmentVariable("SIGIL_AUTH_TENANT_ID") ?? "",
-    BasicUser = Environment.GetEnvironmentVariable("SIGIL_AUTH_TENANT_ID") ?? "",
-    BasicPassword = Environment.GetEnvironmentVariable("SIGIL_AUTH_TOKEN") ?? "",
+    TenantId = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID") ?? "",
+    BasicUser = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID") ?? "",
+    BasicPassword = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TOKEN") ?? "",
 },
 ```
 

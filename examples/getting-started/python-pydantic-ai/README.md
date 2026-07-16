@@ -7,7 +7,7 @@ Runs a Pydantic AI agent and records the generation to Grafana Cloud AI Observab
 ```bash
 cd examples/getting-started/python-pydantic-ai
 cp .env.example .env
-# Fill in ANTHROPIC_API_KEY, SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID, SIGIL_AUTH_TOKEN.
+# Fill in ANTHROPIC_API_KEY, AGENTO11Y_ENDPOINT, AGENTO11Y_AUTH_TENANT_ID, AGENTO11Y_AUTH_TOKEN.
 # See the Grafana Cloud AI Observability getting started docs for where to find each value:
 # https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/
 ```

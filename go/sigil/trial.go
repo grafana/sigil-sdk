@@ -94,7 +94,7 @@ func NewTrial(client *Client, ref TrialRef, opts ...TrialOption) *Trial {
 
 func NewTrialFromRef(client *Client, ref *TrialRef, opts ...TrialOption) (*Trial, error) {
 	if ref == nil {
-		return nil, fmt.Errorf("%w: trial ref is required; set SIGIL_EXPERIMENT_ID and SIGIL_TEST_CASE_ID", ErrExperimentValidationFailed)
+		return nil, fmt.Errorf("%w: trial ref is required; set AGENTO11Y_EXPERIMENT_ID and AGENTO11Y_TEST_CASE_ID", ErrExperimentValidationFailed)
 	}
 	return NewTrial(client, *ref, opts...), nil
 }

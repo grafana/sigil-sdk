@@ -19,23 +19,19 @@ subprojects {
 
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()
-            // Clear canonical SIGIL_* env vars so individual tests don't pick
-            // up developer-machine config when they construct a SigilClient.
-            // Tests that exercise env layering should pass an explicit lookup
-            // to SigilEnvConfig.resolveFromEnv.
-            environment("SIGIL_ENDPOINT", "")
-            environment("SIGIL_PROTOCOL", "")
-            environment("SIGIL_INSECURE", "")
-            environment("SIGIL_HEADERS", "")
-            environment("SIGIL_AUTH_MODE", "")
-            environment("SIGIL_AUTH_TENANT_ID", "")
-            environment("SIGIL_AUTH_TOKEN", "")
-            environment("SIGIL_AGENT_NAME", "")
-            environment("SIGIL_AGENT_VERSION", "")
-            environment("SIGIL_USER_ID", "")
-            environment("SIGIL_TAGS", "")
-            environment("SIGIL_CONTENT_CAPTURE_MODE", "")
-            environment("SIGIL_DEBUG", "")
+            // Clear canonical AGENTO11Y_* and legacy SIGIL_* env vars so
+            // individual tests don't pick up developer-machine config when
+            // they construct a SigilClient. Tests that exercise env layering
+            // should pass an explicit lookup to SigilEnvConfig.resolveFromEnv.
+            listOf(
+                "ENDPOINT", "PROTOCOL", "INSECURE", "HEADERS",
+                "AUTH_MODE", "AUTH_TENANT_ID", "AUTH_TOKEN",
+                "AGENT_NAME", "AGENT_VERSION", "USER_ID", "TAGS",
+                "CONTENT_CAPTURE_MODE", "DEBUG",
+            ).forEach { suffix ->
+                environment("AGENTO11Y_$suffix", "")
+                environment("SIGIL_$suffix", "")
+            }
         }
     }
 

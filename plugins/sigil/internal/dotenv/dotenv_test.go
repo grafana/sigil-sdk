@@ -124,6 +124,10 @@ func TestApplyEnv(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("XDG_CONFIG_HOME", dir)
+			// ApplyEnv materializes winners under both spellings via
+			// os.Setenv, so pin the preferred name blank per subtest to keep
+			// cases hermetic.
+			t.Setenv("AGENTO11Y_ENDPOINT", "")
 			const key = "SIGIL_ENDPOINT"
 			if tc.osUnset {
 				_ = os.Unsetenv(key)
@@ -143,6 +147,74 @@ func TestApplyEnv(t *testing.T) {
 			ApplyEnv("sigil", log.New(&bytes.Buffer{}, "", 0))
 			if got := os.Getenv(key); got != tc.want {
 				t.Fatalf("%s = %q, want %q", key, got, tc.want)
+			}
+			if tc.want != "" {
+				if got := os.Getenv("AGENTO11Y_ENDPOINT"); got != tc.want {
+					t.Fatalf("AGENTO11Y_ENDPOINT = %q, want %q (materialized under both names)", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestApplyEnvAliasFamilies(t *testing.T) {
+	cases := []struct {
+		name string
+		os   map[string]string
+		file string
+		want string
+	}{
+		{
+			name: "shell preferred beats shell legacy",
+			os:   map[string]string{"AGENTO11Y_ENDPOINT": "os-preferred", "SIGIL_ENDPOINT": "os-legacy"},
+			want: "os-preferred",
+		},
+		{
+			name: "shell legacy beats file preferred",
+			os:   map[string]string{"SIGIL_ENDPOINT": "os-legacy"},
+			file: "AGENTO11Y_ENDPOINT=file-preferred\n",
+			want: "os-legacy",
+		},
+		{
+			name: "file preferred beats file legacy",
+			file: "AGENTO11Y_ENDPOINT=file-preferred\nSIGIL_ENDPOINT=file-legacy\n",
+			want: "file-preferred",
+		},
+		{
+			name: "blank shell preferred falls through to shell legacy",
+			os:   map[string]string{"AGENTO11Y_ENDPOINT": "   ", "SIGIL_ENDPOINT": "os-legacy"},
+			want: "os-legacy",
+		},
+		{
+			name: "file legacy applies when nothing else set",
+			file: "SIGIL_ENDPOINT=file-legacy\n",
+			want: "file-legacy",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", dir)
+			t.Setenv("AGENTO11Y_ENDPOINT", "")
+			t.Setenv("SIGIL_ENDPOINT", "")
+			for k, v := range tc.os {
+				t.Setenv(k, v)
+			}
+			cfgDir := filepath.Join(dir, "sigil")
+			if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if tc.file != "" {
+				if err := os.WriteFile(filepath.Join(cfgDir, "config.env"), []byte(tc.file), 0o600); err != nil {
+					t.Fatalf("write: %v", err)
+				}
+			}
+			ApplyEnv("sigil", log.New(&bytes.Buffer{}, "", 0))
+			if got := os.Getenv("AGENTO11Y_ENDPOINT"); got != tc.want {
+				t.Fatalf("AGENTO11Y_ENDPOINT = %q, want %q", got, tc.want)
+			}
+			if got := os.Getenv("SIGIL_ENDPOINT"); got != tc.want {
+				t.Fatalf("SIGIL_ENDPOINT = %q, want %q", got, tc.want)
 			}
 		})
 	}

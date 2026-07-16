@@ -21,7 +21,7 @@ type Payload struct {
 	// SurfaceMarker identifies which host integration fired the hook
 	// (e.g. "vscode" or "copilot-cli"). It is NOT part of the Copilot hook
 	// wire payload — the dispatcher populates it from the
-	// SIGIL_COPILOT_HOOK_SURFACE env var set per entry in the hooks config,
+	// AGENTO11Y_COPILOT_HOOK_SURFACE env var set per entry in the hooks config,
 	// so each config file (plugin vs ~/.copilot/hooks) self-identifies.
 	SurfaceMarker string `json:"-"`
 
@@ -101,7 +101,7 @@ func (p Payload) Source() string {
 }
 
 // Surface returns the host integration that fired the hook, as declared by
-// the hooks config via SIGIL_COPILOT_HOOK_SURFACE. Empty when unknown.
+// the hooks config via AGENTO11Y_COPILOT_HOOK_SURFACE. Empty when unknown.
 func (p Payload) Surface() string {
 	return firstNonEmpty(p.SurfaceMarker)
 }

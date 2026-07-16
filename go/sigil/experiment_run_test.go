@@ -377,3 +377,103 @@ func TestTrialRefEnvRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected ref: %#v ok=%v", restored, ok)
 	}
 }
+
+func TestTrialRefToEnvDualWritesBothPrefixes(t *testing.T) {
+	ref := TrialRef{RunID: "run-4", TestCaseID: "c1", Attempt: 3, SuiteID: "s", SuiteVersion: "2.0.0", TrajectoryID: "traj"}
+	env := ref.ToEnv()
+	pairs := map[string]string{
+		EnvExperimentIDPreferred: EnvExperimentID,
+		EnvTestCaseIDPreferred:   EnvTestCaseID,
+		EnvAttemptPreferred:      EnvAttempt,
+		EnvSuiteIDPreferred:      EnvSuiteID,
+		EnvSuiteVersionPreferred: EnvSuiteVersion,
+		EnvTrajectoryIDPreferred: EnvTrajectoryID,
+	}
+	for preferred, legacy := range pairs {
+		if env[preferred] == "" {
+			t.Errorf("missing %s in %#v", preferred, env)
+		}
+		if env[preferred] != env[legacy] {
+			t.Errorf("%s=%q differs from %s=%q", preferred, env[preferred], legacy, env[legacy])
+		}
+	}
+}
+
+func TestTrialRefFromEnvAliasResolution(t *testing.T) {
+	cases := []struct {
+		name   string
+		env    map[string]string
+		wantOK bool
+		want   TrialRef
+	}{
+		{
+			name:   "legacy-only writer readable by new reader",
+			env:    map[string]string{EnvExperimentID: "exp-1", EnvTestCaseID: "c1", EnvAttempt: "2"},
+			wantOK: true,
+			want:   TrialRef{RunID: "exp-1", TestCaseID: "c1", Attempt: 2},
+		},
+		{
+			name:   "preferred-only writer readable",
+			env:    map[string]string{EnvExperimentIDPreferred: "exp-1", EnvTestCaseIDPreferred: "c1", EnvAttemptPreferred: "2"},
+			wantOK: true,
+			want:   TrialRef{RunID: "exp-1", TestCaseID: "c1", Attempt: 2},
+		},
+		{
+			name: "preferred wins on conflict",
+			env: map[string]string{
+				EnvExperimentIDPreferred: "exp-new", EnvExperimentID: "exp-old",
+				EnvTestCaseIDPreferred: "c-new", EnvTestCaseID: "c-old",
+			},
+			wantOK: true,
+			want:   TrialRef{RunID: "exp-new", TestCaseID: "c-new", Attempt: 1},
+		},
+		{
+			name: "blank preferred falls through to legacy",
+			env: map[string]string{
+				EnvExperimentIDPreferred: "   ", EnvExperimentID: "exp-legacy",
+				EnvTestCaseID: "c1",
+			},
+			wantOK: true,
+			want:   TrialRef{RunID: "exp-legacy", TestCaseID: "c1", Attempt: 1},
+		},
+		{
+			name:   "SIGIL_RUN_ID tertiary fallback for experiment id only",
+			env:    map[string]string{EnvRunID: "run-legacy", EnvTestCaseID: "c1"},
+			wantOK: true,
+			want:   TrialRef{RunID: "run-legacy", TestCaseID: "c1", Attempt: 1},
+		},
+		{
+			name:   "AGENTO11Y_RUN_ID is not a supported alias",
+			env:    map[string]string{"AGENTO11Y_RUN_ID": "run-x", EnvTestCaseID: "c1"},
+			wantOK: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, key := range []string{
+				EnvExperimentIDPreferred, EnvExperimentID, EnvRunID,
+				EnvTestCaseIDPreferred, EnvTestCaseID,
+				EnvAttemptPreferred, EnvAttempt,
+				EnvSuiteIDPreferred, EnvSuiteID,
+				EnvSuiteVersionPreferred, EnvSuiteVersion,
+				EnvTrajectoryIDPreferred, EnvTrajectoryID,
+				"AGENTO11Y_RUN_ID",
+			} {
+				t.Setenv(key, "")
+			}
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			got, ok := TrialRefFromEnv()
+			if ok != tc.wantOK {
+				t.Fatalf("ok=%v want %v (ref=%#v)", ok, tc.wantOK, got)
+			}
+			if !ok {
+				return
+			}
+			if got.RunID != tc.want.RunID || got.TestCaseID != tc.want.TestCaseID || got.Attempt != tc.want.Attempt {
+				t.Fatalf("got %#v want %#v", got, tc.want)
+			}
+		})
+	}
+}

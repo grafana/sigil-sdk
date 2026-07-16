@@ -1,9 +1,10 @@
 import { resetSigilDotenvStateForTests } from "./sigilDotenv.js";
 
 /**
- * Reset every SIGIL_* and OTEL_* env var and XDG_CONFIG_HOME between test
- * cases so on-disk fixtures (config.env) and shell exports cannot leak across
- * cases. Used by both config.test.ts and sigilDotenv.test.ts.
+ * Reset every AGENTO11Y_*, SIGIL_*, and OTEL_* env var and XDG_CONFIG_HOME
+ * between test cases so on-disk fixtures (config.env) and shell exports
+ * cannot leak across cases. Used by both config.test.ts and
+ * sigilDotenv.test.ts.
  *
  * Also clears the dotenv loader's per-process "owned keys" tracking so a
  * test that calls applySigilDotenv doesn't poison the next case's view of
@@ -11,7 +12,11 @@ import { resetSigilDotenvStateForTests } from "./sigilDotenv.js";
  */
 export function clearSigilEnv(): void {
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith("SIGIL_") || key.startsWith("OTEL_")) {
+    if (
+      key.startsWith("AGENTO11Y_") ||
+      key.startsWith("SIGIL_") ||
+      key.startsWith("OTEL_")
+    ) {
       delete process.env[key];
     }
   }
@@ -31,6 +36,7 @@ const REALSDK_PRESERVED_KEYS = [
 
 function isManagedRealSdkKey(key: string): boolean {
   return (
+    key.startsWith("AGENTO11Y_") ||
     key.startsWith("SIGIL_") ||
     key.startsWith("SIGIL_PI_") ||
     key.startsWith("OTEL_")
@@ -40,9 +46,9 @@ function isManagedRealSdkKey(key: string): boolean {
 /**
  * Snapshot then delete the env vars a real-SDK test must control: HOME and the
  * XDG/USERPROFILE pointers plus every key matched by {@link isManagedRealSdkKey}
- * (the SIGIL, SIGIL_PI, and OTEL prefixes). Returns the prior values so
- * {@link restoreEnv} can put them back in afterEach. Also resets the dotenv
- * loader's owned-keys tracking.
+ * (the AGENTO11Y, SIGIL, SIGIL_PI, and OTEL prefixes). Returns the prior
+ * values so {@link restoreEnv} can put them back in afterEach. Also resets the
+ * dotenv loader's owned-keys tracking.
  */
 export function snapshotAndClearTestEnv(): Record<string, string | undefined> {
   const keys = new Set<string>(REALSDK_PRESERVED_KEYS);
