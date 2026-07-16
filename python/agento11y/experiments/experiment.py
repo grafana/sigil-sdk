@@ -659,8 +659,8 @@ class Trial:
         self.artifacts.append({"name": name, "kind": resolved_kind, "artifact_id": record.get("artifact_id", "")})
         if self._span is not None:
             self._span.add_event(
-                "sigil.eval.artifact",
-                attributes={"sigil.eval.artifact.name": name, "sigil.eval.artifact.kind": resolved_kind},
+                "agento11y.eval.artifact",
+                attributes={"agento11y.eval.artifact.name": name, "agento11y.eval.artifact.kind": resolved_kind},
             )
         return record
 

@@ -222,11 +222,11 @@ def resolve_thread(state: SourceState, rotate_turns: int, source: str, slot: int
 def build_tags_metadata(source: str, mode: str, turn: int, slot: int) -> tuple[str, dict[str, str], dict[str, object]]:
     persona = persona_for_turn(turn)
     tags = {
-        "sigil.devex.language": LANGUAGE,
-        "sigil.devex.provider": source,
-        "sigil.devex.source": source_tag_for(source),
-        "sigil.devex.scenario": scenario_for(source, turn),
-        "sigil.devex.mode": mode,
+        "agento11y.devex.language": LANGUAGE,
+        "agento11y.devex.provider": source,
+        "agento11y.devex.source": source_tag_for(source),
+        "agento11y.devex.scenario": scenario_for(source, turn),
+        "agento11y.devex.mode": mode,
     }
     metadata: dict[str, object] = {
         "turn_index": turn,

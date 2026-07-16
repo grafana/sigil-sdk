@@ -6,10 +6,10 @@ import type {
 import type { SigilClient } from '../client.js';
 import type { GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 
-const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
-const usageServerToolUseWebSearchMetadataKey = 'sigil.gen_ai.usage.server_tool_use.web_search_requests';
-const usageServerToolUseWebFetchMetadataKey = 'sigil.gen_ai.usage.server_tool_use.web_fetch_requests';
-const usageServerToolUseTotalMetadataKey = 'sigil.gen_ai.usage.server_tool_use.total_requests';
+const thinkingBudgetMetadataKey = 'agento11y.gen_ai.request.thinking.budget_tokens';
+const usageServerToolUseWebSearchMetadataKey = 'agento11y.gen_ai.usage.server_tool_use.web_search_requests';
+const usageServerToolUseWebFetchMetadataKey = 'agento11y.gen_ai.usage.server_tool_use.web_fetch_requests';
+const usageServerToolUseTotalMetadataKey = 'agento11y.gen_ai.usage.server_tool_use.total_requests';
 type AnyRecord = Record<string, unknown>;
 
 type MessagesCreateRequest = MessageCreateParams & AnyRecord;

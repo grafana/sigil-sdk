@@ -10,7 +10,7 @@ import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const protoPath = join(__dirname, '../proto/sigil/v1/generation_ingest.proto');
+const protoPath = join(__dirname, '../proto/agento11y/v1/generation_ingest.proto');
 const protoLoadOptions = {
   keepCase: false,
   longs: String,
@@ -52,7 +52,7 @@ test('HTTP transport roundtrip preserves full generation payload shape', async (
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'http',
@@ -99,7 +99,7 @@ test('gRPC transport roundtrip preserves full generation payload shape', async (
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'grpc',
@@ -174,7 +174,7 @@ test('HTTP transport roundtrip exports workflow steps to sibling endpoint', asyn
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'http',
@@ -213,7 +213,7 @@ test('gRPC transport roundtrip exports workflow steps through workflow service',
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'grpc',
@@ -249,7 +249,7 @@ test('gRPC transport maps typed message parts to proto payloads', async () => {
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'grpc',
@@ -347,7 +347,7 @@ test('gRPC transport omits maxTokens when it is unset', async () => {
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'grpc',
@@ -408,7 +408,7 @@ test('HTTP transport applies generation tenant auth header', async () => {
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'http',
@@ -448,7 +448,7 @@ test('gRPC transport applies generation bearer auth metadata with explicit heade
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'grpc',
@@ -1150,8 +1150,8 @@ function close(server) {
 async function startGRPCServer(onRequest, onWorkflowStepRequest = () => {}) {
   const packageDefinition = await protoLoader.load(protoPath, protoLoadOptions);
   const loaded = grpc.loadPackageDefinition(packageDefinition);
-  const generationService = loaded.sigil.v1.GenerationIngestService;
-  const workflowStepService = loaded.sigil.v1.WorkflowStepIngestService;
+  const generationService = loaded.agento11y.v1.GenerationIngestService;
+  const workflowStepService = loaded.agento11y.v1.WorkflowStepIngestService;
 
   const server = new grpc.Server();
   server.addService(generationService.service, {

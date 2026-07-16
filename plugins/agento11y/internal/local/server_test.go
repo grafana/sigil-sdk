@@ -289,7 +289,7 @@ func TestServer_GenerationsExport_ProtoJSON(t *testing.T) {
 				"stop_reason":"end_turn",
 				"started_at":"2026-05-21T13:01:50.922Z",
 				"completed_at":"2026-05-21T13:01:50.922Z",
-				"metadata":{"sigil.conversation.title":"Local mode smoke test"}
+				"metadata":{"agento11y.conversation.title":"Local mode smoke test"}
 			}]}`,
 			wantConvID:  "conv-pj",
 			wantListHas: []string{`"title":"Local mode smoke test"`},

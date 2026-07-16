@@ -4,7 +4,7 @@ Notes for contributors working in this repo.
 
 ## Regenerating protobuf stubs
 
-The canonical proto lives at [`proto/sigil/v1/generation_ingest.proto`](../proto/sigil/v1/generation_ingest.proto). After editing it, regenerate every language's stubs from the repo root:
+The canonical proto lives at [`proto/agento11y/v1/generation_ingest.proto`](../proto/agento11y/v1/generation_ingest.proto); `proto/sigil/v1` is the frozen legacy copy kept for the migration window and is not regenerated. After editing the canonical proto, regenerate every language's stubs from the repo root:
 
 ```bash
 mise run generate:proto
@@ -14,11 +14,11 @@ This runs three subtasks:
 
 | Task | Outputs | Tooling |
 | --- | --- | --- |
-| `generate:proto:go` | `go/proto/sigil/v1/*.pb.go` | `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc` |
-| `generate:proto:python` | `python/agento11y/internal/gen/sigil/v1/*_pb2*.py` | `grpcio-tools` (auto-fetched via `uv` if needed) |
-| `generate:proto:js` | `js/proto/sigil/v1/*.proto` | none — copies the proto for the runtime loader |
+| `generate:proto:go` | `go/proto/agento11y/v1/*.pb.go` | `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc` |
+| `generate:proto:python` | `python/agento11y/internal/gen/agento11y/v1/*_pb2*.py` | `grpcio-tools` (auto-fetched via `uv` if needed) |
+| `generate:proto:js` | `js/proto/agento11y/v1/*.proto` | none — copies the proto for the runtime loader |
 
-The Go stubs live under the Go SDK module at `github.com/grafana/agento11y/go/proto/sigil/v1` so external producers can import the wire schema without importing the SDK client package. They share the Go SDK module version.
+The Go stubs live under the Go SDK module at `github.com/grafana/agento11y/go/proto/agento11y/v1` so external producers can import the wire schema without importing the SDK client package. They share the Go SDK module version.
 
 Java and .NET compile the proto on build (gradle protobuf plugin and `Grpc.Tools` respectively), so they pick up changes automatically once the canonical `.proto` is updated.
 

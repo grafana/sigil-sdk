@@ -7,7 +7,7 @@ const { SigilClientMock } = vi.hoisted(() => ({
 
 vi.mock("@grafana/agento11y", () => ({
   SigilClient: SigilClientMock,
-  userAgent: () => "sigil-sdk-js/0.0.0-test",
+  userAgent: () => "agento11y-sdk-js/0.0.0-test",
 }));
 
 import { createSigilClient } from "./client.js";
@@ -54,7 +54,7 @@ describe("createSigilClient", () => {
         auth: { mode: "none" },
         headers: {
           "User-Agent": expect.stringMatching(
-            /^sigil-plugin-opencode\/.+ sigil-sdk-js\/0\.0\.0-test$/,
+            /^agento11y-plugin-opencode\/.+ agento11y-sdk-js\/0\.0\.0-test$/,
           ),
         },
       },
@@ -74,8 +74,8 @@ describe("createSigilClient", () => {
 
     const [arg] = SigilClientMock.mock.calls[0];
     const ua = arg.generationExport.headers["User-Agent"];
-    expect(ua.startsWith("sigil-plugin-opencode/")).toBe(true);
-    expect(ua.endsWith("sigil-sdk-js/0.0.0-test")).toBe(true);
+    expect(ua.startsWith("agento11y-plugin-opencode/")).toBe(true);
+    expect(ua.endsWith("agento11y-sdk-js/0.0.0-test")).toBe(true);
   });
 
   it("passes guard config to the SDK client", () => {

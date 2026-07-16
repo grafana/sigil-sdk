@@ -72,18 +72,18 @@ from .models import (
 from .proto_mapping import generation_to_proto, workflow_step_to_proto
 from .validation import validate_embedding_result, validate_embedding_start, validate_generation
 
-_span_attr_generation_id = "sigil.generation.id"
-_span_attr_sdk_name = "sigil.sdk.name"
-_span_attr_framework_run_id = "sigil.framework.run_id"
-_span_attr_framework_thread_id = "sigil.framework.thread_id"
-_span_attr_framework_parent_run_id = "sigil.framework.parent_run_id"
-_span_attr_framework_component_name = "sigil.framework.component_name"
-_span_attr_framework_run_type = "sigil.framework.run_type"
-_span_attr_framework_retry_attempt = "sigil.framework.retry_attempt"
-_span_attr_framework_langgraph_node = "sigil.framework.langgraph.node"
-_span_attr_framework_event_id = "sigil.framework.event_id"
+_span_attr_generation_id = "agento11y.generation.id"
+_span_attr_sdk_name = "agento11y.sdk.name"
+_span_attr_framework_run_id = "agento11y.framework.run_id"
+_span_attr_framework_thread_id = "agento11y.framework.thread_id"
+_span_attr_framework_parent_run_id = "agento11y.framework.parent_run_id"
+_span_attr_framework_component_name = "agento11y.framework.component_name"
+_span_attr_framework_run_type = "agento11y.framework.run_type"
+_span_attr_framework_retry_attempt = "agento11y.framework.retry_attempt"
+_span_attr_framework_langgraph_node = "agento11y.framework.langgraph.node"
+_span_attr_framework_event_id = "agento11y.framework.event_id"
 _span_attr_conversation_id = "gen_ai.conversation.id"
-_span_attr_conversation_title = "sigil.conversation.title"
+_span_attr_conversation_title = "agento11y.conversation.title"
 _span_attr_user_id = "user.id"
 _span_attr_agent_name = "gen_ai.agent.name"
 _span_attr_agent_version = "gen_ai.agent.version"
@@ -95,9 +95,9 @@ _span_attr_request_model = "gen_ai.request.model"
 _span_attr_request_max_tokens = "gen_ai.request.max_tokens"
 _span_attr_request_temperature = "gen_ai.request.temperature"
 _span_attr_request_top_p = "gen_ai.request.top_p"
-_span_attr_request_tool_choice = "sigil.gen_ai.request.tool_choice"
-_span_attr_request_thinking_enabled = "sigil.gen_ai.request.thinking.enabled"
-_span_attr_request_thinking_budget = "sigil.gen_ai.request.thinking.budget_tokens"
+_span_attr_request_tool_choice = "agento11y.gen_ai.request.tool_choice"
+_span_attr_request_thinking_enabled = "agento11y.gen_ai.request.thinking.enabled"
+_span_attr_request_thinking_budget = "agento11y.gen_ai.request.thinking.budget_tokens"
 _span_attr_response_id = "gen_ai.response.id"
 _span_attr_response_model = "gen_ai.response.model"
 _span_attr_finish_reasons = "gen_ai.response.finish_reasons"
@@ -116,8 +116,8 @@ _span_attr_tool_type = "gen_ai.tool.type"
 _span_attr_tool_description = "gen_ai.tool.description"
 _span_attr_tool_call_arguments = "gen_ai.tool.call.arguments"
 _span_attr_tool_call_result = "gen_ai.tool.call.result"
-_span_attr_parent_generation_ids = "sigil.generation.parent_generation_ids"
-_span_attr_tag_prefix = "sigil.tag."
+_span_attr_parent_generation_ids = "agento11y.generation.parent_generation_ids"
+_span_attr_tag_prefix = "agento11y.tag."
 _max_rating_conversation_id_len = 255
 _max_rating_id_len = 128
 _max_rating_generation_id_len = 255
@@ -176,11 +176,11 @@ _instrumentation_name = "github.com/grafana/sigil/sdks/python"
 _sdk_name = "sdk-python"
 
 # Generation metadata keys for cache diagnostics (Sigil docs/guides/cache-diagnostics.md).
-CACHE_DIAGNOSTICS_MISS_REASON_KEY = "sigil.cache_diagnostics.miss_reason"
-CACHE_DIAGNOSTICS_MISSED_INPUT_TOKENS_KEY = "sigil.cache_diagnostics.missed_input_tokens"
-CACHE_DIAGNOSTICS_PREVIOUS_MESSAGE_ID_KEY = "sigil.cache_diagnostics.previous_message_id"
+CACHE_DIAGNOSTICS_MISS_REASON_KEY = "agento11y.cache_diagnostics.miss_reason"
+CACHE_DIAGNOSTICS_MISSED_INPUT_TOKENS_KEY = "agento11y.cache_diagnostics.missed_input_tokens"
+CACHE_DIAGNOSTICS_PREVIOUS_MESSAGE_ID_KEY = "agento11y.cache_diagnostics.previous_message_id"
 _default_embedding_operation_name = "embeddings"
-_metadata_user_id_key = "sigil.user.id"
+_metadata_user_id_key = "agento11y.user.id"
 _metadata_legacy_user_id_key = "user.id"
 
 
@@ -853,7 +853,7 @@ class Client:
             client_mode = _resolve_content_capture_mode(ctx_mode, client_mode)
         cc_mode = _resolve_content_capture_mode(seed.content_capture, client_mode)
         # FULL_WITH_METADATA_SPANS keeps the proto export full but the OTel
-        # span must omit ``sigil.conversation.title``, so we zero the seed
+        # span must omit ``agento11y.conversation.title``, so we zero the seed
         # title for the start-span attribute pass (proto payload is unaffected
         # — it is rebuilt from ``seed.conversation_title`` at end-time).
         span_title = (
@@ -1380,7 +1380,7 @@ class GenerationRecorder:
 
             self.span.update_name(_generation_span_name(generation.operation_name, generation.model.name))
             # FULL_WITH_METADATA_SPANS: proto export keeps full content, but
-            # the span path must drop ``sigil.conversation.title``. Pass a
+            # the span path must drop ``agento11y.conversation.title``. Pass a
             # shallow copy with the title zeroed only for the span emission
             # so the in-memory ``generation`` (the proto payload) stays
             # untouched.

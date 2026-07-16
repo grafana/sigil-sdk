@@ -3,7 +3,7 @@ using Google.Protobuf.WellKnownTypes;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Proto = Sigil.V1;
+using Proto = Agento11y.V1;
 
 namespace Grafana.Sigil;
 

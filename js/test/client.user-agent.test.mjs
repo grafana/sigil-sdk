@@ -10,7 +10,7 @@ import { defaultConfig, SDK_VERSION, SigilClient, userAgent } from '../.test-dis
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const protoPath = join(__dirname, '../proto/sigil/v1/generation_ingest.proto');
+const protoPath = join(__dirname, '../proto/agento11y/v1/generation_ingest.proto');
 const protoLoadOptions = {
   keepCase: false,
   longs: String,
@@ -20,11 +20,11 @@ const protoLoadOptions = {
 };
 
 test('userAgent() returns the SDK product token', () => {
-  assert.equal(userAgent(), `sigil-sdk-js/${SDK_VERSION}`);
+  assert.equal(userAgent(), `agento11y-sdk-js/${SDK_VERSION}`);
 });
 
-const defaultUserAgent = `sigil-sdk-js/${SDK_VERSION}`;
-const overrideUserAgent = `sigil-plugin-opencode/1.2.3 ${defaultUserAgent}`;
+const defaultUserAgent = `agento11y-sdk-js/${SDK_VERSION}`;
+const overrideUserAgent = `agento11y-plugin-opencode/1.2.3 ${defaultUserAgent}`;
 
 // A non-blank caller User-Agent wins; a blank or whitespace-only one must not
 // blank out the default. undefined exercises the no-header path. HTTP and gRPC
@@ -106,7 +106,7 @@ async function captureGRPCUserAgent(headers) {
 function newClient(generationExportOverrides) {
   const defaults = defaultConfig();
   return new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,
@@ -141,7 +141,7 @@ function firstToken(userAgentValue) {
 async function startGRPCServer(onRequest) {
   const packageDefinition = await protoLoader.load(protoPath, protoLoadOptions);
   const loaded = grpc.loadPackageDefinition(packageDefinition);
-  const service = loaded.sigil.v1.GenerationIngestService;
+  const service = loaded.agento11y.v1.GenerationIngestService;
 
   const server = new grpc.Server();
   server.addService(service.service, {

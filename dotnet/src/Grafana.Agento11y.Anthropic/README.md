@@ -137,6 +137,6 @@ var response = await AnthropicRecorder.MessageAsync(
 
 In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
 
-- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
-- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
-- `sigil.gen_ai.usage.server_tool_use.total_requests`
+- `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
+- `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `agento11y.gen_ai.usage.server_tool_use.total_requests`

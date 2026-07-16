@@ -109,7 +109,7 @@ AGENTO11Y_PROTOCOL=http
 AGENTO11Y_AUTH_MODE=basic
 AGENTO11Y_AUTH_TENANT_ID=<your-instance-id>
 AGENTO11Y_AUTH_TOKEN=<glc_... token>
-AGENTO11Y_TAGS=team=checkout,env=prod   # optional client tags; also emitted as sigil.tag.<key> on OTel spans/metrics
+AGENTO11Y_TAGS=team=checkout,env=prod   # optional client tags; also emitted as agento11y.tag.<key> on OTel spans/metrics
 AGENTO11Y_USER_ID=<end-user id>          # optional; sets the user.id span attribute (all SDKs)
 
 # OTel traces and metrics (separate channel; same token)
@@ -131,7 +131,7 @@ This default differs from coding-agent plugin defaults (Path A), which ship `met
 
 To attach custom key/values, pick the mechanism by where it must show up. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md) for the full table.
 
-- **Client tags** (`AGENTO11Y_TAGS` / config `tags`): merged into every generation export; also emitted as `sigil.tag.<key>` on OTel spans and metrics in all SDKs. Use for low-cardinality values you want to slice metrics/traces by (team, project, env). Do not put high-cardinality values (user, request id) here, they blow up metric label cardinality.
+- **Client tags** (`AGENTO11Y_TAGS` / config `tags`): merged into every generation export; also emitted as `agento11y.tag.<key>` on OTel spans and metrics in all SDKs. Use for low-cardinality values you want to slice metrics/traces by (team, project, env). Do not put high-cardinality values (user, request id) here, they blow up metric label cardinality.
 - **Per-generation `tags` / `metadata`**: export-only, never on spans/metrics. Use for searchable per-request data.
 - **`user_id`** (`AGENTO11Y_USER_ID` / per-call / context): sets the `user.id` span attribute (all SDKs) plus the export; not a metric label. Use this for end-user identity instead of a tag.
 
@@ -160,7 +160,7 @@ Return:
 ## Sigil architecture and ingest model (must follow)
 
 - Sigil uses generation-first ingest:
-  - gRPC: `sigil.v1.GenerationIngestService.ExportGenerations`
+  - gRPC: `agento11y.v1.GenerationIngestService.ExportGenerations`
   - HTTP parity: `POST /api/v1/generations:export`
 - Traces/metrics go through OTel collector/Alloy or direct OTLP, **not** through Sigil ingest.
 - Required generation modes:
@@ -275,12 +275,12 @@ On generation and tool spans, capture or preserve these when available:
 
 - identity and routing:
   - `gen_ai.operation.name`
-  - `sigil.generation.id`
+  - `agento11y.generation.id`
   - `gen_ai.conversation.id`
   - `gen_ai.agent.name`
   - `gen_ai.agent.version` — required for per-version Performance charts; set SDK `agent_version`
-  - `sigil.generation.parent_generation_ids`
-  - `sigil.sdk.name`
+  - `agento11y.generation.parent_generation_ids`
+  - `agento11y.sdk.name`
 - model:
   - `gen_ai.provider.name`
   - `gen_ai.request.model`
@@ -289,9 +289,9 @@ On generation and tool spans, capture or preserve these when available:
   - `gen_ai.request.max_tokens`
   - `gen_ai.request.temperature`
   - `gen_ai.request.top_p`
-  - `sigil.gen_ai.request.tool_choice`
-  - `sigil.gen_ai.request.thinking.enabled`
-  - `sigil.gen_ai.request.thinking.budget_tokens`
+  - `agento11y.gen_ai.request.tool_choice`
+  - `agento11y.gen_ai.request.thinking.enabled`
+  - `agento11y.gen_ai.request.thinking.budget_tokens`
 - usage and outcomes:
   - `gen_ai.usage.input_tokens`
   - `gen_ai.usage.output_tokens`
@@ -370,7 +370,7 @@ step = WorkflowStep(
     completed_at=datetime.now(timezone.utc),
     input_state={"text": "input data"},
     output_state={"category": "incident"},
-    tags={"sigil.framework.name": "custom-orchestrator"},
+    tags={"agento11y.framework.name": "custom-orchestrator"},
     linked_generation_ids=["gen_xyz"],  # LLM calls inside this step
     parent_step_ids=[],                  # first node, no parents
 )
@@ -447,7 +447,7 @@ In the grafana/sigil-sdk repo:
   - `stop_reason` / `finish_reason`
   - Full token usage including `cache_read_input_tokens`, `cache_write_input_tokens`, and `reasoning_tokens` when the provider returns them
 - Always check `rec.err()` / `Err()` after the generation recorder closes; SDK validation or enqueue errors are otherwise silent.
-- Use `AGENTO11Y_TAGS` (client-level) or `tags` on `GenerationStart` for filtering: both export tags on generations. Client-level tags also appear as `sigil.tag.<key>` on OTel spans and metrics in all SDKs; per-generation tags and `metadata` are export-only everywhere. For end-user identity use `user_id` (sets `user.id` span attribute), not a tag. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md).
+- Use `AGENTO11Y_TAGS` (client-level) or `tags` on `GenerationStart` for filtering: both export tags on generations. Client-level tags also appear as `agento11y.tag.<key>` on OTel spans and metrics in all SDKs; per-generation tags and `metadata` are export-only everywhere. For end-user identity use `user_id` (sets `user.id` span attribute), not a tag. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md).
 
 ## Validation checklist
 

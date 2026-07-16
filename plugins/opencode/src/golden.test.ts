@@ -354,7 +354,7 @@ describe("opencode plugin: real-SDK golden export", () => {
     });
 
     expectCommonTurnFields(turn);
-    expect(turn.metadata["sigil.sdk.content_capture_mode"]).toBe(
+    expect(turn.metadata["agento11y.sdk.content_capture_mode"]).toBe(
       contentCapture,
     );
     expect(messageFetches).toBe(contentCapture === "metadata_only" ? 0 : 1);
@@ -422,8 +422,8 @@ const normalizeFields: Record<string, string> = {
   trace_id: "<NORMALIZED>",
   span_id: "<NORMALIZED>",
   parent_span_id: "<NORMALIZED>",
-  "sigil.sdk.version": "<NORMALIZED>",
-  "sigil.sdk.commit": "<NORMALIZED>",
+  "agento11y.sdk.version": "<NORMALIZED>",
+  "agento11y.sdk.commit": "<NORMALIZED>",
   // sha256 derived from agent_version; see Pi golden test for the rationale.
   effective_version: "<NORMALIZED>",
   // The plugin resolves git.branch and cwd from the opencode plugin

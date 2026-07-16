@@ -37,9 +37,9 @@ else:
     GenerateContentResponse = Any
     GeminiContent = Any
 
-_thinking_budget_metadata_key = "sigil.gen_ai.request.thinking.budget_tokens"
-_thinking_level_metadata_key = "sigil.gen_ai.request.thinking.level"
-_usage_tool_use_prompt_tokens_metadata_key = "sigil.gen_ai.usage.tool_use_prompt_tokens"
+_thinking_budget_metadata_key = "agento11y.gen_ai.request.thinking.budget_tokens"
+_thinking_level_metadata_key = "agento11y.gen_ai.request.thinking.level"
+_usage_tool_use_prompt_tokens_metadata_key = "agento11y.gen_ai.usage.tool_use_prompt_tokens"
 
 
 @dataclass(slots=True)

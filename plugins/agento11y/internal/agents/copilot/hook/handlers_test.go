@@ -69,8 +69,8 @@ func TestHookSequenceExportsOnStop(t *testing.T) {
 	if gotAuth != wantAuth {
 		t.Fatalf("auth = %q, want %q", gotAuth, wantAuth)
 	}
-	if !strings.HasPrefix(gotUA, "sigil-plugin-copilot/") {
-		t.Fatalf("User-Agent = %q, want sigil-plugin-copilot/ prefix", gotUA)
+	if !strings.HasPrefix(gotUA, "agento11y-plugin-copilot/") {
+		t.Fatalf("User-Agent = %q, want agento11y-plugin-copilot/ prefix", gotUA)
 	}
 	if strings.Contains(gotBody, "glc_abcdefghijklmnopqrstuvwxyz") {
 		t.Fatalf("export leaked unredacted secret: %s", gotBody)

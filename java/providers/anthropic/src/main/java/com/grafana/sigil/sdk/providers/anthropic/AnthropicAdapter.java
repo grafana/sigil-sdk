@@ -33,13 +33,13 @@ import java.util.Map;
 
 /** Anthropic wrappers and mappers using official Anthropic Java SDK request/response types. */
 public final class AnthropicAdapter {
-    private static final String THINKING_BUDGET_METADATA_KEY = "sigil.gen_ai.request.thinking.budget_tokens";
+    private static final String THINKING_BUDGET_METADATA_KEY = "agento11y.gen_ai.request.thinking.budget_tokens";
     private static final String USAGE_SERVER_TOOL_USE_WEB_SEARCH_METADATA_KEY =
-            "sigil.gen_ai.usage.server_tool_use.web_search_requests";
+            "agento11y.gen_ai.usage.server_tool_use.web_search_requests";
     private static final String USAGE_SERVER_TOOL_USE_WEB_FETCH_METADATA_KEY =
-            "sigil.gen_ai.usage.server_tool_use.web_fetch_requests";
+            "agento11y.gen_ai.usage.server_tool_use.web_fetch_requests";
     private static final String USAGE_SERVER_TOOL_USE_TOTAL_METADATA_KEY =
-            "sigil.gen_ai.usage.server_tool_use.total_requests";
+            "agento11y.gen_ai.usage.server_tool_use.total_requests";
     private static final ObjectMapper JSON = ObjectMappers.jsonMapper();
     private static final ObjectMapper CANONICAL_JSON = new ObjectMapper()
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)

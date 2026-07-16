@@ -39,14 +39,14 @@ from agento11y import (
     validate_generation,
 )
 from agento11y.context import content_capture_mode_from_context, with_content_capture_mode
-from agento11y.internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
-from agento11y.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
+from agento11y.internal.gen.agento11y.v1 import generation_ingest_pb2 as sigil_pb2
+from agento11y.internal.gen.agento11y.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
 from conftest import CapturingGenerationExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-_METADATA_KEY = "sigil.sdk.content_capture_mode"
+_METADATA_KEY = "agento11y.sdk.content_capture_mode"
 # Sentinel substring guaranteed not to appear in any error category classifier
 # output. If it leaks onto a span, the redaction is broken.
 _LEAK_MARKER = "ignore previous instructions"
@@ -233,9 +233,9 @@ def _full_generation() -> Generation:
         call_error="rate limit exceeded",
         artifacts=[],
         metadata={
-            "sigil.sdk.name": "sdk-python",
+            "agento11y.sdk.name": "sdk-python",
             "call_error": "rate limit exceeded",
-            "sigil.conversation.title": "Weather chat",
+            "agento11y.conversation.title": "Weather chat",
         },
     )
 
@@ -322,7 +322,7 @@ class TestContentStripping:
             assert gen.tools[0].description == ""
             assert gen.tools[0].input_schema_json == b""
             assert gen.conversation_title == ""
-            assert "sigil.conversation.title" not in gen.metadata
+            assert "agento11y.conversation.title" not in gen.metadata
 
             # Preserved
             assert len(gen.input) == 2
@@ -338,7 +338,7 @@ class TestContentStripping:
             assert gen.usage.input_tokens == 120
             assert gen.usage.output_tokens == 42
             assert gen.stop_reason == "end_turn"
-            assert gen.metadata["sigil.sdk.name"] == "sdk-python"
+            assert gen.metadata["agento11y.sdk.name"] == "sdk-python"
         finally:
             client.shutdown()
 
@@ -407,7 +407,7 @@ class TestContentStripping:
             rec.end()
 
             gen_span = next(s for s in span_exporter.get_finished_spans() if s.name.startswith("generate"))
-            assert "sigil.conversation.title" not in gen_span.attributes
+            assert "agento11y.conversation.title" not in gen_span.attributes
         finally:
             client.shutdown()
             provider.shutdown()
@@ -672,7 +672,7 @@ class TestToolContentCapture:
 
             span = self._get_tool_span(span_exporter)
             assert span.attributes.get("gen_ai.tool.call.arguments") is None
-            assert "sigil.conversation.title" not in span.attributes
+            assert "agento11y.conversation.title" not in span.attributes
         finally:
             client.shutdown()
             provider.shutdown()
@@ -1246,10 +1246,10 @@ class TestFullWithMetadataSpans:
             assert gen.tools[0].description == "Get weather info"
             assert gen.tools[0].input_schema_json == b'{"type":"object"}'
             assert gen.metadata.fields[_METADATA_KEY].string_value == "full_with_metadata_spans"
-            assert gen.metadata.fields["sigil.conversation.title"].string_value == "Sensitive conversation"
+            assert gen.metadata.fields["agento11y.conversation.title"].string_value == "Sensitive conversation"
 
             # Span path drops the title.
-            assert "sigil.conversation.title" not in env.generation_span().attributes
+            assert "agento11y.conversation.title" not in env.generation_span().attributes
 
     def test_provider_call_error_redacted_on_span_raw_in_proto(self):
         """Provider call errors must not echo raw message on the span under
@@ -1305,7 +1305,7 @@ class TestFullWithMetadataSpans:
             tool_span = env.tool_span()
             assert "gen_ai.tool.call.arguments" not in tool_span.attributes
             assert "gen_ai.tool.call.result" not in tool_span.attributes
-            assert "sigil.conversation.title" not in tool_span.attributes
+            assert "agento11y.conversation.title" not in tool_span.attributes
             assert "gen_ai.tool.description" not in tool_span.attributes
             # Identity attributes still emitted.
             assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
@@ -1442,13 +1442,13 @@ class TestFullWithMetadataSpans:
 
             gen = env.single_generation()
             # Proto export keeps content (also true under FULL_WITH_METADATA_SPANS).
-            assert gen.metadata.fields["sigil.conversation.title"].string_value == "Sensitive conversation"
+            assert gen.metadata.fields["agento11y.conversation.title"].string_value == "Sensitive conversation"
             # Resolved mode is FULL, not FULL_WITH_METADATA_SPANS.
             assert gen.metadata.fields[_METADATA_KEY].string_value == "full"
 
             # Span path: the ctx FULL override re-enables the title attribute that
             # FULL_WITH_METADATA_SPANS would have suppressed.
-            assert env.generation_span().attributes.get("sigil.conversation.title") == "Sensitive conversation"
+            assert env.generation_span().attributes.get("agento11y.conversation.title") == "Sensitive conversation"
 
     def test_context_full_overrides_tool_full_with_metadata_spans(self):
         """with_content_capture_mode(FULL) overrides FULL_WITH_METADATA_SPANS for tool spans too.
@@ -1472,7 +1472,7 @@ class TestFullWithMetadataSpans:
                     rec.set_result(arguments={"city": "Paris"}, result={"temp_c": 18})
 
             tool_span = env.tool_span()
-            assert tool_span.attributes.get("sigil.conversation.title") == "Sensitive tool title"
+            assert tool_span.attributes.get("agento11y.conversation.title") == "Sensitive tool title"
             assert "gen_ai.tool.call.arguments" in tool_span.attributes
             assert "gen_ai.tool.call.result" in tool_span.attributes
 
@@ -1525,9 +1525,9 @@ class _ModeExpect:
     """
 
     mode: ContentCaptureMode
-    marker: str  # metadata["sigil.sdk.content_capture_mode"] value
+    marker: str  # metadata["agento11y.sdk.content_capture_mode"] value
     proto_content_stripped: bool  # system_prompt, message text/thinking, tool args/results, tools.description/schema
-    span_title_present: bool  # whether sigil.conversation.title appears on the generation span
+    span_title_present: bool  # whether agento11y.conversation.title appears on the generation span
     proto_call_error_raw: bool  # whether proto.call_error is the raw provider message vs the error category
     span_raw_error: bool  # whether the span echoes the raw provider message via exception events / status
 
@@ -1636,7 +1636,7 @@ class TestModeCoverageMatrix:
 
             # Conversation title metadata mirror: present iff the proto keeps the
             # title (METADATA_ONLY removes it; every other mode mirrors it).
-            title_mirror = gen.metadata.fields.get("sigil.conversation.title")
+            title_mirror = gen.metadata.fields.get("agento11y.conversation.title")
             if expect.proto_content_stripped:
                 assert title_mirror is None or title_mirror.string_value == ""
             else:
@@ -1645,9 +1645,9 @@ class TestModeCoverageMatrix:
             # Span path: title attribute presence is what the mode advertises.
             gen_span = env.generation_span()
             if expect.span_title_present:
-                assert gen_span.attributes.get("sigil.conversation.title") == title
+                assert gen_span.attributes.get("agento11y.conversation.title") == title
             else:
-                assert "sigil.conversation.title" not in gen_span.attributes
+                assert "agento11y.conversation.title" not in gen_span.attributes
 
     @pytest.mark.parametrize("expect", _MODE_MATRIX, ids=_MODE_IDS)
     def test_generation_call_error(self, expect: _ModeExpect):
@@ -1718,7 +1718,8 @@ class TestModeCoverageMatrix:
             assert gen.system_prompt == "Be helpful."
             assert gen.input[0].parts[0].text == "hello"
             assert gen.output[0].parts[0].text == "hi"
-            assert gen.metadata.fields["sigil.conversation.title"].string_value == "Sensitive streaming conversation"
+            title_field = gen.metadata.fields["agento11y.conversation.title"]
+            assert title_field.string_value == "Sensitive streaming conversation"
             assert gen.metadata.fields[_METADATA_KEY].string_value == "full_with_metadata_spans"
 
             # Span uses the streamText operation name and still drops the title.
@@ -1727,4 +1728,4 @@ class TestModeCoverageMatrix:
                 for s in env.span_exporter.get_finished_spans()
                 if s.attributes.get("gen_ai.operation.name") == "streamText"
             )
-            assert "sigil.conversation.title" not in stream_span.attributes
+            assert "agento11y.conversation.title" not in stream_span.attributes

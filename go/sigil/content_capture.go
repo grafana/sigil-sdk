@@ -42,10 +42,10 @@ const (
 	//
 	// Per-entity behaviour:
 	//   - Generation: full content goes to the gRPC export; the generation span
-	//     omits sigil.conversation.title.
+	//     omits agento11y.conversation.title.
 	//   - ToolExecution: there is no separate gRPC export — the tool execution
 	//     span omits gen_ai.tool.call.arguments, gen_ai.tool.call.result, and
-	//     sigil.conversation.title. Equivalent to MetadataOnly for tool spans.
+	//     agento11y.conversation.title. Equivalent to MetadataOnly for tool spans.
 	//   - Embedding: there is no separate gRPC export — the embedding span
 	//     omits gen_ai.embeddings.input_texts. Equivalent to MetadataOnly for
 	//     embedding spans.

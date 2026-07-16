@@ -1,8 +1,12 @@
+// Canonical Agento11y ingest schema. This is the source of truth for every
+// SDK; proto/sigil/v1 is the frozen legacy copy kept for the migration window.
 syntax = "proto3";
 
-package sigil.v1;
+package agento11y.v1;
 
-option go_package = "github.com/grafana/agento11y/go/proto/sigil/v1;sigilv1";
+option go_package = "github.com/grafana/agento11y/go/proto/agento11y/v1;agento11yv1";
+// Without this option protoc derives "Agento11Y.V1" (capital after digits).
+option csharp_namespace = "Agento11y.V1";
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";

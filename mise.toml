@@ -533,15 +533,15 @@ echo "All Python SDK versions bumped to ${VERSION}"
 # --- Proto generation ---
 
 [tasks."generate:proto:go"]
-description = "Regenerate Go protobuf stubs from proto/sigil/v1/*.proto"
+description = "Regenerate Go protobuf stubs from proto/agento11y/v1/*.proto"
 run = "bash go/scripts/generate_proto.sh"
 
 [tasks."generate:proto:python"]
-description = "Regenerate Python protobuf stubs from proto/sigil/v1/*.proto"
+description = "Regenerate Python protobuf stubs from proto/agento11y/v1/*.proto"
 run = "bash python/scripts/generate_proto.sh"
 
 [tasks."generate:proto:js"]
-description = "Sync proto/sigil/v1/*.proto into js/proto for the JS SDK"
+description = "Sync proto/agento11y/v1/*.proto into js/proto for the JS SDK"
 depends = ["deps"]
 run = "pnpm --filter @grafana/agento11y run sync-proto"
 
@@ -550,7 +550,7 @@ description = "Regenerate protobuf stubs for all SDKs"
 depends = ["generate:proto:go", "generate:proto:python", "generate:proto:js"]
 
 [tasks."check:proto"]
-description = "Fail if generated protobuf stubs drift from proto/sigil/v1/*.proto"
+description = "Fail if generated protobuf stubs drift from proto/agento11y/v1/*.proto"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -562,30 +562,30 @@ fail=0
 
 echo "==> check:proto go"
 bash go/scripts/generate_proto.sh "$tmp/go"
-if ! diff -ruN go/proto/sigil/v1 "$tmp/go/sigil/v1"; then
-  echo >&2 "::error::Go protobuf stubs are out of sync with proto/sigil/v1/*.proto"
+if ! diff -ruN go/proto/agento11y/v1 "$tmp/go/agento11y/v1"; then
+  echo >&2 "::error::Go protobuf stubs are out of sync with proto/agento11y/v1/*.proto"
   fail=1
 fi
 
 echo "==> check:proto python"
 bash python/scripts/generate_proto.sh "$tmp/python"
 if ! diff -ruN python/agento11y/internal/gen "$tmp/python"; then
-  echo >&2 "::error::Python protobuf stubs are out of sync with proto/sigil/v1/*.proto"
+  echo >&2 "::error::Python protobuf stubs are out of sync with proto/agento11y/v1/*.proto"
   fail=1
 fi
 
 echo "==> check:proto js"
 mkdir -p "$tmp/js"
 node js/scripts/sync-proto.mjs "$tmp/js"
-if ! diff -ruN js/proto/sigil "$tmp/js/sigil"; then
-  echo >&2 "::error::JS proto copy in js/proto/sigil is out of sync with proto/sigil/v1/*.proto"
+if ! diff -ruN js/proto/agento11y "$tmp/js/agento11y"; then
+  echo >&2 "::error::JS proto copy in js/proto/agento11y is out of sync with proto/agento11y/v1/*.proto"
   fail=1
 fi
 
 if [[ $fail -ne 0 ]]; then
   cat >&2 <<'EOF'
 
-Generated protobuf code drifted from proto/sigil/v1/*.proto.
+Generated protobuf code drifted from proto/agento11y/v1/*.proto.
 Run `mise run generate:proto` and commit the regenerated files.
 EOF
   exit 1

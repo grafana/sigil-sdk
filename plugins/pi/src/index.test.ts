@@ -2329,7 +2329,7 @@ describe("extension lifecycle", () => {
       expect(seed.topP).toBe(0.9);
       expect(seed.toolChoice).toBe("auto");
       expect(seed.metadata).toEqual({
-        "sigil.gen_ai.request.thinking.budget_tokens": 2048,
+        "agento11y.gen_ai.request.thinking.budget_tokens": 2048,
       });
     });
 
@@ -2510,7 +2510,7 @@ describe("extension lifecycle", () => {
       expect(seeds[0]!.topP).toBe(0.95);
       expect(seeds[0]!.toolChoice).toBe("ANY");
       expect(seeds[0]!.metadata).toEqual({
-        "sigil.gen_ai.request.thinking.budget_tokens": 2048,
+        "agento11y.gen_ai.request.thinking.budget_tokens": 2048,
       });
     });
 

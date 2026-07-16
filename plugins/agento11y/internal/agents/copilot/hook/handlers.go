@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	otelInstrumentationName = "sigil.copilot"
+	otelInstrumentationName = "agento11y.copilot"
 	stopExportTimeout       = 20 * time.Second
 	transcriptRetryWindow   = 1500 * time.Millisecond
 	transcriptRetryInterval = 100 * time.Millisecond

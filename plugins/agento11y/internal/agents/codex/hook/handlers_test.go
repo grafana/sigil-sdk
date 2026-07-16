@@ -284,8 +284,8 @@ func TestStopSuccessfulExportDeletesFragmentAndUsesAuth(t *testing.T) {
 	if gotAuth != wantAuth {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, wantAuth)
 	}
-	if !strings.HasPrefix(gotUA, "sigil-plugin-codex/") {
-		t.Fatalf("User-Agent = %q, want sigil-plugin-codex/ prefix", gotUA)
+	if !strings.HasPrefix(gotUA, "agento11y-plugin-codex/") {
+		t.Fatalf("User-Agent = %q, want agento11y-plugin-codex/ prefix", gotUA)
 	}
 }
 

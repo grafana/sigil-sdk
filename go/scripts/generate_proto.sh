@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR="${1:-${ROOT_DIR}/go/proto}"
-GO_PKG="github.com/grafana/agento11y/go/proto/sigil/v1"
+GO_PKG="github.com/grafana/agento11y/go/proto/agento11y/v1"
 
 GOPATH_BIN="$(go env GOPATH 2>/dev/null || echo "${HOME}/go")/bin"
 PATH="${GOPATH_BIN}:${PATH}"
@@ -34,8 +34,8 @@ protoc \
   -I"${ROOT_DIR}/proto" \
   --go_out="${OUT_DIR}" \
   --go_opt=paths=source_relative \
-  --go_opt="Msigil/v1/generation_ingest.proto=${GO_PKG}" \
+  --go_opt="Magento11y/v1/generation_ingest.proto=${GO_PKG}" \
   --go-grpc_out="${OUT_DIR}" \
   --go-grpc_opt=paths=source_relative \
-  --go-grpc_opt="Msigil/v1/generation_ingest.proto=${GO_PKG}" \
-  "${ROOT_DIR}/proto/sigil/v1/generation_ingest.proto"
+  --go-grpc_opt="Magento11y/v1/generation_ingest.proto=${GO_PKG}" \
+  "${ROOT_DIR}/proto/agento11y/v1/generation_ingest.proto"

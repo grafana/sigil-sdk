@@ -507,9 +507,9 @@ class SigilLiteLLMLogger(CustomLogger):
         is_stream = bool(slo.get("stream"))
 
         tags: dict[str, str] = {
-            "sigil.framework.name": "litellm",
-            "sigil.framework.source": "handler",
-            "sigil.framework.language": "python",
+            "agento11y.framework.name": "litellm",
+            "agento11y.framework.source": "handler",
+            "agento11y.framework.language": "python",
         }
         request_tags = slo.get("request_tags") or []
         for tag_value in request_tags:
@@ -621,9 +621,9 @@ class SigilLiteLLMLogger(CustomLogger):
         encoding_format = optional_params.get("encoding_format") or ""
 
         tags: dict[str, str] = {
-            "sigil.framework.name": "litellm",
-            "sigil.framework.source": "handler",
-            "sigil.framework.language": "python",
+            "agento11y.framework.name": "litellm",
+            "agento11y.framework.source": "handler",
+            "agento11y.framework.language": "python",
         }
         for tag_value in slo.get("request_tags") or []:
             tag_str = str(tag_value)

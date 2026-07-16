@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	sigilv1 "github.com/grafana/agento11y/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -102,13 +102,13 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrGenerationID].AsString() != generationRecorder.lastGeneration.ID {
-		t.Fatalf("expected sigil.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
+		t.Fatalf("expected agento11y.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
 	}
 	if attrs[spanAttrConversationID].AsString() != "conv-1" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-1")
 	}
 	if attrs[spanAttrConversationTitle].AsString() != "Ticket triage" {
-		t.Fatalf("expected sigil.conversation.title=Ticket triage")
+		t.Fatalf("expected agento11y.conversation.title=Ticket triage")
 	}
 	if attrs[spanAttrAgentName].AsString() != "agent-support" {
 		t.Fatalf("expected gen_ai.agent.name=agent-support")
@@ -205,7 +205,7 @@ func TestStartGenerationCreatesChildSpanAndLinksGenerationToSpan(t *testing.T) {
 
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrGenerationID].AsString() != generationRecorder.lastGeneration.ID {
-		t.Fatalf("expected sigil.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
+		t.Fatalf("expected agento11y.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
 	}
 }
 
@@ -261,8 +261,8 @@ func TestStartGenerationSpanNameIncludesModelAndOperation(t *testing.T) {
 		if span.Name() != "text_completion gpt-5" {
 			t.Fatalf("expected span name text_completion gpt-5, got %q", span.Name())
 		}
-		if _, ok := spanAttributeMap(span)["sigil.generation.mode"]; ok {
-			t.Fatalf("did not expect sigil.generation.mode")
+		if _, ok := spanAttributeMap(span)["agento11y.generation.mode"]; ok {
+			t.Fatalf("did not expect agento11y.generation.mode")
 		}
 	}
 }
@@ -535,8 +535,8 @@ func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 		t.Fatalf("expected ok span status, got %v", got)
 	}
 	attrs := spanAttributeMap(span)
-	if _, ok := attrs["sigil.generation.mode"]; ok {
-		t.Fatalf("did not expect sigil.generation.mode")
+	if _, ok := attrs["agento11y.generation.mode"]; ok {
+		t.Fatalf("did not expect agento11y.generation.mode")
 	}
 }
 
@@ -568,7 +568,7 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 		ToolChoice:      stringPtr("required"),
 		ThinkingEnabled: boolPtr(false),
 		Metadata: map[string]any{
-			"sigil.gen_ai.request.thinking.budget_tokens": int64(4096),
+			"agento11y.gen_ai.request.thinking.budget_tokens": int64(4096),
 		},
 		Usage: TokenUsage{
 			InputTokens:           10,
@@ -642,13 +642,13 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 		t.Fatalf("expected gen_ai.request.top_p=0.8")
 	}
 	if attrs[spanAttrRequestToolChoice].AsString() != "required" {
-		t.Fatalf("expected sigil.gen_ai.request.tool_choice=required")
+		t.Fatalf("expected agento11y.gen_ai.request.tool_choice=required")
 	}
 	if attrs[spanAttrRequestThinkingEnabled].AsBool() {
-		t.Fatalf("expected sigil.gen_ai.request.thinking.enabled=false")
+		t.Fatalf("expected agento11y.gen_ai.request.thinking.enabled=false")
 	}
 	if attrs[spanAttrRequestThinkingBudget].AsInt64() != 4096 {
-		t.Fatalf("expected sigil.gen_ai.request.thinking.budget_tokens=4096")
+		t.Fatalf("expected agento11y.gen_ai.request.thinking.budget_tokens=4096")
 	}
 	if attrs[sdkMetadataKeyName].AsString() != sdkName {
 		t.Fatalf("expected %s=%s", sdkMetadataKeyName, sdkName)
@@ -1095,7 +1095,7 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 		t.Fatalf("expected gen_ai.conversation.id=conv-tool")
 	}
 	if attrs[spanAttrConversationTitle].AsString() != "Weather lookup" {
-		t.Fatalf("expected sigil.conversation.title=Weather lookup")
+		t.Fatalf("expected agento11y.conversation.title=Weather lookup")
 	}
 	if attrs[spanAttrAgentName].AsString() != "agent-tools" {
 		t.Fatalf("expected gen_ai.agent.name=agent-tools")
@@ -1244,7 +1244,7 @@ func TestConversationTitleFromContext(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "Conversation from context" {
-		t.Fatalf("expected sigil.conversation.title=Conversation from context, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=Conversation from context, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1329,7 +1329,7 @@ func TestExplicitConversationTitleOverridesContext(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
-		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1358,7 +1358,7 @@ func TestWhitespaceConversationTitleFallsBackToMetadata(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "Metadata title" {
-		t.Fatalf("expected sigil.conversation.title=Metadata title, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=Metadata title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1458,7 +1458,7 @@ func TestToolExecutionConversationTitleFromContext(t *testing.T) {
 	span := onlyToolSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "tool conversation" {
-		t.Fatalf("expected sigil.conversation.title=tool conversation, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=tool conversation, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1475,7 +1475,7 @@ func TestToolExecutionExplicitConversationTitleOverridesContext(t *testing.T) {
 	span := onlyToolSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
-		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1757,19 +1757,19 @@ func TestShutdownFlushesPendingWorkflowStepExport(t *testing.T) {
 func TestFlushRetriesWorkflowStepExport(t *testing.T) {
 	attempts := 0
 	exporter := &capturingGenerationExporter{
-		exportWorkflowSteps: func(_ context.Context, req *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
+		exportWorkflowSteps: func(_ context.Context, req *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
 			attempts++
 			if attempts < 3 {
 				return nil, errors.New("transient")
 			}
-			results := make([]*sigilv1.ExportWorkflowStepResult, len(req.WorkflowSteps))
+			results := make([]*agento11yv1.ExportWorkflowStepResult, len(req.WorkflowSteps))
 			for i := range req.WorkflowSteps {
-				results[i] = &sigilv1.ExportWorkflowStepResult{
+				results[i] = &agento11yv1.ExportWorkflowStepResult{
 					StepId:   req.WorkflowSteps[i].Id,
 					Accepted: true,
 				}
 			}
-			return &sigilv1.ExportWorkflowStepsResponse{Results: results}, nil
+			return &agento11yv1.ExportWorkflowStepsResponse{Results: results}, nil
 		},
 	}
 	client, _, _ := newTestClient(t, Config{
@@ -1923,19 +1923,19 @@ func newTestClient(t *testing.T, config Config) (*Client, *tracetest.SpanRecorde
 
 type capturingGenerationExporter struct {
 	mu                   sync.Mutex
-	requests             []*sigilv1.ExportGenerationsRequest
-	workflowStepRequests []*sigilv1.ExportWorkflowStepsRequest
+	requests             []*agento11yv1.ExportGenerationsRequest
+	workflowStepRequests []*agento11yv1.ExportWorkflowStepsRequest
 	attempts             int
 	workflowStepAttempts int
 	err                  error
 	workflowStepErr      error
-	response             *sigilv1.ExportGenerationsResponse
-	workflowStepResponse *sigilv1.ExportWorkflowStepsResponse
-	export               func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error)
-	exportWorkflowSteps  func(context.Context, *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error)
+	response             *agento11yv1.ExportGenerationsResponse
+	workflowStepResponse *agento11yv1.ExportWorkflowStepsResponse
+	export               func(context.Context, *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error)
+	exportWorkflowSteps  func(context.Context, *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error)
 }
 
-func (e *capturingGenerationExporter) Export(ctx context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *capturingGenerationExporter) Export(ctx context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	e.mu.Lock()
 	e.attempts++
 	err := e.err
@@ -1955,17 +1955,17 @@ func (e *capturingGenerationExporter) Export(ctx context.Context, req *sigilv1.E
 		return e.response, nil
 	}
 
-	results := make([]*sigilv1.ExportGenerationResult, len(req.Generations))
+	results := make([]*agento11yv1.ExportGenerationResult, len(req.Generations))
 	for i := range req.Generations {
-		results[i] = &sigilv1.ExportGenerationResult{
+		results[i] = &agento11yv1.ExportGenerationResult{
 			GenerationId: req.Generations[i].Id,
 			Accepted:     true,
 		}
 	}
-	return &sigilv1.ExportGenerationsResponse{Results: results}, nil
+	return &agento11yv1.ExportGenerationsResponse{Results: results}, nil
 }
 
-func (e *capturingGenerationExporter) ExportWorkflowSteps(ctx context.Context, req *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
+func (e *capturingGenerationExporter) ExportWorkflowSteps(ctx context.Context, req *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
 	e.mu.Lock()
 	e.workflowStepAttempts++
 	err := e.workflowStepErr
@@ -1985,14 +1985,14 @@ func (e *capturingGenerationExporter) ExportWorkflowSteps(ctx context.Context, r
 		return e.workflowStepResponse, nil
 	}
 
-	results := make([]*sigilv1.ExportWorkflowStepResult, len(req.WorkflowSteps))
+	results := make([]*agento11yv1.ExportWorkflowStepResult, len(req.WorkflowSteps))
 	for i := range req.WorkflowSteps {
-		results[i] = &sigilv1.ExportWorkflowStepResult{
+		results[i] = &agento11yv1.ExportWorkflowStepResult{
 			StepId:   req.WorkflowSteps[i].Id,
 			Accepted: true,
 		}
 	}
-	return &sigilv1.ExportWorkflowStepsResponse{Results: results}, nil
+	return &agento11yv1.ExportWorkflowStepsResponse{Results: results}, nil
 }
 
 func (e *capturingGenerationExporter) Shutdown(_ context.Context) error {
@@ -2013,8 +2013,8 @@ func (e *capturingGenerationExporter) workflowStepRequestCount() int {
 
 func TestFlushReturnsErrorOnRejectedGenerationResult(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		response: &sigilv1.ExportGenerationsResponse{
-			Results: []*sigilv1.ExportGenerationResult{
+		response: &agento11yv1.ExportGenerationsResponse{
+			Results: []*agento11yv1.ExportGenerationResult{
 				{
 					GenerationId: "gen-rejected",
 					Accepted:     false,
@@ -2060,8 +2060,8 @@ func TestFlushReturnsErrorOnRejectedGenerationResult(t *testing.T) {
 
 func TestFlushTreatsDuplicateGenerationResultAsSuccess(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		response: &sigilv1.ExportGenerationsResponse{
-			Results: []*sigilv1.ExportGenerationResult{
+		response: &agento11yv1.ExportGenerationsResponse{
+			Results: []*agento11yv1.ExportGenerationResult{
 				{
 					GenerationId: "gen-duplicate",
 					Accepted:     false,
@@ -2103,7 +2103,7 @@ func TestFlushTreatsDuplicateGenerationResultAsSuccess(t *testing.T) {
 
 func TestFlushReturnsErrorOnNilGenerationExportResponse(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		export: func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+		export: func(context.Context, *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 			return nil, nil
 		},
 	}
@@ -2144,7 +2144,7 @@ func TestFlushReturnsErrorOnNilGenerationExportResponse(t *testing.T) {
 
 func TestFlushNilGenerationExportResponseDoesNotPanic(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		export: func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+		export: func(context.Context, *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 			return nil, nil
 		},
 	}
@@ -2189,19 +2189,19 @@ func TestFlushNilGenerationExportResponseDoesNotPanic(t *testing.T) {
 func TestFlushRetriesMalformedGenerationExportResponse(t *testing.T) {
 	attempts := 0
 	exporter := &capturingGenerationExporter{
-		export: func(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+		export: func(_ context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 			attempts++
 			if attempts == 1 {
-				return &sigilv1.ExportGenerationsResponse{}, nil
+				return &agento11yv1.ExportGenerationsResponse{}, nil
 			}
-			results := make([]*sigilv1.ExportGenerationResult, len(req.Generations))
+			results := make([]*agento11yv1.ExportGenerationResult, len(req.Generations))
 			for i := range req.Generations {
-				results[i] = &sigilv1.ExportGenerationResult{
+				results[i] = &agento11yv1.ExportGenerationResult{
 					GenerationId: req.Generations[i].Id,
 					Accepted:     true,
 				}
 			}
-			return &sigilv1.ExportGenerationsResponse{Results: results}, nil
+			return &agento11yv1.ExportGenerationsResponse{Results: results}, nil
 		},
 	}
 	client, _, _ := newTestClient(t, Config{
@@ -2237,8 +2237,8 @@ func TestFlushRetriesMalformedGenerationExportResponse(t *testing.T) {
 
 func TestFlushReturnsErrorOnNilGenerationResult(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		response: &sigilv1.ExportGenerationsResponse{
-			Results: []*sigilv1.ExportGenerationResult{nil},
+		response: &agento11yv1.ExportGenerationsResponse{
+			Results: []*agento11yv1.ExportGenerationResult{nil},
 		},
 	}
 	client, _, _ := newTestClient(t, Config{

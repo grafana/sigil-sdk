@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/agento11y/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	sigil "github.com/grafana/agento11y/go/sigil"
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -27,18 +27,18 @@ const (
 	conformanceStreamOperation     = "streamText"
 	conformanceToolOperation       = "execute_tool"
 	conformanceEmbeddingOperation  = "embeddings"
-	metadataKeyConversation        = "sigil.conversation.title"
-	metadataKeyContentCaptureMode  = "sigil.sdk.content_capture_mode"
-	metadataKeyCanonicalUserID     = "sigil.user.id"
+	metadataKeyConversation        = "agento11y.conversation.title"
+	metadataKeyContentCaptureMode  = "agento11y.sdk.content_capture_mode"
+	metadataKeyCanonicalUserID     = "agento11y.user.id"
 	metadataKeyLegacyUserID        = "user.id"
-	metadataKeyThinkingBudget      = "sigil.gen_ai.request.thinking.budget_tokens"
-	metadataKeySDKName             = "sigil.sdk.name"
+	metadataKeyThinkingBudget      = "agento11y.gen_ai.request.thinking.budget_tokens"
+	metadataKeySDKName             = "agento11y.sdk.name"
 	sdkMetadataKeyName             = metadataKeySDKName
 	sdkNameGo                      = "sdk-go"
 	spanAttrOperationName          = "gen_ai.operation.name"
-	spanAttrGenerationID           = "sigil.generation.id"
+	spanAttrGenerationID           = "agento11y.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
-	spanAttrConversationTitle      = "sigil.conversation.title"
+	spanAttrConversationTitle      = "agento11y.conversation.title"
 	spanAttrUserID                 = "user.id"
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
@@ -49,8 +49,8 @@ const (
 	spanAttrRequestMaxTokens       = "gen_ai.request.max_tokens"
 	spanAttrRequestTemperature     = "gen_ai.request.temperature"
 	spanAttrRequestTopP            = "gen_ai.request.top_p"
-	spanAttrRequestToolChoice      = "sigil.gen_ai.request.tool_choice"
-	spanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled"
+	spanAttrRequestToolChoice      = "agento11y.gen_ai.request.tool_choice"
+	spanAttrRequestThinkingEnabled = "agento11y.gen_ai.request.thinking.enabled"
 	spanAttrRequestThinkingBudget  = metadataKeyThinkingBudget
 	spanAttrEmbeddingInputCount    = "gen_ai.embeddings.input_count"
 	spanAttrEmbeddingInputTexts    = "gen_ai.embeddings.input_texts"
@@ -111,8 +111,8 @@ func newConformanceEnv(t *testing.T, opts ...conformanceEnvOption) *conformanceE
 
 	ingest := &fakeIngestServer{}
 	grpcServer := grpc.NewServer()
-	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
-	sigilv1.RegisterWorkflowStepIngestServiceServer(grpcServer, ingest)
+	agento11yv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+	agento11yv1.RegisterWorkflowStepIngestServiceServer(grpcServer, ingest)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -242,31 +242,31 @@ func (e *conformanceEnv) CollectMetrics(t *testing.T) metricdata.ResourceMetrics
 }
 
 type fakeIngestServer struct {
-	sigilv1.UnimplementedGenerationIngestServiceServer
-	sigilv1.UnimplementedWorkflowStepIngestServiceServer
+	agento11yv1.UnimplementedGenerationIngestServiceServer
+	agento11yv1.UnimplementedWorkflowStepIngestServiceServer
 
 	mu                   sync.Mutex
-	requests             []*sigilv1.ExportGenerationsRequest
-	workflowStepRequests []*sigilv1.ExportWorkflowStepsRequest
+	requests             []*agento11yv1.ExportGenerationsRequest
+	workflowStepRequests []*agento11yv1.ExportWorkflowStepsRequest
 }
 
-func (s *fakeIngestServer) ExportGenerations(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (s *fakeIngestServer) ExportGenerations(_ context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	s.capture(req)
 	return acceptanceResponse(req), nil
 }
 
-func (s *fakeIngestServer) ExportWorkflowSteps(_ context.Context, req *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
+func (s *fakeIngestServer) ExportWorkflowSteps(_ context.Context, req *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
 	s.captureWorkflowSteps(req)
 	return workflowStepAcceptanceResponse(req), nil
 }
 
-func (s *fakeIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
+func (s *fakeIngestServer) capture(req *agento11yv1.ExportGenerationsRequest) {
 	if req == nil {
 		return
 	}
 
 	clone := proto.Clone(req)
-	typed, ok := clone.(*sigilv1.ExportGenerationsRequest)
+	typed, ok := clone.(*agento11yv1.ExportGenerationsRequest)
 	if !ok {
 		return
 	}
@@ -276,7 +276,7 @@ func (s *fakeIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
 	s.mu.Unlock()
 }
 
-func (s *fakeIngestServer) SingleGeneration(t *testing.T) *sigilv1.Generation {
+func (s *fakeIngestServer) SingleGeneration(t *testing.T) *agento11yv1.Generation {
 	t.Helper()
 
 	s.mu.Lock()
@@ -291,7 +291,7 @@ func (s *fakeIngestServer) SingleGeneration(t *testing.T) *sigilv1.Generation {
 	return s.requests[0].Generations[0]
 }
 
-func (s *fakeIngestServer) SingleWorkflowStep(t *testing.T) *sigilv1.WorkflowStep {
+func (s *fakeIngestServer) SingleWorkflowStep(t *testing.T) *agento11yv1.WorkflowStep {
 	t.Helper()
 
 	s.mu.Lock()
@@ -316,7 +316,7 @@ func (s *fakeIngestServer) RequestCount() int {
 	return len(s.requests)
 }
 
-func (s *fakeIngestServer) Requests() []*sigilv1.ExportGenerationsRequest {
+func (s *fakeIngestServer) Requests() []*agento11yv1.ExportGenerationsRequest {
 	if s == nil {
 		return nil
 	}
@@ -324,7 +324,7 @@ func (s *fakeIngestServer) Requests() []*sigilv1.ExportGenerationsRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	out := make([]*sigilv1.ExportGenerationsRequest, len(s.requests))
+	out := make([]*agento11yv1.ExportGenerationsRequest, len(s.requests))
 	copy(out, s.requests)
 	return out
 }
@@ -344,13 +344,13 @@ func (s *fakeIngestServer) GenerationCount() int {
 	return total
 }
 
-func (s *fakeIngestServer) captureWorkflowSteps(req *sigilv1.ExportWorkflowStepsRequest) {
+func (s *fakeIngestServer) captureWorkflowSteps(req *agento11yv1.ExportWorkflowStepsRequest) {
 	if req == nil {
 		return
 	}
 
 	clone := proto.Clone(req)
-	typed, ok := clone.(*sigilv1.ExportWorkflowStepsRequest)
+	typed, ok := clone.(*agento11yv1.ExportWorkflowStepsRequest)
 	if !ok {
 		return
 	}
@@ -360,10 +360,10 @@ func (s *fakeIngestServer) captureWorkflowSteps(req *sigilv1.ExportWorkflowSteps
 	s.mu.Unlock()
 }
 
-func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
-	response := &sigilv1.ExportGenerationsResponse{Results: make([]*sigilv1.ExportGenerationResult, len(req.GetGenerations()))}
+func acceptanceResponse(req *agento11yv1.ExportGenerationsRequest) *agento11yv1.ExportGenerationsResponse {
+	response := &agento11yv1.ExportGenerationsResponse{Results: make([]*agento11yv1.ExportGenerationResult, len(req.GetGenerations()))}
 	for i := range req.GetGenerations() {
-		response.Results[i] = &sigilv1.ExportGenerationResult{
+		response.Results[i] = &agento11yv1.ExportGenerationResult{
 			GenerationId: req.Generations[i].GetId(),
 			Accepted:     true,
 		}
@@ -371,10 +371,10 @@ func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGe
 	return response
 }
 
-func workflowStepAcceptanceResponse(req *sigilv1.ExportWorkflowStepsRequest) *sigilv1.ExportWorkflowStepsResponse {
-	response := &sigilv1.ExportWorkflowStepsResponse{Results: make([]*sigilv1.ExportWorkflowStepResult, len(req.GetWorkflowSteps()))}
+func workflowStepAcceptanceResponse(req *agento11yv1.ExportWorkflowStepsRequest) *agento11yv1.ExportWorkflowStepsResponse {
+	response := &agento11yv1.ExportWorkflowStepsResponse{Results: make([]*agento11yv1.ExportWorkflowStepResult, len(req.GetWorkflowSteps()))}
 	for i := range req.GetWorkflowSteps() {
-		response.Results[i] = &sigilv1.ExportWorkflowStepResult{
+		response.Results[i] = &agento11yv1.ExportWorkflowStepResult{
 			StepId:   req.WorkflowSteps[i].GetId(),
 			Accepted: true,
 		}
@@ -634,7 +634,7 @@ func histogramPointMatches(attrs attribute.Set, want map[string]string) bool {
 	return true
 }
 
-func requireProtoMetadata(t *testing.T, generation *sigilv1.Generation, key, want string) {
+func requireProtoMetadata(t *testing.T, generation *agento11yv1.Generation, key, want string) {
 	t.Helper()
 
 	got, ok := protoMetadataString(generation, key)
@@ -646,7 +646,7 @@ func requireProtoMetadata(t *testing.T, generation *sigilv1.Generation, key, wan
 	}
 }
 
-func requireProtoMetadataAbsent(t *testing.T, generation *sigilv1.Generation, key string) {
+func requireProtoMetadataAbsent(t *testing.T, generation *agento11yv1.Generation, key string) {
 	t.Helper()
 
 	if _, ok := protoMetadataString(generation, key); ok {
@@ -654,7 +654,7 @@ func requireProtoMetadataAbsent(t *testing.T, generation *sigilv1.Generation, ke
 	}
 }
 
-func protoMetadataString(generation *sigilv1.Generation, key string) (string, bool) {
+func protoMetadataString(generation *agento11yv1.Generation, key string) (string, bool) {
 	if generation == nil || generation.GetMetadata() == nil {
 		return "", false
 	}

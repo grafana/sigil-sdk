@@ -35,7 +35,7 @@ public enum ContentCaptureMode {
     /**
      * Splits the proto and span paths for generation content. The proto
      * export keeps full content; the OTel span omits
-     * {@code sigil.conversation.title}, {@code gen_ai.tool.call.arguments},
+     * {@code agento11y.conversation.title}, {@code gen_ai.tool.call.arguments},
      * {@code gen_ai.tool.call.result}, and {@code gen_ai.embeddings.input_texts}.
      *
      * <p>Use this mode when the gRPC ingest destination is private but the

@@ -20,10 +20,10 @@
           }
         ],
         "metadata": {
-          "sigil.conversation.title": "list go files",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "agento11y.conversation.title": "list go files",
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user"
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {
@@ -86,10 +86,10 @@
           }
         ],
         "metadata": {
-          "sigil.conversation.title": "list go files",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "agento11y.conversation.title": "list go files",
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user"
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {

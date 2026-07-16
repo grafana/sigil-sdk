@@ -32,14 +32,14 @@ public final class SigilGoogleAdkAdapter {
     private static final String EMBEDDINGS_UNSUPPORTED_MESSAGE =
             "google-adk: embeddings are not supported because the Google ADK lifecycle surface does not expose a dedicated embeddings callback";
 
-    static final String META_RUN_ID = "sigil.framework.run_id";
-    static final String META_THREAD_ID = "sigil.framework.thread_id";
-    static final String META_PARENT_RUN_ID = "sigil.framework.parent_run_id";
-    static final String META_COMPONENT_NAME = "sigil.framework.component_name";
-    static final String META_RUN_TYPE = "sigil.framework.run_type";
-    static final String META_TAGS = "sigil.framework.tags";
-    static final String META_RETRY_ATTEMPT = "sigil.framework.retry_attempt";
-    static final String META_EVENT_ID = "sigil.framework.event_id";
+    static final String META_RUN_ID = "agento11y.framework.run_id";
+    static final String META_THREAD_ID = "agento11y.framework.thread_id";
+    static final String META_PARENT_RUN_ID = "agento11y.framework.parent_run_id";
+    static final String META_COMPONENT_NAME = "agento11y.framework.component_name";
+    static final String META_RUN_TYPE = "agento11y.framework.run_type";
+    static final String META_TAGS = "agento11y.framework.tags";
+    static final String META_RETRY_ATTEMPT = "agento11y.framework.retry_attempt";
+    static final String META_EVENT_ID = "agento11y.framework.event_id";
 
     private final SigilClient client;
     private final Options options;
@@ -119,9 +119,9 @@ public final class SigilGoogleAdkAdapter {
                     .setEventId(event.getEventId()));
 
             Map<String, String> tags = new LinkedHashMap<>(options.getExtraTags());
-            tags.put("sigil.framework.name", FRAMEWORK_NAME);
-            tags.put("sigil.framework.source", FRAMEWORK_SOURCE);
-            tags.put("sigil.framework.language", FRAMEWORK_LANGUAGE);
+            tags.put("agento11y.framework.name", FRAMEWORK_NAME);
+            tags.put("agento11y.framework.source", FRAMEWORK_SOURCE);
+            tags.put("agento11y.framework.language", FRAMEWORK_LANGUAGE);
 
             GenerationStart start = new GenerationStart()
                     .setConversationId(conversation.conversationId)

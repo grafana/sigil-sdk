@@ -16,14 +16,11 @@ except PackageNotFoundError:
     # Running from a source tree without an installed distribution.
     SDK_VERSION = "0.0.0+unknown"
 
-# The User-Agent product token is allowlisted by the ingest server, so it
-# intentionally keeps the pre-rename name. Do not update it for the
-# sigil-sdk -> agento11y rename without server-side dual-read support.
-_SDK_USER_AGENT_PRODUCT = "sigil-sdk-python"
+_SDK_USER_AGENT_PRODUCT = "agento11y-sdk-python"
 
 
 def user_agent() -> str:
     """Return the SDK's default generation-export User-Agent product token,
-    ``sigil-sdk-python/<SDK_VERSION>``.
+    ``agento11y-sdk-python/<SDK_VERSION>``.
     """
     return f"{_SDK_USER_AGENT_PRODUCT}/{SDK_VERSION}"

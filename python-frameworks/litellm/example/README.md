@@ -43,7 +43,7 @@ curlie POST http://<proxy-host>:4000/chat/completions \
 Open `https://<your-stack>.grafana.net/a/grafana-sigil-app/conversations`. Generations appear with:
 
 - `agent_name`: `litellm-proxy-integration-test`
-- `sigil.framework.name`: `litellm`
+- `agento11y.framework.name`: `litellm`
 - `provider`: `openai` (or whichever model you called)
 
 ## Configuration

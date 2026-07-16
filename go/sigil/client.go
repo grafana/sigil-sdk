@@ -29,10 +29,10 @@ import (
 const Version = "0.8.0"
 
 // UserAgent returns the SDK's default generation-export User-Agent product
-// token, "sigil-sdk-go/<Version>". Coding-agent plugins prepend their own token
+// token, "agento11y-sdk-go/<Version>". Coding-agent plugins prepend their own token
 // (most-specific first), e.g.
 //
-//	"sigil-plugin-claude-code/" + pluginVersion + " " + sigil.UserAgent()
+//	"agento11y-plugin-claude-code/" + pluginVersion + " " + sigil.UserAgent()
 func UserAgent() string {
 	return sdkUserAgentProduct + "/" + Version
 }
@@ -97,7 +97,7 @@ type Config struct {
 	// Read from SIGIL_USER_ID by ConfigFromEnv.
 	UserID string
 	// Tags are merged into every GenerationStart.Tags (per-call tags win on
-	// key conflict) and emitted on OTel spans/metrics as sigil.tag.<key>.
+	// key conflict) and emitted on OTel spans/metrics as agento11y.tag.<key>.
 	// Read from SIGIL_TAGS (CSV) by ConfigFromEnv. These are static, process-
 	// level tags; for per-request dimensions that also reach spans and metrics
 	// use WithTag / WithTags on the request context.
@@ -182,14 +182,14 @@ const (
 	defaultGenerationPayloadMaxBytes  = 16 << 20
 	minRecordedGenerationIDs          = 1024
 
-	sdkMetadataKeyName  = "sigil.sdk.name"
-	metadataUserIDKey   = "sigil.user.id"
+	sdkMetadataKeyName  = "agento11y.sdk.name"
+	metadataUserIDKey   = "agento11y.user.id"
 	sdkName             = "sdk-go"
-	sdkUserAgentProduct = "sigil-sdk-go"
+	sdkUserAgentProduct = "agento11y-sdk-go"
 
-	spanAttrGenerationID           = "sigil.generation.id"
+	spanAttrGenerationID           = "agento11y.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
-	spanAttrConversationTitle      = "sigil.conversation.title"
+	spanAttrConversationTitle      = "agento11y.conversation.title"
 	spanAttrUserID                 = "user.id"
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
@@ -201,9 +201,9 @@ const (
 	spanAttrRequestMaxTokens       = "gen_ai.request.max_tokens"
 	spanAttrRequestTemperature     = "gen_ai.request.temperature"
 	spanAttrRequestTopP            = "gen_ai.request.top_p"
-	spanAttrRequestToolChoice      = "sigil.gen_ai.request.tool_choice"
-	spanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled"
-	spanAttrRequestThinkingBudget  = "sigil.gen_ai.request.thinking.budget_tokens"
+	spanAttrRequestToolChoice      = "agento11y.gen_ai.request.tool_choice"
+	spanAttrRequestThinkingEnabled = "agento11y.gen_ai.request.thinking.enabled"
+	spanAttrRequestThinkingBudget  = "agento11y.gen_ai.request.thinking.budget_tokens"
 	spanAttrResponseID             = "gen_ai.response.id"
 	spanAttrResponseModel          = "gen_ai.response.model"
 	spanAttrFinishReasons          = "gen_ai.response.finish_reasons"
@@ -222,7 +222,7 @@ const (
 	spanAttrToolDescription        = "gen_ai.tool.description"
 	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
 	spanAttrToolCallResult         = "gen_ai.tool.call.result"
-	spanAttrTagPrefix              = "sigil.tag."
+	spanAttrTagPrefix              = "agento11y.tag."
 
 	metricOperationDuration     = "gen_ai.client.operation.duration"
 	metricTokenUsage            = "gen_ai.client.token.usage"
@@ -513,7 +513,7 @@ func NewClient(config Config) *Client {
 //
 // Linking is two-way after End:
 //   - Generation.TraceID and Generation.SpanID are set from the created span context.
-//   - The span includes sigil.generation.id as an attribute.
+//   - The span includes agento11y.generation.id as an attribute.
 func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder) {
 	return c.startGeneration(ctx, start, GenerationModeSync)
 }
@@ -612,7 +612,7 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 	}
 	// dimensionalTags are the static client tags plus any per-request context
 	// tags set via WithTag / WithTags. They are emitted on the generation span
-	// and metrics as sigil.tag.<key> and merged into the exported generation's
+	// and metrics as agento11y.tag.<key> and merged into the exported generation's
 	// tags. The explicit GenerationStart.Tags field stays export-only and wins
 	// on key conflict.
 	dimensionalTags := mergeTags(c.config.Tags, TagsFromContext(ctx))
@@ -967,7 +967,7 @@ func (r *GenerationRecorder) End() {
 	// FullWithMetadataSpans: proto export keeps full content (normalized stays
 	// untouched), but the span path must drop content-bearing attributes. The
 	// only content-bearing attribute generationSpanAttributes emits is
-	// sigil.conversation.title, so a shallow copy with the title zeroed is
+	// agento11y.conversation.title, so a shallow copy with the title zeroed is
 	// enough; no deep clone needed.
 	spanView := normalized
 	if r.contentCaptureMode == ContentCaptureModeFullWithMetadataSpans {

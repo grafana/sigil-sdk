@@ -27,8 +27,8 @@ const (
 	// attached to every span and metric this agent emits. Renamed from
 	// "sigil-codex" when the three agent plugins consolidated into one
 	// binary; dashboards that previously filtered on "sigil-codex" need to
-	// update to "sigil.codex".
-	otelInstrumentationName = "sigil.codex"
+	// update to "agento11y.codex".
+	otelInstrumentationName = "agento11y.codex"
 	stopExportTimeout       = 20 * time.Second
 )
 

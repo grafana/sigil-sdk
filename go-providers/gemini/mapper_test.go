@@ -152,14 +152,14 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Metadata == nil {
 		t.Fatalf("expected metadata map")
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(2048) {
-		t.Fatalf("expected thinking budget metadata 2048, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"] != int64(2048) {
+		t.Fatalf("expected thinking budget metadata 2048, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"])
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.level"] != "high" {
-		t.Fatalf("expected thinking level metadata high, got %v", generation.Metadata["sigil.gen_ai.request.thinking.level"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.level"] != "high" {
+		t.Fatalf("expected thinking level metadata high, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.level"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"] != int64(9) {
-		t.Fatalf("expected tool use prompt token metadata 9, got %v", generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"])
+	if generation.Metadata["agento11y.gen_ai.usage.tool_use_prompt_tokens"] != int64(9) {
+		t.Fatalf("expected tool use prompt token metadata 9, got %v", generation.Metadata["agento11y.gen_ai.usage.tool_use_prompt_tokens"])
 	}
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
@@ -305,14 +305,14 @@ func TestFromStream(t *testing.T) {
 	if generation.Metadata == nil {
 		t.Fatalf("expected metadata map")
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1536) {
-		t.Fatalf("expected thinking budget metadata 1536, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"] != int64(1536) {
+		t.Fatalf("expected thinking budget metadata 1536, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"])
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.level"] != "medium" {
-		t.Fatalf("expected thinking level metadata medium, got %v", generation.Metadata["sigil.gen_ai.request.thinking.level"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.level"] != "medium" {
+		t.Fatalf("expected thinking level metadata medium, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.level"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"] != int64(5) {
-		t.Fatalf("expected tool use prompt token metadata 5, got %v", generation.Metadata["sigil.gen_ai.usage.tool_use_prompt_tokens"])
+	if generation.Metadata["agento11y.gen_ai.usage.tool_use_prompt_tokens"] != int64(5) {
+		t.Fatalf("expected tool use prompt token metadata 5, got %v", generation.Metadata["agento11y.gen_ai.usage.tool_use_prompt_tokens"])
 	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))

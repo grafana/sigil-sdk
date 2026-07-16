@@ -59,14 +59,14 @@ Conversation ID precedence:
 
 ## Metadata and lineage
 
-- `sigil.framework.run_type` is always set.
+- `agento11y.framework.run_type` is always set.
 - Lineage keys are set when present: `run_id`, `thread_id`, `parent_run_id`, `component_name`, `retry_attempt`, `event_id`.
 
 Required tags:
 
-- `sigil.framework.name=llamaindex`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
+- `agento11y.framework.name=llamaindex`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
 
 ## Provider resolver
 

@@ -1,4 +1,4 @@
-"""Tests that client-level tags are emitted as ``sigil.tag.<key>`` span and metric attributes."""
+"""Tests that client-level tags are emitted as ``agento11y.tag.<key>`` span and metric attributes."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 _OPENAI = ModelRef(provider="openai", name="gpt-5")
 _EMBEDDING_MODEL = ModelRef(provider="openai", name="text-embedding-3-small")
-_CLIENT_TAG_PROJECT_KEY = "sigil.tag.project"
+_CLIENT_TAG_PROJECT_KEY = "agento11y.tag.project"
 
 
 class _TagsHarness:
@@ -171,8 +171,8 @@ def test_client_tags_are_normalized_and_sorted():
         assert rec.err() is None
 
         span = h.single_span(None)
-        tag_attrs = [(k, v) for k, v in span.attributes.items() if k.startswith("sigil.tag.")]
-        assert tag_attrs == [("sigil.tag.a", ""), ("sigil.tag.z", "last")]
+        tag_attrs = [(k, v) for k, v in span.attributes.items() if k.startswith("agento11y.tag.")]
+        assert tag_attrs == [("agento11y.tag.a", ""), ("agento11y.tag.z", "last")]
     finally:
         h.shutdown()
 
@@ -195,12 +195,12 @@ def test_empty_client_tags_are_noop():
 
         for span in h.span_exporter.get_finished_spans():
             for key in span.attributes:
-                assert not key.startswith("sigil.tag."), f"unexpected {key} on span {span.name}"
+                assert not key.startswith("agento11y.tag."), f"unexpected {key} on span {span.name}"
 
         for metric_name in ("gen_ai.client.operation.duration", "gen_ai.client.token.usage"):
             for point in h.metric_data_points(metric_name):
                 for key in dict(point.attributes):
-                    assert not key.startswith("sigil.tag."), f"unexpected {key} on {metric_name}"
+                    assert not key.startswith("agento11y.tag."), f"unexpected {key} on {metric_name}"
     finally:
         h.shutdown()
 
@@ -214,10 +214,10 @@ def test_per_call_generation_tags_stay_export_only():
         assert rec.err() is None
 
         span = h.single_span(None)
-        assert "sigil.tag.call_only" not in span.attributes
+        assert "agento11y.tag.call_only" not in span.attributes
 
         for point in h.metric_data_points("gen_ai.client.operation.duration"):
-            assert "sigil.tag.call_only" not in dict(point.attributes)
+            assert "agento11y.tag.call_only" not in dict(point.attributes)
 
         h.client.flush()
         assert len(h.generation_exporter.requests) == 1

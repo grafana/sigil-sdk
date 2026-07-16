@@ -10,7 +10,7 @@ import (
 	"github.com/grafana/agento11y/go/sigil"
 )
 
-const metadataKeyConversationTitle = "sigil.conversation.title"
+const metadataKeyConversationTitle = "agento11y.conversation.title"
 
 // protoInt64 accepts both proto-JSON int64 strings and ordinary JSON
 // numbers. The local store can then read either the HTTP wire shape or

@@ -71,8 +71,8 @@ Primary mapping is Pydantic AI run identity:
 
 ## Metadata and lineage
 
-- Required: `sigil.framework.run_type`
-- Optional: `sigil.framework.run_id`, `sigil.framework.parent_run_id`, `sigil.framework.thread_id`, `sigil.framework.event_id`, `sigil.framework.component_name`, `sigil.framework.retry_attempt`
+- Required: `agento11y.framework.run_type`
+- Optional: `agento11y.framework.run_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.thread_id`, `agento11y.framework.event_id`, `agento11y.framework.component_name`, `agento11y.framework.retry_attempt`
 
 ## Provider resolver
 

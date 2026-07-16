@@ -82,16 +82,16 @@ def test_agento11y_llamaindex_sync_lifecycle_sets_framework_metadata() -> None:
 
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "llamaindex"
-        assert generation.tags["sigil.framework.source"] == "handler"
-        assert generation.tags["sigil.framework.language"] == "python"
+        assert generation.tags["agento11y.framework.name"] == "llamaindex"
+        assert generation.tags["agento11y.framework.source"] == "handler"
+        assert generation.tags["agento11y.framework.language"] == "python"
         assert generation.conversation_id == "framework-conversation-42"
-        assert generation.metadata["sigil.framework.run_id"] == str(run_id)
-        assert generation.metadata["sigil.framework.parent_run_id"] == str(parent_run_id)
-        assert generation.metadata["sigil.framework.thread_id"] == "framework-thread-42"
-        assert generation.metadata["sigil.framework.event_id"] == "framework-event-42"
-        assert generation.metadata["sigil.framework.run_type"] == "chat"
-        assert generation.metadata["sigil.framework.retry_attempt"] == 2
+        assert generation.metadata["agento11y.framework.run_id"] == str(run_id)
+        assert generation.metadata["agento11y.framework.parent_run_id"] == str(parent_run_id)
+        assert generation.metadata["agento11y.framework.thread_id"] == "framework-thread-42"
+        assert generation.metadata["agento11y.framework.event_id"] == "framework-event-42"
+        assert generation.metadata["agento11y.framework.run_type"] == "chat"
+        assert generation.metadata["agento11y.framework.retry_attempt"] == 2
         assert generation.output[0].parts[0].text == "world"
     finally:
         client.shutdown()
@@ -127,8 +127,8 @@ def test_agento11y_llamaindex_keeps_thread_metadata_when_ids_are_split_across_pa
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.conversation_id == "framework-conversation-split-42"
-        assert generation.metadata["sigil.framework.thread_id"] == "framework-thread-split-42"
-        assert generation.metadata["sigil.framework.event_id"] == "framework-event-split-42"
+        assert generation.metadata["agento11y.framework.thread_id"] == "framework-thread-split-42"
+        assert generation.metadata["agento11y.framework.event_id"] == "framework-event-split-42"
     finally:
         client.shutdown()
 
@@ -273,7 +273,7 @@ def test_agento11y_llamaindex_async_handler_records_generation() -> None:
         asyncio.run(_run())
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "llamaindex"
+        assert generation.tags["agento11y.framework.name"] == "llamaindex"
         assert generation.model.provider == "openai"
     finally:
         client.shutdown()
@@ -346,7 +346,7 @@ def test_agento11y_llamaindex_callback_helpers_append_handler() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.conversation_id == "llama-conversation-42"
-        assert generation.metadata["sigil.framework.thread_id"] == "llama-thread-42"
+        assert generation.metadata["agento11y.framework.thread_id"] == "llama-thread-42"
         assert generation.usage.input_tokens == 11
         assert generation.usage.output_tokens == 7
         assert generation.usage.total_tokens == 18

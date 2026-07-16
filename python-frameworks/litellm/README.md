@@ -165,9 +165,9 @@ The callback file reads connection details from environment variables. Adjust th
 - Embedding call types (`embedding`, `aembedding`) are recorded as OTel embedding spans (no generation export). The span carries input/token counts and dimensions; the input text is attached only when the handler's `capture_inputs` is set and the SDK's `EmbeddingCaptureConfig.capture_input=True`. Embedding spans require a configured OTel tracer.
 - Image, audio, and transcription call types are skipped.
 - Framework tags are always set:
-  - `sigil.framework.name=litellm`
-  - `sigil.framework.source=handler`
-  - `sigil.framework.language=python`
+  - `agento11y.framework.name=litellm`
+  - `agento11y.framework.source=handler`
+  - `agento11y.framework.language=python`
 - LiteLLM `request_tags` are forwarded as `litellm.tag.<value>`.
 - Token usage includes detailed breakdowns (cached tokens, reasoning tokens) when the provider returns them.
 - Tool calls and tool results in messages are mapped to Sigil's tool call/result parts.

@@ -36,7 +36,7 @@ func TestContextTagsOnGenerationSpanMetricsAndExport(t *testing.T) {
 
 	originTagKey := spanAttrTagPrefix + "origin"
 
-	// Trace: context tag present on the generation span as sigil.tag.origin.
+	// Trace: context tag present on the generation span as agento11y.tag.origin.
 	span := onlyGenerationSpan(t, recorder.Ended())
 	if got := spanAttributeMap(span)[originTagKey].AsString(); got != "workspace/open-in-sidebar" {
 		t.Fatalf("expected %s on generation span, got %q", originTagKey, got)

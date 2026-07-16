@@ -12,7 +12,7 @@ import io.grpc.MethodDescriptor;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import sigil.v1.GenerationIngestServiceGrpc;
+import agento11y.v1.GenerationIngestServiceGrpc;
 
 /** gRPC exporter for generation ingest. */
 public final class GrpcGenerationExporter implements GenerationExporter {

@@ -36,9 +36,9 @@ func TestExportConfig(t *testing.T) {
 	})
 
 	t.Run("user agent sets header", func(t *testing.T) {
-		got := exportConfig("sigil-plugin-codex/1.2.3").Headers["User-Agent"]
-		if got != "sigil-plugin-codex/1.2.3" {
-			t.Fatalf("User-Agent = %q; want %q", got, "sigil-plugin-codex/1.2.3")
+		got := exportConfig("agento11y-plugin-codex/1.2.3").Headers["User-Agent"]
+		if got != "agento11y-plugin-codex/1.2.3" {
+			t.Fatalf("User-Agent = %q; want %q", got, "agento11y-plugin-codex/1.2.3")
 		}
 	})
 }

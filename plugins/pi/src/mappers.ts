@@ -252,10 +252,10 @@ export function mapGenerationStart(
       start.toolChoice = requestControls.toolChoice;
     }
     if (typeof requestControls.thinkingBudgetTokens === "number") {
-      // The SDK reads `sigil.gen_ai.request.thinking.budget_tokens` from
+      // The SDK reads `agento11y.gen_ai.request.thinking.budget_tokens` from
       // generation metadata and surfaces it as the matching span attribute.
       start.metadata = {
-        "sigil.gen_ai.request.thinking.budget_tokens":
+        "agento11y.gen_ai.request.thinking.budget_tokens":
           requestControls.thinkingBudgetTokens,
       };
     }

@@ -57,11 +57,11 @@ def test_langgraph_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             agent_name="agent-langgraph",
             agent_version="v1",
             provider_resolver="auto",
-            extra_tags={"env": "test", "sigil.framework.name": "override"},
+            extra_tags={"env": "test", "agento11y.framework.name": "override"},
             extra_metadata={
                 "seed": 7,
-                "sigil.framework.run_id": "override-run",
-                "sigil.framework.thread_id": "override-thread",
+                "agento11y.framework.run_id": "override-run",
+                "agento11y.framework.thread_id": "override-thread",
             },
         )
 
@@ -95,19 +95,19 @@ def test_langgraph_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
         assert generation.mode.value == "SYNC"
         assert generation.model.provider == "openai"
         assert generation.model.name == "gpt-5"
-        assert generation.tags["sigil.framework.name"] == "langgraph"
-        assert generation.tags["sigil.framework.source"] == "handler"
-        assert generation.tags["sigil.framework.language"] == "python"
+        assert generation.tags["agento11y.framework.name"] == "langgraph"
+        assert generation.tags["agento11y.framework.source"] == "handler"
+        assert generation.tags["agento11y.framework.language"] == "python"
         assert generation.tags["env"] == "test"
         assert generation.conversation_id == "graph-thread-42"
-        assert generation.metadata["sigil.framework.run_id"] == str(run_id)
-        assert generation.metadata["sigil.framework.thread_id"] == "graph-thread-42"
-        assert generation.metadata["sigil.framework.parent_run_id"] == str(parent_run_id)
-        assert generation.metadata["sigil.framework.component_name"] == "ChatOpenAI"
-        assert generation.metadata["sigil.framework.run_type"] == "chat"
-        assert generation.metadata["sigil.framework.retry_attempt"] == 2
-        assert generation.metadata["sigil.framework.tags"] == ["prod", "blue"]
-        assert generation.metadata["sigil.framework.langgraph.node"] == "answer_node"
+        assert generation.metadata["agento11y.framework.run_id"] == str(run_id)
+        assert generation.metadata["agento11y.framework.thread_id"] == "graph-thread-42"
+        assert generation.metadata["agento11y.framework.parent_run_id"] == str(parent_run_id)
+        assert generation.metadata["agento11y.framework.component_name"] == "ChatOpenAI"
+        assert generation.metadata["agento11y.framework.run_type"] == "chat"
+        assert generation.metadata["agento11y.framework.retry_attempt"] == 2
+        assert generation.metadata["agento11y.framework.tags"] == ["prod", "blue"]
+        assert generation.metadata["agento11y.framework.langgraph.node"] == "answer_node"
         assert generation.metadata["seed"] == 7
         assert generation.usage.input_tokens == 10
         assert generation.usage.output_tokens == 5
@@ -230,7 +230,7 @@ def test_langgraph_error_sets_call_error_and_preserves_framework_tags() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert "provider unavailable" in generation.call_error
-        assert generation.tags["sigil.framework.name"] == "langgraph"
+        assert generation.tags["agento11y.framework.name"] == "langgraph"
     finally:
         client.shutdown()
 
@@ -249,7 +249,7 @@ def test_langgraph_async_handler_records_generation() -> None:
         asyncio.run(_run())
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "langgraph"
+        assert generation.tags["agento11y.framework.name"] == "langgraph"
         assert generation.model.provider == "openai"
     finally:
         client.shutdown()
@@ -309,14 +309,14 @@ def test_langgraph_tool_chain_and_retriever_callbacks_emit_spans() -> None:
         assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
         assert tool_span.attributes.get("gen_ai.conversation.id") == "graph-thread-42"
 
-        assert chain_span.attributes.get("sigil.framework.run_type") == "chain"
-        assert chain_span.attributes.get("sigil.framework.component_name") == "PlanChain"
-        assert chain_span.attributes.get("sigil.framework.langgraph.node") == "chain_node"
+        assert chain_span.attributes.get("agento11y.framework.run_type") == "chain"
+        assert chain_span.attributes.get("agento11y.framework.component_name") == "PlanChain"
+        assert chain_span.attributes.get("agento11y.framework.langgraph.node") == "chain_node"
         assert chain_span.status.status_code.name == "OK"
 
-        assert retriever_span.attributes.get("sigil.framework.run_type") == "retriever"
-        assert retriever_span.attributes.get("sigil.framework.component_name") == "VectorRetriever"
-        assert retriever_span.attributes.get("sigil.framework.langgraph.node") == "retriever_node"
+        assert retriever_span.attributes.get("agento11y.framework.run_type") == "retriever"
+        assert retriever_span.attributes.get("agento11y.framework.component_name") == "VectorRetriever"
+        assert retriever_span.attributes.get("agento11y.framework.langgraph.node") == "retriever_node"
         assert retriever_span.status.status_code.name == "ERROR"
         assert retriever_span.attributes.get("error.type") == "framework_error"
     finally:

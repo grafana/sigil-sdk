@@ -40,7 +40,7 @@ type GRPCWorkflowStepServiceClient = grpc.Client & {
 };
 
 type LoadedGRPCPackage = {
-  sigil?: {
+  agento11y?: {
     v1?: {
       GenerationIngestService?: grpc.ServiceClientConstructor;
       WorkflowStepIngestService?: grpc.ServiceClientConstructor;
@@ -50,7 +50,7 @@ type LoadedGRPCPackage = {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const defaultProtoPath = join(__dirname, '../../proto/sigil/v1/generation_ingest.proto');
+const defaultProtoPath = join(__dirname, '../../proto/agento11y/v1/generation_ingest.proto');
 
 const protoLoadOptions: protoLoader.Options = {
   keepCase: false,
@@ -168,13 +168,13 @@ export class GRPCGenerationExporter implements GenerationExporter {
   private async initializeClient(): Promise<void> {
     const packageDefinition = await protoLoader.load(defaultProtoPath, protoLoadOptions);
     const loaded = grpc.loadPackageDefinition(packageDefinition) as unknown as LoadedGRPCPackage;
-    const generationClientCtor = loaded.sigil?.v1?.GenerationIngestService;
+    const generationClientCtor = loaded.agento11y?.v1?.GenerationIngestService;
     if (generationClientCtor === undefined) {
-      throw new Error('failed to load sigil.v1.GenerationIngestService from proto');
+      throw new Error('failed to load agento11y.v1.GenerationIngestService from proto');
     }
-    const workflowStepClientCtor = loaded.sigil?.v1?.WorkflowStepIngestService;
+    const workflowStepClientCtor = loaded.agento11y?.v1?.WorkflowStepIngestService;
     if (workflowStepClientCtor === undefined) {
-      throw new Error('failed to load sigil.v1.WorkflowStepIngestService from proto');
+      throw new Error('failed to load agento11y.v1.WorkflowStepIngestService from proto');
     }
 
     const credentials = this.insecure ? grpc.credentials.createInsecure() : grpc.credentials.createSsl();

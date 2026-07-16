@@ -55,12 +55,12 @@ _framework_name = "claude-agent-sdk"
 _framework_source = "hooks"
 _framework_language = "python"
 _framework_instrumentation_name = "github.com/grafana/sigil/sdks/python-frameworks/claude-agent-sdk"
-_metadata_run_id = "sigil.framework.run_id"
-_metadata_run_type = "sigil.framework.run_type"
-_metadata_session_id = "sigil.framework.session_id"
-_metadata_permission_mode = "sigil.claude_agent.permission_mode"
-_metadata_cwd = "sigil.claude_agent.cwd"
-_metadata_total_cost_usd = "sigil.claude_agent.total_cost_usd"
+_metadata_run_id = "agento11y.framework.run_id"
+_metadata_run_type = "agento11y.framework.run_type"
+_metadata_session_id = "agento11y.framework.session_id"
+_metadata_permission_mode = "agento11y.claude_agent.permission_mode"
+_metadata_cwd = "agento11y.claude_agent.cwd"
+_metadata_total_cost_usd = "agento11y.claude_agent.total_cost_usd"
 
 
 class SigilClaudeAgentHandler:
@@ -145,9 +145,9 @@ class SigilClaudeAgentHandler:
             metadata[_metadata_cwd] = str(options.cwd)
 
         tags = dict(self._extra_tags)
-        tags["sigil.framework.name"] = _framework_name
-        tags["sigil.framework.source"] = _framework_source
-        tags["sigil.framework.language"] = _framework_language
+        tags["agento11y.framework.name"] = _framework_name
+        tags["agento11y.framework.source"] = _framework_source
+        tags["agento11y.framework.language"] = _framework_language
 
         start = GenerationStart(
             conversation_id=conversation_id,
@@ -345,7 +345,7 @@ class SigilClaudeAgentHandler:
                     agent_name=self._agent_name,
                     agent_version=self._agent_version,
                     tags={
-                        "sigil.framework.name": _framework_name,
+                        "agento11y.framework.name": _framework_name,
                         **self._extra_tags,
                     },
                 ),

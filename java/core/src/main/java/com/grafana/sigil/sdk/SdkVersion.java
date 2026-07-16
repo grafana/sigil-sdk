@@ -10,13 +10,13 @@ public final class SdkVersion {
     /** Released version of the Sigil Java SDK. */
     public static final String VERSION = "0.2.0";
 
-    private static final String USER_AGENT_PRODUCT = "sigil-sdk-java";
+    private static final String USER_AGENT_PRODUCT = "agento11y-sdk-java";
 
     private SdkVersion() {}
 
     /**
      * Returns the SDK's default generation-export User-Agent product token, {@code
-     * sigil-sdk-java/<VERSION>}.
+     * agento11y-sdk-java/<VERSION>}.
      */
     public static String userAgent() {
         return USER_AGENT_PRODUCT + "/" + VERSION;

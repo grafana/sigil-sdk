@@ -76,7 +76,7 @@ class SigilClientTagsTest {
                 SigilClient.METRIC_TOOL_CALLS_PER_OPERATION)) {
             for (HistogramPointData point : histogramPoints(metrics, metricName)) {
                 assertThat(point.getAttributes().get(CLIENT_TAG_PROJECT_KEY))
-                        .as("expected sigil.tag.project on %s", metricName)
+                        .as("expected agento11y.tag.project on %s", metricName)
                         .isEqualTo("checkout-svc");
             }
         }
@@ -100,7 +100,7 @@ class SigilClientTagsTest {
         assertThat(spans).hasSize(2);
         for (SpanData span : spans) {
             assertThat(span.getAttributes().get(CLIENT_TAG_PROJECT_KEY))
-                    .as("expected sigil.tag.project on span %s", span.getName())
+                    .as("expected agento11y.tag.project on span %s", span.getName())
                     .isEqualTo("embed-tools");
         }
 
@@ -110,7 +110,7 @@ class SigilClientTagsTest {
         for (String metricName : List.of(SigilClient.METRIC_OPERATION_DURATION, SigilClient.METRIC_TOKEN_USAGE)) {
             for (HistogramPointData point : histogramPoints(metrics, metricName)) {
                 assertThat(point.getAttributes().get(CLIENT_TAG_PROJECT_KEY))
-                        .as("expected sigil.tag.project on %s", metricName)
+                        .as("expected agento11y.tag.project on %s", metricName)
                         .isEqualTo("embed-tools");
             }
         }
@@ -124,8 +124,8 @@ class SigilClientTagsTest {
                 " a ", ""));
 
         assertThat(attributes.size()).isEqualTo(2);
-        assertThat(attributes.get(AttributeKey.stringKey("sigil.tag.a"))).isEmpty();
-        assertThat(attributes.get(AttributeKey.stringKey("sigil.tag.z"))).isEqualTo("last");
+        assertThat(attributes.get(AttributeKey.stringKey("agento11y.tag.a"))).isEmpty();
+        assertThat(attributes.get(AttributeKey.stringKey("agento11y.tag.z"))).isEqualTo("last");
 
         try (SigilClient client = newClient(Map.of(" z ", " last ", "   ", "discard", " a ", ""))) {
             GenerationRecorder recorder = client.startGeneration(TestFixtures.startFixture());
@@ -134,8 +134,8 @@ class SigilClientTagsTest {
         }
 
         SpanData span = singleSpan();
-        assertThat(span.getAttributes().get(AttributeKey.stringKey("sigil.tag.a"))).isEmpty();
-        assertThat(span.getAttributes().get(AttributeKey.stringKey("sigil.tag.z"))).isEqualTo("last");
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("agento11y.tag.a"))).isEmpty();
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("agento11y.tag.z"))).isEqualTo("last");
         span.getAttributes().forEach((key, value) ->
                 assertThat(key.getKey().trim()).isEqualTo(key.getKey()));
     }
@@ -187,11 +187,11 @@ class SigilClientTagsTest {
         }
 
         SpanData span = singleSpan();
-        assertThat(span.getAttributes().get(AttributeKey.stringKey("sigil.tag.call_only"))).isNull();
+        assertThat(span.getAttributes().get(AttributeKey.stringKey("agento11y.tag.call_only"))).isNull();
 
         for (MetricData metric : metricReader.collectAllMetrics()) {
             for (HistogramPointData point : metric.getHistogramData().getPoints()) {
-                assertThat(point.getAttributes().get(AttributeKey.stringKey("sigil.tag.call_only")))
+                assertThat(point.getAttributes().get(AttributeKey.stringKey("agento11y.tag.call_only")))
                         .as("per-call tag must not appear on metric %s", metric.getName())
                         .isNull();
             }

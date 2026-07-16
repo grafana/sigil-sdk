@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/agento11y/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	sigil "github.com/grafana/agento11y/go/sigil"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -66,7 +66,7 @@ func NewEnv(t testing.TB, opts ...func(*sigil.Config)) *Env {
 
 	ingest := &capturingIngestServer{}
 	grpcServer := grpc.NewServer()
-	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+	agento11yv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -188,7 +188,7 @@ func (e *Env) close() error {
 	return closeErr
 }
 
-func (e *Env) singleRequest(t testing.TB) *sigilv1.ExportGenerationsRequest {
+func (e *Env) singleRequest(t testing.TB) *agento11yv1.ExportGenerationsRequest {
 	t.Helper()
 
 	if e == nil || e.ingest == nil {
@@ -198,24 +198,24 @@ func (e *Env) singleRequest(t testing.TB) *sigilv1.ExportGenerationsRequest {
 }
 
 type capturingIngestServer struct {
-	sigilv1.UnimplementedGenerationIngestServiceServer
+	agento11yv1.UnimplementedGenerationIngestServiceServer
 
 	mu       sync.Mutex
-	requests []*sigilv1.ExportGenerationsRequest
+	requests []*agento11yv1.ExportGenerationsRequest
 }
 
-func (s *capturingIngestServer) ExportGenerations(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (s *capturingIngestServer) ExportGenerations(_ context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	s.capture(req)
 	return acceptedResponse(req), nil
 }
 
-func (s *capturingIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
+func (s *capturingIngestServer) capture(req *agento11yv1.ExportGenerationsRequest) {
 	if req == nil {
 		return
 	}
 
 	clone := proto.Clone(req)
-	typed, ok := clone.(*sigilv1.ExportGenerationsRequest)
+	typed, ok := clone.(*agento11yv1.ExportGenerationsRequest)
 	if !ok {
 		return
 	}
@@ -231,7 +231,7 @@ func (s *capturingIngestServer) requestCount() int {
 	return len(s.requests)
 }
 
-func (s *capturingIngestServer) singleRequest(t testing.TB) *sigilv1.ExportGenerationsRequest {
+func (s *capturingIngestServer) singleRequest(t testing.TB) *agento11yv1.ExportGenerationsRequest {
 	t.Helper()
 
 	s.mu.Lock()
@@ -243,10 +243,10 @@ func (s *capturingIngestServer) singleRequest(t testing.TB) *sigilv1.ExportGener
 	return s.requests[0]
 }
 
-func acceptedResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
-	response := &sigilv1.ExportGenerationsResponse{Results: make([]*sigilv1.ExportGenerationResult, len(req.GetGenerations()))}
+func acceptedResponse(req *agento11yv1.ExportGenerationsRequest) *agento11yv1.ExportGenerationsResponse {
+	response := &agento11yv1.ExportGenerationsResponse{Results: make([]*agento11yv1.ExportGenerationResult, len(req.GetGenerations()))}
 	for i := range req.GetGenerations() {
-		response.Results[i] = &sigilv1.ExportGenerationResult{
+		response.Results[i] = &agento11yv1.ExportGenerationResult{
 			Accepted: true,
 		}
 	}

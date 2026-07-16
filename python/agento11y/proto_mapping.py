@@ -7,7 +7,7 @@ from datetime import timezone
 
 from google.protobuf import json_format, struct_pb2, timestamp_pb2
 
-from .internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
+from .internal.gen.agento11y.v1 import generation_ingest_pb2 as sigil_pb2
 from .models import (
     ArtifactKind,
     Generation,
@@ -19,7 +19,7 @@ from .models import (
 
 
 def generation_to_proto(generation: Generation) -> sigil_pb2.Generation:
-    """Converts a `Generation` model into protobuf `sigil.v1.Generation`."""
+    """Converts a `Generation` model into protobuf `agento11y.v1.Generation`."""
 
     message = sigil_pb2.Generation(
         id=generation.id,
@@ -110,7 +110,7 @@ def workflow_step_to_proto_json(step: WorkflowStep) -> dict[str, object]:
 
 
 def workflow_step_to_proto(step: WorkflowStep) -> sigil_pb2.WorkflowStep:
-    """Converts a WorkflowStep model into protobuf sigil.v1.WorkflowStep."""
+    """Converts a WorkflowStep model into protobuf agento11y.v1.WorkflowStep."""
 
     message = sigil_pb2.WorkflowStep(
         id=step.id,

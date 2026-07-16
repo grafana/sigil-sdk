@@ -76,17 +76,17 @@ await client.shutdown();
 
 Framework tags and metadata are always injected:
 
-- `sigil.framework.name=langchain`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
-- `metadata["sigil.framework.run_id"]=<framework run id>`
-- `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
-- `metadata["sigil.framework.parent_run_id"]=<parent run id>` (when available)
-- `metadata["sigil.framework.component_name"]=<serialized component name>`
-- `metadata["sigil.framework.run_type"]=<llm|chat|tool|chain|retriever>`
-- `metadata["sigil.framework.tags"]=<normalized callback tags>`
-- `metadata["sigil.framework.retry_attempt"]=<attempt>` (when available)
-- `metadata["sigil.framework.event_id"]=<event id>` (when available)
+- `agento11y.framework.name=langchain`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
+- `metadata["agento11y.framework.run_id"]=<framework run id>`
+- `metadata["agento11y.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+- `metadata["agento11y.framework.parent_run_id"]=<parent run id>` (when available)
+- `metadata["agento11y.framework.component_name"]=<serialized component name>`
+- `metadata["agento11y.framework.run_type"]=<llm|chat|tool|chain|retriever>`
+- `metadata["agento11y.framework.tags"]=<normalized callback tags>`
+- `metadata["agento11y.framework.retry_attempt"]=<attempt>` (when available)
+- `metadata["agento11y.framework.event_id"]=<event id>` (when available)
 - generation span attributes mirror low-cardinality framework metadata keys
 
 Conversation mapping is conversation-first:

@@ -169,7 +169,7 @@ function newHarness(overrides = {}) {
   const traceProvider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(spanExporter)],
   });
-  const tracer = traceProvider.getTracer('sigil-sdk-js-test');
+  const tracer = traceProvider.getTracer('agento11y-sdk-js-test');
   const generationExporter = new CapturingExporter();
   const defaults = defaultConfig();
 

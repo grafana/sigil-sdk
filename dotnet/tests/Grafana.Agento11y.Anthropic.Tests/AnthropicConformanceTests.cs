@@ -37,9 +37,9 @@ public sealed class AnthropicConformanceTests
         Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(2048L, ReadThinkingBudget(generation));
-        Assert.Equal(2L, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_search_requests"));
-        var webFetchRequests = TryReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_fetch_requests") ?? 0L;
-        Assert.Equal(2L + webFetchRequests, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.total_requests"));
+        Assert.Equal(2L, ReadMetadataLong(generation, "agento11y.gen_ai.usage.server_tool_use.web_search_requests"));
+        var webFetchRequests = TryReadMetadataLong(generation, "agento11y.gen_ai.usage.server_tool_use.web_fetch_requests") ?? 0L;
+        Assert.Equal(2L + webFetchRequests, ReadMetadataLong(generation, "agento11y.gen_ai.usage.server_tool_use.total_requests"));
         Assert.Equal(162, generation.Usage.TotalTokens);
         Assert.Equal(30, generation.Usage.CacheReadInputTokens);
         Assert.Equal(10, generation.Usage.CacheWriteInputTokens);
@@ -65,9 +65,9 @@ public sealed class AnthropicConformanceTests
         Assert.Contains("weather", generation.ToolChoice ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(2048L, ReadThinkingBudget(generation));
-        Assert.Equal(3L, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_search_requests"));
-        var streamWebFetchRequests = TryReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.web_fetch_requests") ?? 0L;
-        Assert.Equal(3L + streamWebFetchRequests, ReadMetadataLong(generation, "sigil.gen_ai.usage.server_tool_use.total_requests"));
+        Assert.Equal(3L, ReadMetadataLong(generation, "agento11y.gen_ai.usage.server_tool_use.web_search_requests"));
+        var streamWebFetchRequests = TryReadMetadataLong(generation, "agento11y.gen_ai.usage.server_tool_use.web_fetch_requests") ?? 0L;
+        Assert.Equal(3L + streamWebFetchRequests, ReadMetadataLong(generation, "agento11y.gen_ai.usage.server_tool_use.total_requests"));
         Assert.Equal(105, generation.Usage.TotalTokens);
         Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent);
     }
@@ -231,7 +231,7 @@ public sealed class AnthropicConformanceTests
 
     private static long ReadThinkingBudget(Generation generation)
     {
-        var raw = generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"];
+        var raw = generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"];
         return raw switch
         {
             JsonElement json when json.ValueKind == JsonValueKind.Number && json.TryGetInt64(out var parsed) => parsed,

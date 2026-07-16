@@ -47,7 +47,7 @@ func TestStripContent(t *testing.T) {
 			StopReason: "end_turn",
 			CallError:  "rate limit exceeded: prompt too long for model",
 			Artifacts:  []Artifact{{Kind: "request", Payload: []byte("raw")}},
-			Metadata:   map[string]any{"sigil.sdk.name": "sdk-go", "call_error": "rate limit exceeded: prompt too long for model", "sigil.conversation.title": "Weather chat"},
+			Metadata:   map[string]any{"agento11y.sdk.name": "sdk-go", "call_error": "rate limit exceeded: prompt too long for model", "agento11y.conversation.title": "Weather chat"},
 		}
 	}
 
@@ -91,8 +91,8 @@ func TestStripContent(t *testing.T) {
 		if gen.ConversationTitle != "" {
 			t.Fatal("ConversationTitle not stripped")
 		}
-		if _, ok := gen.Metadata["sigil.conversation.title"]; ok {
-			t.Fatal("Metadata[sigil.conversation.title] should be deleted")
+		if _, ok := gen.Metadata["agento11y.conversation.title"]; ok {
+			t.Fatal("Metadata[agento11y.conversation.title] should be deleted")
 		}
 	})
 
@@ -151,7 +151,7 @@ func TestStripContent(t *testing.T) {
 		if gen.Model.Name != "claude-sonnet-4-5" {
 			t.Fatal("Model lost")
 		}
-		if gen.Metadata["sigil.sdk.name"] != "sdk-go" {
+		if gen.Metadata["agento11y.sdk.name"] != "sdk-go" {
 			t.Fatal("Metadata lost")
 		}
 	})

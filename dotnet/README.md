@@ -270,7 +270,7 @@ var sigil = new SigilClient(new SigilClientConfig
 {
     ContentCaptureResolver = metadata =>
     {
-        if (metadata != null && metadata.TryGetValue("sigil.tenant", out var tenant) && (string?)tenant == "healthcare")
+        if (metadata != null && metadata.TryGetValue("tenant", out var tenant) && (string?)tenant == "healthcare")
         {
             return ContentCaptureMode.MetadataOnly;
         }
@@ -294,7 +294,7 @@ Resolution precedence for tool executions (highest to lowest):
 3. `SigilClientConfig.ContentCaptureResolver` return value
 4. `SigilClientConfig.ContentCapture` (defaults to `ContentCaptureMode.NoToolContent`)
 
-User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `UserId` each show up (export vs spans vs metrics).
+User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `UserId` each show up (export vs spans vs metrics).
 
 ## Context defaults
 

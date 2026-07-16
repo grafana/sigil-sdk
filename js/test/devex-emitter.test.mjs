@@ -12,10 +12,10 @@ import {
 
 test('devex emitter tags include required provider and language fields', () => {
   const payload = buildTagsAndMetadata('openai', 'SYNC', 2, 1);
-  assert.equal(payload.tags['sigil.devex.language'], 'javascript');
-  assert.equal(payload.tags['sigil.devex.provider'], 'openai');
-  assert.equal(payload.tags['sigil.devex.source'], 'provider_wrapper');
-  assert.equal(payload.tags['sigil.devex.mode'], 'SYNC');
+  assert.equal(payload.tags['agento11y.devex.language'], 'javascript');
+  assert.equal(payload.tags['agento11y.devex.provider'], 'openai');
+  assert.equal(payload.tags['agento11y.devex.source'], 'provider_wrapper');
+  assert.equal(payload.tags['agento11y.devex.mode'], 'SYNC');
   assert.equal(payload.metadata.turn_index, 2);
   assert.equal(payload.metadata.conversation_slot, 1);
   assert.equal(typeof payload.metadata.agent_persona, 'string');
@@ -77,7 +77,7 @@ test('framework emit path invokes all framework handlers for provider sources', 
       turn: 3,
       agentName: 'agent',
       agentVersion: 'v1',
-      tags: { 'sigil.devex.provider': 'openai' },
+      tags: { 'agento11y.devex.provider': 'openai' },
       metadata: { provider_shape: 'framework' },
     },
   );
@@ -109,7 +109,7 @@ test('framework emit path skips non-provider custom source', async () => {
       turn: 3,
       agentName: 'agent',
       agentVersion: 'v1',
-      tags: { 'sigil.devex.provider': 'mistral' },
+      tags: { 'agento11y.devex.provider': 'mistral' },
       metadata: { provider_shape: 'framework' },
     },
   );

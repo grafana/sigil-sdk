@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/agento11y/go/proto/sigil/wire"
+	"github.com/grafana/agento11y/go/proto/agento11y/wire"
 )
 
 func TestProbeConversations(t *testing.T) {

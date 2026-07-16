@@ -26,7 +26,7 @@ const exportTimeout = 20 * time.Second
 
 // otelInstrumentationName scopes the tracer/meter vibe's tool-execution
 // spans and metrics are emitted under.
-const otelInstrumentationName = "sigil.vibe"
+const otelInstrumentationName = "agento11y.vibe"
 
 // PostAgentTurn handles a vibe post_agent_turn hook event end to end:
 // read state, read the new transcript slice, read meta.json, map to a

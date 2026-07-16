@@ -1,7 +1,7 @@
 using Google.Protobuf;
 using System.Text;
 using Xunit;
-using SigilProto = Sigil.V1;
+using SigilProto = Agento11y.V1;
 
 namespace Grafana.Sigil.Tests;
 
@@ -116,7 +116,7 @@ public sealed class GenerationTransportTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("sigil-plugin-semantic-kernel/1.2.3")]
+    [InlineData("agento11y-plugin-semantic-kernel/1.2.3")]
     public async Task GenerationHttpTransport_ResolvesUserAgent(string? headerValue)
     {
         var expected = string.IsNullOrWhiteSpace(headerValue) ? SdkVersion.UserAgent() : headerValue;

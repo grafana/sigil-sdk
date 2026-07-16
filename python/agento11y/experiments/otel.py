@@ -4,7 +4,7 @@ The experiments surface writes scores over the v1 ingest path. When explicitly
 enabled, it also emits OpenTelemetry so already-instrumented agents line up with
 Sigil's eval model and a future OTLP eval materializer can read the same data.
 
-We emit OpenTelemetry names directly — there is **no parallel ``sigil.*`` mirror**:
+We emit OpenTelemetry names directly — there is **no parallel ``agento11y.*`` mirror**:
 
 - **Merged names** are emitted as-is: the ``gen_ai.evaluation.result`` event and
   its attributes, ``gen_ai.request.model`` / ``gen_ai.agent.*`` on the candidate,
@@ -15,9 +15,9 @@ We emit OpenTelemetry names directly — there is **no parallel ``sigil.*`` mirr
   best-effort prediction and **may change until they land upstream**: evaluator
   and reference-set provenance under ``gen_ai.evaluation.*``, suite id/version,
   the run/case ids (#79), and the per-attempt trial identity ``test.case.run.*``.
-  ``sigil.eval.schema.version`` stamps which prediction generation a consumer is
+  ``agento11y.eval.schema.version`` stamps which prediction generation a consumer is
   reading, so a rename upstream is a visible version bump, not silent drift.
-- Only concepts with **no upstream home at all** keep a ``sigil.*`` name (the
+- Only concepts with **no upstream home at all** keep an ``agento11y.*`` name (the
   schema-version marker here, and artifact refs in :mod:`.experiment`). Those are
   product nouns, not mirrors of a proposed standard. Cost is *not* among them: it
   has no OTel attribute and is derived from tokens, so the span carries the
@@ -44,7 +44,7 @@ INSTRUMENTATION_NAME = "sigil_sdk.experiments"
 # Bumps whenever the predicted (not-yet-merged) attribute set changes, so a
 # consumer can tell which generation of the proposed names it is reading.
 SCHEMA_VERSION = "experiments-otel-2026-06"
-ATTR_SCHEMA_VERSION = "sigil.eval.schema.version"
+ATTR_SCHEMA_VERSION = "agento11y.eval.schema.version"
 
 # Trial span name template.
 TRIAL_SPAN_NAME = "eval.trial"

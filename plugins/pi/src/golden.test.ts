@@ -367,7 +367,7 @@ describe("pi plugin: real-SDK golden export", () => {
 
     const { turn } = await runFullTurn();
 
-    expect(turn.metadata["sigil.sdk.content_capture_mode"]).toBe(
+    expect(turn.metadata["agento11y.sdk.content_capture_mode"]).toBe(
       contentCapture,
     );
 
@@ -401,8 +401,8 @@ const normalizeFields: Record<string, string> = {
   trace_id: "<NORMALIZED>",
   span_id: "<NORMALIZED>",
   parent_span_id: "<NORMALIZED>",
-  "sigil.sdk.version": "<NORMALIZED>",
-  "sigil.sdk.commit": "<NORMALIZED>",
+  "agento11y.sdk.version": "<NORMALIZED>",
+  "agento11y.sdk.commit": "<NORMALIZED>",
   // effective_version is a sha256 derived from agent_version. Normalize so
   // a future agent_version bump does not silently change the golden hash.
   effective_version: "<NORMALIZED>",

@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Xunit;
-using SigilProto = Sigil.V1;
+using SigilProto = Agento11y.V1;
 
 namespace Grafana.Sigil.Tests;
 
@@ -167,7 +167,7 @@ public sealed class ContentCaptureModeTests
         Assert.Equal(42L, gen.Usage.OutputTokens);
         Assert.Equal("end_turn", gen.StopReason);
         Assert.Equal("claude-sonnet-4-5", gen.Model.Name);
-        Assert.Equal("sdk-dotnet", gen.Metadata["sigil.sdk.name"]);
+        Assert.Equal("sdk-dotnet", gen.Metadata["agento11y.sdk.name"]);
     }
 
     [Fact]
@@ -1669,7 +1669,7 @@ public sealed class ContentCaptureModeTests
             },
             Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["sigil.sdk.name"] = "sdk-dotnet",
+                ["agento11y.sdk.name"] = "sdk-dotnet",
                 ["call_error"] = "rate limit exceeded: prompt too long for model",
             },
         };

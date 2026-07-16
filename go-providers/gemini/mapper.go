@@ -11,9 +11,9 @@ import (
 	"github.com/grafana/agento11y/go/sigil"
 )
 
-const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
-const thinkingLevelMetadataKey = "sigil.gen_ai.request.thinking.level"
-const usageToolUsePromptTokensMetadataKey = "sigil.gen_ai.usage.tool_use_prompt_tokens"
+const thinkingBudgetMetadataKey = "agento11y.gen_ai.request.thinking.budget_tokens"
+const thinkingLevelMetadataKey = "agento11y.gen_ai.request.thinking.level"
+const usageToolUsePromptTokensMetadataKey = "agento11y.gen_ai.usage.tool_use_prompt_tokens"
 
 // FromRequestResponse maps a Gemini request/response pair to sigil.Generation.
 func FromRequestResponse(

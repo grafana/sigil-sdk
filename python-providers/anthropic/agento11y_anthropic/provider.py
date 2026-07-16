@@ -33,10 +33,10 @@ else:
     MessageCreateParams = Any
     RawMessageStreamEvent = Any
 
-_thinking_budget_metadata_key = "sigil.gen_ai.request.thinking.budget_tokens"
-_usage_server_tool_use_web_search_metadata_key = "sigil.gen_ai.usage.server_tool_use.web_search_requests"
-_usage_server_tool_use_web_fetch_metadata_key = "sigil.gen_ai.usage.server_tool_use.web_fetch_requests"
-_usage_server_tool_use_total_metadata_key = "sigil.gen_ai.usage.server_tool_use.total_requests"
+_thinking_budget_metadata_key = "agento11y.gen_ai.request.thinking.budget_tokens"
+_usage_server_tool_use_web_search_metadata_key = "agento11y.gen_ai.usage.server_tool_use.web_search_requests"
+_usage_server_tool_use_web_fetch_metadata_key = "agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"
+_usage_server_tool_use_total_metadata_key = "agento11y.gen_ai.usage.server_tool_use.total_requests"
 
 
 @dataclass(slots=True)

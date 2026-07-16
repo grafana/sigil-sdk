@@ -29,12 +29,12 @@ _framework_name = "strands"
 _framework_source = "hooks"
 _framework_language = "python"
 _framework_instrumentation_name = "github.com/grafana/sigil/sdks/python-frameworks/strands"
-_metadata_run_id = "sigil.framework.run_id"
-_metadata_thread_id = "sigil.framework.thread_id"
-_metadata_parent_run_id = "sigil.framework.parent_run_id"
-_metadata_component_name = "sigil.framework.component_name"
-_metadata_run_type = "sigil.framework.run_type"
-_metadata_event_id = "sigil.framework.event_id"
+_metadata_run_id = "agento11y.framework.run_id"
+_metadata_thread_id = "agento11y.framework.thread_id"
+_metadata_parent_run_id = "agento11y.framework.parent_run_id"
+_metadata_component_name = "agento11y.framework.component_name"
+_metadata_run_type = "agento11y.framework.run_type"
+_metadata_event_id = "agento11y.framework.event_id"
 
 
 @dataclass(slots=True)
@@ -130,9 +130,9 @@ class SigilStrandsHandler(SigilFrameworkHandlerBase):
             metadata_payload[_metadata_event_id] = event_id
 
         tags_payload = dict(self._extra_tags)
-        tags_payload["sigil.framework.name"] = self._framework_name
-        tags_payload["sigil.framework.source"] = self._framework_source
-        tags_payload["sigil.framework.language"] = self._framework_language
+        tags_payload["agento11y.framework.name"] = self._framework_name
+        tags_payload["agento11y.framework.source"] = self._framework_source
+        tags_payload["agento11y.framework.language"] = self._framework_language
 
         start = GenerationStart(
             conversation_id=conversation_id,

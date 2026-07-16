@@ -24,11 +24,11 @@ test('langchain handler records sync lifecycle with framework tags', async () =>
     const handler = new SigilLangChainHandler(client, {
       agentName: 'agent-langchain',
       agentVersion: 'v1',
-      extraTags: { env: 'test', 'sigil.framework.name': 'override' },
+      extraTags: { env: 'test', 'agento11y.framework.name': 'override' },
       extraMetadata: {
         seed: 7,
-        'sigil.framework.run_id': 'override-run',
-        'sigil.framework.thread_id': 'override-thread',
+        'agento11y.framework.run_id': 'override-run',
+        'agento11y.framework.thread_id': 'override-thread',
       },
     });
 
@@ -61,18 +61,18 @@ test('langchain handler records sync lifecycle with framework tags', async () =>
   assert.equal(generation.mode, 'SYNC');
   assert.equal(generation.model.provider, 'openai');
   assert.equal(generation.model.name, 'gpt-5');
-  assert.equal(generation.tags['sigil.framework.name'], 'langchain');
-  assert.equal(generation.tags['sigil.framework.source'], 'handler');
-  assert.equal(generation.tags['sigil.framework.language'], 'javascript');
+  assert.equal(generation.tags['agento11y.framework.name'], 'langchain');
+  assert.equal(generation.tags['agento11y.framework.source'], 'handler');
+  assert.equal(generation.tags['agento11y.framework.language'], 'javascript');
   assert.equal(generation.tags.env, 'test');
   assert.equal(generation.conversationId, 'chain-thread-42');
-  assert.equal(generation.metadata['sigil.framework.run_id'], 'run-sync');
-  assert.equal(generation.metadata['sigil.framework.thread_id'], 'chain-thread-42');
-  assert.equal(generation.metadata['sigil.framework.parent_run_id'], 'parent-run-sync');
-  assert.equal(generation.metadata['sigil.framework.component_name'], 'ChatOpenAI');
-  assert.equal(generation.metadata['sigil.framework.run_type'], 'chat');
-  assert.equal(generation.metadata['sigil.framework.retry_attempt'], 2);
-  assert.deepEqual(generation.metadata['sigil.framework.tags'], ['prod', 'blue']);
+  assert.equal(generation.metadata['agento11y.framework.run_id'], 'run-sync');
+  assert.equal(generation.metadata['agento11y.framework.thread_id'], 'chain-thread-42');
+  assert.equal(generation.metadata['agento11y.framework.parent_run_id'], 'parent-run-sync');
+  assert.equal(generation.metadata['agento11y.framework.component_name'], 'ChatOpenAI');
+  assert.equal(generation.metadata['agento11y.framework.run_type'], 'chat');
+  assert.equal(generation.metadata['agento11y.framework.retry_attempt'], 2);
+  assert.deepEqual(generation.metadata['agento11y.framework.tags'], ['prod', 'blue']);
   assert.equal(generation.metadata.seed, 7);
   assert.equal(generation.usage.inputTokens, 10);
   assert.equal(generation.usage.outputTokens, 5);
@@ -437,7 +437,7 @@ test('langchain handler sets call_error on llm error', async () => {
   });
 
   assert.match(generation.callError ?? '', /provider unavailable/);
-  assert.equal(generation.tags['sigil.framework.name'], 'langchain');
+  assert.equal(generation.tags['agento11y.framework.name'], 'langchain');
 });
 
 test('langchain handler explicitly has no embedding lifecycle', async () => {
@@ -513,14 +513,14 @@ test('langchain handler maps tool callbacks and emits chain/retriever spans', as
     assert.equal(toolSpan.attributes['gen_ai.conversation.id'], 'chain-thread-42');
 
     assert.ok(chainSpan);
-    assert.equal(chainSpan.attributes['sigil.framework.run_type'], 'chain');
-    assert.equal(chainSpan.attributes['sigil.framework.component_name'], 'PlanChain');
-    assert.equal(chainSpan.attributes['sigil.framework.parent_run_id'], 'parent-run');
+    assert.equal(chainSpan.attributes['agento11y.framework.run_type'], 'chain');
+    assert.equal(chainSpan.attributes['agento11y.framework.component_name'], 'PlanChain');
+    assert.equal(chainSpan.attributes['agento11y.framework.parent_run_id'], 'parent-run');
     assert.equal(chainSpan.status.code, SpanStatusCode.OK);
 
     assert.ok(retrieverSpan);
-    assert.equal(retrieverSpan.attributes['sigil.framework.run_type'], 'retriever');
-    assert.equal(retrieverSpan.attributes['sigil.framework.component_name'], 'VectorRetriever');
+    assert.equal(retrieverSpan.attributes['agento11y.framework.run_type'], 'retriever');
+    assert.equal(retrieverSpan.attributes['agento11y.framework.component_name'], 'VectorRetriever');
     assert.equal(retrieverSpan.attributes['error.type'], 'framework_error');
     assert.equal(retrieverSpan.status.code, SpanStatusCode.ERROR);
   } finally {

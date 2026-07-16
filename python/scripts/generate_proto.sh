@@ -37,22 +37,22 @@ mkdir -p "${OUT_DIR}"
   -I"${PROTO_INCLUDE}" \
   --python_out="${OUT_DIR}" \
   --grpc_python_out="${OUT_DIR}" \
-  "${ROOT_DIR}/proto/sigil/v1/generation_ingest.proto"
+  "${ROOT_DIR}/proto/agento11y/v1/generation_ingest.proto"
 
 # The grpc plugin emits absolute import paths; normalize to relative package import.
 TMP_FILE="$(mktemp)"
-sed 's|from sigil.v1 import generation_ingest_pb2 as|from . import generation_ingest_pb2 as|' \
-  "${OUT_DIR}/sigil/v1/generation_ingest_pb2_grpc.py" > "${TMP_FILE}"
-mv "${TMP_FILE}" "${OUT_DIR}/sigil/v1/generation_ingest_pb2_grpc.py"
+sed 's|from agento11y.v1 import generation_ingest_pb2 as|from . import generation_ingest_pb2 as|' \
+  "${OUT_DIR}/agento11y/v1/generation_ingest_pb2_grpc.py" > "${TMP_FILE}"
+mv "${TMP_FILE}" "${OUT_DIR}/agento11y/v1/generation_ingest_pb2_grpc.py"
 
 # protoc does not emit package __init__.py files; recreate them so the drift
 # check and a fresh regenerate both produce the full committed tree.
 cat > "${OUT_DIR}/__init__.py" <<'EOF'
 """Generated protobuf modules."""
 EOF
-cat > "${OUT_DIR}/sigil/__init__.py" <<'EOF'
-"""Generated sigil protobuf namespace."""
+cat > "${OUT_DIR}/agento11y/__init__.py" <<'EOF'
+"""Generated agento11y protobuf namespace."""
 EOF
-cat > "${OUT_DIR}/sigil/v1/__init__.py" <<'EOF'
-"""Generated sigil.v1 protobuf namespace."""
+cat > "${OUT_DIR}/agento11y/v1/__init__.py" <<'EOF'
+"""Generated agento11y.v1 protobuf namespace."""
 EOF

@@ -24,7 +24,7 @@ def set_cache_diagnostics(
     missed_input_tokens: int | None = None,
     previous_message_id: str | None = None,
 ) -> None:
-    """Stamp ``sigil.cache_diagnostics.*`` metadata on a generation recorder.
+    """Stamp ``agento11y.cache_diagnostics.*`` metadata on a generation recorder.
 
     Call before :meth:`GenerationRecorder.end`, typically after the provider
     response is available (before or with :meth:`GenerationRecorder.set_result`).

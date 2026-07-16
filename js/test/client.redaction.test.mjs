@@ -21,7 +21,7 @@ test('secret redaction sanitizer redacts assistant and tool content but leaves u
   const exporter = new CapturingExporter();
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,
@@ -156,7 +156,7 @@ test('generation sanitizer failure falls back to metadata_only stripping', async
   const defaults = defaultConfig();
   const warnings = [];
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,
@@ -188,7 +188,7 @@ test('generation sanitizer failure falls back to metadata_only stripping', async
     await client.flush();
 
     const generation = exporter.requests[0].generations[0];
-    assert.equal(generation.metadata['sigil.sdk.content_capture_mode'], 'metadata_only');
+    assert.equal(generation.metadata['agento11y.sdk.content_capture_mode'], 'metadata_only');
     assert.equal(generation.conversationTitle, '');
     assert.equal(generation.systemPrompt, '');
     assert.equal(generation.input[0].parts[0].text, '');

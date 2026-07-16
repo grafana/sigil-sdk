@@ -377,9 +377,9 @@ def test_tags_and_metadata() -> None:
 
         gen = exporter.requests[0].generations[0]
 
-        assert gen.tags["sigil.framework.name"] == "litellm"
-        assert gen.tags["sigil.framework.source"] == "handler"
-        assert gen.tags["sigil.framework.language"] == "python"
+        assert gen.tags["agento11y.framework.name"] == "litellm"
+        assert gen.tags["agento11y.framework.source"] == "handler"
+        assert gen.tags["agento11y.framework.language"] == "python"
         assert gen.tags["litellm.tag.prod"] == "prod"
         assert gen.tags["litellm.tag.blue"] == "blue"
         assert gen.tags["env"] == "test"

@@ -8,11 +8,11 @@ Read the README and `mise tasks` for the obvious stuff: layout, package names, w
 
 ## Proto is canonical
 
-`proto/sigil/v1/*.proto` is the source of truth. Generated stubs live under each language tree:
+`proto/agento11y/v1/*.proto` is the source of truth; `proto/sigil/v1` is the frozen legacy copy kept for the migration window. Generated stubs live under each language tree:
 
-- Go: `go/sigil/internal/gen/`
-- Python: `python/agento11y/internal/gen/`
-- JS: `js/proto/` (the runtime loads `.proto` files directly, no codegen)
+- Go: `go/proto/agento11y/`
+- Python: `python/agento11y/internal/gen/agento11y/`
+- JS: `js/proto/agento11y/` (the runtime loads `.proto` files directly, no codegen)
 - Java, .NET: compiled on build via the gradle protobuf plugin and `Grpc.Tools`; no committed stubs.
 
 Never edit generated files. Edit the `.proto`, then:

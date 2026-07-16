@@ -6,8 +6,8 @@ from urllib.parse import urlparse
 
 import grpc
 
-from ..internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
-from ..internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
+from ..internal.gen.agento11y.v1 import generation_ingest_pb2 as sigil_pb2
+from ..internal.gen.agento11y.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
 from ..models import (
     ExportGenerationResult,
     ExportGenerationsRequest,

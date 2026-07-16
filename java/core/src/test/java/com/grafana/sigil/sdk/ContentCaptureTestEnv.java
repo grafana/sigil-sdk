@@ -13,8 +13,8 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import sigil.v1.GenerationIngest;
-import sigil.v1.GenerationIngestServiceGrpc;
+import agento11y.v1.GenerationIngest;
+import agento11y.v1.GenerationIngestServiceGrpc;
 
 /**
  * Real-gRPC content-capture test env.

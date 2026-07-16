@@ -31,6 +31,9 @@
           }
         ],
         "metadata": {
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user",
           "copilot.agent_version": "1.0.50",
           "copilot.assistant_text_available": true,
           "copilot.error_count": 0,
@@ -49,10 +52,7 @@
           "copilot.subagent_count": 0,
           "copilot.tool_count": 1,
           "copilot.transcript_path_present": true,
-          "copilot.turn_id": "turn-000001",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "copilot.turn_id": "turn-000001"
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {

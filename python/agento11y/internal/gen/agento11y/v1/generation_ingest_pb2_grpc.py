@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import generation_ingest_pb2 as sigil_dot_v1_dot_generation__ingest__pb2
+from . import generation_ingest_pb2 as agento11y_dot_v1_dot_generation__ingest__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in sigil/v1/generation_ingest_pb2_grpc.py depends on'
+        + ' but the generated code in agento11y/v1/generation_ingest_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -35,9 +35,9 @@ class GenerationIngestServiceStub(object):
             channel: A grpc.Channel.
         """
         self.ExportGenerations = channel.unary_unary(
-                '/sigil.v1.GenerationIngestService/ExportGenerations',
-                request_serializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportGenerationsRequest.SerializeToString,
-                response_deserializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportGenerationsResponse.FromString,
+                '/agento11y.v1.GenerationIngestService/ExportGenerations',
+                request_serializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportGenerationsRequest.SerializeToString,
+                response_deserializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportGenerationsResponse.FromString,
                 _registered_method=True)
 
 
@@ -55,14 +55,14 @@ def add_GenerationIngestServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ExportGenerations': grpc.unary_unary_rpc_method_handler(
                     servicer.ExportGenerations,
-                    request_deserializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportGenerationsRequest.FromString,
-                    response_serializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportGenerationsResponse.SerializeToString,
+                    request_deserializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportGenerationsRequest.FromString,
+                    response_serializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportGenerationsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'sigil.v1.GenerationIngestService', rpc_method_handlers)
+            'agento11y.v1.GenerationIngestService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('sigil.v1.GenerationIngestService', rpc_method_handlers)
+    server.add_registered_method_handlers('agento11y.v1.GenerationIngestService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -83,9 +83,9 @@ class GenerationIngestService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/sigil.v1.GenerationIngestService/ExportGenerations',
-            sigil_dot_v1_dot_generation__ingest__pb2.ExportGenerationsRequest.SerializeToString,
-            sigil_dot_v1_dot_generation__ingest__pb2.ExportGenerationsResponse.FromString,
+            '/agento11y.v1.GenerationIngestService/ExportGenerations',
+            agento11y_dot_v1_dot_generation__ingest__pb2.ExportGenerationsRequest.SerializeToString,
+            agento11y_dot_v1_dot_generation__ingest__pb2.ExportGenerationsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -109,9 +109,9 @@ class WorkflowStepIngestServiceStub(object):
             channel: A grpc.Channel.
         """
         self.ExportWorkflowSteps = channel.unary_unary(
-                '/sigil.v1.WorkflowStepIngestService/ExportWorkflowSteps',
-                request_serializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsRequest.SerializeToString,
-                response_deserializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsResponse.FromString,
+                '/agento11y.v1.WorkflowStepIngestService/ExportWorkflowSteps',
+                request_serializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsRequest.SerializeToString,
+                response_deserializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsResponse.FromString,
                 _registered_method=True)
 
 
@@ -131,14 +131,14 @@ def add_WorkflowStepIngestServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'ExportWorkflowSteps': grpc.unary_unary_rpc_method_handler(
                     servicer.ExportWorkflowSteps,
-                    request_deserializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsRequest.FromString,
-                    response_serializer=sigil_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsResponse.SerializeToString,
+                    request_deserializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsRequest.FromString,
+                    response_serializer=agento11y_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'sigil.v1.WorkflowStepIngestService', rpc_method_handlers)
+            'agento11y.v1.WorkflowStepIngestService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('sigil.v1.WorkflowStepIngestService', rpc_method_handlers)
+    server.add_registered_method_handlers('agento11y.v1.WorkflowStepIngestService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -161,9 +161,9 @@ class WorkflowStepIngestService(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/sigil.v1.WorkflowStepIngestService/ExportWorkflowSteps',
-            sigil_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsRequest.SerializeToString,
-            sigil_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsResponse.FromString,
+            '/agento11y.v1.WorkflowStepIngestService/ExportWorkflowSteps',
+            agento11y_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsRequest.SerializeToString,
+            agento11y_dot_v1_dot_generation__ingest__pb2.ExportWorkflowStepsResponse.FromString,
             options,
             channel_credentials,
             insecure,

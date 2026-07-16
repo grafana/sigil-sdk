@@ -251,6 +251,6 @@ def _new_client(generation_export: GenerationExportConfig, api_endpoint: str = "
         ClientConfig(
             generation_export=generation_export,
             api=ApiConfig(endpoint=api_endpoint),
-            tracer=trace.get_tracer("sigil-sdk-python-rating-test"),
+            tracer=trace.get_tracer("agento11y-sdk-python-rating-test"),
         )
     )

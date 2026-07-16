@@ -42,18 +42,18 @@ from agento11y import (
     with_conversation_title,
     with_user_id,
 )
-from agento11y.internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
-from agento11y.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
+from agento11y.internal.gen.agento11y.v1 import generation_ingest_pb2 as sigil_pb2
+from agento11y.internal.gen.agento11y.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-_metadata_conversation_title = "sigil.conversation.title"
-_metadata_user_id = "sigil.user.id"
+_metadata_conversation_title = "agento11y.conversation.title"
+_metadata_user_id = "agento11y.user.id"
 _metadata_legacy_user_id = "user.id"
-_span_attr_conversation_title = "sigil.conversation.title"
+_span_attr_conversation_title = "agento11y.conversation.title"
 _span_attr_user_id = "user.id"
 
 
@@ -925,12 +925,12 @@ def test_conformance_client_tag_attributes() -> None:
         env.shutdown()
 
         span = env.generation_span()
-        assert span.attributes["sigil.tag.team"] == "payments"
-        assert "sigil.tag.call_only" not in span.attributes
+        assert span.attributes["agento11y.tag.team"] == "payments"
+        assert "agento11y.tag.call_only" not in span.attributes
 
         metrics = env.metrics()
         assert any(
-            point.attributes.get("sigil.tag.team") == "payments"
+            point.attributes.get("agento11y.tag.team") == "payments"
             for point in metrics["gen_ai.client.operation.duration"].data_points
         )
     finally:
@@ -958,5 +958,56 @@ def test_conformance_shutdown_flush_semantics() -> None:
         assert generation.conversation_id == "conv-shutdown"
         assert generation.agent_name == "agent-shutdown"
         assert generation.agent_version == "v-shutdown"
+    finally:
+        env.shutdown()
+
+
+def test_conformance_no_sdk_owned_legacy_sigil_namespace() -> None:
+    """Guards the agento11y rename: the SDK emits only agento11y.* names for
+    SDK-owned span attributes, metadata keys, and tag projections, while
+    caller-supplied metadata and tags pass through untouched even when they
+    use the legacy sigil.* namespace."""
+    env = _ConformanceEnv()
+    try:
+        recorder = env.client.start_generation(
+            GenerationStart(
+                id="gen-legacy-namespace",
+                conversation_id="conv-legacy-namespace",
+                conversation_title="Legacy namespace check",
+                user_id="user-legacy",
+                agent_name="agent-legacy",
+                agent_version="1.0.0",
+                model=ModelRef(provider="anthropic", name="claude-sonnet-4-5"),
+                tool_choice="auto",
+                thinking_enabled=True,
+                tags={"sigil.caller_tag": "caller-tag"},
+                metadata={"sigil.caller_key": "caller-value"},
+            )
+        )
+        recorder.set_result(
+            Generation(
+                output=[
+                    Message(role=MessageRole.ASSISTANT, parts=[Part(kind=PartKind.TEXT, text="ok")]),
+                ],
+                usage=TokenUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+        )
+        recorder.end()
+        env.shutdown()
+
+        span = env.generation_span()
+        legacy_span_attrs = [key for key in span.attributes if str(key).startswith("sigil.")]
+        assert legacy_span_attrs == []
+        assert span.attributes["agento11y.generation.id"] == "gen-legacy-namespace"
+        assert span.attributes["agento11y.sdk.name"] == "sdk-python"
+
+        generation = env.servicer.single_generation()
+        metadata = dict(generation.metadata.fields)
+        legacy_metadata_keys = [key for key in metadata if key.startswith("sigil.") and key != "sigil.caller_key"]
+        assert legacy_metadata_keys == []
+        assert metadata["sigil.caller_key"].string_value == "caller-value"
+        assert metadata["agento11y.sdk.name"].string_value == "sdk-python"
+        assert metadata[_metadata_user_id].string_value == "user-legacy"
+        assert generation.tags["sigil.caller_tag"] == "caller-tag"
     finally:
         env.shutdown()
