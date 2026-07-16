@@ -217,6 +217,8 @@ class Evaluator:
 
 # Environment variables used to hand a trial reference across a process / container
 # boundary (e.g. from the host that creates the run to a verifier container).
+# Readers accept the preferred AGENTO11Y_* names first, then the legacy SIGIL_*
+# names; writers emit both prefixes so old verifier containers keep working.
 ENV_EXPERIMENT_ID = "SIGIL_EXPERIMENT_ID"
 ENV_RUN_ID = "SIGIL_RUN_ID"  # legacy alias accepted on read
 ENV_TEST_CASE_ID = "SIGIL_TEST_CASE_ID"
@@ -224,6 +226,23 @@ ENV_ATTEMPT = "SIGIL_ATTEMPT"
 ENV_SUITE_ID = "SIGIL_SUITE_ID"
 ENV_SUITE_VERSION = "SIGIL_SUITE_VERSION"
 ENV_TRAJECTORY_ID = "SIGIL_TRAJECTORY_ID"
+
+ENV_EXPERIMENT_ID_PREFERRED = "AGENTO11Y_EXPERIMENT_ID"
+ENV_TEST_CASE_ID_PREFERRED = "AGENTO11Y_TEST_CASE_ID"
+ENV_ATTEMPT_PREFERRED = "AGENTO11Y_ATTEMPT"
+ENV_SUITE_ID_PREFERRED = "AGENTO11Y_SUITE_ID"
+ENV_SUITE_VERSION_PREFERRED = "AGENTO11Y_SUITE_VERSION"
+ENV_TRAJECTORY_ID_PREFERRED = "AGENTO11Y_TRAJECTORY_ID"
+
+
+def _first_nonblank(env: dict[str, str], *keys: str) -> str:
+    """Returns the first nonblank (trimmed) value of ``keys`` in ``env``."""
+
+    for key in keys:
+        val = (env.get(key) or "").strip()
+        if val:
+            return val
+    return ""
 
 
 @dataclass(frozen=True)
@@ -277,34 +296,40 @@ class TrialRef:
 
     def to_env(self) -> dict[str, str]:
         env = {
+            ENV_EXPERIMENT_ID_PREFERRED: self.experiment_id,
             ENV_EXPERIMENT_ID: self.experiment_id,
+            ENV_TEST_CASE_ID_PREFERRED: self.test_case_id,
             ENV_TEST_CASE_ID: self.test_case_id,
+            ENV_ATTEMPT_PREFERRED: str(self.attempt),
             ENV_ATTEMPT: str(self.attempt),
         }
         if self.suite_id:
+            env[ENV_SUITE_ID_PREFERRED] = self.suite_id
             env[ENV_SUITE_ID] = self.suite_id
         if self.suite_version:
+            env[ENV_SUITE_VERSION_PREFERRED] = self.suite_version
             env[ENV_SUITE_VERSION] = self.suite_version
         if self.trajectory_id:
+            env[ENV_TRAJECTORY_ID_PREFERRED] = self.trajectory_id
             env[ENV_TRAJECTORY_ID] = self.trajectory_id
         return env
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> TrialRef | None:
         env = environ if environ is not None else dict(os.environ)
-        experiment_id = (env.get(ENV_EXPERIMENT_ID) or env.get(ENV_RUN_ID) or "").strip()
-        test_case_id = (env.get(ENV_TEST_CASE_ID) or "").strip()
+        experiment_id = _first_nonblank(env, ENV_EXPERIMENT_ID_PREFERRED, ENV_EXPERIMENT_ID, ENV_RUN_ID)
+        test_case_id = _first_nonblank(env, ENV_TEST_CASE_ID_PREFERRED, ENV_TEST_CASE_ID)
         if not experiment_id or not test_case_id:
             return None
         try:
-            attempt = int(env.get(ENV_ATTEMPT) or "1")
+            attempt = int(_first_nonblank(env, ENV_ATTEMPT_PREFERRED, ENV_ATTEMPT) or "1")
         except ValueError:
             attempt = 1
         return cls(
             experiment_id=experiment_id,
             test_case_id=test_case_id,
             attempt=attempt,
-            suite_id=(env.get(ENV_SUITE_ID) or "").strip(),
-            suite_version=(env.get(ENV_SUITE_VERSION) or "").strip(),
-            trajectory_id=(env.get(ENV_TRAJECTORY_ID) or "").strip(),
+            suite_id=_first_nonblank(env, ENV_SUITE_ID_PREFERRED, ENV_SUITE_ID),
+            suite_version=_first_nonblank(env, ENV_SUITE_VERSION_PREFERRED, ENV_SUITE_VERSION),
+            trajectory_id=_first_nonblank(env, ENV_TRAJECTORY_ID_PREFERRED, ENV_TRAJECTORY_ID),
         )

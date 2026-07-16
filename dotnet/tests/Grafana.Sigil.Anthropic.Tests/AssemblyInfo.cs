@@ -5,27 +5,29 @@ internal static class TestEnvCleanup
     [ModuleInitializer]
     internal static void ClearSigilEnvVars()
     {
-        // Clear canonical SIGIL_* env vars so individual tests don't pick up
-        // developer-machine config when they construct a SigilClient.
-        string[] keys =
+        // Clear canonical AGENTO11Y_* / SIGIL_* env vars so individual tests
+        // don't pick up developer-machine config when they construct a
+        // SigilClient.
+        string[] suffixes =
         {
-            "SIGIL_ENDPOINT",
-            "SIGIL_PROTOCOL",
-            "SIGIL_INSECURE",
-            "SIGIL_HEADERS",
-            "SIGIL_AUTH_MODE",
-            "SIGIL_AUTH_TENANT_ID",
-            "SIGIL_AUTH_TOKEN",
-            "SIGIL_AGENT_NAME",
-            "SIGIL_AGENT_VERSION",
-            "SIGIL_USER_ID",
-            "SIGIL_TAGS",
-            "SIGIL_CONTENT_CAPTURE_MODE",
-            "SIGIL_DEBUG",
+            "ENDPOINT",
+            "PROTOCOL",
+            "INSECURE",
+            "HEADERS",
+            "AUTH_MODE",
+            "AUTH_TENANT_ID",
+            "AUTH_TOKEN",
+            "AGENT_NAME",
+            "AGENT_VERSION",
+            "USER_ID",
+            "TAGS",
+            "CONTENT_CAPTURE_MODE",
+            "DEBUG",
         };
-        foreach (var key in keys)
+        foreach (var suffix in suffixes)
         {
-            Environment.SetEnvironmentVariable(key, null);
+            Environment.SetEnvironmentVariable("AGENTO11Y_" + suffix, null);
+            Environment.SetEnvironmentVariable("SIGIL_" + suffix, null);
         }
     }
 }

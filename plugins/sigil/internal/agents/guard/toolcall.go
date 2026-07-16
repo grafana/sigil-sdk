@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -89,9 +88,9 @@ func (r Result) Blocked() bool {
 }
 
 // EvaluateToolCall asks Sigil whether the tool call should proceed. It
-// reads SIGIL_ENDPOINT / SIGIL_AUTH_TENANT_ID / SIGIL_AUTH_TOKEN from the
-// process environment and honours envconfig.GuardsConfig for the
-// enabled/timeout/fail-open knobs. Callers are expected to gate this
+// reads the branded ENDPOINT / AUTH_TENANT_ID / AUTH_TOKEN families (either
+// spelling) from the process environment and honours envconfig.GuardsConfig
+// for the enabled/timeout/fail-open knobs. Callers are expected to gate this
 // helper behind cfg.Enabled — when disabled it short-circuits to allow.
 //
 // Behaviour:
@@ -116,23 +115,23 @@ func EvaluateToolCall(ctx context.Context, cfg envconfig.GuardsConfig, in ToolCa
 		return Result{Action: sigil.HookActionAllow}
 	}
 
-	endpoint := strings.TrimSpace(os.Getenv("SIGIL_ENDPOINT"))
-	tenantID := strings.TrimSpace(os.Getenv("SIGIL_AUTH_TENANT_ID"))
-	authToken := strings.TrimSpace(os.Getenv("SIGIL_AUTH_TOKEN"))
+	endpoint := envconfig.Getenv("ENDPOINT")
+	tenantID := envconfig.Getenv("AUTH_TENANT_ID")
+	authToken := envconfig.Getenv("AUTH_TOKEN")
 	tenantID, authToken = envconfig.LocalAuthPlaceholders(endpoint, tenantID, authToken)
 	if endpoint == "" || tenantID == "" || authToken == "" {
 		if cfg.FailOpen {
 			if logger != nil {
-				logger.Printf("guard: missing SIGIL_* credentials; failing open")
+				logger.Printf("guard: missing AGENTO11Y_*/SIGIL_* credentials; failing open")
 			}
 			return Result{Action: sigil.HookActionAllow}
 		}
 		if logger != nil {
-			logger.Printf("guard: missing SIGIL_* credentials; failing closed")
+			logger.Printf("guard: missing AGENTO11Y_*/SIGIL_* credentials; failing closed")
 		}
 		return Result{
 			Action: sigil.HookActionDeny,
-			Reason: formatEvalFailure(in.ToolName, "missing SIGIL_ENDPOINT/SIGIL_AUTH_TENANT_ID/SIGIL_AUTH_TOKEN"),
+			Reason: formatEvalFailure(in.ToolName, "missing AGENTO11Y_ENDPOINT/AGENTO11Y_AUTH_TENANT_ID/AGENTO11Y_AUTH_TOKEN"),
 		}
 	}
 

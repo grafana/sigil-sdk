@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 )
 
 // Test seams.
@@ -26,7 +28,7 @@ const maxSurfaceAncestry = 6
 // is read by BOTH the Copilot CLI and Copilot Chat in VS Code, so the surface
 // must be inferred at runtime. Precedence:
 //
-//  1. SIGIL_COPILOT_HOOK_SURFACE env — an explicit override. The plugin's
+//  1. AGENTO11Y_COPILOT_HOOK_SURFACE env — an explicit override. The plugin's
 //     hooks.json sets this to "copilot-cli", so anyone driving capture via
 //     the plugin (rather than the shared user file) is labelled precisely.
 //  2. Process ancestry — if a `copilot` binary is an ancestor of this
@@ -37,7 +39,7 @@ const maxSurfaceAncestry = 6
 //  3. Otherwise the only other host that fires these hooks is Copilot Chat in
 //     VS Code, so the surface is "vscode".
 func detectSurface() string {
-	if s := strings.TrimSpace(os.Getenv("SIGIL_COPILOT_HOOK_SURFACE")); s != "" {
+	if s := envconfig.Getenv("COPILOT_HOOK_SURFACE"); s != "" {
 		return s
 	}
 	if hasCopilotAncestor(os.Getppid(), maxSurfaceAncestry) {

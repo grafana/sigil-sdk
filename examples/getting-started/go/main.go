@@ -51,11 +51,11 @@ func main() {
 
 	cfg := sigil.DefaultConfig()
 	cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP
-	cfg.GenerationExport.Endpoint = os.Getenv("SIGIL_ENDPOINT")
+	cfg.GenerationExport.Endpoint = os.Getenv("AGENTO11Y_ENDPOINT")
 	cfg.GenerationExport.Auth = sigil.AuthConfig{
 		Mode:          sigil.ExportAuthModeBasic,
-		TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
-		BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
+		TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+		BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 	}
 	// Client tags attach to every generation and become sigil.tag.<key>
 	// attributes on OTel spans and metrics, so keep them low-cardinality

@@ -43,10 +43,10 @@ All hosts read the same config file at `~/.config/sigil/config.env`. The first r
 To preconfigure without the prompt, create the file:
 
 ```dotenv
-SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-SIGIL_AUTH_TENANT_ID=<instance-id>
-SIGIL_AUTH_TOKEN=glc_...
-SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
+AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_AUTH_TENANT_ID=<instance-id>
+AGENTO11Y_AUTH_TOKEN=glc_...
+AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 ```
 
 Find these values in Grafana Cloud at `https://<your-grafana>.grafana.net/plugins/grafana-sigil-app`.
@@ -62,7 +62,7 @@ Then follow your agent's quickstart:
 
 ## Tagging sessions
 
-Add `--tag key=value` (repeatable) before any `--` to attach tags to every generation the launched session produces. This is shorthand for setting `SIGIL_TAGS`; flag tags merge onto (and override) any `SIGIL_TAGS` already in the environment.
+Add `--tag key=value` (repeatable) before any `--` to attach tags to every generation the launched session produces. This is shorthand for setting `AGENTO11Y_TAGS`; flag tags merge onto (and override) any `AGENTO11Y_TAGS` already in the environment.
 
 ```sh
 sigil claude --tag project=hackathon --tag team=ai
@@ -74,11 +74,11 @@ The same flag works for every launcher (`claude`, `codex`, `copilot`, `opencode`
 
 ## Content capture
 
-The shared `sigil` binary defaults to `metadata_only`: only model, tokens, tool names, timing, and cost ship to Grafana AI Observability. Prompts, responses, and tool I/O stay on the local machine. To opt into sending content, set `SIGIL_CONTENT_CAPTURE_MODE` in `~/.config/sigil/config.env`. The shared binary parser accepts every mode the SDKs support:
+The shared `sigil` binary defaults to `metadata_only`: only model, tokens, tool names, timing, and cost ship to Grafana AI Observability. Prompts, responses, and tool I/O stay on the local machine. To opt into sending content, set `AGENTO11Y_CONTENT_CAPTURE_MODE` in `~/.config/sigil/config.env`. The shared binary parser accepts every mode the SDKs support:
 
 ```dotenv
 # valid values: full | no_tool_content | metadata_only | full_with_metadata_spans
-SIGIL_CONTENT_CAPTURE_MODE=full
+AGENTO11Y_CONTENT_CAPTURE_MODE=full
 ```
 
 Unknown values fall back to `metadata_only` with a warning. `default` is accepted as an alias for `metadata_only` so the shared binary matches the Go envconfig resolver rather than the JS SDK's client-level default of `no_tool_content`. The Pi (`@grafana/sigil-pi`) and OpenCode (`@grafana/sigil-opencode`) plugins ship their own parsers but accept the same set of values.
@@ -87,7 +87,7 @@ A plugin can only export fields the host agent passes through to it, so individu
 
 ## Auto-update
 
-`sigil claude`, `sigil codex`, `sigil copilot`, and `sigil opencode` refresh the installed host plugin automatically. Set `SIGIL_AUTO_UPDATE=false` to opt out.
+`sigil claude`, `sigil codex`, `sigil copilot`, and `sigil opencode` refresh the installed host plugin automatically. Set `AGENTO11Y_AUTO_UPDATE=false` to opt out.
 
 ## Troubleshooting
 
@@ -99,8 +99,8 @@ sigil doctor
 
 The two pipelines are independent and fail independently:
 
-- **Conversations** (the chat transcripts) export over `SIGIL_ENDPOINT` + `SIGIL_AUTH_TENANT_ID` + `SIGIL_AUTH_TOKEN`. The token needs the `sigil:write` scope.
-- **Analytics** (the AI Observability metrics and traces) export over `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_ENDPOINT`). The token needs `metrics:write` and `traces:write`.
+- **Conversations** (the chat transcripts) export over `AGENTO11Y_ENDPOINT` + `AGENTO11Y_AUTH_TENANT_ID` + `AGENTO11Y_AUTH_TOKEN`. The token needs the `sigil:write` scope.
+- **Analytics** (the AI Observability metrics and traces) export over `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_ENDPOINT`). The token needs `metrics:write` and `traces:write`.
 
 The common failure is conversations showing up while the analytics page stays empty: the OTLP endpoint is unset, or the token lacks the metrics/traces scopes. `sigil doctor` flags that case explicitly and exits non-zero when a pipeline is broken.
 
@@ -116,4 +116,4 @@ For support, capture the machine-readable report — it never includes the auth 
 sigil doctor --json
 ```
 
-If you need lower-level detail, hooks always exit 0, so problems only show up in the debug log. Set `SIGIL_DEBUG=true` in `~/.config/sigil/config.env` and tail `~/.local/state/sigil/logs/sigil.log`.
+If you need lower-level detail, hooks always exit 0, so problems only show up in the debug log. Set `AGENTO11Y_DEBUG=true` in `~/.config/sigil/config.env` and tail `~/.local/state/sigil/logs/sigil.log`.

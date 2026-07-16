@@ -51,8 +51,9 @@ class GenerationExportConfig:
     """Generation ingest export configuration.
 
     Transport fields default to ``None`` so the resolver can layer in env vars
-    (``SIGIL_ENDPOINT`` / ``SIGIL_PROTOCOL`` / ``SIGIL_INSECURE`` / ``SIGIL_HEADERS``)
-    before falling back to schema defaults.
+    (``AGENTO11Y_ENDPOINT`` / ``AGENTO11Y_PROTOCOL`` / ``AGENTO11Y_INSECURE`` /
+    ``AGENTO11Y_HEADERS``, each with a ``SIGIL_*`` legacy fallback) before
+    falling back to schema defaults.
     """
 
     protocol: str | None = None
@@ -105,8 +106,8 @@ class ClientConfig:
     """Top-level SDK runtime configuration.
 
     Fields default to ``None`` where the resolver can layer in canonical
-    ``SIGIL_*`` environment variables. After ``resolve_config`` runs, all fields
-    are populated with concrete values.
+    ``AGENTO11Y_*`` environment variables (``SIGIL_*`` legacy fallback). After
+    ``resolve_config`` runs, all fields are populated with concrete values.
     """
 
     generation_export: GenerationExportConfig = field(default_factory=GenerationExportConfig)
@@ -125,8 +126,8 @@ class ClientConfig:
     use_experimental_otel: bool | None = None
 
     # Default identity / tags merged into each GenerationStart when the per-call
-    # field is unset. Read from SIGIL_AGENT_NAME / SIGIL_AGENT_VERSION /
-    # SIGIL_USER_ID / SIGIL_TAGS by ``resolve_config``.
+    # field is unset. Read from AGENTO11Y_AGENT_NAME / AGENTO11Y_AGENT_VERSION /
+    # AGENTO11Y_USER_ID / AGENTO11Y_TAGS (SIGIL_* fallback) by ``resolve_config``.
     agent_name: str | None = None
     agent_version: str | None = None
     user_id: str | None = None
@@ -135,7 +136,8 @@ class ClientConfig:
     ingest_actor: str | None = None
 
     # When True (and ``logger`` is not provided) the SDK constructs a default
-    # logger at debug level. Read from ``SIGIL_DEBUG`` by ``resolve_config``.
+    # logger at debug level. Read from ``AGENTO11Y_DEBUG`` (``SIGIL_DEBUG``
+    # fallback) by ``resolve_config``.
     debug: bool | None = None
 
     # Convenience aliases for simpler caller config wiring.
@@ -143,7 +145,8 @@ class ClientConfig:
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> ClientConfig:
-        """Returns a fully-resolved config built from canonical SIGIL_* env vars.
+        """Returns a fully-resolved config built from canonical AGENTO11Y_* env
+        vars (with SIGIL_* fallbacks).
 
         This is a debugging / advanced helper. The recommended path is to call
         ``Client()`` directly which performs the same resolution internally.
@@ -163,15 +166,25 @@ def default_config() -> ClientConfig:
     return resolve_config(ClientConfig(), env={})
 
 
-def _env(env: dict[str, str] | None, key: str) -> str | None:
-    """Returns the trimmed env var value, or ``None`` when unset/empty."""
+def _env(env: dict[str, str] | None, suffix: str) -> tuple[str | None, str]:
+    """Selects the first nonblank value of ``AGENTO11Y_<suffix>`` / ``SIGIL_<suffix>``.
+
+    Returns ``(value, selected_key)`` so validation messages can name the key
+    the user actually set, or ``(None, "")`` when neither spelling is set.
+    Selection happens before parsing: a nonblank preferred value always wins,
+    even when it later fails validation, so stale legacy config cannot silently
+    resurface.
+    """
 
     src = env if env is not None else os.environ
-    raw = src.get(key)
-    if raw is None:
-        return None
-    val = raw.strip()
-    return val or None
+    for key in ("AGENTO11Y_" + suffix, "SIGIL_" + suffix):
+        raw = src.get(key)
+        if raw is None:
+            continue
+        val = raw.strip()
+        if val:
+            return val, key
+    return None, ""
 
 
 def _parse_bool(raw: str) -> bool:
@@ -199,10 +212,10 @@ def resolve_config(
     *,
     env: dict[str, str] | None = None,
 ) -> ClientConfig:
-    """Resolves caller config against canonical ``SIGIL_*`` env vars and defaults.
+    """Resolves caller config against canonical env vars and defaults.
 
-    Resolution order: explicit user-provided fields > ``SIGIL_*`` env vars > SDK
-    config struct defaults.
+    Resolution order: explicit user-provided fields > ``AGENTO11Y_*`` env vars
+    (``SIGIL_*`` legacy fallback) > SDK config struct defaults.
     """
 
     # Clone so resolve_config never mutates the caller's config. Some fields
@@ -213,23 +226,24 @@ def resolve_config(
     log = logging.getLogger("sigil_sdk")
 
     # Transport
-    env_endpoint = _env(env, "SIGIL_ENDPOINT")
+    env_endpoint, _ = _env(env, "ENDPOINT")
     if out.generation_export.endpoint is None:
         out.generation_export.endpoint = env_endpoint or _DEFAULT_ENDPOINT
     if out.generation_export.protocol is None:
-        out.generation_export.protocol = _env(env, "SIGIL_PROTOCOL") or _DEFAULT_PROTOCOL
+        ev, _ = _env(env, "PROTOCOL")
+        out.generation_export.protocol = ev or _DEFAULT_PROTOCOL
     if out.generation_export.insecure is None:
-        ev = _env(env, "SIGIL_INSECURE")
+        ev, _ = _env(env, "INSECURE")
         out.generation_export.insecure = _parse_bool(ev) if ev is not None else _DEFAULT_INSECURE
     if out.generation_export.headers is None:
-        ev = _env(env, "SIGIL_HEADERS")
+        ev, _ = _env(env, "HEADERS")
         out.generation_export.headers = _parse_csv_kv(ev) if ev is not None else {}
 
     # Auth. Invalid mode strings are warned and skipped so other valid env
     # vars still apply.
     auth = out.generation_export.auth
     if auth.mode is None:
-        env_mode = _env(env, "SIGIL_AUTH_MODE")
+        env_mode, mode_key = _env(env, "AUTH_MODE")
         if env_mode is None:
             auth.mode = _DEFAULT_AUTH_MODE
         else:
@@ -237,14 +251,15 @@ def resolve_config(
             if normalized in _VALID_AUTH_MODES:
                 auth.mode = normalized
             else:
-                log.warning("sigil: ignoring invalid SIGIL_AUTH_MODE %r", env_mode)
+                log.warning("sigil: ignoring invalid %s %r", mode_key, env_mode)
                 auth.mode = _DEFAULT_AUTH_MODE
     if not auth.tenant_id:
-        auth.tenant_id = _env(env, "SIGIL_AUTH_TENANT_ID") or ""
+        ev, _ = _env(env, "AUTH_TENANT_ID")
+        auth.tenant_id = ev or ""
     # Set both fields; _resolve_export_headers uses only the one matching the
-    # final mode. Lets env's token fill a caller-supplied mode without
-    # SIGIL_AUTH_MODE.
-    env_token = _env(env, "SIGIL_AUTH_TOKEN")
+    # final mode. Lets env's token fill a caller-supplied mode without an
+    # env-provided auth mode.
+    env_token, _ = _env(env, "AUTH_TOKEN")
     if env_token:
         if not auth.bearer_token:
             auth.bearer_token = env_token
@@ -255,23 +270,28 @@ def resolve_config(
 
     # Agent / user / tags defaults
     if out.agent_name is None:
-        out.agent_name = _env(env, "SIGIL_AGENT_NAME") or ""
+        ev, _ = _env(env, "AGENT_NAME")
+        out.agent_name = ev or ""
     if out.agent_version is None:
-        out.agent_version = _env(env, "SIGIL_AGENT_VERSION") or ""
+        ev, _ = _env(env, "AGENT_VERSION")
+        out.agent_version = ev or ""
     if out.user_id is None:
-        out.user_id = _env(env, "SIGIL_USER_ID") or ""
+        ev, _ = _env(env, "USER_ID")
+        out.user_id = ev or ""
     if out.ingest_actor is None:
-        out.ingest_actor = _env(env, "SIGIL_INGEST_ACTOR") or ""
+        ev, _ = _env(env, "INGEST_ACTOR")
+        out.ingest_actor = ev or ""
     # Merge env-derived tags as a base layer; caller tags win on key collision.
-    # Matches Go and JS SDK behavior.
-    ev = _env(env, "SIGIL_TAGS")
+    # Matches Go and JS SDK behavior. The two env spellings are never merged;
+    # the selected value is used whole.
+    ev, _ = _env(env, "TAGS")
     env_tags = _parse_csv_kv(ev) if ev is not None else {}
     caller_tags = out.tags or {}
     out.tags = {**env_tags, **caller_tags}
 
     # Content capture.
     if out.content_capture is None:
-        ev = _env(env, "SIGIL_CONTENT_CAPTURE_MODE")
+        ev, capture_key = _env(env, "CONTENT_CAPTURE_MODE")
         if ev is None:
             out.content_capture = ContentCaptureMode.DEFAULT
         else:
@@ -279,15 +299,15 @@ def resolve_config(
             if normalized in _VALID_CONTENT_CAPTURE:
                 out.content_capture = _content_capture_from_str(normalized)
             else:
-                log.warning("sigil: ignoring invalid SIGIL_CONTENT_CAPTURE_MODE %r", ev)
+                log.warning("sigil: ignoring invalid %s %r", capture_key, ev)
                 out.content_capture = ContentCaptureMode.DEFAULT
 
     # Debug
     if out.debug is None:
-        ev = _env(env, "SIGIL_DEBUG")
+        ev, _ = _env(env, "DEBUG")
         out.debug = _parse_bool(ev) if ev is not None else False
     if out.use_experimental_otel is None:
-        ev = _env(env, "SIGIL_USE_EXPERIMENTAL_OTEL")
+        ev, _ = _env(env, "USE_EXPERIMENTAL_OTEL")
         out.use_experimental_otel = _parse_bool(ev) if ev is not None else False
 
     if out.generation_export_endpoint:

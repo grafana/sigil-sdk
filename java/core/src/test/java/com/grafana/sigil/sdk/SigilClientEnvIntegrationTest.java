@@ -51,6 +51,25 @@ class SigilClientEnvIntegrationTest {
     }
 
     @Test
+    void resolveFromPreferredEnvFillsConfigDefaults() {
+        SigilClientConfig caller = new SigilClientConfig();
+        Map<String, String> env = Map.of(
+                "AGENTO11Y_AGENT_NAME", "env-agent",
+                "AGENTO11Y_AGENT_VERSION", "1.2.3",
+                "AGENTO11Y_USER_ID", "user-1",
+                "AGENTO11Y_TAGS", "service=demo,team=ai");
+
+        SigilClientConfig resolved = SigilEnvConfig.resolveFromEnv(env::get, caller).config();
+
+        assertThat(resolved.getAgentName()).isEqualTo("env-agent");
+        assertThat(resolved.getAgentVersion()).isEqualTo("1.2.3");
+        assertThat(resolved.getUserId()).isEqualTo("user-1");
+        assertThat(resolved.getTags())
+                .containsEntry("service", "demo")
+                .containsEntry("team", "ai");
+    }
+
+    @Test
     void callerConfigOverridesEnv() {
         SigilClientConfig caller = new SigilClientConfig().setAgentName("caller-agent");
         SigilClientConfig resolved = SigilEnvConfig.resolveFromEnv(

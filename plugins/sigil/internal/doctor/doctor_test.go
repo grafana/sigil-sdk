@@ -137,7 +137,18 @@ func TestCollectConversations(t *testing.T) {
 			name:       "missing token",
 			osEnv:      map[string]string{"SIGIL_ENDPOINT": "https://x", "SIGIL_AUTH_TENANT_ID": "1"},
 			wantHealth: HealthError,
-			wantMsg:    "SIGIL_AUTH_TOKEN",
+			wantMsg:    "AGENTO11Y_AUTH_TOKEN",
+		},
+		{
+			name:       "preferred-only credentials",
+			osEnv:      map[string]string{"AGENTO11Y_ENDPOINT": "https://x", "AGENTO11Y_AUTH_TENANT_ID": "1", "AGENTO11Y_AUTH_TOKEN": "glc_t"},
+			wantHealth: HealthOK,
+		},
+		{
+			name:       "legacy-only credentials suggest migration",
+			osEnv:      map[string]string{"SIGIL_ENDPOINT": "https://x", "SIGIL_AUTH_TENANT_ID": "1", "SIGIL_AUTH_TOKEN": "glc_t"},
+			wantHealth: HealthOK,
+			wantMsg:    "preferred names are AGENTO11Y_*",
 		},
 	}
 	for _, tc := range tests {
@@ -153,6 +164,46 @@ func TestCollectConversations(t *testing.T) {
 	}
 }
 
+func TestCollectConversationsConflictingTokens(t *testing.T) {
+	osEnv := map[string]string{
+		"AGENTO11Y_ENDPOINT":       "https://x",
+		"AGENTO11Y_AUTH_TENANT_ID": "1",
+		"AGENTO11Y_AUTH_TOKEN":     "preferred-secret",
+		"SIGIL_AUTH_TOKEN":         "legacy-secret",
+	}
+	sec := collectConversations(osEnv, nil)
+	if sec.Token.Key != "AGENTO11Y_AUTH_TOKEN" {
+		t.Fatalf("token key = %q, want AGENTO11Y_AUTH_TOKEN", sec.Token.Key)
+	}
+	if !sec.Token.Conflict {
+		t.Fatalf("token conflict not flagged: %+v", sec.Token)
+	}
+	encoded, err := json.Marshal(sec)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, secret := range []string{"preferred-secret", "legacy-secret"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("section JSON leaks token value %q: %s", secret, encoded)
+		}
+	}
+	if !strings.Contains(strings.Join(sec.Messages, " "), "AGENTO11Y_AUTH_TOKEN") {
+		t.Fatalf("messages %v do not name the selected key", sec.Messages)
+	}
+}
+
+func TestResolveFamilySourceBeatsSpelling(t *testing.T) {
+	osEnv := map[string]string{"SIGIL_ENDPOINT": "shell-legacy"}
+	fileEnv := map[string]string{"AGENTO11Y_ENDPOINT": "file-preferred"}
+	r := resolveFamily("ENDPOINT", osEnv, fileEnv)
+	if r.value != "shell-legacy" || r.key != "SIGIL_ENDPOINT" || r.source != sourceEnv {
+		t.Fatalf("resolveFamily = %+v, want shell legacy winner", r)
+	}
+	if !r.conflict {
+		t.Fatalf("expected conflict flag when spellings disagree: %+v", r)
+	}
+}
+
 func TestCollectAnalytics(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -161,6 +212,7 @@ func TestCollectAnalytics(t *testing.T) {
 		wantHealth   Health
 		wantEndpoint string
 		wantVar      string
+		wantMsg      string
 	}{
 		{
 			name: "sigil otlp set with auth",
@@ -172,6 +224,20 @@ func TestCollectAnalytics(t *testing.T) {
 			wantHealth:   HealthOK,
 			wantEndpoint: "https://otlp",
 			wantVar:      "SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT",
+			wantMsg:      "preferred names are AGENTO11Y_*",
+		},
+		{
+			name: "conflicting otlp spellings flag the disagreement",
+			osEnv: map[string]string{
+				"AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT": "https://preferred",
+				"SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT":     "https://legacy",
+				"AGENTO11Y_AUTH_TENANT_ID":              "12345",
+				"AGENTO11Y_OTEL_AUTH_TOKEN":             "glc_tok",
+			},
+			wantHealth:   HealthOK,
+			wantEndpoint: "https://preferred",
+			wantVar:      "AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT",
+			wantMsg:      "AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT and its other spelling are both set with different values",
 		},
 		{
 			name: "standard otel fallback with auth via SIGIL_AUTH_TOKEN",
@@ -235,6 +301,9 @@ func TestCollectAnalytics(t *testing.T) {
 			}
 			if tc.wantVar != "" && sec.EndpointVar != tc.wantVar {
 				t.Fatalf("endpoint var = %q, want %q", sec.EndpointVar, tc.wantVar)
+			}
+			if tc.wantMsg != "" && !strings.Contains(strings.Join(sec.Messages, " "), tc.wantMsg) {
+				t.Fatalf("messages %v missing %q", sec.Messages, tc.wantMsg)
 			}
 		})
 	}
@@ -464,6 +533,7 @@ func TestCollectConfig_Tags(t *testing.T) {
 		fileEnv    map[string]string
 		wantTags   map[string]string
 		wantSource string
+		wantMsg    string
 	}{
 		{name: "no tags", wantTags: nil},
 		{
@@ -483,6 +553,23 @@ func TestCollectConfig_Tags(t *testing.T) {
 			osEnv:    map[string]string{"SIGIL_TAGS": "novalue,=noKey"},
 			wantTags: nil,
 		},
+		{
+			name: "conflicting spellings flag the disagreement",
+			osEnv: map[string]string{
+				"AGENTO11Y_TAGS": "env=prod",
+				"SIGIL_TAGS":     "env=staging",
+			},
+			wantTags:   map[string]string{"env": "prod"},
+			wantSource: sourceEnv,
+			wantMsg:    "AGENTO11Y_TAGS and its other spelling are both set with different values; using AGENTO11Y_TAGS",
+		},
+		{
+			name:       "legacy-only tags suggest migration",
+			osEnv:      map[string]string{"SIGIL_TAGS": "env=prod"},
+			wantTags:   map[string]string{"env": "prod"},
+			wantSource: sourceEnv,
+			wantMsg:    "preferred name is AGENTO11Y_TAGS",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -498,6 +585,9 @@ func TestCollectConfig_Tags(t *testing.T) {
 			}
 			if sec.TagsSource != tc.wantSource {
 				t.Fatalf("tags source = %q, want %q", sec.TagsSource, tc.wantSource)
+			}
+			if tc.wantMsg != "" && !strings.Contains(strings.Join(sec.Messages, " "), tc.wantMsg) {
+				t.Fatalf("messages %v missing %q", sec.Messages, tc.wantMsg)
 			}
 		})
 	}

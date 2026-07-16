@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 )
 
 // nonTTYStdin returns a file that is guaranteed not to be a terminal.
@@ -40,15 +42,16 @@ func writeDotenv(t *testing.T, contents string) string {
 	return path
 }
 
-// clearSeededEnv wipes every SIGIL_* key loadSeeds reads from the
-// process env. Tests need this because the host shell may have some of
+// clearSeededEnv wipes both spellings of every family loadSeeds reads from
+// the process env. Tests need this because the host shell may have some of
 // them exported (the developer running `go test` is the same user who
 // uses sigil), which would otherwise leak into table cases that intend
 // to exercise the "env unset" path.
 func clearSeededEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range seededKeys {
-		t.Setenv(k, "")
+	for _, suffix := range seededSuffixes {
+		t.Setenv(envconfig.PreferredKey(suffix), "")
+		t.Setenv(envconfig.LegacyKey(suffix), "")
 	}
 }
 
@@ -361,8 +364,10 @@ func TestBuildUpdates(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := buildUpdates(c.in); !reflect.DeepEqual(got, c.want) {
-				t.Errorf("buildUpdates() =\n%v\nwant\n%v", got, c.want)
+			// Managed values are written and deleted under both spellings.
+			want := envconfig.ExpandAliases(c.want)
+			if got := buildUpdates(c.in); !reflect.DeepEqual(got, want) {
+				t.Errorf("buildUpdates() =\n%v\nwant\n%v", got, want)
 			}
 		})
 	}

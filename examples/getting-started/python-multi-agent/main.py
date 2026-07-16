@@ -53,7 +53,7 @@ sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ["SIGIL_ENDPOINT"],
+            endpoint=os.environ["AGENTO11Y_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
                 tenant_id=os.environ["GRAFANA_INSTANCE_ID"],

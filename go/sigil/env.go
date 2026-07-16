@@ -7,42 +7,56 @@ import (
 	"strings"
 )
 
-// canonical SIGIL_* env-var names.
-const (
-	envEndpoint     = "SIGIL_ENDPOINT"
-	envProtocol     = "SIGIL_PROTOCOL"
-	envInsecure     = "SIGIL_INSECURE"
-	envHeaders      = "SIGIL_HEADERS"
-	envAuthMode     = "SIGIL_AUTH_MODE"
-	envAuthTenantID = "SIGIL_AUTH_TENANT_ID"
-	envAuthToken    = "SIGIL_AUTH_TOKEN"
-	envAgentName    = "SIGIL_AGENT_NAME"
-	envAgentVersion = "SIGIL_AGENT_VERSION"
-	envUserID       = "SIGIL_USER_ID"
+// envPair is one logical config field readable under the preferred
+// AGENTO11Y_* name with a SIGIL_* legacy fallback. Selection happens before
+// parsing: a nonblank preferred value always wins, even when it later fails
+// validation, so stale legacy config cannot silently resurface.
+type envPair struct {
+	preferred string
+	legacy    string
+}
+
+func brandedPair(suffix string) envPair {
+	return envPair{preferred: "AGENTO11Y_" + suffix, legacy: "SIGIL_" + suffix}
+}
+
+// canonical env-var names: preferred AGENTO11Y_* with SIGIL_* fallback.
+var (
+	envEndpoint     = brandedPair("ENDPOINT")
+	envProtocol     = brandedPair("PROTOCOL")
+	envInsecure     = brandedPair("INSECURE")
+	envHeaders      = brandedPair("HEADERS")
+	envAuthMode     = brandedPair("AUTH_MODE")
+	envAuthTenantID = brandedPair("AUTH_TENANT_ID")
+	envAuthToken    = brandedPair("AUTH_TOKEN")
+	envAgentName    = brandedPair("AGENT_NAME")
+	envAgentVersion = brandedPair("AGENT_VERSION")
+	envUserID       = brandedPair("USER_ID")
 	// envTags: comma-separated key=value pairs merged into generation export tags
-	// and emitted on OTel spans/metrics as sigil.tag.<key>.
-	envTags                = "SIGIL_TAGS"
-	envContentCaptureMode  = "SIGIL_CONTENT_CAPTURE_MODE"
-	envDebug               = "SIGIL_DEBUG"
-	envRedactInputMessages = "SIGIL_REDACT_INPUT_MESSAGES"
+	// and emitted on OTel spans/metrics as sigil.tag.<key>. The two spellings are
+	// never merged; the selected value is used whole.
+	envTags                = brandedPair("TAGS")
+	envContentCaptureMode  = brandedPair("CONTENT_CAPTURE_MODE")
+	envDebug               = brandedPair("DEBUG")
+	envRedactInputMessages = brandedPair("REDACT_INPUT_MESSAGES")
 )
 
-// envLookup resolves canonical SIGIL_* env vars from os.Environ unless a
+// envLookup resolves canonical env vars from os.Environ unless a
 // caller-supplied lookup is provided (used by tests).
 type envLookup func(string) (string, bool)
 
 func defaultLookup(key string) (string, bool) { return os.LookupEnv(key) }
 
-// ConfigFromEnv returns a Config built from canonical SIGIL_* env vars layered
-// on top of DefaultConfig. This is a debugging / advanced helper — most callers
-// should construct a Client via NewClient which performs the same resolution
-// internally.
+// ConfigFromEnv returns a Config built from canonical AGENTO11Y_* env vars
+// (with SIGIL_* fallbacks) layered on top of DefaultConfig. This is a
+// debugging / advanced helper — most callers should construct a Client via
+// NewClient which performs the same resolution internally.
 func ConfigFromEnv() (Config, error) {
 	return resolveFromEnv(defaultLookup, DefaultConfig())
 }
 
 // resolveFromEnv applies env overrides onto the supplied baseline. Invalid
-// values (bad SIGIL_AUTH_MODE, etc.) are skipped — the base value is kept
+// values (bad AUTH_MODE, etc.) are skipped — the base value is kept
 // and the per-field error is returned via errors.Join, so one typo cannot
 // discard the rest of the env layer.
 func resolveFromEnv(lookup envLookup, base Config) (Config, error) {
@@ -52,36 +66,36 @@ func resolveFromEnv(lookup envLookup, base Config) (Config, error) {
 	cfg := base
 	var errs []error
 
-	if v, ok := envTrimmed(lookup, envEndpoint); ok {
+	if v, _, ok := envTrimmed(lookup, envEndpoint); ok {
 		cfg.GenerationExport.Endpoint = v
 	}
-	if v, ok := envTrimmed(lookup, envProtocol); ok {
+	if v, _, ok := envTrimmed(lookup, envProtocol); ok {
 		cfg.GenerationExport.Protocol = GenerationExportProtocol(strings.ToLower(v))
 	}
-	if v, ok := envTrimmed(lookup, envInsecure); ok {
+	if v, _, ok := envTrimmed(lookup, envInsecure); ok {
 		b := parseBool(v)
 		cfg.GenerationExport.Insecure = &b
 	}
-	if v, ok := envTrimmed(lookup, envHeaders); ok {
+	if v, _, ok := envTrimmed(lookup, envHeaders); ok {
 		cfg.GenerationExport.Headers = parseCSVKV(v)
 	}
 
 	auth := cfg.GenerationExport.Auth
-	if v, ok := envTrimmed(lookup, envAuthMode); ok {
+	if v, key, ok := envTrimmed(lookup, envAuthMode); ok {
 		mode := ExportAuthMode(strings.ToLower(v))
 		if !validAuthMode(mode) {
-			errs = append(errs, fmt.Errorf("sigil: invalid SIGIL_AUTH_MODE %q", v))
+			errs = append(errs, fmt.Errorf("sigil: invalid %s %q", key, v))
 		} else {
 			auth.Mode = mode
 		}
 	}
-	if v, ok := envTrimmed(lookup, envAuthTenantID); ok {
+	if v, _, ok := envTrimmed(lookup, envAuthTenantID); ok {
 		auth.TenantID = v
 	}
-	if v, ok := envTrimmed(lookup, envAuthToken); ok {
+	if v, _, ok := envTrimmed(lookup, envAuthToken); ok {
 		// Set both fields; resolveHeadersWithAuth uses only the one matching
 		// the final mode. Lets env's token fill a caller-supplied mode
-		// without env declaring SIGIL_AUTH_MODE.
+		// without env declaring an AUTH_MODE.
 		if auth.BearerToken == "" {
 			auth.BearerToken = v
 		}
@@ -94,21 +108,21 @@ func resolveFromEnv(lookup envLookup, base Config) (Config, error) {
 	}
 	cfg.GenerationExport.Auth = auth
 
-	if v, ok := envTrimmed(lookup, envAgentName); ok {
+	if v, _, ok := envTrimmed(lookup, envAgentName); ok {
 		cfg.AgentName = v
 	}
-	if v, ok := envTrimmed(lookup, envAgentVersion); ok {
+	if v, _, ok := envTrimmed(lookup, envAgentVersion); ok {
 		cfg.AgentVersion = v
 	}
-	if v, ok := envTrimmed(lookup, envUserID); ok {
+	if v, _, ok := envTrimmed(lookup, envUserID); ok {
 		cfg.UserID = v
 	}
-	if v, ok := envTrimmed(lookup, envTags); ok {
+	if v, _, ok := envTrimmed(lookup, envTags); ok {
 		cfg.Tags = parseCSVKV(v)
 	}
 
-	if v, ok := envTrimmed(lookup, envContentCaptureMode); ok {
-		mode, err := parseContentCaptureMode(v)
+	if v, key, ok := envTrimmed(lookup, envContentCaptureMode); ok {
+		mode, err := parseContentCaptureMode(key, v)
 		if err != nil {
 			errs = append(errs, err)
 		} else {
@@ -116,7 +130,7 @@ func resolveFromEnv(lookup envLookup, base Config) (Config, error) {
 		}
 	}
 
-	if v, ok := envTrimmed(lookup, envDebug); ok {
+	if v, _, ok := envTrimmed(lookup, envDebug); ok {
 		b := parseBool(v)
 		cfg.Debug = &b
 	}
@@ -124,16 +138,22 @@ func resolveFromEnv(lookup envLookup, base Config) (Config, error) {
 	return cfg, errors.Join(errs...)
 }
 
-func envTrimmed(lookup envLookup, key string) (string, bool) {
-	raw, ok := lookup(key)
-	if !ok {
-		return "", false
+// envTrimmed selects the pair's first nonblank value (preferred, then legacy)
+// and returns it with the env-var name it came from, so validation errors can
+// name the key the user actually set.
+func envTrimmed(lookup envLookup, pair envPair) (value, key string, ok bool) {
+	for _, k := range []string{pair.preferred, pair.legacy} {
+		raw, found := lookup(k)
+		if !found {
+			continue
+		}
+		val := strings.TrimSpace(raw)
+		if val == "" {
+			continue
+		}
+		return val, k, true
 	}
-	val := strings.TrimSpace(raw)
-	if val == "" {
-		return "", false
-	}
-	return val, true
+	return "", "", false
 }
 
 func parseBool(raw string) bool {
@@ -177,7 +197,7 @@ func parseCSVKV(raw string) map[string]string {
 	return out
 }
 
-func parseContentCaptureMode(v string) (ContentCaptureMode, error) {
+func parseContentCaptureMode(key, v string) (ContentCaptureMode, error) {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "full":
 		return ContentCaptureModeFull, nil
@@ -188,7 +208,7 @@ func parseContentCaptureMode(v string) (ContentCaptureMode, error) {
 	case "full_with_metadata_spans":
 		return ContentCaptureModeFullWithMetadataSpans, nil
 	default:
-		return ContentCaptureModeDefault, fmt.Errorf("sigil: invalid SIGIL_CONTENT_CAPTURE_MODE %q", v)
+		return ContentCaptureModeDefault, fmt.Errorf("sigil: invalid %s %q", key, v)
 	}
 }
 

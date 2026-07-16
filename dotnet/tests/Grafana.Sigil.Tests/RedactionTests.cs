@@ -122,6 +122,52 @@ public sealed class RedactionTests
     }
 
     [Fact]
+    public void SecretRedactionSanitizer_InputRedactionEnvAliasPrecedence()
+    {
+        var secretToken = "glc_abcdefghijklmnopqrstuvwxyz1234";
+
+        var preferredOnly = SecretRedactionSanitizer.Create(
+            null,
+            key => key == "AGENTO11Y_REDACT_INPUT_MESSAGES" ? "true" : null,
+            null
+        )(GenerationWithUserInput(secretToken));
+        Assert.DoesNotContain(secretToken, preferredOnly.Input[0].Parts[0].Text);
+
+        var preferredFalseWinsOverLegacyTrue = SecretRedactionSanitizer.Create(
+            null,
+            key => key == "AGENTO11Y_REDACT_INPUT_MESSAGES" ? "false"
+                : key == "SIGIL_REDACT_INPUT_MESSAGES" ? "true" : null,
+            null
+        )(GenerationWithUserInput(secretToken));
+        Assert.Contains(secretToken, preferredFalseWinsOverLegacyTrue.Input[0].Parts[0].Text);
+
+        var blankPreferredFallsThrough = SecretRedactionSanitizer.Create(
+            null,
+            key => key == "AGENTO11Y_REDACT_INPUT_MESSAGES" ? "   "
+                : key == "SIGIL_REDACT_INPUT_MESSAGES" ? "true" : null,
+            null
+        )(GenerationWithUserInput(secretToken));
+        Assert.DoesNotContain(secretToken, blankPreferredFallsThrough.Input[0].Parts[0].Text);
+
+        var logs = new List<string>();
+        var invalidPreferredBlocksLegacy = SecretRedactionSanitizer.Create(
+            null,
+            key => key == "AGENTO11Y_REDACT_INPUT_MESSAGES" ? "bogus"
+                : key == "SIGIL_REDACT_INPUT_MESSAGES" ? "true" : null,
+            logs.Add
+        )(GenerationWithUserInput(secretToken));
+        Assert.Contains(secretToken, invalidPreferredBlocksLegacy.Input[0].Parts[0].Text);
+        Assert.Contains(logs, l => l.Contains("AGENTO11Y_REDACT_INPUT_MESSAGES"));
+
+        var explicitFalseBeatsPreferredTrue = SecretRedactionSanitizer.Create(
+            new SecretRedactionOptions { RedactInputMessages = false },
+            key => key == "AGENTO11Y_REDACT_INPUT_MESSAGES" ? "true" : null,
+            null
+        )(GenerationWithUserInput(secretToken));
+        Assert.Contains(secretToken, explicitFalseBeatsPreferredTrue.Input[0].Parts[0].Text);
+    }
+
+    [Fact]
     public void SecretRedactionSanitizer_EmailToggle()
     {
         const string text = "send mail to example@example.com";

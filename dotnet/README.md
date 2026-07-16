@@ -33,7 +33,7 @@ For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance 
 
 ## Quickstart (OpenAI Responses wrapper)
 
-The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [environment variables](#environment-variables) section.
+The snippet below configures the SDK explicitly. As an alternative, set `AGENTO11Y_*` environment variables and call `new SigilClient()` with no arguments — refer to the [environment variables](#environment-variables) section.
 
 ```csharp
 using Grafana.Sigil;
@@ -49,8 +49,8 @@ var sigil = new SigilClient(new SigilClientConfig
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
-            TenantId = Environment.GetEnvironmentVariable("SIGIL_AUTH_TENANT_ID"),
-            BasicPassword = Environment.GetEnvironmentVariable("SIGIL_AUTH_TOKEN"),
+            TenantId = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID"),
+            BasicPassword = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TOKEN"),
         },
         BatchSize = 100,
         FlushInterval = TimeSpan.FromSeconds(1),
@@ -159,7 +159,7 @@ var sigil = new SigilClient(new SigilClientConfig
 });
 ```
 
-You can also set `SIGIL_REDACT_INPUT_MESSAGES=true`. An explicit
+You can also set `AGENTO11Y_REDACT_INPUT_MESSAGES=true`. An explicit
 `RedactInputMessages` value takes precedence over the environment variable.
 
 ## Embedding observability
@@ -362,25 +362,25 @@ The SDK emits these OTel histograms through your configured OTel meter provider:
 
 ## Environment variables
 
-The SDK reads `SIGIL_*` environment variables at client construction. Caller-supplied
+The SDK reads `AGENTO11Y_*` environment variables at client construction. Caller-supplied
 fields on `SigilClientConfig` win; environment variables fill anything left at the default;
 SDK schema defaults fill the rest.
 
 | Env var | Field |
 | --- | --- |
-| `SIGIL_ENDPOINT` | `GenerationExportConfig.Endpoint` |
-| `SIGIL_PROTOCOL` | `GenerationExportConfig.Protocol` (`http`/`grpc`/`none`) |
-| `SIGIL_INSECURE` | `GenerationExportConfig.Insecure` (tri-state `bool?`) |
-| `SIGIL_HEADERS` | `GenerationExportConfig.Headers` (CSV: `K=V,...`) |
-| `SIGIL_AUTH_MODE` | `AuthConfig.Mode` (`none`/`tenant`/`bearer`/`basic`) |
-| `SIGIL_AUTH_TENANT_ID` | `AuthConfig.TenantId` |
-| `SIGIL_AUTH_TOKEN` | `AuthConfig.BearerToken` and/or `BasicPassword` (filled when empty) |
-| `SIGIL_AGENT_NAME` | `SigilClientConfig.AgentName` |
-| `SIGIL_AGENT_VERSION` | `SigilClientConfig.AgentVersion` |
-| `SIGIL_USER_ID` | `SigilClientConfig.UserId` |
-| `SIGIL_TAGS` | `SigilClientConfig.Tags` (CSV; applied to generations, spans, and metrics; see [Tags and Metadata](../docs/concepts/tags-and-metadata.md)) |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `SigilClientConfig.ContentCapture` |
-| `SIGIL_DEBUG` | `SigilClientConfig.Debug` (tri-state `bool?`) |
+| `AGENTO11Y_ENDPOINT` | `GenerationExportConfig.Endpoint` |
+| `AGENTO11Y_PROTOCOL` | `GenerationExportConfig.Protocol` (`http`/`grpc`/`none`) |
+| `AGENTO11Y_INSECURE` | `GenerationExportConfig.Insecure` (tri-state `bool?`) |
+| `AGENTO11Y_HEADERS` | `GenerationExportConfig.Headers` (CSV: `K=V,...`) |
+| `AGENTO11Y_AUTH_MODE` | `AuthConfig.Mode` (`none`/`tenant`/`bearer`/`basic`) |
+| `AGENTO11Y_AUTH_TENANT_ID` | `AuthConfig.TenantId` |
+| `AGENTO11Y_AUTH_TOKEN` | `AuthConfig.BearerToken` and/or `BasicPassword` (filled when empty) |
+| `AGENTO11Y_AGENT_NAME` | `SigilClientConfig.AgentName` |
+| `AGENTO11Y_AGENT_VERSION` | `SigilClientConfig.AgentVersion` |
+| `AGENTO11Y_USER_ID` | `SigilClientConfig.UserId` |
+| `AGENTO11Y_TAGS` | `SigilClientConfig.Tags` (CSV; applied to generations, spans, and metrics; see [Tags and Metadata](../docs/concepts/tags-and-metadata.md)) |
+| `AGENTO11Y_CONTENT_CAPTURE_MODE` | `SigilClientConfig.ContentCapture` |
+| `AGENTO11Y_DEBUG` | `SigilClientConfig.Debug` (tri-state `bool?`) |
 
 Use `EnvConfig.FromEnv()` to inspect the resolved config without constructing a
 client. Invalid values (bad auth mode, etc.) are skipped with a warning so a
@@ -390,7 +390,7 @@ single typo does not discard the rest of the env layer.
 
 - `GenerationExportConfig.Insecure` is now `bool?` instead of `bool`. The
   default flips from `true` to `false` (TLS on) when neither caller nor
-  `SIGIL_INSECURE` provides a value. Code that reads the property as a plain
+  `AGENTO11Y_INSECURE` provides a value. Code that reads the property as a plain
   `bool` needs to coalesce (e.g. `cfg.Insecure ?? false`).
 - `ConfigResolver.ResolveHeadersWithAuth` no longer rejects mode-irrelevant
   fields (e.g. `TenantId` set under `Mode = Bearer`). This matches Go/JS/Python

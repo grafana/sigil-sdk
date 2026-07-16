@@ -171,6 +171,88 @@ describe("resolveConfig", () => {
   });
 });
 
+describe("resolveConfig AGENTO11Y_* aliases", () => {
+  beforeEach(clearEnv);
+  afterEach(clearEnv);
+
+  function setBranded(prefix: string): void {
+    process.env[`${prefix}ENDPOINT`] = "http://localhost:8080";
+    process.env[`${prefix}AUTH_TENANT_ID`] = "tenant-1";
+    process.env[`${prefix}AUTH_TOKEN`] = "glc_token";
+    process.env[`${prefix}AGENT_NAME`] = "pi-alias";
+    process.env[`${prefix}AGENT_VERSION`] = "1.2.3";
+    process.env[`${prefix}CONTENT_CAPTURE_MODE`] = "full";
+    process.env[`${prefix}REDACT_INPUT_MESSAGES`] = "false";
+    process.env[`${prefix}GUARDS_ENABLED`] = "true";
+    process.env[`${prefix}GUARDS_TIMEOUT_MS`] = "2500";
+    process.env[`${prefix}GUARDS_FAIL_OPEN`] = "false";
+  }
+
+  it("preferred-only env produces the same config as legacy-only env", () => {
+    setBranded("AGENTO11Y_");
+    const preferred = resolveConfig();
+    clearEnv();
+    setBranded("SIGIL_");
+    const legacy = resolveConfig();
+    expect(preferred).not.toBeNull();
+    expect(preferred).toEqual(legacy);
+    expect(preferred?.guards).toEqual({
+      enabled: true,
+      timeoutMs: 2500,
+      failOpen: false,
+    });
+  });
+
+  it("AGENTO11Y_ENDPOINT beats SIGIL_ENDPOINT", () => {
+    process.env.AGENTO11Y_ENDPOINT = "http://preferred:8080";
+    process.env.SIGIL_ENDPOINT = "http://legacy:8080";
+    expect(resolveConfig()?.endpoint).toBe("http://preferred:8080");
+  });
+
+  it("blank AGENTO11Y_ENDPOINT falls back to SIGIL_ENDPOINT", () => {
+    process.env.AGENTO11Y_ENDPOINT = "   ";
+    process.env.SIGIL_ENDPOINT = "http://legacy:8080";
+    expect(resolveConfig()?.endpoint).toBe("http://legacy:8080");
+  });
+
+  it("invalid AGENTO11Y_GUARDS_ENABLED keeps the default over a valid SIGIL_GUARDS_ENABLED", () => {
+    const warn = loggerMock.warn;
+    warn.mockClear();
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.AGENTO11Y_GUARDS_ENABLED = "maybe";
+    process.env.SIGIL_GUARDS_ENABLED = "true";
+    const cfg = resolveConfig();
+    expect(cfg?.guards.enabled).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "invalid boolean value for AGENTO11Y_GUARDS_ENABLED",
+      ),
+    );
+    warn.mockRestore();
+  });
+
+  it("invalid AGENTO11Y_CONTENT_CAPTURE_MODE ignores a valid SIGIL_CONTENT_CAPTURE_MODE", () => {
+    const warn = loggerMock.warn;
+    warn.mockClear();
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.AGENTO11Y_CONTENT_CAPTURE_MODE = "yolo";
+    process.env.SIGIL_CONTENT_CAPTURE_MODE = "full";
+    const cfg = resolveConfig();
+    expect(cfg?.contentCapture).toBe("metadata_only");
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("AGENTO11Y_CONTENT_CAPTURE_MODE"),
+    );
+    warn.mockRestore();
+  });
+
+  it("clearSigilEnv strips ambient AGENTO11Y_* vars", () => {
+    process.env.AGENTO11Y_ENDPOINT = "http://ambient:8080";
+    clearEnv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBeUndefined();
+    expect(resolveConfig()).toBeNull();
+  });
+});
+
 describe("resolveConfig canonical SIGIL_* env vars", () => {
   beforeEach(clearEnv);
   afterEach(clearEnv);
@@ -215,6 +297,30 @@ describe("resolveConfig canonical OTLP env vars", () => {
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.example.com/otlp";
     const cfg = resolveConfig();
     expect(cfg?.otlp?.endpoint).toBe("https://otlp.example.com/otlp");
+  });
+
+  it("reads AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT", () => {
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT =
+      "https://otlp.example.com/otlp";
+    const cfg = resolveConfig();
+    expect(cfg?.otlp?.endpoint).toBe("https://otlp.example.com/otlp");
+  });
+
+  it("whitespace SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT falls through to OTEL_EXPORTER_OTLP_ENDPOINT", () => {
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT = "   ";
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://std.example.com/otlp";
+    const cfg = resolveConfig();
+    expect(cfg?.otlp?.endpoint).toBe("https://std.example.com/otlp");
+  });
+
+  it("whitespace AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT falls through to OTEL_EXPORTER_OTLP_ENDPOINT", () => {
+    process.env.SIGIL_ENDPOINT = "http://localhost:8080";
+    process.env.AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT = "   ";
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "https://std.example.com/otlp";
+    const cfg = resolveConfig();
+    expect(cfg?.otlp?.endpoint).toBe("https://std.example.com/otlp");
   });
 
   it("returns no otlp when not configured", () => {

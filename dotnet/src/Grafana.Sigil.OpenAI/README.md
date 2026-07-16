@@ -49,8 +49,8 @@ var sigilConfig = new SigilClientConfig
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
-            TenantId = Environment.GetEnvironmentVariable("SIGIL_AUTH_TENANT_ID"),
-            BasicPassword = Environment.GetEnvironmentVariable("SIGIL_AUTH_TOKEN"),
+            TenantId = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID"),
+            BasicPassword = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TOKEN"),
         },
     },
     Api = new ApiConfig

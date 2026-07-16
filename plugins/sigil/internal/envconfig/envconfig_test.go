@@ -3,6 +3,7 @@ package envconfig
 import (
 	"bytes"
 	"log"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -177,9 +178,10 @@ func TestResolveGuards(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("SIGIL_GUARDS_ENABLED", "")
-			t.Setenv("SIGIL_GUARDS_FAIL_OPEN", "")
-			t.Setenv("SIGIL_GUARDS_TIMEOUT_MS", "")
+			for _, suffix := range []string{"GUARDS_ENABLED", "GUARDS_FAIL_OPEN", "GUARDS_TIMEOUT_MS"} {
+				t.Setenv(PreferredKey(suffix), "")
+				t.Setenv(LegacyKey(suffix), "")
+			}
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
@@ -197,5 +199,70 @@ func TestResolveGuards(t *testing.T) {
 				t.Errorf("unexpected log output: %q", buf.String())
 			}
 		})
+	}
+}
+
+func TestLookupEnv(t *testing.T) {
+	cases := []struct {
+		name      string
+		env       map[string]string
+		wantValue string
+		wantKey   string
+		wantOK    bool
+	}{
+		{name: "unset", wantOK: false},
+		{name: "preferred only", env: map[string]string{"AGENTO11Y_ENDPOINT": "p"}, wantValue: "p", wantKey: "AGENTO11Y_ENDPOINT", wantOK: true},
+		{name: "legacy only", env: map[string]string{"SIGIL_ENDPOINT": "l"}, wantValue: "l", wantKey: "SIGIL_ENDPOINT", wantOK: true},
+		{name: "preferred wins on conflict", env: map[string]string{"AGENTO11Y_ENDPOINT": "p", "SIGIL_ENDPOINT": "l"}, wantValue: "p", wantKey: "AGENTO11Y_ENDPOINT", wantOK: true},
+		{name: "blank preferred falls through", env: map[string]string{"AGENTO11Y_ENDPOINT": "   ", "SIGIL_ENDPOINT": "l"}, wantValue: "l", wantKey: "SIGIL_ENDPOINT", wantOK: true},
+		{name: "value trimmed", env: map[string]string{"AGENTO11Y_ENDPOINT": "  p  "}, wantValue: "p", wantKey: "AGENTO11Y_ENDPOINT", wantOK: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AGENTO11Y_ENDPOINT", "")
+			t.Setenv("SIGIL_ENDPOINT", "")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			value, key, ok := LookupEnv("ENDPOINT")
+			if value != tc.wantValue || key != tc.wantKey || ok != tc.wantOK {
+				t.Errorf("LookupEnv() = (%q, %q, %v), want (%q, %q, %v)", value, key, ok, tc.wantValue, tc.wantKey, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestSetBothEnv(t *testing.T) {
+	t.Setenv("AGENTO11Y_ENDPOINT", "")
+	t.Setenv("SIGIL_ENDPOINT", "")
+	SetBothEnv("ENDPOINT", "https://x")
+	if got := Getenv("ENDPOINT"); got != "https://x" {
+		t.Errorf("Getenv = %q", got)
+	}
+	for _, key := range []string{"AGENTO11Y_ENDPOINT", "SIGIL_ENDPOINT"} {
+		if got := os.Getenv(key); got != "https://x" {
+			t.Errorf("%s = %q, want https://x", key, got)
+		}
+	}
+}
+
+func TestExpandAliases(t *testing.T) {
+	got := ExpandAliases(map[string]string{
+		"SIGIL_ENDPOINT":       "https://x",
+		"AGENTO11Y_AUTH_TOKEN": "tok",
+		"SIGIL_TAGS":           "",
+		"OTEL_SERVICE_NAME":    "svc",
+	})
+	want := map[string]string{
+		"SIGIL_ENDPOINT":       "https://x",
+		"AGENTO11Y_ENDPOINT":   "https://x",
+		"AGENTO11Y_AUTH_TOKEN": "tok",
+		"SIGIL_AUTH_TOKEN":     "tok",
+		"SIGIL_TAGS":           "",
+		"AGENTO11Y_TAGS":       "",
+		"OTEL_SERVICE_NAME":    "svc",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExpandAliases() = %v, want %v", got, want)
 	}
 }

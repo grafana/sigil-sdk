@@ -23,7 +23,7 @@ All four values (API URL, Instance ID, Sigil API token, and OTLP endpoint) live 
 https://<your-stack>.grafana.net/plugins/grafana-sigil-app
 ```
 
-Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `SIGIL_AUTH_TOKEN` (Sigil ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
+Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `AGENTO11Y_AUTH_TOKEN` (Sigil ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
 
 The Connection page also has a *Set `OTEL_EXPORTER_OTLP_ENDPOINT` for traces and metrics* link that routes to the [OpenTelemetry stack tile](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#recommended-opentelemetry-setup-via-grafana-cloud-integrations), the recommended OTel setup for Grafana Cloud. The tile emits `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_EXPORTER_OTLP_HEADERS` ready to copy.
 
@@ -69,17 +69,17 @@ Cursor has no launcher (it is a GUI app). After installing the binary, wire its 
 To skip the prompt, write the config file by hand:
 
 ```dotenv
-SIGIL_ENDPOINT=<your-sigil-api-url>
-SIGIL_AUTH_TENANT_ID=<your-instance-id>
-SIGIL_AUTH_TOKEN=glc_...
-SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=<otlp-gateway-url>
+AGENTO11Y_ENDPOINT=<your-sigil-api-url>
+AGENTO11Y_AUTH_TENANT_ID=<your-instance-id>
+AGENTO11Y_AUTH_TOKEN=glc_...
+AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=<otlp-gateway-url>
 ```
 
 To re-enter credentials later, run `sigil login`.
 
 ## Content capture
 
-Coding-agent plugins default to `metadata_only`: only model, tokens, tool names, timing, and cost are sent. Prompts, responses, and tool I/O stay on the local machine. To opt into sending content, set `SIGIL_CONTENT_CAPTURE_MODE` in `~/.config/sigil/config.env`.
+Coding-agent plugins default to `metadata_only`: only model, tokens, tool names, timing, and cost are sent. Prompts, responses, and tool I/O stay on the local machine. To opt into sending content, set `AGENTO11Y_CONTENT_CAPTURE_MODE` in `~/.config/sigil/config.env`.
 
 Accepted values depend on the plugin surface:
 
@@ -101,16 +101,16 @@ You are acting as a coding agent inside the user's repository. Your goal is to a
 
 ## Environment
 
-The Sigil SDK reads these `SIGIL_*` env vars automatically. Set them before the SDK starts:
+The Sigil SDK reads these `AGENTO11Y_*` env vars automatically. Set them before the SDK starts:
 
 ```
-SIGIL_ENDPOINT=<your-sigil-api-url>
-SIGIL_PROTOCOL=http
-SIGIL_AUTH_MODE=basic
-SIGIL_AUTH_TENANT_ID=<your-instance-id>
-SIGIL_AUTH_TOKEN=<glc_... token>
-SIGIL_TAGS=team=checkout,env=prod   # optional client tags; also emitted as sigil.tag.<key> on OTel spans/metrics
-SIGIL_USER_ID=<end-user id>          # optional; sets the user.id span attribute (all SDKs)
+AGENTO11Y_ENDPOINT=<your-sigil-api-url>
+AGENTO11Y_PROTOCOL=http
+AGENTO11Y_AUTH_MODE=basic
+AGENTO11Y_AUTH_TENANT_ID=<your-instance-id>
+AGENTO11Y_AUTH_TOKEN=<glc_... token>
+AGENTO11Y_TAGS=team=checkout,env=prod   # optional client tags; also emitted as sigil.tag.<key> on OTel spans/metrics
+AGENTO11Y_USER_ID=<end-user id>          # optional; sets the user.id span attribute (all SDKs)
 
 # OTel traces and metrics (separate channel; same token)
 OTEL_EXPORTER_OTLP_ENDPOINT=<from stack OpenTelemetry card>
@@ -131,9 +131,9 @@ This default differs from coding-agent plugin defaults (Path A), which ship `met
 
 To attach custom key/values, pick the mechanism by where it must show up. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md) for the full table.
 
-- **Client tags** (`SIGIL_TAGS` / config `tags`): merged into every generation export; also emitted as `sigil.tag.<key>` on OTel spans and metrics in all SDKs. Use for low-cardinality values you want to slice metrics/traces by (team, project, env). Do not put high-cardinality values (user, request id) here, they blow up metric label cardinality.
+- **Client tags** (`AGENTO11Y_TAGS` / config `tags`): merged into every generation export; also emitted as `sigil.tag.<key>` on OTel spans and metrics in all SDKs. Use for low-cardinality values you want to slice metrics/traces by (team, project, env). Do not put high-cardinality values (user, request id) here, they blow up metric label cardinality.
 - **Per-generation `tags` / `metadata`**: export-only, never on spans/metrics. Use for searchable per-request data.
-- **`user_id`** (`SIGIL_USER_ID` / per-call / context): sets the `user.id` span attribute (all SDKs) plus the export; not a metric label. Use this for end-user identity instead of a tag.
+- **`user_id`** (`AGENTO11Y_USER_ID` / per-call / context): sets the `user.id` span attribute (all SDKs) plus the export; not a metric label. Use this for end-user identity instead of a tag.
 
 Capture modes do not strip `tags`/`metadata`/`user_id`; do not put secrets there.
 
@@ -447,7 +447,7 @@ In the grafana/sigil-sdk repo:
   - `stop_reason` / `finish_reason`
   - Full token usage including `cache_read_input_tokens`, `cache_write_input_tokens`, and `reasoning_tokens` when the provider returns them
 - Always check `rec.err()` / `Err()` after the generation recorder closes; SDK validation or enqueue errors are otherwise silent.
-- Use `SIGIL_TAGS` (client-level) or `tags` on `GenerationStart` for filtering: both export tags on generations. Client-level tags also appear as `sigil.tag.<key>` on OTel spans and metrics in all SDKs; per-generation tags and `metadata` are export-only everywhere. For end-user identity use `user_id` (sets `user.id` span attribute), not a tag. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md).
+- Use `AGENTO11Y_TAGS` (client-level) or `tags` on `GenerationStart` for filtering: both export tags on generations. Client-level tags also appear as `sigil.tag.<key>` on OTel spans and metrics in all SDKs; per-generation tags and `metadata` are export-only everywhere. For end-user identity use `user_id` (sets `user.id` span attribute), not a tag. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md).
 
 ## Validation checklist
 

@@ -345,19 +345,19 @@ func printNextStep(w io.Writer) {
 	fmt.Fprintln(w, faint.Render("Read documentation at ")+link.Render(docsURL))
 }
 
-// seededKeys are the SIGIL_* keys loadSeeds reads from the dotenv file
-// and overlays from the process env. Package-level so tests can iterate
-// it to clear the env hermetically per case.
-var seededKeys = []string{
-	"SIGIL_ENDPOINT",
-	"SIGIL_AUTH_TENANT_ID",
-	"SIGIL_AUTH_TOKEN",
-	"SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT",
-	"SIGIL_CONTENT_CAPTURE_MODE",
-	"SIGIL_TAGS",
-	"SIGIL_GUARDS_ENABLED",
-	"SIGIL_GUARDS_FAIL_OPEN",
-	"SIGIL_GUARDS_TIMEOUT_MS",
+// seededSuffixes are the alias families loadSeeds resolves from the dotenv
+// file and overlays from the process env. Package-level so tests can iterate
+// it to clear both spellings hermetically per case.
+var seededSuffixes = []string{
+	"ENDPOINT",
+	"AUTH_TENANT_ID",
+	"AUTH_TOKEN",
+	"OTEL_EXPORTER_OTLP_ENDPOINT",
+	"CONTENT_CAPTURE_MODE",
+	"TAGS",
+	"GUARDS_ENABLED",
+	"GUARDS_FAIL_OPEN",
+	"GUARDS_TIMEOUT_MS",
 }
 
 // Content capture mode labels mirror sigil.ContentCaptureMode.String() so
@@ -393,14 +393,16 @@ type formValues struct {
 }
 
 // buildUpdates maps the form values onto the dotenv keys WriteDotenv expects.
-// Empty values delete their key (handled by the writer); content capture mode
-// and the guard-enabled flag are always written explicitly so a downgrade
-// (e.g. full back to metadata_only, or enabled back to disabled) actually
-// takes effect instead of being silently preserved. When guards are enabled
-// the timeout and fail mode are always written too, so clearing the timeout
-// field deletes the key (the runtime default then applies) rather than
-// leaving a stale value behind. While guards are off only the disabled flag
-// is written, leaving any prior timeout/fail-mode untouched and inert.
+// Every managed value is written under both branded spellings (and empty
+// values delete both) so old binaries that only read SIGIL_* keep working.
+// Content capture mode and the guard-enabled flag are always written
+// explicitly so a downgrade (e.g. full back to metadata_only, or enabled back
+// to disabled) actually takes effect instead of being silently preserved.
+// When guards are enabled the timeout and fail mode are always written too,
+// so clearing the timeout field deletes the key (the runtime default then
+// applies) rather than leaving a stale value behind. While guards are off
+// only the disabled flag is written, leaving any prior timeout/fail-mode
+// untouched and inert.
 func buildUpdates(v formValues) map[string]string {
 	updates := map[string]string{
 		"SIGIL_ENDPOINT":                    v.endpoint,
@@ -424,7 +426,7 @@ func buildUpdates(v formValues) map[string]string {
 	default:
 		updates["SIGIL_GUARDS_ENABLED"] = "false"
 	}
-	return updates
+	return envconfig.ExpandAliases(updates)
 }
 
 // normalizeContentMode maps a raw (possibly stale or empty) value onto one of
@@ -497,11 +499,24 @@ func validateGuardTimeout(s string) error {
 // env wins over the file) so when the launcher auto-prompts because one
 // SIGIL_* var is missing, the other vars already set in the user's shell
 // pre-fill the form instead of appearing empty.
+// loadSeeds resolves each seeded family as shell over file, preferred
+// spelling first within each source, and keys the result by the legacy
+// SIGIL_* name — the form's internal key space.
 func loadSeeds(configPath string, logger *log.Logger) map[string]string {
-	seeds := dotenv.LoadDotenv(configPath, logger)
-	for _, k := range seededKeys {
-		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-			seeds[k] = v
+	fileEnv := dotenv.LoadDotenv(configPath, logger)
+	seeds := map[string]string{}
+	for _, suffix := range seededSuffixes {
+		preferred, legacy := envconfig.PreferredKey(suffix), envconfig.LegacyKey(suffix)
+		for _, v := range []string{
+			strings.TrimSpace(os.Getenv(preferred)),
+			strings.TrimSpace(os.Getenv(legacy)),
+			strings.TrimSpace(fileEnv[preferred]),
+			strings.TrimSpace(fileEnv[legacy]),
+		} {
+			if v != "" {
+				seeds[legacy] = v
+				break
+			}
 		}
 	}
 	return seeds

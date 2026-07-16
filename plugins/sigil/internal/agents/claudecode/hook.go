@@ -113,9 +113,9 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 		return nil
 	}
 
-	sigilEndpoint := os.Getenv("SIGIL_ENDPOINT")
-	tenantID := os.Getenv("SIGIL_AUTH_TENANT_ID")
-	authToken := os.Getenv("SIGIL_AUTH_TOKEN")
+	sigilEndpoint := envconfig.Getenv("ENDPOINT")
+	tenantID := envconfig.Getenv("AUTH_TENANT_ID")
+	authToken := envconfig.Getenv("AUTH_TOKEN")
 
 	// A local-mode endpoint never needs real Cloud credentials. The
 	// launcher injects placeholders, but a user running the hook
@@ -124,11 +124,11 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 	tenantID, authToken = envconfig.LocalAuthPlaceholders(sigilEndpoint, tenantID, authToken)
 
 	missing := envconfig.MissingEnvVars(
-		[]string{"SIGIL_ENDPOINT", "SIGIL_AUTH_TENANT_ID", "SIGIL_AUTH_TOKEN"},
+		[]string{"AGENTO11Y_ENDPOINT", "AGENTO11Y_AUTH_TENANT_ID", "AGENTO11Y_AUTH_TOKEN"},
 		map[string]string{
-			"SIGIL_ENDPOINT":       sigilEndpoint,
-			"SIGIL_AUTH_TENANT_ID": tenantID,
-			"SIGIL_AUTH_TOKEN":     authToken,
+			"AGENTO11Y_ENDPOINT":       sigilEndpoint,
+			"AGENTO11Y_AUTH_TENANT_ID": tenantID,
+			"AGENTO11Y_AUTH_TOKEN":     authToken,
 		},
 	)
 	if len(missing) > 0 {
@@ -137,7 +137,7 @@ func Hook(ctx context.Context, stdin io.Reader, stdout io.Writer, logger *log.Lo
 		return nil
 	}
 
-	extraTags := envconfig.ParseExtraTags(os.Getenv("SIGIL_TAGS"))
+	extraTags := envconfig.ParseExtraTags(envconfig.Getenv("TAGS"))
 	userID := resolveUserID()
 	contentMode := envconfig.ResolveContentMode(logger)
 

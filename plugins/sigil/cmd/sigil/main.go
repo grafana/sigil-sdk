@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/cli"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/doctor"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/dotenv"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/local"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/login"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/useragent"
@@ -192,7 +193,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 			return
 		}
 
-		logger := cli.InitLogger("sigil", args[0], "SIGIL_DEBUG")
+		logger := cli.InitLogger("sigil", args[0])
 
 		// Auto-prompt for credentials on first run. login.Run returns
 		// ErrNotInteractive when stdin is not a TTY (e.g. CI, piped input);
@@ -283,7 +284,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 	// Cursor (and Codex headless) launch hooks under a stripped environment
 	// where the dotenv is the only place SIGIL_DEBUG could come from.
 	dotenv.ApplyEnv("sigil", nil)
-	logger := cli.InitLogger("sigil", agent, "SIGIL_DEBUG")
+	logger := cli.InitLogger("sigil", agent)
 	defer cli.RecoverAndLog(logger)
 
 	if err := hook(context.Background(), stdin, stdout, logger); err != nil {
@@ -314,7 +315,7 @@ func runLoginCommand(args []string, stderr io.Writer) {
 	}
 
 	dotenv.ApplyEnv("sigil", nil)
-	logger := cli.InitLogger("sigil", "login", "SIGIL_DEBUG")
+	logger := cli.InitLogger("sigil", "login")
 
 	err := loginRun(context.Background(), login.RunOpts{
 		// Only the explicit `sigil login` shows the “Try sigil claude/pi”
@@ -350,7 +351,7 @@ func runCursorInstall(verb string, stdout, stderr io.Writer) {
 	// $XDG_CONFIG_HOME/sigil/config.env still enables file logging, and
 	// before HasCredentials so dotenv-supplied credentials are visible.
 	dotenv.ApplyEnv("sigil", nil)
-	logger := cli.InitLogger("sigil", "cursor", "SIGIL_DEBUG")
+	logger := cli.InitLogger("sigil", "cursor")
 
 	if verb == "uninstall" {
 		if err := cursorUninstall(stdout, stderr, logger); err != nil {
@@ -492,7 +493,9 @@ func parseLauncherArgs(name string, rest []string, stderr io.Writer) ([]string, 
 	}
 
 	if len(flagTags) > 0 {
-		_ = os.Setenv("SIGIL_TAGS", mergeTags(os.Getenv("SIGIL_TAGS"), flagTags))
+		// Merge onto the effective selected tags and write the result under
+		// both branded spellings so old child processes see it too.
+		envconfig.SetBothEnv("TAGS", mergeTags(envconfig.Getenv("TAGS"), flagTags))
 	}
 
 	var localEnv *local.LaunchEnv
@@ -650,7 +653,7 @@ func runLocalCommand(args []string, stdout, stderr io.Writer) {
 		_, _ = fmt.Fprintf(stdout, "sigil local receiver running at %s (pid %d)\n", status.Endpoint, status.PID)
 	case "serve":
 		// Internal: invoked by the daemon child. Blocks until SIGTERM.
-		logger := cli.InitLogger("sigil", "local", "SIGIL_DEBUG")
+		logger := cli.InitLogger("sigil", "local")
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer cancel()
 		if err := local.Serve(ctx, dir, local.DefaultPort, logger); err != nil {

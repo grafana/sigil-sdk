@@ -32,4 +32,4 @@ set -a && source .env && set +a
 GOWORK=off go run .
 ```
 
-The canned sample does not call an LLM. Provider keys in `.env.example` are included because real experiment jobs often use them for the agent or grader. The required values for this sample are the Grafana Cloud ingest settings (`SIGIL_ENDPOINT`, `SIGIL_AUTH_MODE`, `SIGIL_AUTH_TENANT_ID`, `SIGIL_AUTH_TOKEN`).
+The canned sample does not call an LLM. Provider keys in `.env.example` are included because real experiment jobs often use them for the agent or grader. The required values for this sample are the Grafana Cloud ingest settings (`AGENTO11Y_ENDPOINT`, `AGENTO11Y_AUTH_MODE`, `AGENTO11Y_AUTH_TENANT_ID`, `AGENTO11Y_AUTH_TOKEN`).

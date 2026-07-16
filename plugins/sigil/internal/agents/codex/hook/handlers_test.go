@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/codex/config"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/codex/fragment"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/agents/codex/mapper"
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/redact"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -299,7 +300,7 @@ func TestStopLocalEndpointAllowsMissingCredentials(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("XDG_STATE_HOME", t.TempDir())
-			t.Setenv("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", "")
+			envconfig.PinAliasEnvBlank(t)
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 			logger := log.New(io.Discard, "", 0)
 			var gotAuth string
@@ -818,7 +819,7 @@ func TestPreToolUseGuard(t *testing.T) {
 				"SIGIL_GUARDS_FAIL_OPEN": "false",
 			},
 			clearCreds:         true,
-			wantStdoutContains: []string{`"permissionDecision":"deny"`, "missing SIGIL_ENDPOINT/SIGIL_AUTH_TENANT_ID/SIGIL_AUTH_TOKEN"},
+			wantStdoutContains: []string{`"permissionDecision":"deny"`, "missing AGENTO11Y_ENDPOINT/AGENTO11Y_AUTH_TENANT_ID/AGENTO11Y_AUTH_TOKEN"},
 		},
 		{
 			name:             "enabled_allow_transform_writes_updated_input",

@@ -47,6 +47,27 @@ public sealed class EnvIntegrationTests
     }
 
     [Fact]
+    public void ResolveFromEnvFillsConfigDefaultsFromPreferredNames()
+    {
+        var caller = new SigilClientConfig();
+        var env = new Dictionary<string, string?>
+        {
+            ["AGENTO11Y_AGENT_NAME"] = "env-agent",
+            ["AGENTO11Y_AGENT_VERSION"] = "1.2.3",
+            ["AGENTO11Y_USER_ID"] = "user-1",
+            ["AGENTO11Y_TAGS"] = "service=demo,team=ai",
+        };
+
+        var (resolved, _) = EnvConfig.ResolveFromEnv(k => env.TryGetValue(k, out var v) ? v : null, caller);
+
+        Assert.Equal("env-agent", resolved.AgentName);
+        Assert.Equal("1.2.3", resolved.AgentVersion);
+        Assert.Equal("user-1", resolved.UserId);
+        Assert.Equal("demo", resolved.Tags["service"]);
+        Assert.Equal("ai", resolved.Tags["team"]);
+    }
+
+    [Fact]
     public void CallerConfigOverridesEnv()
     {
         var caller = new SigilClientConfig { AgentName = "caller-agent" };

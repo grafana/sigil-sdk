@@ -10,6 +10,9 @@ const (
 	ExperimentRunIDTag         = "experiment.run_id"
 	ExperimentRunIDMetadataKey = "experiment_run_id"
 
+	// Legacy SIGIL_* trial env names. Kept unchanged for compatibility with
+	// older runners and verifiers; see the AGENTO11Y_* constants below for the
+	// preferred spellings. Readers accept both prefixes and writers emit both.
 	EnvExperimentID = "SIGIL_EXPERIMENT_ID"
 	EnvRunID        = "SIGIL_RUN_ID"
 	EnvTestCaseID   = "SIGIL_TEST_CASE_ID"
@@ -17,6 +20,14 @@ const (
 	EnvSuiteID      = "SIGIL_SUITE_ID"
 	EnvSuiteVersion = "SIGIL_SUITE_VERSION"
 	EnvTrajectoryID = "SIGIL_TRAJECTORY_ID"
+
+	// Preferred AGENTO11Y_* trial env names.
+	EnvExperimentIDPreferred = "AGENTO11Y_EXPERIMENT_ID"
+	EnvTestCaseIDPreferred   = "AGENTO11Y_TEST_CASE_ID"
+	EnvAttemptPreferred      = "AGENTO11Y_ATTEMPT"
+	EnvSuiteIDPreferred      = "AGENTO11Y_SUITE_ID"
+	EnvSuiteVersionPreferred = "AGENTO11Y_SUITE_VERSION"
+	EnvTrajectoryIDPreferred = "AGENTO11Y_TRAJECTORY_ID"
 )
 
 type TrialStatus string
@@ -198,44 +209,56 @@ func TrialRefFromJSON(payload map[string]any) TrialRef {
 	}
 }
 
+// ToEnv writes each trial value under both the preferred AGENTO11Y_* and
+// legacy SIGIL_* names so older verifier processes keep working during the
+// compatibility period.
 func (r TrialRef) ToEnv() map[string]string {
 	attempt := r.Attempt
 	if attempt <= 0 {
 		attempt = 1
 	}
 	env := map[string]string{
-		EnvExperimentID: r.RunID,
-		EnvTestCaseID:   r.TestCaseID,
-		EnvAttempt:      strconv.Itoa(attempt),
+		EnvExperimentIDPreferred: r.RunID,
+		EnvExperimentID:          r.RunID,
+		EnvTestCaseIDPreferred:   r.TestCaseID,
+		EnvTestCaseID:            r.TestCaseID,
+		EnvAttemptPreferred:      strconv.Itoa(attempt),
+		EnvAttempt:               strconv.Itoa(attempt),
 	}
 	if r.SuiteID != "" {
+		env[EnvSuiteIDPreferred] = r.SuiteID
 		env[EnvSuiteID] = r.SuiteID
 	}
 	if r.SuiteVersion != "" {
+		env[EnvSuiteVersionPreferred] = r.SuiteVersion
 		env[EnvSuiteVersion] = r.SuiteVersion
 	}
 	if r.TrajectoryID != "" {
+		env[EnvTrajectoryIDPreferred] = r.TrajectoryID
 		env[EnvTrajectoryID] = r.TrajectoryID
 	}
 	return env
 }
 
+// TrialRefFromEnv reads the preferred AGENTO11Y_* names first, then the
+// same-suffix SIGIL_* names; SIGIL_RUN_ID remains a tertiary fallback for the
+// experiment ID only.
 func TrialRefFromEnv() (*TrialRef, bool) {
-	experimentID := strings.TrimSpace(firstNonBlank(os.Getenv(EnvExperimentID), os.Getenv(EnvRunID)))
-	testCaseID := strings.TrimSpace(os.Getenv(EnvTestCaseID))
+	experimentID := firstNonBlank(os.Getenv(EnvExperimentIDPreferred), os.Getenv(EnvExperimentID), os.Getenv(EnvRunID))
+	testCaseID := firstNonBlank(os.Getenv(EnvTestCaseIDPreferred), os.Getenv(EnvTestCaseID))
 	if experimentID == "" || testCaseID == "" {
 		return nil, false
 	}
 	attempt := 1
-	if parsed, err := strconv.Atoi(os.Getenv(EnvAttempt)); err == nil && parsed > 0 {
+	if parsed, err := strconv.Atoi(firstNonBlank(os.Getenv(EnvAttemptPreferred), os.Getenv(EnvAttempt))); err == nil && parsed > 0 {
 		attempt = parsed
 	}
 	return &TrialRef{
 		RunID:        experimentID,
 		TestCaseID:   testCaseID,
 		Attempt:      attempt,
-		SuiteID:      strings.TrimSpace(os.Getenv(EnvSuiteID)),
-		SuiteVersion: strings.TrimSpace(os.Getenv(EnvSuiteVersion)),
-		TrajectoryID: strings.TrimSpace(os.Getenv(EnvTrajectoryID)),
+		SuiteID:      firstNonBlank(os.Getenv(EnvSuiteIDPreferred), os.Getenv(EnvSuiteID)),
+		SuiteVersion: firstNonBlank(os.Getenv(EnvSuiteVersionPreferred), os.Getenv(EnvSuiteVersion)),
+		TrajectoryID: firstNonBlank(os.Getenv(EnvTrajectoryIDPreferred), os.Getenv(EnvTrajectoryID)),
 	}, true
 }

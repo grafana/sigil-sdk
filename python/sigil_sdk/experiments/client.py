@@ -24,6 +24,7 @@ from ..models import (
     ExperimentReport,
     ScoreItem,
 )
+from .types import _first_nonblank
 
 TENANT_HEADER = "X-Scope-OrgID"
 INGEST_ACTOR_HEADER = "X-Sigil-Ingest-Actor"
@@ -53,7 +54,7 @@ class Client:
     ) -> None:
         if not (endpoint or "").strip():
             raise ValueError("Sigil endpoint is required (your Grafana Cloud Sigil URL)")
-        token = (ingest_token or os.environ.get("SIGIL_AUTH_TOKEN", "")).strip()
+        token = (ingest_token or _first_nonblank(os.environ, "AGENTO11Y_AUTH_TOKEN", "SIGIL_AUTH_TOKEN")).strip()
         if not token:
             raise ValueError("ingest_token is required (your Grafana Cloud ingestion API key)")
         self.endpoint = endpoint.rstrip("/")
@@ -61,7 +62,9 @@ class Client:
         self.ingest_token = token
         self.actor = actor
         self.trusted = trusted
-        self.grafana_url = (grafana_url or os.environ.get("SIGIL_GRAFANA_URL", "")).rstrip("/")
+        self.grafana_url = (
+            grafana_url or _first_nonblank(os.environ, "AGENTO11Y_GRAFANA_URL", "SIGIL_GRAFANA_URL")
+        ).rstrip("/")
         self.timeout = timeout
         self.generation_endpoint = generation_endpoint or self.endpoint
         self.generation_protocol = generation_protocol
@@ -69,7 +72,9 @@ class Client:
         self._retry = _transport.RetryPolicy(timeout=timeout)
         self._core: Any | None = None
         self.use_experimental_otel = (
-            _env_bool("SIGIL_USE_EXPERIMENTAL_OTEL") if use_experimental_otel is None else bool(use_experimental_otel)
+            _env_bool("AGENTO11Y_USE_EXPERIMENTAL_OTEL", "SIGIL_USE_EXPERIMENTAL_OTEL")
+            if use_experimental_otel is None
+            else bool(use_experimental_otel)
         )
 
     # --- connection args -------------------------------------------------- #
@@ -450,5 +455,5 @@ def _format_bearer(token: str) -> str:
     return f"Bearer {value}"
 
 
-def _env_bool(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+def _env_bool(*names: str) -> bool:
+    return _first_nonblank(os.environ, *names).lower() in {"1", "true", "yes", "on"}

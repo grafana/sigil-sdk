@@ -50,7 +50,7 @@ For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance 
 
 ## Quick Start (sync)
 
-The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+The snippet below configures the SDK explicitly. As an alternative, set `AGENTO11Y_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
 
 ```java
 SigilClient client = new SigilClient(new SigilClientConfig()
@@ -61,8 +61,8 @@ SigilClient client = new SigilClient(new SigilClientConfig()
         .setEndpoint("https://sigil-prod-<region>.grafana.net")
         .setAuth(new AuthConfig()
             .setMode(AuthMode.BASIC)
-            .setTenantId(System.getenv("SIGIL_AUTH_TENANT_ID"))
-            .setBasicPassword(System.getenv("SIGIL_AUTH_TOKEN")))));
+            .setTenantId(System.getenv("AGENTO11Y_AUTH_TENANT_ID"))
+            .setBasicPassword(System.getenv("AGENTO11Y_AUTH_TOKEN")))));
 
 try {
     client.withGeneration(
@@ -259,8 +259,8 @@ For Grafana Cloud, use `BASIC` auth mode. The username is your Grafana Cloud ins
 ```java
 .setAuth(new AuthConfig()
     .setMode(AuthMode.BASIC)
-    .setTenantId(System.getenv("SIGIL_AUTH_TENANT_ID"))
-    .setBasicPassword(System.getenv("SIGIL_AUTH_TOKEN")))
+    .setTenantId(System.getenv("AGENTO11Y_AUTH_TENANT_ID"))
+    .setBasicPassword(System.getenv("AGENTO11Y_AUTH_TOKEN")))
 ```
 
 If your deployment requires a distinct username, set `basicUser` explicitly:
@@ -268,9 +268,9 @@ If your deployment requires a distinct username, set `basicUser` explicitly:
 ```java
 .setAuth(new AuthConfig()
     .setMode(AuthMode.BASIC)
-    .setTenantId(System.getenv("SIGIL_AUTH_TENANT_ID"))
-    .setBasicUser(System.getenv("SIGIL_AUTH_TENANT_ID"))
-    .setBasicPassword(System.getenv("SIGIL_AUTH_TOKEN")))
+    .setTenantId(System.getenv("AGENTO11Y_AUTH_TENANT_ID"))
+    .setBasicUser(System.getenv("AGENTO11Y_AUTH_TENANT_ID"))
+    .setBasicPassword(System.getenv("AGENTO11Y_AUTH_TOKEN")))
 ```
 
 Generation export transport protocols:
@@ -354,25 +354,25 @@ Framework helpers:
 
 ## Environment variables
 
-The SDK reads `SIGIL_*` environment variables at client construction. Caller-supplied
+The SDK reads `AGENTO11Y_*` environment variables at client construction. Caller-supplied
 fields on `SigilClientConfig` win; env vars fill anything left at the default;
 SDK schema defaults fill the rest.
 
 | Env var | Field |
 | --- | --- |
-| `SIGIL_ENDPOINT` | `GenerationExportConfig.endpoint` |
-| `SIGIL_PROTOCOL` | `GenerationExportConfig.protocol` (`http`/`grpc`/`none`) |
-| `SIGIL_INSECURE` | `GenerationExportConfig.insecure` (tri-state) |
-| `SIGIL_HEADERS` | `GenerationExportConfig.headers` (CSV: `K=V,...`) |
-| `SIGIL_AUTH_MODE` | `AuthConfig.mode` (`none`/`tenant`/`bearer`/`basic`) |
-| `SIGIL_AUTH_TENANT_ID` | `AuthConfig.tenantId` |
-| `SIGIL_AUTH_TOKEN` | `AuthConfig.bearerToken` and/or `basicPassword` (filled when empty) |
-| `SIGIL_AGENT_NAME` | `SigilClientConfig.agentName` |
-| `SIGIL_AGENT_VERSION` | `SigilClientConfig.agentVersion` |
-| `SIGIL_USER_ID` | `SigilClientConfig.userId` |
-| `SIGIL_TAGS` | `SigilClientConfig.tags` (CSV; applied to generations, spans, and metrics; see [Tags and Metadata](../docs/concepts/tags-and-metadata.md)) |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `SigilClientConfig.contentCapture` |
-| `SIGIL_DEBUG` | `SigilClientConfig.debug` (tri-state) |
+| `AGENTO11Y_ENDPOINT` | `GenerationExportConfig.endpoint` |
+| `AGENTO11Y_PROTOCOL` | `GenerationExportConfig.protocol` (`http`/`grpc`/`none`) |
+| `AGENTO11Y_INSECURE` | `GenerationExportConfig.insecure` (tri-state) |
+| `AGENTO11Y_HEADERS` | `GenerationExportConfig.headers` (CSV: `K=V,...`) |
+| `AGENTO11Y_AUTH_MODE` | `AuthConfig.mode` (`none`/`tenant`/`bearer`/`basic`) |
+| `AGENTO11Y_AUTH_TENANT_ID` | `AuthConfig.tenantId` |
+| `AGENTO11Y_AUTH_TOKEN` | `AuthConfig.bearerToken` and/or `basicPassword` (filled when empty) |
+| `AGENTO11Y_AGENT_NAME` | `SigilClientConfig.agentName` |
+| `AGENTO11Y_AGENT_VERSION` | `SigilClientConfig.agentVersion` |
+| `AGENTO11Y_USER_ID` | `SigilClientConfig.userId` |
+| `AGENTO11Y_TAGS` | `SigilClientConfig.tags` (CSV; applied to generations, spans, and metrics; see [Tags and Metadata](../docs/concepts/tags-and-metadata.md)) |
+| `AGENTO11Y_CONTENT_CAPTURE_MODE` | `SigilClientConfig.contentCapture` |
+| `AGENTO11Y_DEBUG` | `SigilClientConfig.debug` (tri-state) |
 
 Use `SigilEnvConfig.fromEnv()` to inspect the resolved config without
 constructing a client. Invalid values (bad auth mode, etc.) are skipped with a
@@ -382,7 +382,7 @@ warning so a single typo does not discard the rest of the env layer.
 
 - `GenerationExportConfig.insecure` is now tri-state (`Boolean` instead of
   `boolean`). The default flips from `true` to `false` (TLS on) when neither
-  caller nor `SIGIL_INSECURE` provides a value. Existing callers that call
+  caller nor `AGENTO11Y_INSECURE` provides a value. Existing callers that call
   `setInsecure(true)` keep working through autoboxing. The previous
   `isInsecure()` boolean accessor was replaced by `getInsecure()`
   (returns `Boolean`) and `isInsecureResolved()` (returns `boolean`,

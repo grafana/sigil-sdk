@@ -8,11 +8,11 @@ Each SDK README links here for the language-specific config fields.
 
 | Mechanism | Set where | Cardinality | Generation export (Sigil UI) | OTel spans (traces) | OTel metrics |
 | --- | --- | --- | --- | --- | --- |
-| **Client tags** (`SIGIL_TAGS` / config `tags`) | Once, on the client | Keep low | Yes, merged into every generation | Yes, as `sigil.tag.<key>` | Yes, as `sigil.tag.<key>` |
+| **Client tags** (`AGENTO11Y_TAGS` / config `tags`) | Once, on the client | Keep low | Yes, merged into every generation | Yes, as `sigil.tag.<key>` | Yes, as `sigil.tag.<key>` |
 | **Per-generation `tags`** | Per `startGeneration` call | Any | Yes | No | No |
 | **`metadata`** (struct/dict) | Per `startGeneration` call | Any | Yes | No | No |
 
-There is also a dedicated **`user_id`** field (`SIGIL_USER_ID` / config / per-call / context). It is recorded on the generation export and on the generation span as the `user.id` attribute (all SDKs), but it is **not** a metric label.
+There is also a dedicated **`user_id`** field (`AGENTO11Y_USER_ID` / config / per-call / context). It is recorded on the generation export and on the generation span as the `user.id` attribute (all SDKs), but it is **not** a metric label.
 
 ## Cross-SDK parity
 
@@ -26,7 +26,7 @@ Client tags become OTel metric attributes, which become Prometheus label values:
 
 ### Client tags and default user id (apply to every generation)
 
-Set client tags with the `SIGIL_TAGS` env var (CSV: `key=value,key=value`) and `SIGIL_USER_ID`. The SDK reads them when you construct the client with no explicit values. To set them in code:
+Set client tags with the `AGENTO11Y_TAGS` env var (CSV: `key=value,key=value`) and `AGENTO11Y_USER_ID`. The SDK reads them when you construct the client with no explicit values. To set them in code:
 
 **Go**
 

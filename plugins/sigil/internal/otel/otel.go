@@ -169,10 +169,11 @@ func Setup(ctx context.Context, instanceID string) (*Providers, error) {
 	return &Providers{tp: tp, mp: mp}, nil
 }
 
-// EndpointFromEnv returns the configured OTLP endpoint, preferring
-// SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT over OTEL_EXPORTER_OTLP_ENDPOINT.
+// EndpointFromEnv returns the configured OTLP endpoint, preferring the
+// branded AGENTO11Y_/SIGIL_ OTEL_EXPORTER_OTLP_ENDPOINT spellings over the
+// standard OTEL_EXPORTER_OTLP_ENDPOINT. Blank branded values fall through.
 func EndpointFromEnv() string {
-	return envOr("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	return firstNonBlank(envconfig.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
 }
 
 // ProbeTarget is one OTLP signal's resolved probe destination: the full
@@ -226,7 +227,7 @@ func exporterConfigFromEnv(endpoint string) exporterConfig {
 	return exporterConfig{
 		endpoint: endpoint,
 		headers:  headers,
-		insecure: envconfig.ParseBool(envOr("SIGIL_OTEL_EXPORTER_OTLP_INSECURE", os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))),
+		insecure: envconfig.ParseBool(firstNonBlank(envconfig.Getenv("OTEL_EXPORTER_OTLP_INSECURE"), os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"))),
 	}
 }
 
@@ -260,9 +261,13 @@ func signalEndpointURL(endpoint, signal string) string {
 	return base + "/v1/" + signal
 }
 
+// addAuthHeaderIfMissing synthesizes Basic auth from the branded tenant and
+// token families. Token order: AGENTO11Y_OTEL_AUTH_TOKEN > SIGIL_OTEL_AUTH_TOKEN
+// > AGENTO11Y_AUTH_TOKEN > SIGIL_AUTH_TOKEN. An explicit Authorization value
+// in OTEL_EXPORTER_OTLP_HEADERS always wins over the synthesized header.
 func addAuthHeaderIfMissing(headers map[string]string) {
-	tenant := strings.TrimSpace(os.Getenv("SIGIL_AUTH_TENANT_ID"))
-	token := envOr("SIGIL_OTEL_AUTH_TOKEN", os.Getenv("SIGIL_AUTH_TOKEN"))
+	tenant := envconfig.Getenv("AUTH_TENANT_ID")
+	token := firstNonBlank(envconfig.Getenv("OTEL_AUTH_TOKEN"), envconfig.Getenv("AUTH_TOKEN"))
 	if tenant == "" || token == "" {
 		return
 	}
@@ -272,11 +277,13 @@ func addAuthHeaderIfMissing(headers map[string]string) {
 	headers["Authorization"] = "Basic " + base64.StdEncoding.EncodeToString([]byte(tenant+":"+token))
 }
 
-func envOr(key, fallback string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
+func firstNonBlank(values ...string) string {
+	for _, v := range values {
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return trimmed
+		}
 	}
-	return strings.TrimSpace(fallback)
+	return ""
 }
 
 func parseHeaders(raw string) map[string]string {

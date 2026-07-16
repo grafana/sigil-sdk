@@ -45,11 +45,11 @@ sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ["SIGIL_ENDPOINT"],
+            endpoint=os.environ["AGENTO11Y_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+                tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+                basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
             ),
         ),
         # Client tags attach to every generation and become sigil.tag.<key>

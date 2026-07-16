@@ -87,10 +87,10 @@ func runTestCase(ctx context.Context, client *sigil.Client, exp *sigil.Experimen
 }
 
 func buildClient() *sigil.Client {
-	endpoint := strings.TrimRight(requireEnv("SIGIL_ENDPOINT"), "/")
-	authMode := sigil.ExportAuthMode(strings.ToLower(getenv("SIGIL_AUTH_MODE", string(sigil.ExportAuthModeBasic))))
-	authToken := strings.TrimSpace(os.Getenv("SIGIL_AUTH_TOKEN"))
-	tenantID := requireEnv("SIGIL_AUTH_TENANT_ID")
+	endpoint := strings.TrimRight(requireEnv("AGENTO11Y_ENDPOINT"), "/")
+	authMode := sigil.ExportAuthMode(strings.ToLower(getenv("AGENTO11Y_AUTH_MODE", string(sigil.ExportAuthModeBasic))))
+	authToken := strings.TrimSpace(os.Getenv("AGENTO11Y_AUTH_TOKEN"))
+	tenantID := requireEnv("AGENTO11Y_AUTH_TENANT_ID")
 
 	cfg := sigil.DefaultConfig()
 	cfg.API.Endpoint = endpoint
@@ -105,7 +105,7 @@ func authConfig(mode sigil.ExportAuthMode, tenantID string, token string) sigil.
 	switch mode {
 	case sigil.ExportAuthModeBasic:
 		if token == "" {
-			log.Fatal("SIGIL_AUTH_TOKEN is required when SIGIL_AUTH_MODE=basic")
+			log.Fatal("AGENTO11Y_AUTH_TOKEN is required when AGENTO11Y_AUTH_MODE=basic")
 		}
 		return sigil.AuthConfig{
 			Mode:          sigil.ExportAuthModeBasic,
@@ -114,7 +114,7 @@ func authConfig(mode sigil.ExportAuthMode, tenantID string, token string) sigil.
 		}
 	case sigil.ExportAuthModeBearer:
 		if token == "" {
-			log.Fatal("SIGIL_AUTH_TOKEN is required when SIGIL_AUTH_MODE=bearer")
+			log.Fatal("AGENTO11Y_AUTH_TOKEN is required when AGENTO11Y_AUTH_MODE=bearer")
 		}
 		return sigil.AuthConfig{
 			Mode:        sigil.ExportAuthModeBearer,
@@ -128,7 +128,7 @@ func authConfig(mode sigil.ExportAuthMode, tenantID string, token string) sigil.
 	case sigil.ExportAuthModeNone:
 		return sigil.AuthConfig{Mode: sigil.ExportAuthModeNone}
 	default:
-		log.Fatalf("unsupported SIGIL_AUTH_MODE %q", mode)
+		log.Fatalf("unsupported AGENTO11Y_AUTH_MODE %q", mode)
 		return sigil.AuthConfig{}
 	}
 }

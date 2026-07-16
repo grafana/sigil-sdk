@@ -2,7 +2,6 @@ package config
 
 import (
 	"log"
-	"os"
 
 	"github.com/grafana/sigil-sdk/go/sigil"
 
@@ -51,7 +50,7 @@ func AllowedDotenvKey(key string) bool {
 func Load(logger *log.Logger) Config {
 	return Config{
 		ContentCapture: envconfig.ResolveContentMode(logger),
-		Debug:          envconfig.ParseBool(os.Getenv("SIGIL_DEBUG")),
+		Debug:          envconfig.ParseBool(envconfig.Getenv("DEBUG")),
 		Guards:         envconfig.ResolveGuards(logger),
 	}
 }

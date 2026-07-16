@@ -35,26 +35,22 @@ export interface SigilOpencodeConfig {
 
 export async function loadConfig(): Promise<SigilOpencodeConfig | null> {
   // Read the shared sigil dotenv file so the OpenCode plugin and every other
-  // Sigil agent resolve credentials from the same place. Values in process.env
-  // always win — applySigilDotenv only fills empty/whitespace entries.
+  // Sigil agent resolve credentials from the same place. Shell env values win
+  // over file values for each alias family, and the winner is materialized
+  // under both spellings; see applySigilDotenv.
   applySigilDotenv();
   return resolveConfig();
 }
 
 export function resolveConfig(): SigilOpencodeConfig | null {
-  const endpoint = normalizeBaseEndpoint((env("SIGIL_ENDPOINT") ?? "").trim());
+  const endpoint = normalizeBaseEndpoint(brandedEnv("ENDPOINT") ?? "");
   if (!endpoint) return null;
 
-  const configuredAgentName = (env("SIGIL_AGENT_NAME") ?? "opencode").trim();
-  const agentName =
-    configuredAgentName.length > 0 ? configuredAgentName : "opencode";
-
-  const configuredAgentVersion = (env("SIGIL_AGENT_VERSION") ?? "").trim();
-  const agentVersion =
-    configuredAgentVersion.length > 0 ? configuredAgentVersion : undefined;
+  const agentName = brandedEnv("AGENT_NAME") ?? "opencode";
+  const agentVersion = brandedEnv("AGENT_VERSION");
 
   const contentCapture = resolveContentCapture();
-  const debug = envBool("SIGIL_DEBUG") ?? false;
+  const debug = brandedBool("DEBUG") ?? false;
 
   return {
     endpoint,
@@ -69,13 +65,13 @@ export function resolveConfig(): SigilOpencodeConfig | null {
 }
 
 function resolveAuth(): SigilAuthConfig {
-  const tenant = (env("SIGIL_AUTH_TENANT_ID") ?? "").trim();
-  const token = (env("SIGIL_AUTH_TOKEN") ?? "").trim();
+  const tenant = brandedEnv("AUTH_TENANT_ID") ?? "";
+  const token = lookupBrandedEnv("AUTH_TOKEN");
   if (tenant && token) {
     return {
       mode: "basic",
       basicUser: tenant,
-      basicPassword: token,
+      basicPassword: token.value,
       tenantId: tenant,
     };
   }
@@ -83,28 +79,23 @@ function resolveAuth(): SigilAuthConfig {
     return { mode: "tenant", tenantId: tenant };
   }
   if (token) {
+    const tenantKey = token.key.replace(/AUTH_TOKEN$/, "AUTH_TENANT_ID");
     console.warn(
-      "[sigil-opencode] SIGIL_AUTH_TOKEN is set but SIGIL_AUTH_TENANT_ID is missing — auth disabled",
+      `[sigil-opencode] ${token.key} is set but ${tenantKey} is missing — auth disabled`,
     );
   }
   return { mode: "none" };
 }
 
 function resolveOtlp(): OtlpConfig | undefined {
-  const endpoint = (
-    env("SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT") ??
-    env("OTEL_EXPORTER_OTLP_ENDPOINT") ??
-    ""
-  ).trim();
+  const endpoint =
+    brandedEnv("OTEL_EXPORTER_OTLP_ENDPOINT") ??
+    (env("OTEL_EXPORTER_OTLP_ENDPOINT") ?? "").trim();
   if (!endpoint) return undefined;
 
   const headers = parseOtelHeaders(env("OTEL_EXPORTER_OTLP_HEADERS") ?? "");
-  const tenant = (env("SIGIL_AUTH_TENANT_ID") ?? "").trim();
-  const token = (
-    env("SIGIL_OTEL_AUTH_TOKEN") ??
-    env("SIGIL_AUTH_TOKEN") ??
-    ""
-  ).trim();
+  const tenant = brandedEnv("AUTH_TENANT_ID") ?? "";
+  const token = brandedEnv("OTEL_AUTH_TOKEN") ?? brandedEnv("AUTH_TOKEN") ?? "";
   if (tenant && token && !hasAuthorizationHeader(headers)) {
     headers.Authorization = `Basic ${Buffer.from(`${tenant}:${token}`).toString("base64")}`;
   }
@@ -130,9 +121,9 @@ function hasAuthorizationHeader(headers: Record<string, string>): boolean {
 }
 
 function resolveContentCapture(): ContentCaptureMode {
-  const envVal = env("SIGIL_CONTENT_CAPTURE_MODE");
-  if (envVal !== undefined) {
-    return parseContentCaptureMode(envVal);
+  const resolved = lookupBrandedEnv("CONTENT_CAPTURE_MODE");
+  if (resolved !== undefined) {
+    return parseContentCaptureMode(resolved.value, resolved.key);
   }
   return "metadata_only";
 }
@@ -150,7 +141,10 @@ const VALID_CAPTURE_MODES: ContentCaptureMode[] = [
   "full_with_metadata_spans",
 ];
 
-function parseContentCaptureMode(value: string): ContentCaptureMode {
+function parseContentCaptureMode(
+  value: string,
+  key: string,
+): ContentCaptureMode {
   const normalized = value.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return "full";
   if (["0", "false", "no", "off"].includes(normalized)) return "metadata_only";
@@ -161,7 +155,7 @@ function parseContentCaptureMode(value: string): ContentCaptureMode {
     return normalized as ContentCaptureMode;
   }
   console.warn(
-    `[sigil-opencode] unsupported contentCapture value "${value}", defaulting to metadata_only`,
+    `[sigil-opencode] unsupported contentCapture value "${value}" for ${key}, defaulting to metadata_only`,
   );
   return "metadata_only";
 }
@@ -171,26 +165,51 @@ function env(key: string): string | undefined {
   return v !== undefined && v !== "" ? v : undefined;
 }
 
-function envBool(key: string): boolean | undefined {
-  const v = env(key);
+interface BrandedValue {
+  value: string;
+  key: string;
+}
+
+// lookupBrandedEnv selects a branded variable's first nonblank spelling
+// (preferred AGENTO11Y_<suffix>, then legacy SIGIL_<suffix>) and returns the
+// trimmed value with the env-var name it came from, so warnings can name the
+// key the user actually set. Blank or whitespace-only values are treated as
+// unset. Selection happens before parsing: an invalid selected value never
+// falls back to the other spelling.
+function lookupBrandedEnv(suffix: string): BrandedValue | undefined {
+  for (const key of [`AGENTO11Y_${suffix}`, `SIGIL_${suffix}`]) {
+    const raw = process.env[key];
+    if (raw !== undefined && raw.trim() !== "") {
+      return { value: raw.trim(), key };
+    }
+  }
+  return undefined;
+}
+
+function brandedEnv(suffix: string): string | undefined {
+  return lookupBrandedEnv(suffix)?.value;
+}
+
+function brandedBool(suffix: string): boolean | undefined {
+  const v = brandedEnv(suffix);
   return v !== undefined ? toBool(v) : undefined;
 }
 
 export function resolveGuards(): GuardsFeatureConfig {
   return {
-    enabled: envBool("SIGIL_GUARDS_ENABLED") ?? false,
-    timeoutMs: envPositiveInt("SIGIL_GUARDS_TIMEOUT_MS") ?? 1500,
-    failOpen: envBool("SIGIL_GUARDS_FAIL_OPEN") ?? true,
+    enabled: brandedBool("GUARDS_ENABLED") ?? false,
+    timeoutMs: brandedPositiveInt("GUARDS_TIMEOUT_MS") ?? 1500,
+    failOpen: brandedBool("GUARDS_FAIL_OPEN") ?? true,
   };
 }
 
-function envPositiveInt(key: string): number | undefined {
-  const raw = env(key);
-  if (raw === undefined || raw.trim() === "") return undefined;
-  const n = Number(raw);
+function brandedPositiveInt(suffix: string): number | undefined {
+  const found = lookupBrandedEnv(suffix);
+  if (found === undefined) return undefined;
+  const n = Number(found.value);
   if (Number.isInteger(n) && n > 0) return n;
   console.warn(
-    `[sigil-opencode] invalid integer value for ${key}: "${raw}" - using default`,
+    `[sigil-opencode] invalid integer value for ${found.key}: "${found.value}" - using default`,
   );
   return undefined;
 }

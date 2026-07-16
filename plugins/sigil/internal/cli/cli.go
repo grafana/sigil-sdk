@@ -14,8 +14,9 @@ import (
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/xdg"
 )
 
-// InitLogger returns a logger that writes to the per-app log file when
-// debugEnvKey is truthy, and /dev/null otherwise.
+// InitLogger returns a logger that writes to the per-app log file when the
+// branded DEBUG family (AGENTO11Y_DEBUG, SIGIL_DEBUG fallback) is truthy,
+// and /dev/null otherwise.
 //
 // agentName is woven into the line prefix (`<app>[<agent>]: `) so log
 // entries from concurrently-running agents stay distinguishable in the
@@ -23,13 +24,13 @@ import (
 //
 // The log file lives at xdg.LogFilePath(appName); the directory is created
 // if missing. Any open failure falls back silently to io.Discard.
-func InitLogger(appName, agentName, debugEnvKey string) *log.Logger {
+func InitLogger(appName, agentName string) *log.Logger {
 	prefix := appName + ": "
 	if agentName != "" {
 		prefix = appName + "[" + agentName + "]: "
 	}
 	logger := log.New(io.Discard, prefix, log.Ltime)
-	if !envconfig.ParseBool(os.Getenv(debugEnvKey)) {
+	if !envconfig.ParseBool(envconfig.Getenv("DEBUG")) {
 		return logger
 	}
 	path := xdg.LogFilePath(appName)

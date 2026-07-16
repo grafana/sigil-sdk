@@ -37,11 +37,11 @@ const model = "gpt-4.1-mini";
 const sigil = createSigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: process.env.SIGIL_ENDPOINT!,
+    endpoint: process.env.AGENTO11Y_ENDPOINT!,
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID!,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN!,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID!,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN!,
     },
   },
   // Client tags attach to every generation and become sigil.tag.<key>

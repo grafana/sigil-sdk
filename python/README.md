@@ -139,7 +139,7 @@ Full framework examples:
 
 ## Quick Start (Sync Generation)
 
-`Client()` reads `SIGIL_*` env vars by default. See the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names. Pass an explicit `ClientConfig` only when you need to override.
+`Client()` reads `AGENTO11Y_*` env vars by default. See the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names. Pass an explicit `ClientConfig` only when you need to override.
 
 ```python
 from sigil_sdk import (
@@ -150,7 +150,7 @@ from sigil_sdk import (
     user_text_message,
 )
 
-client = Client()  # reads SIGIL_* env vars
+client = Client()  # reads AGENTO11Y_* env vars
 
 with client.start_generation(
     GenerationStart(
@@ -186,8 +186,8 @@ client = Client(
             endpoint="https://sigil-prod-<region>.grafana.net",
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+                tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+                basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
             ),
         ),
     )
@@ -211,7 +211,7 @@ client = Client(
     ClientConfig(
         generation_sanitizer=create_secret_redaction_sanitizer(
             SecretRedactionOptions(
-                redact_input_messages=False,  # None falls back to SIGIL_REDACT_INPUT_MESSAGES, then False
+                redact_input_messages=False,  # None falls back to AGENTO11Y_REDACT_INPUT_MESSAGES, then False
                 redact_email_addresses=True,
             )
         )
@@ -240,7 +240,7 @@ client = Client(
 
 ### Configuring redaction via environment variables
 
-`create_secret_redaction_sanitizer()` reads `SIGIL_REDACT_INPUT_MESSAGES` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) when `redact_input_messages` is left `None`. Precedence is explicit option > env var > `False`. An unrecognised env value logs a warning through the `sigil_sdk` logger and falls back to the next layer, so a typo cannot silently flip redaction.
+`create_secret_redaction_sanitizer()` reads `AGENTO11Y_REDACT_INPUT_MESSAGES` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) when `redact_input_messages` is left `None`. Precedence is explicit option > env var > `False`. An unrecognised env value logs a warning through the `sigil_sdk` logger and falls back to the next layer, so a typo cannot silently flip redaction.
 
 ```python
 from sigil_sdk import (
@@ -249,7 +249,7 @@ from sigil_sdk import (
     create_secret_redaction_sanitizer,
 )
 
-# Leave redact_input_messages unset so SIGIL_REDACT_INPUT_MESSAGES decides.
+# Leave redact_input_messages unset so AGENTO11Y_REDACT_INPUT_MESSAGES decides.
 client = Client(
     ClientConfig(
         generation_sanitizer=create_secret_redaction_sanitizer(),
@@ -534,8 +534,8 @@ cfg = ClientConfig(
         endpoint="https://sigil-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
-            tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-            basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+            tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+            basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
         ),
     ),
     api=ApiConfig(endpoint="https://sigil-prod-<region>.grafana.net"),
@@ -565,8 +565,8 @@ cfg = ClientConfig(
         endpoint="https://sigil-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
-            tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-            basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+            tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+            basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
         ),
     ),
     api=ApiConfig(endpoint="https://sigil-prod-<region>.grafana.net"),
@@ -587,8 +587,8 @@ cfg = ClientConfig(
         endpoint="https://sigil-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
-            tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-            basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+            tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+            basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
         ),
     ),
 )
@@ -599,15 +599,15 @@ If your deployment requires a distinct username, set `basic_user` explicitly:
 ```python
 auth=AuthConfig(
     mode="basic",
-    tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-    basic_user=os.environ["SIGIL_AUTH_TENANT_ID"],
-    basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+    tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+    basic_user=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+    basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
 )
 ```
 
 ## Wiring custom env vars
 
-The SDK only auto-loads `SIGIL_*` env vars (`SIGIL_ENDPOINT`, `SIGIL_PROTOCOL`, `SIGIL_AUTH_MODE`, `SIGIL_AUTH_TOKEN`, etc.) when you call `Client()`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
+The SDK only auto-loads `AGENTO11Y_*` env vars (`AGENTO11Y_ENDPOINT`, `AGENTO11Y_PROTOCOL`, `AGENTO11Y_AUTH_MODE`, `AGENTO11Y_AUTH_TOKEN`, etc.) when you call `Client()`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
 
 ```python
 import os
@@ -728,7 +728,7 @@ Experiment writes use the same Grafana Cloud ingestion API key as generation
 ingest. They do not require a control-plane URL or a separate eval API key.
 Experimental OTel eval spans/events are disabled by default; opt in with
 `use_experimental_otel=True` on `sigil.experiment(...)` or
-`SIGIL_USE_EXPERIMENTAL_OTEL=true`.
+`AGENTO11Y_USE_EXPERIMENTAL_OTEL=true`.
 
 If you use a supported framework, prefer its adapter (e.g. `sigil-sdk-langgraph`)
 — it can expose conversation or generation ids that you bind to the trial, so

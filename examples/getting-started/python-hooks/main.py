@@ -46,10 +46,7 @@ load_dotenv()
 
 
 def sigil_api_endpoint() -> str:
-    explicit = os.getenv("SIGIL_API_ENDPOINT", "").strip()
-    if explicit:
-        return explicit
-    parsed = urlparse(os.environ["SIGIL_ENDPOINT"])
+    parsed = urlparse(os.environ["AGENTO11Y_ENDPOINT"])
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
@@ -85,11 +82,11 @@ sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ["SIGIL_ENDPOINT"],
+            endpoint=os.environ["AGENTO11Y_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+                tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+                basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
             ),
         ),
         api=ApiConfig(endpoint=sigil_api_endpoint()),

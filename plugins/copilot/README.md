@@ -57,15 +57,15 @@ When `sigil copilot` prompts, copy values from `https://<your-grafana>.grafana.n
 You need values from three Grafana Cloud pages:
 
 1. **AI Observability → Configuration**
-   - **API URL** → `SIGIL_ENDPOINT`
-   - **Instance ID** → `SIGIL_AUTH_TENANT_ID`
+   - **API URL** → `AGENTO11Y_ENDPOINT`
+   - **Instance ID** → `AGENTO11Y_AUTH_TENANT_ID`
 
 2. **Administration → Users and access → Cloud access policies**
    - Create a policy with scopes `sigil:write`, `metrics:write`, `traces:write`.
-   - Add a token. The `glc_…` value is shown once → `SIGIL_AUTH_TOKEN`.
+   - Add a token. The `glc_…` value is shown once → `AGENTO11Y_AUTH_TOKEN`.
 
 3. **Grafana Cloud Portal → your stack → OpenTelemetry card**
-   - **OTLP endpoint URL** → `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT`
+   - **OTLP endpoint URL** → `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT`
 
 Run `sigil login` later to update saved credentials.
 
@@ -75,10 +75,10 @@ Run `sigil login` later to update saved credentials.
 Create or update `~/.config/sigil/config.env`:
 
 ```dotenv
-SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-SIGIL_AUTH_TENANT_ID=<instance-id>
-SIGIL_AUTH_TOKEN=glc_...
-SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
+AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_AUTH_TENANT_ID=<instance-id>
+AGENTO11Y_AUTH_TOKEN=glc_...
+AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
 ```
 
 </details>
@@ -86,7 +86,7 @@ SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net
 To also send the conversation text (with automatic secret redaction), add this to `~/.config/sigil/config.env`:
 
 ```dotenv
-SIGIL_CONTENT_CAPTURE_MODE=full
+AGENTO11Y_CONTENT_CAPTURE_MODE=full
 ```
 
 ## 3. Verify
@@ -99,7 +99,7 @@ generations with `agent_name=copilot`.
 If nothing shows up:
 
 ```sh
-SIGIL_DEBUG=true sigil copilot   # one turn
+AGENTO11Y_DEBUG=true sigil copilot   # one turn
 tail -f ~/.local/state/sigil/logs/sigil.log
 ```
 
@@ -138,10 +138,10 @@ Captured prompt, assistant, and tool content is redacted before export. See [Con
 Guards do two things when enabled: block tool calls that match a deny rule, and apply Transform rules to redact sensitive tool arguments. They're off by default:
 
 ```sh
-SIGIL_GUARDS_ENABLED=true sigil copilot
+AGENTO11Y_GUARDS_ENABLED=true sigil copilot
 ```
 
-By default, transport errors and timeouts let the tool call through. Set `SIGIL_GUARDS_FAIL_OPEN=false` to block tool calls on errors instead. Raise or lower `SIGIL_GUARDS_TIMEOUT_MS` (default `1500`) to trade latency against tolerance for slow evaluators.
+By default, transport errors and timeouts let the tool call through. Set `AGENTO11Y_GUARDS_FAIL_OPEN=false` to block tool calls on errors instead. Raise or lower `AGENTO11Y_GUARDS_TIMEOUT_MS` (default `1500`) to trade latency against tolerance for slow evaluators.
 
 ### Transform guards (redaction)
 
@@ -150,26 +150,26 @@ When guards are enabled and a [Transform rule](https://grafana.com/docs/grafana-
 Limits:
 
 - Transforms apply in `copilot-cli`. Copilot Chat in VS Code expects a different hook response shape for argument rewrites that has not been verified end to end, so no rewrite is sent there and VS Code tool calls run with their original arguments. Deny rules work on both surfaces.
-- Each guarded tool call adds one synchronous hook round-trip (`SIGIL_GUARDS_TIMEOUT_MS`). Transform redaction fails open: when the transform cannot be applied, the original arguments pass through unchanged. Transport errors follow `SIGIL_GUARDS_FAIL_OPEN`.
+- Each guarded tool call adds one synchronous hook round-trip (`AGENTO11Y_GUARDS_TIMEOUT_MS`). Transform redaction fails open: when the transform cannot be applied, the original arguments pass through unchanged. Transport errors follow `AGENTO11Y_GUARDS_FAIL_OPEN`.
 - When arguments are redacted, the exported tool record carries the redacted arguments the tool actually ran with.
 
 ## All options
 
 | Variable | Default | Description |
 |---|---|---|
-| `SIGIL_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
-| `SIGIL_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
-| `SIGIL_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
-| `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
-| `SIGIL_OTEL_AUTH_TOKEN` | `SIGIL_AUTH_TOKEN` | Override the OTel password. |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `metadata_only` | `metadata_only`, `no_tool_content`, `full`, or `full_with_metadata_spans`. |
-| `SIGIL_TAGS` | — | `key=value,key=value` tags on every generation and as `sigil.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). |
-| `SIGIL_USER_ID` | — | Override the user id. |
-| `SIGIL_DEBUG` | `false` | Log to `~/.local/state/sigil/logs/sigil.log`. |
-| `SIGIL_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Copilot `preToolUse` hook is evaluated against Sigil: tool calls denied by guard rules are blocked, and Transform rules redact tool arguments in `copilot-cli`. |
-| `SIGIL_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
-| `SIGIL_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
-| `SIGIL_COPILOT_HOOK_SURFACE` | _(auto)_ | Override the detected host surface (`copilot-cli` or `vscode`). Normally inferred at runtime; set explicitly only when driving capture through a custom hooks config. |
+| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
+| `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
+| `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
+| `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
+| `AGENTO11Y_OTEL_AUTH_TOKEN` | `AGENTO11Y_AUTH_TOKEN` | Override the OTel password. |
+| `AGENTO11Y_CONTENT_CAPTURE_MODE` | `metadata_only` | `metadata_only`, `no_tool_content`, `full`, or `full_with_metadata_spans`. |
+| `AGENTO11Y_TAGS` | — | `key=value,key=value` tags on every generation and as `sigil.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). |
+| `AGENTO11Y_USER_ID` | — | Override the user id. |
+| `AGENTO11Y_DEBUG` | `false` | Log to `~/.local/state/sigil/logs/sigil.log`. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Copilot `preToolUse` hook is evaluated against Sigil: tool calls denied by guard rules are blocked, and Transform rules redact tool arguments in `copilot-cli`. |
+| `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
+| `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
+| `AGENTO11Y_COPILOT_HOOK_SURFACE` | _(auto)_ | Override the detected host surface (`copilot-cli` or `vscode`). Normally inferred at runtime; set explicitly only when driving capture through a custom hooks config. |
 
 If your OTLP **Instance ID** (on the OpenTelemetry card) differs from your AI Observability Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
 
@@ -184,7 +184,7 @@ When the documented Copilot hook payloads provide it, the plugin exports:
 - model, Copilot CLI version, reasoning effort, and request/message identifiers from the local Copilot transcript when available
 - output token counts from the local Copilot transcript when available
 - tool names and tool call order
-- tool arguments and results when `SIGIL_CONTENT_CAPTURE_MODE=full`
+- tool arguments and results when `AGENTO11Y_CONTENT_CAPTURE_MODE=full`
 - tool status from `PostToolUse` and `PostToolUseFailure`
 - error metadata from `ErrorOccurred`
 - subagent lifecycle metadata from `SubagentStart` and `SubagentStop`
@@ -203,7 +203,7 @@ The Copilot hook payload carries no host identifier, and one shared
 `~/.copilot/hooks/sigil.json` serves both hosts, so the surface is resolved at
 runtime:
 
-1. An explicit `SIGIL_COPILOT_HOOK_SURFACE` env var wins (the in-repo
+1. An explicit `AGENTO11Y_COPILOT_HOOK_SURFACE` env var wins (the in-repo
    `plugins/copilot/hooks.json` sets `copilot-cli` for anyone driving capture
    through a plugin instead of the shared file).
 2. Otherwise, if a `copilot` process is an ancestor of the hook, the surface is
@@ -213,7 +213,7 @@ runtime:
    hook, with no `copilot` ancestor).
 
 The resolved surface is also written to the `copilot.hook_surface` metadata
-field and the `SIGIL_DEBUG` log line (`dispatch: event=… surface=…`).
+field and the `AGENTO11Y_DEBUG` log line (`dispatch: event=… surface=…`).
 
 ## Limitations / Known Gaps
 
@@ -230,9 +230,9 @@ field and the `SIGIL_DEBUG` log line (`dispatch: event=… surface=…`).
 | Hooks file missing at `~/.copilot/hooks/sigil.json` | Re-run `sigil copilot -- <args>` (it writes the file before launching). For VS Code, also add `~/.copilot/hooks` to `chat.hookFilesLocations`. |
 | Turns appear twice in Sigil | A leftover `sigil-copilot` plugin is firing alongside the shared file. Remove it: `copilot plugin uninstall sigil-copilot` (newer `sigil copilot` runs do this automatically). |
 | Command not found | Reinstall `sigil` (see step 1). Check `sigil --version` and that its install dir is on `PATH`. |
-| Hooks run but nothing appears in Sigil | Check `SIGIL_ENDPOINT`, `SIGIL_AUTH_TENANT_ID`, and `SIGIL_AUTH_TOKEN`. Without all three, the plugin discards the completed fragment. |
-| No latency/tool charts in AI Observability | Set `SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT` so the plugin can emit traces and metrics. |
-| Prompt or tool content is missing | Check `SIGIL_CONTENT_CAPTURE_MODE`. The default is `metadata_only`. |
+| Hooks run but nothing appears in Sigil | Check `AGENTO11Y_ENDPOINT`, `AGENTO11Y_AUTH_TENANT_ID`, and `AGENTO11Y_AUTH_TOKEN`. Without all three, the plugin discards the completed fragment. |
+| No latency/tool charts in AI Observability | Set `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` so the plugin can emit traces and metrics. |
+| Prompt or tool content is missing | Check `AGENTO11Y_CONTENT_CAPTURE_MODE`. The default is `metadata_only`. |
 | Assistant response text is missing | Check that `agentStop` included a readable `transcriptPath` and that the local `events.jsonl` transcript still exists under `~/.copilot/session-state/<session-id>/`. |
 | Model or output tokens are still missing | The local Copilot transcript for that turn did not include those fields. This plugin can only export the fields Copilot recorded locally. |
 | Cloud agent cannot reach Sigil | Expected unless your admin allows the Sigil endpoint through the cloud-agent firewall. This plugin is documented for Copilot CLI first. |

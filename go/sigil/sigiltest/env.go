@@ -21,8 +21,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ClearAmbientEnv strips SIGIL_* and OTEL_* env vars so test clients aren't
-// influenced by the developer's shell.
+// ClearAmbientEnv strips AGENTO11Y_*, SIGIL_*, and OTEL_* env vars so test
+// clients aren't influenced by the developer's shell.
 func ClearAmbientEnv() { clearAmbientEnvOnce() }
 
 var clearAmbientEnvOnce = sync.OnceFunc(func() {
@@ -32,7 +32,7 @@ var clearAmbientEnvOnce = sync.OnceFunc(func() {
 			continue
 		}
 		key := kv[:idx]
-		if strings.HasPrefix(key, "SIGIL_") || strings.HasPrefix(key, "OTEL_") {
+		if strings.HasPrefix(key, "AGENTO11Y_") || strings.HasPrefix(key, "SIGIL_") || strings.HasPrefix(key, "OTEL_") {
 			_ = os.Unsetenv(key)
 		}
 	}

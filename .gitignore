@@ -18,11 +18,15 @@ js/.test-dist/
 js-core/proto/
 python/build/
 python-frameworks/*/build/
+python-providers/*/build/
 
 *.db
 coverage.out
 plugins/claude-code/sigil-cc
 plugins/codex/sigil-codex
+examples/experiments/go/go
+examples/getting-started/go/go
+examples/getting-started/go-hooks/go-hooks
 
 # dotnet artifacts
 dotnet/**/artifacts/

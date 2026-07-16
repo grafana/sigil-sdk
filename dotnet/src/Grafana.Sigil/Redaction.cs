@@ -14,7 +14,8 @@ public sealed class SecretRedactionOptions
 {
     /// <summary>
     /// Redact user messages in <see cref="Generation.Input"/>. <c>null</c>
-    /// falls back to <c>SIGIL_REDACT_INPUT_MESSAGES</c>, then <c>false</c>.
+    /// falls back to <c>AGENTO11Y_REDACT_INPUT_MESSAGES</c> (legacy
+    /// <c>SIGIL_REDACT_INPUT_MESSAGES</c>), then <c>false</c>.
     /// Assistant and tool messages in input are always sanitized.
     /// </summary>
     public bool? RedactInputMessages { get; set; }
@@ -28,7 +29,10 @@ public sealed class SecretRedactionOptions
 /// <summary>Factory for the built-in regex-based secrets redactor.</summary>
 public static class SecretRedactionSanitizer
 {
-    private const string EnvRedactInputMessages = "SIGIL_REDACT_INPUT_MESSAGES";
+    private static readonly EnvPair EnvRedactInputMessages = new(
+        "AGENTO11Y_REDACT_INPUT_MESSAGES",
+        "SIGIL_REDACT_INPUT_MESSAGES"
+    );
     private static readonly HashSet<string> TrueTokens = new(StringComparer.OrdinalIgnoreCase)
     {
         "1", "true", "yes", "on",
@@ -250,12 +254,11 @@ public static class SecretRedactionSanitizer
             return explicitValue.Value;
         }
 
-        var raw = envLookup(EnvRedactInputMessages)?.Trim();
-        if (string.IsNullOrEmpty(raw))
+        var value = EnvConfig.EnvTrimmed(envLookup, EnvRedactInputMessages, out var key);
+        if (value == null)
         {
             return false;
         }
-        var value = raw!;
 
         if (TrueTokens.Contains(value))
         {
@@ -267,7 +270,7 @@ public static class SecretRedactionSanitizer
             return false;
         }
 
-        logger?.Invoke($"sigil: ignoring invalid {EnvRedactInputMessages}: {value}");
+        logger?.Invoke($"sigil: ignoring invalid {key}: {value}");
         return false;
     }
 

@@ -37,14 +37,14 @@ pip install "sigil-sdk>=0.9.0"
 Required environment:
 
 ```bash
-export SIGIL_ENDPOINT=https://sigil-prod-<region>.grafana.net
-export SIGIL_AUTH_TOKEN=<grafana-cloud-ingestion-api-key>
+export AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+export AGENTO11Y_AUTH_TOKEN=<grafana-cloud-ingestion-api-key>
 
 # Optional when the endpoint requires tenant-scoped basic auth.
-export SIGIL_AUTH_TENANT_ID=<stack-id>
+export AGENTO11Y_AUTH_TENANT_ID=<stack-id>
 
-# Optional UI host for deep links when it differs from SIGIL_ENDPOINT.
-export SIGIL_GRAFANA_URL=https://<your-stack>.grafana.net
+# Optional UI host for deep links when it differs from AGENTO11Y_ENDPOINT.
+export AGENTO11Y_GRAFANA_URL=https://<your-stack>.grafana.net
 ```
 
 Experiment ingest uses the Cloud ingestion API key. Do not add a separate
@@ -150,9 +150,9 @@ In the verifier:
 from sigil_sdk import experiments as sigil
 
 client = sigil.Client(
-    endpoint=os.environ["SIGIL_ENDPOINT"],
-    tenant_id=os.environ.get("SIGIL_AUTH_TENANT_ID", ""),
-    ingest_token=os.environ["SIGIL_AUTH_TOKEN"],
+    endpoint=os.environ["AGENTO11Y_ENDPOINT"],
+    tenant_id=os.environ.get("AGENTO11Y_AUTH_TENANT_ID", ""),
+    ingest_token=os.environ["AGENTO11Y_AUTH_TOKEN"],
 )
 ref = sigil.TrialRef.from_env()
 if ref is None:

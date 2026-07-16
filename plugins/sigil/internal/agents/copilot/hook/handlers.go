@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -498,7 +497,7 @@ func Stop(p Payload, cfg config.Config, logger *log.Logger) {
 		Fragment:       frag,
 		Session:        session,
 		ContentCapture: cfg.ContentCapture,
-		UserIDOverride: os.Getenv("SIGIL_USER_ID"),
+		UserIDOverride: envconfig.Getenv("USER_ID"),
 	})
 	logger.Printf(
 		"stop: mapped model=%s provider=%s response_id=%s output_tokens=%d assistant_text=%t tool_count=%d",

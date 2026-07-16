@@ -1,7 +1,7 @@
 // Package dotenv loads KEY=value pairs from $XDG_CONFIG_HOME/<app>/config.env
 // and writes them into the process environment where the OS env is empty.
 //
-// This lets hooks pick up SIGIL_* credentials when the agent runs them under
+// This lets hooks pick up branded credentials when the agent runs them under
 // a stripped environment (e.g. Cursor's hook runtime, Codex's headless mode).
 package dotenv
 
@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/grafana/sigil-sdk/plugins/sigil/internal/envconfig"
 	"github.com/grafana/sigil-sdk/plugins/sigil/internal/xdg"
 )
 
@@ -20,23 +21,58 @@ func FilePath(appName string) string {
 	return xdg.ConfigFilePath(appName, "config.env")
 }
 
-// HasCredentials reports whether the canonical SIGIL_* credentials are
-// populated in the OS env. Call after ApplyEnv so dotenv-supplied values are
-// visible.
+// HasCredentials reports whether the branded credentials are populated in the
+// OS env under either spelling. Call after ApplyEnv so dotenv-supplied values
+// are visible.
 func HasCredentials() bool {
-	return strings.TrimSpace(os.Getenv("SIGIL_ENDPOINT")) != "" &&
-		strings.TrimSpace(os.Getenv("SIGIL_AUTH_TENANT_ID")) != "" &&
-		strings.TrimSpace(os.Getenv("SIGIL_AUTH_TOKEN")) != ""
+	return envconfig.Getenv("ENDPOINT") != "" &&
+		envconfig.Getenv("AUTH_TENANT_ID") != "" &&
+		envconfig.Getenv("AUTH_TOKEN") != ""
 }
 
-// ApplyEnv loads the dotenv file for appName and writes keys whose OS env
-// value is empty. Existing OS env values always win per-key. Returns the
-// parsed dotenv map for callers that need to introspect (tests). An
-// empty-but-set OS value is treated as unset to match the SDK's own
-// envTrimmed behaviour and to handle agents that pre-create blank vars.
+// ApplyEnv loads the dotenv file for appName and merges it into the process
+// environment. Supported alias families resolve source-first, spelling-second:
+//
+//	shell AGENTO11Y_* > shell SIGIL_* > file AGENTO11Y_* > file SIGIL_*
+//
+// so a shell export always beats a config.env entry even across spellings.
+// The winning value is materialized under BOTH names so downstream readers and
+// child processes (including old binaries that only read SIGIL_*) observe one
+// consistent value. Blank or whitespace-only values count as unset at every
+// step. Keys outside the alias registry keep the old exact-key semantics:
+// the file value is applied only where the OS env is empty. Returns the
+// parsed dotenv map for callers that need to introspect (tests).
 func ApplyEnv(appName string, logger *log.Logger) map[string]string {
 	fileEnv := LoadDotenv(FilePath(appName), logger)
+
+	aliasKeys := map[string]bool{}
+	for _, suffix := range envconfig.AliasSuffixes {
+		preferred := envconfig.PreferredKey(suffix)
+		legacy := envconfig.LegacyKey(suffix)
+		aliasKeys[preferred] = true
+		aliasKeys[legacy] = true
+
+		winner, found := "", false
+		for _, candidate := range []string{
+			strings.TrimSpace(os.Getenv(preferred)),
+			strings.TrimSpace(os.Getenv(legacy)),
+			strings.TrimSpace(fileEnv[preferred]),
+			strings.TrimSpace(fileEnv[legacy]),
+		} {
+			if candidate != "" {
+				winner, found = candidate, true
+				break
+			}
+		}
+		if found {
+			envconfig.SetBothEnv(suffix, winner)
+		}
+	}
+
 	for k, v := range fileEnv {
+		if aliasKeys[k] {
+			continue
+		}
 		if strings.TrimSpace(os.Getenv(k)) != "" {
 			continue
 		}
@@ -92,9 +128,10 @@ func LoadDotenv(path string, logger *log.Logger) map[string]string {
 }
 
 // AllowedDotenvKey limits which keys the dotenv loader will copy into the
-// process environment. SIGIL_* and a small set of OTEL_* vars are recognised.
+// process environment. AGENTO11Y_*, SIGIL_*, and a small set of OTEL_* vars
+// are recognised.
 func AllowedDotenvKey(key string) bool {
-	if strings.HasPrefix(key, "SIGIL_") {
+	if strings.HasPrefix(key, "AGENTO11Y_") || strings.HasPrefix(key, "SIGIL_") {
 		return true
 	}
 	switch key {

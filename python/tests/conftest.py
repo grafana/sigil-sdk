@@ -17,9 +17,9 @@ from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
 
 @pytest.fixture(autouse=True)
 def _clear_sigil_env(monkeypatch):
-    """Strip ambient SIGIL_* / OTEL_* so Client() doesn't pick up the dev's shell."""
+    """Strip ambient AGENTO11Y_* / SIGIL_* / OTEL_* so Client() doesn't pick up the dev's shell."""
     for key in list(os.environ):
-        if key.startswith("SIGIL_") or key.startswith("OTEL_"):
+        if key.startswith(("AGENTO11Y_", "SIGIL_", "OTEL_")):
             monkeypatch.delenv(key, raising=False)
     yield
 

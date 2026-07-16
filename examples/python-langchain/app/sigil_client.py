@@ -8,6 +8,7 @@ everything else. Config comes from environment variables (see `.env.example`).
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
 
 from opentelemetry.metrics import MeterProvider
 from opentelemetry.trace import TracerProvider
@@ -27,10 +28,11 @@ def setup_sigil(
     tracer_provider: TracerProvider,
     meter_provider: MeterProvider,
 ) -> Client:
-    endpoint = _required_env("SIGIL_ENDPOINT")
-    api_endpoint = _required_env("SIGIL_API_ENDPOINT")
-    tenant_id = _required_env("SIGIL_AUTH_TENANT_ID")
-    auth_token = os.getenv("SIGIL_AUTH_TOKEN", "").strip()
+    endpoint = _required_env("AGENTO11Y_ENDPOINT")
+    parsed = urlparse(endpoint)
+    api_endpoint = f"{parsed.scheme}://{parsed.netloc}"
+    tenant_id = _required_env("AGENTO11Y_AUTH_TENANT_ID")
+    auth_token = os.getenv("AGENTO11Y_AUTH_TOKEN", "").strip()
 
     if auth_token:
         # Grafana Cloud: basic auth (user = instance ID, password = access token).

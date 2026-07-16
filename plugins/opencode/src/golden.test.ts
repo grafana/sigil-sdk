@@ -174,21 +174,28 @@ function opencodeMessageFixture() {
   };
 }
 
-const SDK_ENV_KEYS = [
-  "SIGIL_ENDPOINT",
-  "SIGIL_PROTOCOL",
-  "SIGIL_AUTH_MODE",
-  "SIGIL_AUTH_TENANT_ID",
-  "SIGIL_AUTH_TOKEN",
-  "SIGIL_HEADERS",
-  "SIGIL_AGENT_NAME",
-  "SIGIL_AGENT_VERSION",
-  "SIGIL_USER_ID",
-  "SIGIL_TAGS",
-  "SIGIL_CONTENT_CAPTURE_MODE",
-  "SIGIL_DEBUG",
+const SDK_ENV_SUFFIXES = [
+  "ENDPOINT",
+  "PROTOCOL",
+  "AUTH_MODE",
+  "AUTH_TENANT_ID",
+  "AUTH_TOKEN",
+  "HEADERS",
+  "AGENT_NAME",
+  "AGENT_VERSION",
+  "USER_ID",
+  "TAGS",
+  "CONTENT_CAPTURE_MODE",
+  "DEBUG",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
-  "SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT",
+] as const;
+
+const SDK_ENV_KEYS = [
+  ...SDK_ENV_SUFFIXES.flatMap((suffix) => [
+    `AGENTO11Y_${suffix}`,
+    `SIGIL_${suffix}`,
+  ]),
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
 ] as const;
 
 describe("opencode plugin: real-SDK golden export", () => {
