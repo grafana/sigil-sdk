@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestSDKExportSendsDefaultUserAgent(t *testing.T) {
-	want := "sigil-sdk-go/" + Version
+	want := "agento11y-sdk-go/" + Version
 
 	t.Run("http", func(t *testing.T) {
 		if got := exportAndCaptureHTTPUserAgent(t, nil); got != want {
@@ -35,8 +35,8 @@ func TestSDKExportSendsDefaultUserAgent(t *testing.T) {
 }
 
 func TestSDKExportUserAgentOverride(t *testing.T) {
-	defaultUA := "sigil-sdk-go/" + Version
-	override := "sigil-plugin-claude-code/1.2.3 " + defaultUA
+	defaultUA := "agento11y-sdk-go/" + Version
+	override := "agento11y-plugin-claude-code/1.2.3 " + defaultUA
 
 	// A non-blank caller User-Agent wins; a blank or whitespace-only one must
 	// not blank out the default. HTTP and gRPC must agree.
@@ -122,7 +122,7 @@ func exportAndCaptureHTTPUserAgent(t *testing.T, headers map[string]string) stri
 			http.Error(w, "read body", http.StatusBadRequest)
 			return
 		}
-		request := &sigilv1.ExportGenerationsRequest{}
+		request := &agento11yv1.ExportGenerationsRequest{}
 		if err := protojson.Unmarshal(payload, request); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -158,7 +158,7 @@ func exportAndCaptureGRPCUserAgent(t *testing.T, headers map[string]string) stri
 
 	ingest := &capturingIngestServer{}
 	grpcServer := grpc.NewServer()
-	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+	agento11yv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

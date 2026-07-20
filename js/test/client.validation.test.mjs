@@ -200,7 +200,7 @@ test('validation accepts artifacts with recordId and no payload', async () => {
 function newClient(generationExporter) {
   const defaults = defaultConfig();
   return new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 100,

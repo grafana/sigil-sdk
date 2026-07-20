@@ -10,7 +10,7 @@ import {
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
-const clientTagProjectKey = 'sigil.tag.project';
+const clientTagProjectKey = 'agento11y.tag.project';
 
 class CapturingExporter {
   requests = [];
@@ -44,7 +44,7 @@ test('client SIGIL_TAGS appear on generation span and metrics', async () => {
     const metricAttrs = await harness.metricDataPointAttributes('gen_ai.client.operation.duration');
     assert.ok(
       metricAttrs.some((attrs) => attrs[clientTagProjectKey] === 'checkout-svc'),
-      'expected sigil.tag.project on operation.duration metric',
+      'expected agento11y.tag.project on operation.duration metric',
     );
   } finally {
     await shutdownHarness(harness);
@@ -102,7 +102,7 @@ test('per-call generation tags stay export-only', async () => {
     recorder.end();
 
     const span = singleGenerationSpan(harness.spanExporter);
-    assert.equal(span.attributes['sigil.tag.call_only'], undefined);
+    assert.equal(span.attributes['agento11y.tag.call_only'], undefined);
 
     await harness.client.shutdown();
     const generation = harness.generationExporter.requests[0]?.generations?.[0];
@@ -117,7 +117,7 @@ function newHarness(overrides = {}) {
   const traceProvider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(spanExporter)],
   });
-  const tracer = traceProvider.getTracer('sigil-sdk-js-test');
+  const tracer = traceProvider.getTracer('agento11y-sdk-js-test');
   const generationExporter = new CapturingExporter();
   const defaults = defaultConfig();
 

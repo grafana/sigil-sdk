@@ -6,18 +6,18 @@ import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig
-from sigil_sdk.client import GenerationRecorder
-from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_langchain import (
+from agento11y import Client, ClientConfig, GenerationExportConfig
+from agento11y.client import GenerationRecorder
+from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
+from agento11y_langchain import (
     SigilAsyncLangChainHandler,
     SigilLangChainHandler,
     create_sigil_langchain_handler,
     with_sigil_langchain_callbacks,
 )
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 class _CapturingExporter:
@@ -58,11 +58,11 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             agent_name="agent-langchain",
             agent_version="v1",
             provider_resolver="auto",
-            extra_tags={"env": "test", "sigil.framework.name": "override"},
+            extra_tags={"env": "test", "agento11y.framework.name": "override"},
             extra_metadata={
                 "seed": 7,
-                "sigil.framework.run_id": "override-run",
-                "sigil.framework.thread_id": "override-thread",
+                "agento11y.framework.run_id": "override-run",
+                "agento11y.framework.thread_id": "override-thread",
             },
         )
 
@@ -96,18 +96,18 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
         assert generation.mode.value == "SYNC"
         assert generation.model.provider == "openai"
         assert generation.model.name == "gpt-5"
-        assert generation.tags["sigil.framework.name"] == "langchain"
-        assert generation.tags["sigil.framework.source"] == "handler"
-        assert generation.tags["sigil.framework.language"] == "python"
+        assert generation.tags["agento11y.framework.name"] == "langchain"
+        assert generation.tags["agento11y.framework.source"] == "handler"
+        assert generation.tags["agento11y.framework.language"] == "python"
         assert generation.tags["env"] == "test"
         assert generation.conversation_id == "chain-thread-42"
-        assert generation.metadata["sigil.framework.run_id"] == str(run_id)
-        assert generation.metadata["sigil.framework.thread_id"] == "chain-thread-42"
-        assert generation.metadata["sigil.framework.parent_run_id"] == str(parent_run_id)
-        assert generation.metadata["sigil.framework.component_name"] == "ChatOpenAI"
-        assert generation.metadata["sigil.framework.run_type"] == "chat"
-        assert generation.metadata["sigil.framework.retry_attempt"] == 2
-        assert generation.metadata["sigil.framework.tags"] == ["prod", "blue"]
+        assert generation.metadata["agento11y.framework.run_id"] == str(run_id)
+        assert generation.metadata["agento11y.framework.thread_id"] == "chain-thread-42"
+        assert generation.metadata["agento11y.framework.parent_run_id"] == str(parent_run_id)
+        assert generation.metadata["agento11y.framework.component_name"] == "ChatOpenAI"
+        assert generation.metadata["agento11y.framework.run_type"] == "chat"
+        assert generation.metadata["agento11y.framework.retry_attempt"] == 2
+        assert generation.metadata["agento11y.framework.tags"] == ["prod", "blue"]
         assert generation.metadata["seed"] == 7
         assert generation.usage.input_tokens == 10
         assert generation.usage.output_tokens == 5
@@ -622,7 +622,7 @@ def test_langchain_error_sets_call_error_and_preserves_framework_tags() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert "provider unavailable" in generation.call_error
-        assert generation.tags["sigil.framework.name"] == "langchain"
+        assert generation.tags["agento11y.framework.name"] == "langchain"
     finally:
         client.shutdown()
 
@@ -641,7 +641,7 @@ def test_langchain_async_handler_records_generation() -> None:
         asyncio.run(_run())
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "langchain"
+        assert generation.tags["agento11y.framework.name"] == "langchain"
         assert generation.model.provider == "openai"
     finally:
         client.shutdown()
@@ -701,13 +701,13 @@ def test_langchain_tool_chain_and_retriever_callbacks_emit_spans() -> None:
         assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
         assert tool_span.attributes.get("gen_ai.conversation.id") == "chain-thread-42"
 
-        assert chain_span.attributes.get("sigil.framework.run_type") == "chain"
-        assert chain_span.attributes.get("sigil.framework.component_name") == "PlanChain"
-        assert chain_span.attributes.get("sigil.framework.parent_run_id") == str(parent_run_id)
+        assert chain_span.attributes.get("agento11y.framework.run_type") == "chain"
+        assert chain_span.attributes.get("agento11y.framework.component_name") == "PlanChain"
+        assert chain_span.attributes.get("agento11y.framework.parent_run_id") == str(parent_run_id)
         assert chain_span.status.status_code.name == "OK"
 
-        assert retriever_span.attributes.get("sigil.framework.run_type") == "retriever"
-        assert retriever_span.attributes.get("sigil.framework.component_name") == "VectorRetriever"
+        assert retriever_span.attributes.get("agento11y.framework.run_type") == "retriever"
+        assert retriever_span.attributes.get("agento11y.framework.component_name") == "VectorRetriever"
         assert retriever_span.status.status_code.name == "ERROR"
         assert retriever_span.attributes.get("error.type") == "framework_error"
     finally:

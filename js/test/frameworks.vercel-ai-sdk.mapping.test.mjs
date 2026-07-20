@@ -285,14 +285,14 @@ test('vercel ai sdk mapping includes canonical framework identity in tags and me
   const metadata = buildFrameworkMetadata({ trace: 'abc' }, 'initial', 'reasoned');
 
   assert.equal(tags.env, 'test');
-  assert.equal(tags['sigil.framework.name'], 'vercel-ai-sdk');
-  assert.equal(tags['sigil.framework.source'], 'framework');
-  assert.equal(tags['sigil.framework.language'], 'typescript');
+  assert.equal(tags['agento11y.framework.name'], 'vercel-ai-sdk');
+  assert.equal(tags['agento11y.framework.source'], 'framework');
+  assert.equal(tags['agento11y.framework.language'], 'typescript');
 
   assert.equal(metadata.trace, 'abc');
-  assert.equal(metadata['sigil.framework.name'], 'vercel-ai-sdk');
-  assert.equal(metadata['sigil.framework.source'], 'framework');
-  assert.equal(metadata['sigil.framework.language'], 'typescript');
-  assert.equal(metadata['sigil.framework.step_type'], 'initial');
-  assert.equal(metadata['sigil.framework.reasoning_text'], 'reasoned');
+  assert.equal(metadata['agento11y.framework.name'], 'vercel-ai-sdk');
+  assert.equal(metadata['agento11y.framework.source'], 'framework');
+  assert.equal(metadata['agento11y.framework.language'], 'typescript');
+  assert.equal(metadata['agento11y.framework.step_type'], 'initial');
+  assert.equal(metadata['agento11y.framework.reasoning_text'], 'reasoned');
 });

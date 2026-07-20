@@ -5,13 +5,13 @@ Sigil records normalized LLM generation and tool-execution telemetry using your 
 ## Installation
 
 ```bash
-pnpm add @grafana/sigil-sdk-js
+pnpm add @grafana/agento11y
 ```
 
 For low-dependency runtimes that only need the core `SigilClient` and generation export APIs, use the slim core package:
 
 ```bash
-pnpm add @grafana/sigil-sdk-js-core
+pnpm add @grafana/agento11y-core
 ```
 
 For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance ID, and API token), refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/).
@@ -32,10 +32,10 @@ mise run sdk:conformance
 
 ## Quick Start
 
-The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+The snippet below configures the SDK explicitly. As an alternative, set `AGENTO11Y_*` environment variables and call `new SigilClient()` with no arguments — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
 
 ```ts
-import { SigilClient } from "@grafana/sigil-sdk-js";
+import { SigilClient } from "@grafana/agento11y";
 
 const client = new SigilClient({
   generationExport: {
@@ -43,8 +43,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
     },
   },
   api: {
@@ -75,7 +75,7 @@ await client.shutdown();
 Client-level default:
 
 ```ts
-import { SigilClient } from "@grafana/sigil-sdk-js";
+import { SigilClient } from "@grafana/agento11y";
 
 const client = new SigilClient({
   contentCapture: "metadata_only",
@@ -114,7 +114,7 @@ Dynamic resolution via `contentCaptureResolver`:
 ```ts
 const client = new SigilClient({
   contentCaptureResolver: (metadata) => {
-    if (metadata?.["sigil.tenant"] === "healthcare") {
+    if (metadata?.["tenant"] === "healthcare") {
       return "metadata_only";
     }
     return "default"; // defer to `contentCapture`
@@ -132,7 +132,7 @@ Resolution precedence (highest to lowest):
 
 Unlike the Go, Python, Java, and .NET SDKs, the JS SDK does not propagate the resolved capture mode through async context, so tool executions started inside a generation block do not automatically inherit the generation's mode. Set `contentCapture` on each `ToolExecutionStart` when you need a tool to follow a non-default policy.
 
-User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `userId` each show up (export vs spans vs metrics).
+User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `userId` each show up (export vs spans vs metrics).
 
 ## Pre-Ingest Redaction
 
@@ -143,11 +143,11 @@ validation, span sync, debug snapshots, and export.
 import {
   SigilClient,
   createSecretRedactionSanitizer,
-} from "@grafana/sigil-sdk-js";
+} from "@grafana/agento11y";
 
 const client = new SigilClient({
   generationSanitizer: createSecretRedactionSanitizer({
-    redactInputMessages: false, // omit to fall back to SIGIL_REDACT_INPUT_MESSAGES, then false
+    redactInputMessages: false, // omit to fall back to AGENTO11Y_REDACT_INPUT_MESSAGES, then false
     redactEmailAddresses: true,
   }),
 });
@@ -172,7 +172,7 @@ const client = new SigilClient({
 
 ### Configuring redaction via environment variables
 
-`createSecretRedactionSanitizer()` reads `SIGIL_REDACT_INPUT_MESSAGES` (accepts
+`createSecretRedactionSanitizer()` reads `AGENTO11Y_REDACT_INPUT_MESSAGES` (accepts
 `1/0`, `true/false`, `yes/no`, `on/off`) when `redactInputMessages` is omitted.
 Precedence is explicit option > env var > `false`. An unrecognised env value is
 warned and falls back to the next layer, so a typo cannot silently flip
@@ -182,9 +182,9 @@ redaction.
 import {
   createSecretRedactionSanitizer,
   SigilClient,
-} from "@grafana/sigil-sdk-js";
+} from "@grafana/agento11y";
 
-// Omit redactInputMessages so SIGIL_REDACT_INPUT_MESSAGES decides.
+// Omit redactInputMessages so AGENTO11Y_REDACT_INPUT_MESSAGES decides.
 const client = new SigilClient({
   generationSanitizer: createSecretRedactionSanitizer(),
 });
@@ -197,7 +197,7 @@ Use hooks when you want Sigil guard rules to run before an LLM call. The SDK eva
 Hooks are disabled by default. Enable them on the client and call `evaluateHook(...)` before the provider request:
 
 ```ts
-import { HookDeniedError, SigilClient } from "@grafana/sigil-sdk-js";
+import { HookDeniedError, SigilClient } from "@grafana/agento11y";
 
 const client = new SigilClient({
   hooks: { enabled: true, phases: ["preflight"], timeoutMs: 15_000, failOpen: true },
@@ -336,13 +336,13 @@ await client.startToolExecution(
 
 Use module subpath exports for framework callback integrations:
 
-- LangChain: `@grafana/sigil-sdk-js/langchain`
-- LangGraph: `@grafana/sigil-sdk-js/langgraph`
-- OpenAI Agents: `@grafana/sigil-sdk-js/openai-agents`
-- LlamaIndex: `@grafana/sigil-sdk-js/llamaindex`
-- Google ADK: `@grafana/sigil-sdk-js/google-adk`
-- Vercel AI SDK: `@grafana/sigil-sdk-js/vercel-ai-sdk`
-- Strands Agents: `@grafana/sigil-sdk-js/strands`
+- LangChain: `@grafana/agento11y/langchain`
+- LangGraph: `@grafana/agento11y/langgraph`
+- OpenAI Agents: `@grafana/agento11y/openai-agents`
+- LlamaIndex: `@grafana/agento11y/llamaindex`
+- Google ADK: `@grafana/agento11y/google-adk`
+- Vercel AI SDK: `@grafana/agento11y/vercel-ai-sdk`
+- Strands Agents: `@grafana/agento11y/strands`
 - LangChain guide: `docs/frameworks/langchain.md`
 - LangGraph guide: `docs/frameworks/langgraph.md`
 - OpenAI Agents guide: `docs/frameworks/openai-agents.md`
@@ -352,14 +352,14 @@ Use module subpath exports for framework callback integrations:
 - Strands Agents guide: `docs/frameworks/strands.md`
 
 ```ts
-import { SigilClient } from "@grafana/sigil-sdk-js";
-import { withSigilLangChainCallbacks } from "@grafana/sigil-sdk-js/langchain";
-import { withSigilLangGraphCallbacks } from "@grafana/sigil-sdk-js/langgraph";
-import { withSigilOpenAIAgentsHooks } from "@grafana/sigil-sdk-js/openai-agents";
-import { withSigilLlamaIndexCallbacks } from "@grafana/sigil-sdk-js/llamaindex";
-import { withSigilGoogleAdkPlugins } from "@grafana/sigil-sdk-js/google-adk";
-import { createSigilVercelAiSdk } from "@grafana/sigil-sdk-js/vercel-ai-sdk";
-import { withSigilStrandsHooks } from "@grafana/sigil-sdk-js/strands";
+import { SigilClient } from "@grafana/agento11y";
+import { withSigilLangChainCallbacks } from "@grafana/agento11y/langchain";
+import { withSigilLangGraphCallbacks } from "@grafana/agento11y/langgraph";
+import { withSigilOpenAIAgentsHooks } from "@grafana/agento11y/openai-agents";
+import { withSigilLlamaIndexCallbacks } from "@grafana/agento11y/llamaindex";
+import { withSigilGoogleAdkPlugins } from "@grafana/agento11y/google-adk";
+import { createSigilVercelAiSdk } from "@grafana/agento11y/vercel-ai-sdk";
+import { withSigilStrandsHooks } from "@grafana/agento11y/strands";
 import { Runner } from "@openai/agents";
 import { CallbackManager } from "llamaindex";
 
@@ -382,18 +382,18 @@ The same redaction policy also applies to Strands Agents generations.
 
 Each framework handler injects:
 
-- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `vercel-ai-sdk`, or `strands`)
-- `sigil.framework.source` (`handler` for existing callback handlers, `framework` for Vercel AI SDK hooks, `hooks` for Strands)
-- `sigil.framework.language` (`javascript` for existing callback handlers, `typescript` for Vercel AI SDK and Strands hooks)
-- `metadata["sigil.framework.run_id"]`
-- `metadata["sigil.framework.thread_id"]` (when present)
-- `metadata["sigil.framework.parent_run_id"]` (when available)
-- `metadata["sigil.framework.component_name"]`
-- `metadata["sigil.framework.run_type"]`
-- `metadata["sigil.framework.tags"]`
-- `metadata["sigil.framework.retry_attempt"]` (when available)
-- `metadata["sigil.framework.event_id"]` (when available)
-- `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
+- `agento11y.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `vercel-ai-sdk`, or `strands`)
+- `agento11y.framework.source` (`handler` for existing callback handlers, `framework` for Vercel AI SDK hooks, `hooks` for Strands)
+- `agento11y.framework.language` (`javascript` for existing callback handlers, `typescript` for Vercel AI SDK and Strands hooks)
+- `metadata["agento11y.framework.run_id"]`
+- `metadata["agento11y.framework.thread_id"]` (when present)
+- `metadata["agento11y.framework.parent_run_id"]` (when available)
+- `metadata["agento11y.framework.component_name"]`
+- `metadata["agento11y.framework.run_type"]`
+- `metadata["agento11y.framework.tags"]`
+- `metadata["agento11y.framework.retry_attempt"]` (when available)
+- `metadata["agento11y.framework.event_id"]` (when available)
+- `metadata["agento11y.framework.langgraph.node"]` (LangGraph when available)
 
 Conversation mapping is conversation-first:
 
@@ -423,7 +423,7 @@ await graph.invoke({ prompt: 'What timezone did I give you?', answer: '' }, thre
 - `flush()` drains queued generations; `shutdown()` flushes and closes generation exporters.
 - Empty tool names produce a no-op tool recorder.
 - Generation/tool spans always include SDK identity attributes:
-  - `sigil.sdk.name=sdk-js`
+  - `agento11y.sdk.name=sdk-js`
 - Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Raw provider artifacts are opt-in (`rawArtifacts: true`).
 
@@ -468,8 +468,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
     },
   },
   api: {
@@ -489,8 +489,8 @@ const client = new SigilClient({
     endpoint: "https://sigil-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
     },
   },
 });
@@ -501,15 +501,15 @@ If your deployment requires a distinct username, set `basicUser` explicitly:
 ```ts
 auth: {
   mode: "basic",
-  tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-  basicUser: process.env.SIGIL_AUTH_TENANT_ID,
-  basicPassword: process.env.SIGIL_AUTH_TOKEN,
+  tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+  basicUser: process.env.AGENTO11Y_AUTH_TENANT_ID,
+  basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
 },
 ```
 
 ## Wiring custom env vars
 
-The SDK only auto-loads `SIGIL_*` env vars (`SIGIL_ENDPOINT`, `SIGIL_PROTOCOL`, `SIGIL_AUTH_MODE`, `SIGIL_AUTH_TOKEN`, etc.) when you call `new SigilClient()`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
+The SDK only auto-loads `AGENTO11Y_*` env vars (`AGENTO11Y_ENDPOINT`, `AGENTO11Y_PROTOCOL`, `AGENTO11Y_AUTH_MODE`, `AGENTO11Y_AUTH_TOKEN`, etc.) when you call `new SigilClient()`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
 
 ```ts
 const generationBearerToken = (process.env.MY_APP_SIGIL_TOKEN ?? "").trim();
@@ -523,8 +523,8 @@ const client = new SigilClient({
         ? { mode: "bearer", bearerToken: generationBearerToken }
         : {
             mode: "basic",
-            tenantId: process.env.SIGIL_AUTH_TENANT_ID,
-            basicPassword: process.env.SIGIL_AUTH_TOKEN,
+            tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
+            basicPassword: process.env.AGENTO11Y_AUTH_TOKEN,
           },
   },
   api: {

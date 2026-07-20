@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/genai"
 
-	sigil "github.com/grafana/sigil-sdk/go/sigil"
-	"github.com/grafana/sigil-sdk/go/sigil/sigiltest"
+	sigil "github.com/grafana/agento11y/go/sigil"
+	"github.com/grafana/agento11y/go/sigil/sigiltest"
 )
 
 const (
@@ -95,7 +95,7 @@ func TestConformance_GeminiSyncMapping(t *testing.T) {
 	if got := sigiltest.StringValue(t, exported, "usage", "reasoning_tokens"); got != "10" {
 		t.Fatalf("unexpected usage.reasoning_tokens: got %q want %q", got, "10")
 	}
-	if got := sigiltest.FloatValue(t, exported, "metadata", "sigil.gen_ai.usage.tool_use_prompt_tokens"); got != 9 {
+	if got := sigiltest.FloatValue(t, exported, "metadata", "agento11y.gen_ai.usage.tool_use_prompt_tokens"); got != 9 {
 		t.Fatalf("unexpected tool_use_prompt_tokens: got %v want %v", got, float64(9))
 	}
 }
@@ -433,7 +433,7 @@ func TestConformance_GenerateContentSyncNormalization(t *testing.T) {
 	if generation.Output[0].Parts[2].Kind != sigil.PartKindText || generation.Output[0].Parts[2].Text != "It is 18C and sunny." {
 		t.Fatalf("unexpected text output: %#v", generation.Output[0].Parts[2])
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.level"] != "high" {
+	if generation.Metadata["agento11y.gen_ai.request.thinking.level"] != "high" {
 		t.Fatalf("unexpected thinking level metadata: %#v", generation.Metadata)
 	}
 	if generation.Tags["tenant"] != "t-123" {

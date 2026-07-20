@@ -8,6 +8,42 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "agento11y"
+version = "0.9.3"
+source = { editable = "." }
+dependencies = [
+    { name = "grpcio" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-proto" },
+    { name = "opentelemetry-sdk" },
+    { name = "protobuf" },
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "grpcio-tools" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.80.0" },
+    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.80.0" },
+    { name = "opentelemetry-api", specifier = ">=1.27.0" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.27.0" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27.0" },
+    { name = "opentelemetry-proto", specifier = ">=1.27.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.27.0" },
+    { name = "protobuf", specifier = ">=6.31.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2.0" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "certifi"
 version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
@@ -539,42 +575,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/34/26/f5d29e25ffdb535af
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5d/40/e1e72872c6354b306daef1703549e8e83b4d43cfea356311bf722a043752/setuptools-83.0.0-py3-none-any.whl", hash = "sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3", size = 1008090, upload-time = "2026-07-04T15:31:20.885Z" },
 ]
-
-[[package]]
-name = "sigil-sdk"
-version = "0.9.3"
-source = { editable = "." }
-dependencies = [
-    { name = "grpcio" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-proto" },
-    { name = "opentelemetry-sdk" },
-    { name = "protobuf" },
-    { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "grpcio-tools" },
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "grpcio", specifier = ">=1.80.0" },
-    { name = "grpcio-tools", marker = "extra == 'dev'", specifier = ">=1.80.0" },
-    { name = "opentelemetry-api", specifier = ">=1.27.0" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.27.0" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27.0" },
-    { name = "opentelemetry-proto", specifier = ">=1.27.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.27.0" },
-    { name = "protobuf", specifier = ">=6.31.1" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2.0" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "tomli"

@@ -15,14 +15,14 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from pydantic_ai import Agent, RunContext
-from sigil_sdk import (
+from agento11y import (
     AuthConfig,
     Client,
     ClientConfig,
     GenerationExportConfig,
     with_conversation_title,
 )
-from sigil_sdk_pydantic_ai import with_sigil_pydantic_ai_capability
+from agento11y_pydantic_ai import with_sigil_pydantic_ai_capability
 
 load_dotenv()
 
@@ -51,11 +51,11 @@ sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ["SIGIL_ENDPOINT"],
+            endpoint=os.environ["AGENTO11Y_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+                tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+                basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
             ),
         ),
     )

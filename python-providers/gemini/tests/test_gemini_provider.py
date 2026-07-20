@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from agento11y import Client, ClientConfig, GenerationExportConfig
+from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
+from agento11y_gemini import GeminiOptions, GeminiStreamSummary, models
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig
-from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_gemini import GeminiOptions, GeminiStreamSummary, models
 
 
 class _CapturingExporter:
@@ -318,7 +318,7 @@ def test_gemini_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
     assert mapped_default.top_p == 0.8
     assert mapped_default.tool_choice == "any"
     assert mapped_default.thinking_enabled is True
-    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1536
+    assert mapped_default.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 1536
     assert mapped_default.usage.total_tokens == 170
     assert mapped_default.usage.cache_read_input_tokens == 12
     assert mapped_default.usage.reasoning_tokens == 10
@@ -341,7 +341,7 @@ def test_gemini_mappers_use_strict_payloads_and_support_raw_artifacts() -> None:
     assert stream_mapped.max_tokens == 444
     assert stream_mapped.tool_choice == "any"
     assert stream_mapped.thinking_enabled is True
-    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1536
+    assert stream_mapped.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 1536
     assert [artifact.kind.value for artifact in stream_mapped.artifacts] == [
         "request",
         "response",

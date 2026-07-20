@@ -1,6 +1,6 @@
 import type { ContentCaptureMode, ContentCaptureResolver, Generation, Message } from './types.js';
 
-export const metadataKeyContentCaptureMode = 'sigil.sdk.content_capture_mode';
+export const metadataKeyContentCaptureMode = 'agento11y.sdk.content_capture_mode';
 
 /**
  * Returns the effective mode from an override and a fallback. `'default'` is
@@ -70,7 +70,7 @@ export function stripContent(generation: Generation, errorCategory: string): voi
   }
   if (generation.metadata !== undefined) {
     delete generation.metadata.call_error;
-    delete generation.metadata['sigil.conversation.title'];
+    delete generation.metadata['agento11y.conversation.title'];
   }
 
   if (generation.input !== undefined) {

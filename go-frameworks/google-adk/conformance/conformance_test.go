@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	googleadk "github.com/grafana/sigil-sdk/go-frameworks/google-adk"
-	"github.com/grafana/sigil-sdk/go/sigil"
+	googleadk "github.com/grafana/agento11y/go-frameworks/google-adk"
+	"github.com/grafana/agento11y/go/sigil"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -25,16 +25,16 @@ const (
 	spanAttrProviderName   = "gen_ai.provider.name"
 	spanAttrRequestModel   = "gen_ai.request.model"
 	spanAttrResponseModel  = "gen_ai.response.model"
-	spanAttrGenerationID   = "sigil.generation.id"
+	spanAttrGenerationID   = "agento11y.generation.id"
 
-	metadataRunID       = "sigil.framework.run_id"
-	metadataThreadID    = "sigil.framework.thread_id"
-	metadataParentRunID = "sigil.framework.parent_run_id"
-	metadataRunType     = "sigil.framework.run_type"
-	metadataComponent   = "sigil.framework.component_name"
-	metadataEventID     = "sigil.framework.event_id"
-	metadataTags        = "sigil.framework.tags"
-	metadataRetry       = "sigil.framework.retry_attempt"
+	metadataRunID       = "agento11y.framework.run_id"
+	metadataThreadID    = "agento11y.framework.thread_id"
+	metadataParentRunID = "agento11y.framework.parent_run_id"
+	metadataRunType     = "agento11y.framework.run_type"
+	metadataComponent   = "agento11y.framework.component_name"
+	metadataEventID     = "agento11y.framework.event_id"
+	metadataTags        = "agento11y.framework.tags"
+	metadataRetry       = "agento11y.framework.retry_attempt"
 )
 
 type conformanceEnv struct {
@@ -133,9 +133,9 @@ func TestConformance_RunLifecycleExportsFrameworkTelemetry(t *testing.T) {
 	requireStringFromMap(t, model, "name", "gemini-2.5-pro")
 
 	tags := mustObject(t, generation, "tags")
-	requireStringFromMap(t, tags, "sigil.framework.name", "google-adk")
-	requireStringFromMap(t, tags, "sigil.framework.source", "handler")
-	requireStringFromMap(t, tags, "sigil.framework.language", "go")
+	requireStringFromMap(t, tags, "agento11y.framework.name", "google-adk")
+	requireStringFromMap(t, tags, "agento11y.framework.source", "handler")
+	requireStringFromMap(t, tags, "agento11y.framework.language", "go")
 	requireStringFromMap(t, tags, "deployment.environment", "staging")
 
 	metadata := mustObject(t, generation, "metadata")
@@ -211,9 +211,9 @@ func TestConformance_StreamingRunExportsTokenDrivenGeneration(t *testing.T) {
 	requireStringField(t, generation, "span_id", span.SpanContext().SpanID().String())
 
 	tags := mustObject(t, generation, "tags")
-	requireStringFromMap(t, tags, "sigil.framework.name", "google-adk")
-	requireStringFromMap(t, tags, "sigil.framework.source", "handler")
-	requireStringFromMap(t, tags, "sigil.framework.language", "go")
+	requireStringFromMap(t, tags, "agento11y.framework.name", "google-adk")
+	requireStringFromMap(t, tags, "agento11y.framework.source", "handler")
+	requireStringFromMap(t, tags, "agento11y.framework.language", "go")
 
 	metadata := mustObject(t, generation, "metadata")
 	requireStringFromMap(t, metadata, metadataRunID, "run-stream")

@@ -1,4 +1,4 @@
-"""Tests for the experiment surface (sigil_sdk.experiments).
+"""Tests for the experiment surface (agento11y.experiments).
 
 Exercises the ergonomic Experiment/Trial API against a fake client that captures
 exported scores, and asserts the bilingual OTel telemetry (trial span identity
@@ -12,11 +12,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk.experiments import (
+from agento11y.experiments import (
     Evaluator,
     Experiment,
     TestCase,
@@ -26,7 +22,11 @@ from sigil_sdk.experiments import (
     otel,
     score,
 )
-from sigil_sdk.models import CreateExperimentRequest, ScoreItem
+from agento11y.models import CreateExperimentRequest, ScoreItem
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 class FakeClient:
@@ -187,11 +187,11 @@ def test_trial_span_emits_otel_eval_telemetry() -> None:
     assert attrs[otel.TEST_CASE_RUN_ID]  # the trial id
     # Verdict maps onto the merged pass|fail enum (this trial failed).
     assert attrs[otel.TEST_CASE_RESULT_STATUS] == "fail"
-    # The schema-version marker is the one sigil.* attribute we keep.
+    # The schema-version marker is the one agento11y.* attribute we keep.
     assert attrs[otel.ATTR_SCHEMA_VERSION] == otel.SCHEMA_VERSION
-    # No sigil.* mirrors are emitted.
-    assert not any(str(k).startswith("sigil.eval.experiment") for k in attrs)
-    assert not any(str(k).startswith("sigil.test_case_trial") for k in attrs)
+    # No mirrors are emitted, in neither the agento11y.* nor the legacy sigil.* namespace.
+    assert not any(str(k).startswith("agento11y.eval.experiment") for k in attrs)
+    assert not any(str(k).startswith("sigil.") for k in attrs)
 
     # The eval result event uses OTel names; the verdict is the score label.
     events = [e for e in span.events if e.name == otel.EVENT_EVAL_RESULT]
@@ -202,7 +202,7 @@ def test_trial_span_emits_otel_eval_telemetry() -> None:
     assert eattrs[otel.EVAL_SCORE_LABEL] == "fail"
     assert eattrs[otel.EVAL_EVALUATOR_ID] == "exact"
     assert eattrs[otel.EVAL_EVALUATOR_TYPE] == "deterministic"
-    assert "sigil.eval.score.passed" not in eattrs  # verdict is the label, no mirror
+    assert "agento11y.eval.score.passed" not in eattrs  # verdict is the label, no mirror
     assert eattrs[otel.EVAL_EXPLANATION] == "off by one"
 
 
@@ -244,6 +244,62 @@ def test_trial_ref_env_round_trip() -> None:
     assert restored.experiment_id == "run-4"
     assert restored.test_case_id == "c1"
     assert restored.attempt == 3
+
+
+def test_trial_ref_to_env_dual_writes_both_prefixes() -> None:
+    ref = TrialRef(
+        experiment_id="run-5",
+        test_case_id="c1",
+        attempt=2,
+        suite_id="s",
+        suite_version="2.0.0",
+        trajectory_id="traj-1",
+    )
+    env = ref.to_env()
+    for suffix in ("EXPERIMENT_ID", "TEST_CASE_ID", "ATTEMPT", "SUITE_ID", "SUITE_VERSION", "TRAJECTORY_ID"):
+        assert env[f"AGENTO11Y_{suffix}"] == env[f"SIGIL_{suffix}"]
+    assert env["AGENTO11Y_EXPERIMENT_ID"] == "run-5"
+    assert env["SIGIL_EXPERIMENT_ID"] == "run-5"
+    assert env["SIGIL_ATTEMPT"] == "2"
+
+
+def test_trial_ref_from_env_reads_legacy_only_writer() -> None:
+    env = {"SIGIL_EXPERIMENT_ID": "run-old", "SIGIL_TEST_CASE_ID": "c1", "SIGIL_ATTEMPT": "4"}
+    ref = TrialRef.from_env(env)
+    assert ref is not None
+    assert ref.experiment_id == "run-old"
+    assert ref.test_case_id == "c1"
+    assert ref.attempt == 4
+
+
+@pytest.mark.parametrize(
+    "env,expected_experiment_id",
+    [
+        pytest.param(
+            {"AGENTO11Y_EXPERIMENT_ID": "run-new", "SIGIL_EXPERIMENT_ID": "run-old", "AGENTO11Y_TEST_CASE_ID": "c1"},
+            "run-new",
+            id="preferred wins over legacy",
+        ),
+        pytest.param(
+            {"AGENTO11Y_EXPERIMENT_ID": "   ", "SIGIL_EXPERIMENT_ID": "run-old", "SIGIL_TEST_CASE_ID": "c1"},
+            "run-old",
+            id="blank preferred falls through",
+        ),
+        pytest.param(
+            {"SIGIL_RUN_ID": "run-tertiary", "SIGIL_TEST_CASE_ID": "c1"},
+            "run-tertiary",
+            id="SIGIL_RUN_ID tertiary fallback",
+        ),
+    ],
+)
+def test_trial_ref_from_env_precedence(env: dict[str, str], expected_experiment_id: str) -> None:
+    ref = TrialRef.from_env(env)
+    assert ref is not None
+    assert ref.experiment_id == expected_experiment_id
+
+
+def test_trial_ref_from_env_ignores_agento11y_run_id() -> None:
+    assert TrialRef.from_env({"AGENTO11Y_RUN_ID": "run-x", "AGENTO11Y_TEST_CASE_ID": "c1"}) is None
 
 
 def test_trial_from_ref_requires_ref() -> None:
@@ -419,13 +475,77 @@ def test_trial_artifact_upload() -> None:
 def test_experiment_factory_uses_supplied_client() -> None:
     client = FakeClient()
     suite = _suite()
-    from sigil_sdk.experiments import experiment as experiment_factory
+    from agento11y.experiments import experiment as experiment_factory
 
     with experiment_factory("factory run", suite=suite, client=client, experiment_id="run-f") as exp:
         assert exp._owns_client is False
         with exp.trial(suite.test_cases[0]) as trial:
             trial.score("final", value=True)
     assert client.finalized and client.finalized[0][0] == "run-f"
+
+
+@pytest.mark.parametrize(
+    "env,expected",
+    [
+        pytest.param(
+            {
+                "AGENTO11Y_ENDPOINT": "https://preferred",
+                "SIGIL_ENDPOINT": "https://legacy",
+                "SIGIL_API_ENDPOINT": "https://api-legacy",
+                "AGENTO11Y_AUTH_TENANT_ID": "1",
+                "SIGIL_AUTH_TENANT_ID": "2",
+                "SIGIL_TENANT_ID": "3",
+                "AGENTO11Y_AUTH_TOKEN": "tok-preferred",
+                "SIGIL_AUTH_TOKEN": "tok-legacy",
+            },
+            ("https://preferred", "1", "tok-preferred"),
+            id="preferred wins per field",
+        ),
+        pytest.param(
+            {"SIGIL_API_ENDPOINT": "https://api-legacy", "SIGIL_TENANT_ID": "3", "SIGIL_AUTH_TOKEN": "tok"},
+            ("https://api-legacy", "3", "tok"),
+            id="oldest legacy spellings still resolve",
+        ),
+        pytest.param(
+            {"AGENTO11Y_ENDPOINT": "   ", "SIGIL_ENDPOINT": "https://legacy", "SIGIL_AUTH_TOKEN": "tok"},
+            ("https://legacy", "", "tok"),
+            id="blank preferred endpoint falls through",
+        ),
+    ],
+)
+def test_experiment_factory_connection_env_precedence(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], expected: tuple[str, str, str]
+) -> None:
+    from agento11y.experiments import experiment as experiment_factory
+
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    exp = experiment_factory("conn")
+    client = exp.client
+    assert (client.endpoint, client.tenant_id, client.ingest_token) == expected
+
+
+def test_experiment_factory_ignores_agento11y_api_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agento11y.experiments import experiment as experiment_factory
+
+    monkeypatch.setenv("AGENTO11Y_API_ENDPOINT", "https://nope")
+    monkeypatch.setenv("SIGIL_AUTH_TOKEN", "tok")
+    with pytest.raises(ValueError, match="endpoint is required"):
+        experiment_factory("conn")
+
+
+def test_experiments_client_env_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agento11y.experiments.client import Client as IngestClient
+
+    monkeypatch.setenv("AGENTO11Y_AUTH_TOKEN", "tok-preferred")
+    monkeypatch.setenv("SIGIL_AUTH_TOKEN", "tok-legacy")
+    monkeypatch.setenv("AGENTO11Y_GRAFANA_URL", "https://g.example/")
+    monkeypatch.setenv("AGENTO11Y_USE_EXPERIMENTAL_OTEL", "false")
+    monkeypatch.setenv("SIGIL_USE_EXPERIMENTAL_OTEL", "true")
+    client = IngestClient("https://sigil.example")
+    assert client.ingest_token == "tok-preferred"
+    assert client.grafana_url == "https://g.example"
+    assert client.use_experimental_otel is False
 
 
 def test_final_score_primitive_derives_boolean_verdict() -> None:
@@ -442,7 +562,7 @@ def test_final_score_primitive_derives_boolean_verdict() -> None:
 
 
 def test_artifact_content_kind_inference() -> None:
-    from sigil_sdk.experiments.experiment import _artifact_content, _kind_from_mime
+    from agento11y.experiments.experiment import _artifact_content, _kind_from_mime
 
     assert _kind_from_mime("image/png") == "image"
     assert _kind_from_mime("application/pdf") == "pdf"
@@ -476,7 +596,7 @@ def test_non_verdict_states_omit_result_status() -> None:
 def test_parse_report_matches_backend_shape() -> None:
     # Regression: the report keys the run under `experiment` and cost under
     # `total_cost` (older drafts used `run` / `total_cost_usd`).
-    from sigil_sdk._experiments_transport import _parse_report
+    from agento11y._experiments_transport import _parse_report
 
     payload = {
         "experiment": {"experiment_id": "run-9", "name": "nightly", "status": "completed"},

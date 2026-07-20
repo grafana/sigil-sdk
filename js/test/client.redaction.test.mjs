@@ -21,7 +21,7 @@ test('secret redaction sanitizer redacts assistant and tool content but leaves u
   const exporter = new CapturingExporter();
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,
@@ -156,7 +156,7 @@ test('generation sanitizer failure falls back to metadata_only stripping', async
   const defaults = defaultConfig();
   const warnings = [];
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,
@@ -188,7 +188,7 @@ test('generation sanitizer failure falls back to metadata_only stripping', async
     await client.flush();
 
     const generation = exporter.requests[0].generations[0];
-    assert.equal(generation.metadata['sigil.sdk.content_capture_mode'], 'metadata_only');
+    assert.equal(generation.metadata['agento11y.sdk.content_capture_mode'], 'metadata_only');
     assert.equal(generation.conversationTitle, '');
     assert.equal(generation.systemPrompt, '');
     assert.equal(generation.input[0].parts[0].text, '');
@@ -334,4 +334,51 @@ test('createSecretRedactionSanitizer: blank env value is treated as unset (no wa
   const sanitized = sanitizer(buildUserSecretGeneration());
   assert.match(sanitized.input[0].parts[0].text, /sk-proj-/);
   assert.equal(warnings.length, 0);
+});
+
+test('createSecretRedactionSanitizer: AGENTO11Y_REDACT_INPUT_MESSAGES enables user input redaction', () => {
+  const sanitizer = createSecretRedactionSanitizer({}, { AGENTO11Y_REDACT_INPUT_MESSAGES: 'true' });
+  const sanitized = sanitizer(buildUserSecretGeneration());
+  assert.match(sanitized.input[0].parts[0].text, /\[REDACTED:openai-project-key\]/);
+});
+
+test('createSecretRedactionSanitizer: explicit redactInputMessages wins over preferred env', () => {
+  const sanitizer = createSecretRedactionSanitizer(
+    { redactInputMessages: false },
+    { AGENTO11Y_REDACT_INPUT_MESSAGES: 'true' },
+  );
+  const sanitized = sanitizer(buildUserSecretGeneration());
+  assert.match(sanitized.input[0].parts[0].text, /sk-proj-/);
+});
+
+test('createSecretRedactionSanitizer: preferred env wins over legacy', () => {
+  const sanitizer = createSecretRedactionSanitizer(
+    {},
+    { AGENTO11Y_REDACT_INPUT_MESSAGES: 'false', SIGIL_REDACT_INPUT_MESSAGES: 'true' },
+  );
+  const sanitized = sanitizer(buildUserSecretGeneration());
+  assert.match(sanitized.input[0].parts[0].text, /sk-proj-/);
+});
+
+test('createSecretRedactionSanitizer: blank preferred falls through to legacy', () => {
+  const sanitizer = createSecretRedactionSanitizer(
+    {},
+    { AGENTO11Y_REDACT_INPUT_MESSAGES: '   ', SIGIL_REDACT_INPUT_MESSAGES: 'true' },
+  );
+  const sanitized = sanitizer(buildUserSecretGeneration());
+  assert.match(sanitized.input[0].parts[0].text, /\[REDACTED:openai-project-key\]/);
+});
+
+test('createSecretRedactionSanitizer: invalid preferred blocks valid legacy and warns with preferred key', () => {
+  const warnings = [];
+  const logger = { warn: (message) => warnings.push(message) };
+  const sanitizer = createSecretRedactionSanitizer(
+    {},
+    { AGENTO11Y_REDACT_INPUT_MESSAGES: 'maybe', SIGIL_REDACT_INPUT_MESSAGES: 'true' },
+    logger,
+  );
+  const sanitized = sanitizer(buildUserSecretGeneration());
+  assert.match(sanitized.input[0].parts[0].text, /sk-proj-/);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /AGENTO11Y_REDACT_INPUT_MESSAGES.*maybe/);
 });

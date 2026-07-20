@@ -7,7 +7,7 @@ import os
 from tempfile import TemporaryDirectory
 
 from dotenv import load_dotenv
-from sigil_sdk import experiments as sigil
+from agento11y import experiments as sigil
 
 from app.dashboard_agent import (
     DashboardCase,
@@ -93,7 +93,7 @@ CASES: list[DashboardCase] = [
 def main() -> None:
     load_dotenv()
     experiment_id = os.environ.get(
-        "SIGIL_EXPERIMENT_ID",
+        "AGENTO11Y_EXPERIMENT_ID",
         f"dashboard-example-{os.environ.get('GIT_SHA', 'manual')}",
     )
     suite = sigil.TestSuite(

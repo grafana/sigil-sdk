@@ -11,8 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
 import grpc
-from opentelemetry.sdk.trace import TracerProvider
-from sigil_sdk import (
+from agento11y import (
     Artifact,
     ArtifactKind,
     AuthConfig,
@@ -32,8 +31,9 @@ from sigil_sdk import (
     ToolDefinition,
     ToolResult,
 )
-from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2 as sigil_pb2
-from sigil_sdk.internal.gen.sigil.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
+from agento11y.internal.gen.agento11y.v1 import generation_ingest_pb2 as sigil_pb2
+from agento11y.internal.gen.agento11y.v1 import generation_ingest_pb2_grpc as sigil_pb2_grpc
+from opentelemetry.sdk.trace import TracerProvider
 
 
 class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceServicer):
@@ -55,8 +55,8 @@ class _CapturingGenerationServicer(sigil_pb2_grpc.GenerationIngestServiceService
 
 
 import pytest
-from sigil_sdk.exporters.http import _normalize_endpoint
-from sigil_sdk.version import SDK_VERSION
+from agento11y.exporters.http import _normalize_endpoint
+from agento11y.version import SDK_VERSION
 
 
 @pytest.mark.parametrize(
@@ -301,8 +301,8 @@ def test_sdk_generation_auth_tenant_over_http() -> None:
         server.server_close()
 
 
-_DEFAULT_USER_AGENT = f"sigil-sdk-python/{SDK_VERSION}"
-_OVERRIDE_USER_AGENT = f"sigil-plugin-langgraph/1.2.3 {_DEFAULT_USER_AGENT}"
+_DEFAULT_USER_AGENT = f"agento11y-sdk-python/{SDK_VERSION}"
+_OVERRIDE_USER_AGENT = f"agento11y-plugin-langgraph/1.2.3 {_DEFAULT_USER_AGENT}"
 
 # A non-blank caller User-Agent wins; a blank or whitespace-only one must not
 # blank out the default. None exercises the no-header path. HTTP and gRPC must
@@ -568,7 +568,7 @@ def _assert_generation_json_payload(generation: dict[str, Any]) -> None:
     metadata = generation["metadata"]
     assert metadata["seed"] in (1, 1.0)
     assert metadata["nested"] == {"ok": True}
-    assert metadata["sigil.sdk.name"] == "sdk-python"
+    assert metadata["agento11y.sdk.name"] == "sdk-python"
 
     artifacts = generation["raw_artifacts"]
     assert isinstance(artifacts, list) and len(artifacts) == 2
@@ -656,7 +656,7 @@ def _assert_generation_proto_payload(generation: sigil_pb2.Generation) -> None:
 
     assert generation.metadata["seed"] in (1, 1.0)
     assert generation.metadata["nested"] == {"ok": True}
-    assert generation.metadata["sigil.sdk.name"] == "sdk-python"
+    assert generation.metadata["agento11y.sdk.name"] == "sdk-python"
 
     assert len(generation.raw_artifacts) == 2
 
@@ -696,7 +696,7 @@ def _new_client(generation_export: GenerationExportConfig) -> Client:
     return Client(
         ClientConfig(
             generation_export=generation_export,
-            tracer=trace_provider.get_tracer("sigil-sdk-python-transport-test"),
+            tracer=trace_provider.get_tracer("agento11y-sdk-python-transport-test"),
         )
     )
 

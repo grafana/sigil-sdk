@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 	"github.com/joho/godotenv"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -56,11 +56,11 @@ func main() {
 
 	cfg := sigil.DefaultConfig()
 	cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP
-	cfg.GenerationExport.Endpoint = os.Getenv("SIGIL_ENDPOINT")
+	cfg.GenerationExport.Endpoint = os.Getenv("AGENTO11Y_ENDPOINT")
 	cfg.GenerationExport.Auth = sigil.AuthConfig{
 		Mode:          sigil.ExportAuthModeBasic,
-		TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
-		BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
+		TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+		BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 	}
 	cfg.API.Endpoint = sigilAPIEndpoint()
 	cfg.Hooks.Enabled = true
@@ -149,12 +149,9 @@ func main() {
 }
 
 func sigilAPIEndpoint() string {
-	if explicit := strings.TrimSpace(os.Getenv("SIGIL_API_ENDPOINT")); explicit != "" {
-		return explicit
-	}
-	parsed, err := url.Parse(os.Getenv("SIGIL_ENDPOINT"))
+	parsed, err := url.Parse(os.Getenv("AGENTO11Y_ENDPOINT"))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return os.Getenv("SIGIL_ENDPOINT")
+		return os.Getenv("AGENTO11Y_ENDPOINT")
 	}
 	return parsed.Scheme + "://" + parsed.Host
 }

@@ -1,11 +1,11 @@
 # Sigil Python Framework Module: Claude Agent SDK
 
-`sigil-sdk-claude-agent-sdk` records Claude Agent SDK sessions as Sigil generations and maps Claude tool hooks to Sigil tool spans.
+`agento11y-claude-agent-sdk` records Claude Agent SDK sessions as Sigil generations and maps Claude tool hooks to Sigil tool spans.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-claude-agent-sdk
+pip install agento11y agento11y-claude-agent-sdk
 pip install claude-agent-sdk
 ```
 
@@ -17,8 +17,8 @@ The Claude Agent SDK runs the Claude Code CLI. Authenticate and configure Claude
 import asyncio
 
 from claude_agent_sdk import ClaudeAgentOptions
-from sigil_sdk import Client
-from sigil_sdk_claude_agent import sigil_query
+from agento11y import Client
+from agento11y_claude_agent import sigil_query
 
 
 async def main():
@@ -48,8 +48,8 @@ For bidirectional sessions, attach hooks to your `ClaudeAgentOptions` and pass e
 
 ```python
 from claude_agent_sdk import ClaudeAgentOptions
-from sigil_sdk import Client
-from sigil_sdk_claude_agent import SigilClaudeSDKClient
+from agento11y import Client
+from agento11y_claude_agent import SigilClaudeSDKClient
 
 sigil = Client()
 options = ClaudeAgentOptions(permission_mode="default")
@@ -84,7 +84,7 @@ Sigil guards run through Claude Agent SDK hooks:
 Enable guards on the Sigil client:
 
 ```python
-from sigil_sdk import Client, ClientConfig, HooksConfig
+from agento11y import Client, ClientConfig, HooksConfig
 
 client = Client(ClientConfig(hooks=HooksConfig(enabled=True)))
 ```
@@ -104,24 +104,24 @@ Conversation ID precedence:
 set, it creates one client-level fallback conversation ID and reuses it for every query in that client session so
 multi-query sessions stay grouped.
 
-When Claude returns a session ID in the stream, the handler also records it in generation metadata as `sigil.framework.session_id`.
+When Claude returns a session ID in the stream, the handler also records it in generation metadata as `agento11y.framework.session_id`.
 
 ## Metadata
 
 Required framework tags:
 
-- `sigil.framework.name=claude-agent-sdk`
-- `sigil.framework.source=hooks`
-- `sigil.framework.language=python`
+- `agento11y.framework.name=claude-agent-sdk`
+- `agento11y.framework.source=hooks`
+- `agento11y.framework.language=python`
 
 Metadata includes:
 
-- `sigil.framework.run_id`
-- `sigil.framework.run_type=agent`
-- `sigil.framework.session_id` when Claude returns one
-- `sigil.claude_agent.permission_mode` when configured
-- `sigil.claude_agent.cwd` when configured
-- `sigil.claude_agent.total_cost_usd` when Claude returns cost data
+- `agento11y.framework.run_id`
+- `agento11y.framework.run_type=agent`
+- `agento11y.framework.session_id` when Claude returns one
+- `agento11y.claude_agent.permission_mode` when configured
+- `agento11y.claude_agent.cwd` when configured
+- `agento11y.claude_agent.total_cost_usd` when Claude returns cost data
 
 ## Claude Native OpenTelemetry
 

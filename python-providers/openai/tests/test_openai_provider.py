@@ -6,12 +6,9 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig
-from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_openai import (
+from agento11y import Client, ClientConfig, GenerationExportConfig
+from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
+from agento11y_openai import (
     ChatCompletionsStreamSummary,
     OpenAIOptions,
     ResponsesStreamSummary,
@@ -19,6 +16,9 @@ from sigil_sdk_openai import (
     embeddings,
     responses,
 )
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 class _CapturingExporter:
@@ -91,7 +91,7 @@ def test_chat_sync_wrapper_sets_sync_mode_and_raw_artifacts_default_off() -> Non
         assert generation.mode.value == "SYNC"
         assert generation.model.provider == "openai"
         assert generation.max_tokens == 320
-        assert generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1024
+        assert generation.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 1024
         assert generation.artifacts == []
     finally:
         client.shutdown()
@@ -197,7 +197,7 @@ def test_responses_sync_wrapper_sets_sync_mode_and_maps_contract_fields() -> Non
         assert generation.temperature == 0.2
         assert generation.top_p == 0.8
         assert generation.stop_reason == "stop"
-        assert generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 512
+        assert generation.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 512
         assert generation.artifacts == []
     finally:
         client.shutdown()
@@ -480,7 +480,7 @@ def test_chat_mapper_filters_system_messages_and_supports_raw_artifacts() -> Non
     assert mapped_default.temperature == 0.2
     assert mapped_default.top_p == 0.85
     assert mapped_default.thinking_enabled is True
-    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
+    assert mapped_default.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 2048
     assert mapped_default.artifacts == []
 
     mapped_with_artifacts = chat.completions.from_request_response(
@@ -566,7 +566,7 @@ def test_responses_mapper_maps_output_and_stream_fallback() -> None:
     assert mapped.max_tokens == 300
     assert mapped.stop_reason == "stop"
     assert mapped.thinking_enabled is True
-    assert mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 640
+    assert mapped.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 640
     assert mapped.usage.total_tokens == 100
     assert len(mapped.output) == 3
     assert mapped.output[2].role.value == "tool"

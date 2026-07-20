@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 	"github.com/joho/godotenv"
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
@@ -51,13 +51,13 @@ func main() {
 
 	cfg := sigil.DefaultConfig()
 	cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP
-	cfg.GenerationExport.Endpoint = os.Getenv("SIGIL_ENDPOINT")
+	cfg.GenerationExport.Endpoint = os.Getenv("AGENTO11Y_ENDPOINT")
 	cfg.GenerationExport.Auth = sigil.AuthConfig{
 		Mode:          sigil.ExportAuthModeBasic,
-		TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
-		BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
+		TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+		BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 	}
-	// Client tags attach to every generation and become sigil.tag.<key>
+	// Client tags attach to every generation and become agento11y.tag.<key>
 	// attributes on OTel spans and metrics, so keep them low-cardinality
 	// (team, env). See docs/concepts/tags-and-metadata.md.
 	cfg.Tags = map[string]string{"team": "checkout", "env": "dev"}

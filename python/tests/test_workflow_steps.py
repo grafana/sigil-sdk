@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from uuid import uuid4
 
-from sigil_sdk import (
+from agento11y import (
     Client,
     ClientConfig,
     EnqueueError,
@@ -17,18 +17,18 @@ from sigil_sdk import (
     ValidationError,
     WorkflowStep,
 )
-from sigil_sdk.exporters.http import HTTPGenerationExporter, _normalize_endpoint
-from sigil_sdk.exporters.noop import NoopGenerationExporter
-from sigil_sdk.framework_handler import (
+from agento11y.exporters.http import HTTPGenerationExporter, _normalize_endpoint
+from agento11y.exporters.noop import NoopGenerationExporter
+from agento11y.framework_handler import (
     SigilFrameworkHandlerBase,
     _safe_serializable_dict,
 )
-from sigil_sdk.models import (
+from agento11y.models import (
     ExportWorkflowStepResult,
     ExportWorkflowStepsRequest,
     ExportWorkflowStepsResponse,
 )
-from sigil_sdk.proto_mapping import workflow_step_to_proto, workflow_step_to_proto_json
+from agento11y.proto_mapping import workflow_step_to_proto, workflow_step_to_proto_json
 
 # ---------------------------------------------------------------------------
 # proto mapping
@@ -50,8 +50,8 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
         input_state={"text": "hello", "n": 1},
         output_state={"category": "incident"},
         error="boom",
-        tags={"sigil.framework.name": "langgraph"},
-        metadata={"sigil.framework.run_id": "run-1"},
+        tags={"agento11y.framework.name": "langgraph"},
+        metadata={"agento11y.framework.run_id": "run-1"},
         linked_generation_ids=["gen_1", "gen_2"],
         parent_step_ids=["wfs_parent"],
         trace_id="trace-1",
@@ -67,7 +67,7 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
     assert proto.agent_name == "incident-pipeline"
     assert proto.agent_version == "v1"
     assert proto.error == "boom"
-    assert dict(proto.tags) == {"sigil.framework.name": "langgraph"}
+    assert dict(proto.tags) == {"agento11y.framework.name": "langgraph"}
     assert list(proto.linked_generation_ids) == ["gen_1", "gen_2"]
     assert list(proto.parent_step_ids) == ["wfs_parent"]
     assert proto.trace_id == "trace-1"
@@ -77,7 +77,7 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
     assert proto.input_state["text"] == "hello"
     assert proto.input_state["n"] == 1
     assert proto.output_state["category"] == "incident"
-    assert proto.metadata["sigil.framework.run_id"] == "run-1"
+    assert proto.metadata["agento11y.framework.run_id"] == "run-1"
 
 
 def test_workflow_step_to_proto_json_uses_snake_case_keys() -> None:
@@ -194,7 +194,7 @@ class _RecordingExporter:
 
     def export_generations(self, request):
         self.gen_batches.append(list(request.generations))
-        from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
+        from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
 
         return ExportGenerationsResponse(
             results=[

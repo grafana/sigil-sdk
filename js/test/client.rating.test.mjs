@@ -242,7 +242,7 @@ test('submitConversationRating applies bearer auth header from config', async ()
 function newClient(options) {
   const defaults = defaultConfig();
   return new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-rating-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-rating-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: options.generationProtocol ?? 'http',

@@ -15,8 +15,8 @@ import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { Agent, tool } from '@strands-agents/sdk';
 import { OpenAIModel } from '@strands-agents/sdk/models/openai';
-import { createSigilClient } from '@grafana/sigil-sdk-js';
-import { withSigilStrandsHooks } from '@grafana/sigil-sdk-js/strands';
+import { createSigilClient } from '@grafana/agento11y';
+import { withSigilStrandsHooks } from '@grafana/agento11y/strands';
 import { z } from 'zod';
 
 function env(name: string, fallback: string): string {
@@ -62,16 +62,16 @@ const addNumbers = tool({
   callback: ({ left, right }) => left + right,
 });
 
-const tenantId = requiredEnv('SIGIL_AUTH_TENANT_ID');
+const tenantId = requiredEnv('AGENTO11Y_AUTH_TENANT_ID');
 const sigil = createSigilClient({
   generationExport: {
-    protocol: env('SIGIL_PROTOCOL', 'http') as 'http' | 'grpc' | 'none',
-    endpoint: requiredEnv('SIGIL_ENDPOINT'),
+    protocol: env('AGENTO11Y_PROTOCOL', 'http') as 'http' | 'grpc' | 'none',
+    endpoint: requiredEnv('AGENTO11Y_ENDPOINT'),
     auth: {
       mode: 'basic',
       tenantId,
       basicUser: tenantId,
-      basicPassword: requiredEnv('SIGIL_AUTH_TOKEN'),
+      basicPassword: requiredEnv('AGENTO11Y_AUTH_TOKEN'),
     },
   },
   meter: meterProvider.getMeter('sigil-strands-typescript-example'),
@@ -94,7 +94,7 @@ try {
         systemPrompt: 'You are concise and show the final answer.',
         printer: false,
         appState: {
-          conversation_id: env('SIGIL_CONVERSATION_ID', 'sigil-strands-demo'),
+          conversation_id: env('AGENTO11Y_CONVERSATION_ID', 'sigil-strands-demo'),
         },
       },
       sigil,

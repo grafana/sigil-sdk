@@ -1,13 +1,14 @@
-"""Tests for canonical SIGIL_* env-var resolution in the Python SDK."""
+"""Tests for canonical AGENTO11Y_* / legacy SIGIL_* env-var resolution in the Python SDK."""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 import pytest
-from sigil_sdk import ApiConfig, Client, ClientConfig
-from sigil_sdk.config import default_config, resolve_config
-from sigil_sdk.models import ContentCaptureMode, GenerationStart, ModelRef
+from agento11y import ApiConfig, Client, ClientConfig
+from agento11y.config import default_config, resolve_config
+from agento11y.models import ContentCaptureMode, GenerationStart, ModelRef
 
 
 def _check_no_env(cfg: ClientConfig) -> None:
@@ -65,6 +66,35 @@ def _check_invalid_auth_mode_preserves_valid(cfg: ClientConfig) -> None:
 
 def _check_stray_tenant_does_not_error(cfg: ClientConfig) -> None:
     assert cfg.generation_export.auth.mode == "none"
+
+
+def _check_agent_name_preferred(cfg: ClientConfig) -> None:
+    assert cfg.agent_name == "preferred"
+
+
+def _check_agent_name_legacy(cfg: ClientConfig) -> None:
+    assert cfg.agent_name == "legacy"
+
+
+def _check_capture_default(cfg: ClientConfig) -> None:
+    assert cfg.content_capture == ContentCaptureMode.DEFAULT
+
+
+def _check_auth_mode_none_with_bearer_token(cfg: ClientConfig) -> None:
+    assert cfg.generation_export.auth.mode == "none"
+    assert cfg.generation_export.auth.bearer_token == "tok"
+
+
+def _check_mixed_prefix_auth(cfg: ClientConfig) -> None:
+    auth = cfg.generation_export.auth
+    assert auth.mode == "basic"
+    assert auth.tenant_id == "42"
+    assert auth.basic_user == "42"
+    assert auth.basic_password == "glc_xxx"
+
+
+def _check_preferred_tags_only(cfg: ClientConfig) -> None:
+    assert cfg.tags == {"service": "preferred"}
 
 
 @pytest.mark.parametrize(
@@ -129,6 +159,49 @@ def _check_stray_tenant_does_not_error(cfg: ClientConfig) -> None:
             _check_stray_tenant_does_not_error,
             id="stray SIGIL_AUTH_TENANT_ID does not error",
         ),
+        pytest.param(
+            {
+                "AGENTO11Y_ENDPOINT": "https://env:4318",
+                "AGENTO11Y_PROTOCOL": "http",
+                "AGENTO11Y_INSECURE": "true",
+                "AGENTO11Y_HEADERS": "X-A=1,X-B=two",
+                "AGENTO11Y_AUTH_MODE": "basic",
+                "AGENTO11Y_AUTH_TENANT_ID": "42",
+                "AGENTO11Y_AUTH_TOKEN": "glc_xxx",
+            },
+            _check_transport,
+            id="preferred-only env matches legacy-only resolution",
+        ),
+        pytest.param(
+            {"AGENTO11Y_AGENT_NAME": "preferred", "SIGIL_AGENT_NAME": "legacy"},
+            _check_agent_name_preferred,
+            id="preferred wins over legacy on conflict",
+        ),
+        pytest.param(
+            {"AGENTO11Y_AGENT_NAME": "   ", "SIGIL_AGENT_NAME": "legacy"},
+            _check_agent_name_legacy,
+            id="blank preferred falls through to legacy",
+        ),
+        pytest.param(
+            {"AGENTO11Y_CONTENT_CAPTURE_MODE": "bogus", "SIGIL_CONTENT_CAPTURE_MODE": "metadata_only"},
+            _check_capture_default,
+            id="invalid preferred capture mode blocks valid legacy fallback",
+        ),
+        pytest.param(
+            {"AGENTO11Y_AUTH_MODE": "bogus", "SIGIL_AUTH_MODE": "bearer", "SIGIL_AUTH_TOKEN": "tok"},
+            _check_auth_mode_none_with_bearer_token,
+            id="invalid preferred auth mode blocks valid legacy fallback",
+        ),
+        pytest.param(
+            {"AGENTO11Y_AUTH_MODE": "basic", "SIGIL_AUTH_TOKEN": "glc_xxx", "SIGIL_AUTH_TENANT_ID": "42"},
+            _check_mixed_prefix_auth,
+            id="mixed-prefix auth fields resolve per field",
+        ),
+        pytest.param(
+            {"AGENTO11Y_TAGS": "service=preferred", "SIGIL_TAGS": "service=legacy,env=prod"},
+            _check_preferred_tags_only,
+            id="preferred tags replace legacy tags without merging",
+        ),
     ],
 )
 def test_resolve_config_env(env: dict[str, str], check: Callable[[ClientConfig], None]) -> None:
@@ -145,6 +218,27 @@ def test_explicit_overrides_env() -> None:
     )
     assert cfg.generation_export.endpoint == "https://explicit:4318"
     assert cfg.agent_name == "planner"
+
+
+def test_explicit_overrides_both_env_prefixes() -> None:
+    explicit = ClientConfig()
+    explicit.generation_export.endpoint = "https://explicit:4318"
+    cfg = resolve_config(
+        explicit,
+        env={"AGENTO11Y_ENDPOINT": "https://preferred:4318", "SIGIL_ENDPOINT": "https://legacy:4318"},
+    )
+    assert cfg.generation_export.endpoint == "https://explicit:4318"
+
+
+def test_invalid_preferred_capture_mode_warning_names_selected_key(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="agento11y"):
+        cfg = resolve_config(
+            None,
+            env={"AGENTO11Y_CONTENT_CAPTURE_MODE": "bogus", "SIGIL_CONTENT_CAPTURE_MODE": "metadata_only"},
+        )
+    assert cfg.content_capture == ContentCaptureMode.DEFAULT
+    assert any("AGENTO11Y_CONTENT_CAPTURE_MODE" in r.getMessage() for r in caplog.records)
+    assert not any("SIGIL_CONTENT_CAPTURE_MODE" in r.getMessage() for r in caplog.records)
 
 
 def test_sigil_endpoint_also_defaults_api_endpoint() -> None:
@@ -184,6 +278,12 @@ def test_caller_tags_merge_with_env_tags() -> None:
     explicit = ClientConfig(tags={"team": "ai", "env": "staging"})
     cfg = resolve_config(explicit, env={"SIGIL_TAGS": "service=orch,env=prod"})
     assert cfg.tags == {"service": "orch", "team": "ai", "env": "staging"}
+
+
+def test_caller_tags_win_over_preferred_env_tags() -> None:
+    explicit = ClientConfig(tags={"env": "staging"})
+    cfg = resolve_config(explicit, env={"AGENTO11Y_TAGS": "service=orch,env=prod"})
+    assert cfg.tags == {"service": "orch", "env": "staging"}
 
 
 def test_env_token_fills_caller_bearer_mode() -> None:
@@ -253,6 +353,14 @@ def test_from_env_classmethod_matches_resolve() -> None:
     via_resolve = resolve_config(None, env={"SIGIL_AGENT_NAME": "planner", "SIGIL_PROTOCOL": "none"})
     assert via_class.agent_name == via_resolve.agent_name
     assert via_class.generation_export.protocol == via_resolve.generation_export.protocol
+
+
+def test_from_env_classmethod_matches_resolve_with_preferred_keys() -> None:
+    env = {"AGENTO11Y_AGENT_NAME": "planner", "AGENTO11Y_PROTOCOL": "none"}
+    via_class = ClientConfig.from_env(env=env)
+    via_resolve = resolve_config(None, env=env)
+    assert via_class.agent_name == via_resolve.agent_name == "planner"
+    assert via_class.generation_export.protocol == via_resolve.generation_export.protocol == "none"
 
 
 def test_client_reads_env_automatically(monkeypatch: pytest.MonkeyPatch) -> None:

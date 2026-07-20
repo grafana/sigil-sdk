@@ -20,7 +20,7 @@ This helper maps strict Gemini `model/contents/config` payloads into Sigil `Gene
 ## Wrapper-first example
 
 ```ts
-import { SigilClient, gemini } from "@grafana/sigil-sdk-js";
+import { SigilClient, gemini } from "@grafana/agento11y";
 
 const client = new SigilClient();
 
@@ -81,6 +81,6 @@ console.log(embeddingResponse.embeddings?.length ?? 0);
 Gemini-specific fields are mapped as follows:
 
 - `usage.thoughtsTokenCount` -> normalized `usage.reasoningTokens`
-- `usage.toolUsePromptTokenCount` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
-- `config.thinkingConfig.thinkingBudget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
-- `config.thinkingConfig.thinkingLevel` -> metadata `sigil.gen_ai.request.thinking.level`
+- `usage.toolUsePromptTokenCount` -> metadata `agento11y.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinkingConfig.thinkingBudget` -> metadata `agento11y.gen_ai.request.thinking.budget_tokens`
+- `config.thinkingConfig.thinkingLevel` -> metadata `agento11y.gen_ai.request.thinking.level`

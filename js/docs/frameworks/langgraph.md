@@ -1,18 +1,18 @@
-# LangGraph Handler (`@grafana/sigil-sdk-js/langgraph`)
+# LangGraph Handler (`@grafana/agento11y/langgraph`)
 
 Use `SigilLangGraphHandler` to map LangGraph callback lifecycle events to Sigil generation records.
 
 ## Install
 
 ```bash
-pnpm add @grafana/sigil-sdk-js @langchain/core @langchain/langgraph @langchain/openai
+pnpm add @grafana/agento11y @langchain/core @langchain/langgraph @langchain/openai
 ```
 
 ## Usage
 
 ```ts
-import { SigilClient } from '@grafana/sigil-sdk-js';
-import { withSigilLangGraphCallbacks } from '@grafana/sigil-sdk-js/langgraph';
+import { SigilClient } from '@grafana/agento11y';
+import { withSigilLangGraphCallbacks } from '@grafana/agento11y/langgraph';
 
 const client = new SigilClient();
 const config = withSigilLangGraphCallbacks(undefined, client, { providerResolver: 'auto' });
@@ -23,11 +23,11 @@ const config = withSigilLangGraphCallbacks(undefined, client, { providerResolver
 ```ts
 import { ChatOpenAI } from '@langchain/openai';
 import { END, START, StateGraph, Annotation } from '@langchain/langgraph';
-import { SigilClient } from '@grafana/sigil-sdk-js';
+import { SigilClient } from '@grafana/agento11y';
 import {
   SigilLangGraphHandler,
   withSigilLangGraphCallbacks,
-} from '@grafana/sigil-sdk-js/langgraph';
+} from '@grafana/agento11y/langgraph';
 
 const GraphState = Annotation.Root({
   prompt: Annotation<string>(),
@@ -96,9 +96,9 @@ await persistedGraph.invoke({ prompt: 'What timezone did I just give you?', answ
 When `thread_id` is present, the handler records:
 
 - `conversationId=<thread_id>`
-- `metadata["sigil.framework.run_id"]=<run id>`
-- `metadata["sigil.framework.thread_id"]=<thread id>`
-- generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id`
+- `metadata["agento11y.framework.run_id"]=<run id>`
+- `metadata["agento11y.framework.thread_id"]=<thread id>`
+- generation span attributes `agento11y.framework.run_id` and `agento11y.framework.thread_id`
 
 When `conversation_id` / `session_id` / `group_id` is present, that value is used as primary `conversationId`.
 
@@ -114,18 +114,18 @@ When `conversation_id` / `session_id` / `group_id` is present, that value is use
 
 Framework tags and metadata are always injected:
 
-- `sigil.framework.name=langgraph`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
-- `metadata["sigil.framework.run_id"]=<framework run id>`
-- `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
-- `metadata["sigil.framework.parent_run_id"]=<parent run id>` (when available)
-- `metadata["sigil.framework.component_name"]=<serialized component name>`
-- `metadata["sigil.framework.run_type"]=<llm|chat|tool|chain|retriever>`
-- `metadata["sigil.framework.tags"]=<normalized callback tags>`
-- `metadata["sigil.framework.retry_attempt"]=<attempt>` (when available)
-- `metadata["sigil.framework.event_id"]=<event id>` (when available)
-- `metadata["sigil.framework.langgraph.node"]=<node id>` (when callback context exposes it)
+- `agento11y.framework.name=langgraph`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
+- `metadata["agento11y.framework.run_id"]=<framework run id>`
+- `metadata["agento11y.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+- `metadata["agento11y.framework.parent_run_id"]=<parent run id>` (when available)
+- `metadata["agento11y.framework.component_name"]=<serialized component name>`
+- `metadata["agento11y.framework.run_type"]=<llm|chat|tool|chain|retriever>`
+- `metadata["agento11y.framework.tags"]=<normalized callback tags>`
+- `metadata["agento11y.framework.retry_attempt"]=<attempt>` (when available)
+- `metadata["agento11y.framework.event_id"]=<event id>` (when available)
+- `metadata["agento11y.framework.langgraph.node"]=<node id>` (when callback context exposes it)
 - generation span attributes mirror low-cardinality framework metadata keys
 
 Fallback conversation mapping uses `sigil:framework:langgraph:<run_id>` when no framework session key is available.

@@ -42,10 +42,10 @@ import java.util.regex.Pattern;
 
 /** Sigil Java SDK runtime client. */
 public final class SigilClient implements AutoCloseable {
-    static final String SPAN_ATTR_GENERATION_ID = "sigil.generation.id";
-    static final String SPAN_ATTR_SDK_NAME = "sigil.sdk.name";
+    static final String SPAN_ATTR_GENERATION_ID = "agento11y.generation.id";
+    static final String SPAN_ATTR_SDK_NAME = "agento11y.sdk.name";
     static final String SPAN_ATTR_CONVERSATION_ID = "gen_ai.conversation.id";
-    static final String SPAN_ATTR_CONVERSATION_TITLE = "sigil.conversation.title";
+    static final String SPAN_ATTR_CONVERSATION_TITLE = "agento11y.conversation.title";
     static final String SPAN_ATTR_USER_ID = "user.id";
     static final String SPAN_ATTR_AGENT_NAME = "gen_ai.agent.name";
     static final String SPAN_ATTR_AGENT_VERSION = "gen_ai.agent.version";
@@ -57,9 +57,9 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_REQUEST_MAX_TOKENS = "gen_ai.request.max_tokens";
     static final String SPAN_ATTR_REQUEST_TEMPERATURE = "gen_ai.request.temperature";
     static final String SPAN_ATTR_REQUEST_TOP_P = "gen_ai.request.top_p";
-    static final String SPAN_ATTR_REQUEST_TOOL_CHOICE = "sigil.gen_ai.request.tool_choice";
-    static final String SPAN_ATTR_REQUEST_THINKING_ENABLED = "sigil.gen_ai.request.thinking.enabled";
-    static final String SPAN_ATTR_REQUEST_THINKING_BUDGET = "sigil.gen_ai.request.thinking.budget_tokens";
+    static final String SPAN_ATTR_REQUEST_TOOL_CHOICE = "agento11y.gen_ai.request.tool_choice";
+    static final String SPAN_ATTR_REQUEST_THINKING_ENABLED = "agento11y.gen_ai.request.thinking.enabled";
+    static final String SPAN_ATTR_REQUEST_THINKING_BUDGET = "agento11y.gen_ai.request.thinking.budget_tokens";
     static final String SPAN_ATTR_RESPONSE_ID = "gen_ai.response.id";
     static final String SPAN_ATTR_RESPONSE_MODEL = "gen_ai.response.model";
     static final String SPAN_ATTR_FINISH_REASONS = "gen_ai.response.finish_reasons";
@@ -78,7 +78,7 @@ public final class SigilClient implements AutoCloseable {
     static final String SPAN_ATTR_TOOL_DESCRIPTION = "gen_ai.tool.description";
     static final String SPAN_ATTR_TOOL_CALL_ARGUMENTS = "gen_ai.tool.call.arguments";
     static final String SPAN_ATTR_TOOL_CALL_RESULT = "gen_ai.tool.call.result";
-    static final String SPAN_ATTR_TAG_PREFIX = "sigil.tag.";
+    static final String SPAN_ATTR_TAG_PREFIX = "agento11y.tag.";
     private static final int MAX_RATING_CONVERSATION_ID_LEN = 255;
     private static final int MAX_RATING_ID_LEN = 128;
     private static final int MAX_RATING_GENERATION_ID_LEN = 255;
@@ -111,9 +111,9 @@ public final class SigilClient implements AutoCloseable {
     static final String DEFAULT_EMBEDDING_OPERATION_NAME = "embeddings";
     static final String TOOL_EXECUTION_OPERATION_NAME = "execute_tool";
     static final String SDK_NAME = "sdk-java";
-    static final String METADATA_USER_ID_KEY = "sigil.user.id";
+    static final String METADATA_USER_ID_KEY = "agento11y.user.id";
     static final String METADATA_LEGACY_USER_ID_KEY = "user.id";
-    static final String METADATA_KEY_CONTENT_CAPTURE_MODE = "sigil.sdk.content_capture_mode";
+    static final String METADATA_KEY_CONTENT_CAPTURE_MODE = "agento11y.sdk.content_capture_mode";
 
     private final SigilClientConfig config;
     private final GenerationExporter generationExporter;
@@ -728,7 +728,7 @@ public final class SigilClient implements AutoCloseable {
         if (ccMode == ContentCaptureMode.METADATA_ONLY
                 || ccMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {
             // FULL_WITH_METADATA_SPANS keeps the proto title but the start
-            // span path must omit sigil.conversation.title. The recorder
+            // span path must omit agento11y.conversation.title. The recorder
             // rebuilds the proto payload from the seed at end-time, so this
             // mutation only affects span attributes.
             initial.setConversationTitle("");

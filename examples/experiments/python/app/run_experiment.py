@@ -8,8 +8,8 @@ instrumented normally and you want to publish experiment results to Sigil:
   3. Bind or record the real conversation/generation when available.
   4. Emit scores and artifacts, then let the context managers flush/finalize.
 
-Config via env: SIGIL_ENDPOINT, SIGIL_AUTH_TOKEN, optional SIGIL_AUTH_TENANT_ID,
-SIGIL_EXPERIMENT_ID, ANTHROPIC_API_KEY, AGENT_MODEL, GRADER_MODEL, GIT_SHA.
+Config via env: AGENTO11Y_ENDPOINT, AGENTO11Y_AUTH_TOKEN, optional AGENTO11Y_AUTH_TENANT_ID,
+AGENTO11Y_EXPERIMENT_ID, ANTHROPIC_API_KEY, AGENT_MODEL, GRADER_MODEL, GIT_SHA.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import os
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
-from sigil_sdk import experiments as sigil
+from agento11y import experiments as sigil
 
 from app.agent import answer_question, grade_answer
 
@@ -40,7 +40,7 @@ CASES: list[Case] = [
 
 def main() -> None:
     load_dotenv()
-    experiment_id = os.environ.get("SIGIL_EXPERIMENT_ID", f"experiment-example-{os.environ.get('GIT_SHA', 'manual')}")
+    experiment_id = os.environ.get("AGENTO11Y_EXPERIMENT_ID", f"experiment-example-{os.environ.get('GIT_SHA', 'manual')}")
     suite = sigil.TestSuite(
         suite_id="experiment-example",
         name="Framework-free example experiment",

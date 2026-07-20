@@ -4,7 +4,10 @@
 //
 // The helpers here intentionally have no dependency on the SDK client. They
 // only operate on the generated protobuf types from
-// github.com/grafana/sigil-sdk/go/proto/sigil/v1.
+// github.com/grafana/agento11y/go/proto/sigil/v1.
+//
+// FROZEN legacy package. sigil.v1 is retained only for the migration window;
+// the canonical helpers live in go/proto/agento11y/wire.
 package wire
 
 import (
@@ -13,7 +16,7 @@ import (
 	"net/url"
 	"strings"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
+	sigilv1 "github.com/grafana/agento11y/go/proto/sigil/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )

@@ -1,6 +1,6 @@
 # Sigil Python Provider Helper: Anthropic
 
-`sigil-sdk-anthropic` provides strict Anthropic Messages wrappers and mappers for Sigil.
+`agento11y-anthropic` provides strict Anthropic Messages wrappers and mappers for Sigil.
 
 ## Embeddings support
 
@@ -9,15 +9,15 @@ This helper currently supports Anthropic Messages APIs only. Native Anthropic em
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-anthropic anthropic
+pip install agento11y agento11y-anthropic anthropic
 ```
 
 ## Wrapper Mode (Sync)
 
 ```python
 from anthropic.types.message_create_params import MessageCreateParams
-from sigil_sdk import Client, ClientConfig
-from sigil_sdk_anthropic import AnthropicOptions, messages
+from agento11y import Client, ClientConfig
+from agento11y_anthropic import AnthropicOptions, messages
 
 client = Client(ClientConfig())
 
@@ -41,7 +41,7 @@ response = messages.create(
 ## Wrapper Mode (Stream)
 
 ```python
-from sigil_sdk_anthropic import AnthropicStreamSummary, messages
+from agento11y_anthropic import AnthropicStreamSummary, messages
 
 summary = messages.stream(
     client,
@@ -72,6 +72,6 @@ Raw artifacts are default OFF and should only be enabled for diagnostics.
 
 In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
 
-- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
-- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
-- `sigil.gen_ai.usage.server_tool_use.total_requests`
+- `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
+- `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `agento11y.gen_ai.usage.server_tool_use.total_requests`

@@ -19,7 +19,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
-import sigil.v1.GenerationIngest;
+import agento11y.v1.GenerationIngest;
 
 class ContentCaptureModeTest {
 
@@ -125,7 +125,7 @@ class ContentCaptureModeTest {
         assertThat(gen.getCallError()).isEqualTo("rate_limit");
         assertThat(gen.getMetadata()).doesNotContainKey("call_error");
         assertThat(gen.getConversationTitle()).isEmpty();
-        assertThat(gen.getMetadata()).doesNotContainKey("sigil.conversation.title");
+        assertThat(gen.getMetadata()).doesNotContainKey("agento11y.conversation.title");
 
         // Input text stripped
         assertThat(gen.getInput().get(0).getParts().get(0).getText()).isEmpty();
@@ -172,7 +172,7 @@ class ContentCaptureModeTest {
         assertThat(gen.getUsage().getOutputTokens()).isEqualTo(42);
         assertThat(gen.getStopReason()).isEqualTo("end_turn");
         assertThat(gen.getModel().getName()).isEqualTo("claude-sonnet-4-5");
-        assertThat(gen.getMetadata().get("sigil.sdk.name")).isEqualTo("sdk-java");
+        assertThat(gen.getMetadata().get("agento11y.sdk.name")).isEqualTo("sdk-java");
     }
 
     @Test
@@ -878,9 +878,9 @@ class ContentCaptureModeTest {
         gen.setUsage(new TokenUsage().setInputTokens(120).setOutputTokens(42));
         gen.setStopReason("end_turn");
         gen.setCallError("rate limit exceeded: prompt too long for model");
-        gen.getMetadata().put("sigil.sdk.name", "sdk-java");
+        gen.getMetadata().put("agento11y.sdk.name", "sdk-java");
         gen.getMetadata().put("call_error", "rate limit exceeded: prompt too long for model");
-        gen.getMetadata().put("sigil.conversation.title", "My secret conversation");
+        gen.getMetadata().put("agento11y.conversation.title", "My secret conversation");
 
         gen.getInput().add(new Message()
                 .setRole(MessageRole.USER)
@@ -975,7 +975,7 @@ class ContentCaptureModeTest {
             assertThat(rec.error()).isEmpty();
 
             GenerationIngest.Generation gen = env.singleGeneration();
-            assertThat(gen.getMetadata().getFieldsMap().get("sigil.sdk.content_capture_mode").getStringValue())
+            assertThat(gen.getMetadata().getFieldsMap().get("agento11y.sdk.content_capture_mode").getStringValue())
                     .isEqualTo(expect.marker());
 
             // Content fields: stripped only under METADATA_ONLY.
@@ -995,14 +995,14 @@ class ContentCaptureModeTest {
 
             // Conversation title metadata mirror: present iff the proto keeps it.
             if (expect.protoContentStripped()) {
-                assertThat(gen.getMetadata().getFieldsMap()).doesNotContainKey("sigil.conversation.title");
+                assertThat(gen.getMetadata().getFieldsMap()).doesNotContainKey("agento11y.conversation.title");
             } else {
-                assertThat(gen.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
+                assertThat(gen.getMetadata().getFieldsMap().get("agento11y.conversation.title").getStringValue())
                         .isEqualTo(title);
             }
 
             // Span path: title presence is what the mode advertises.
-            String spanTitle = env.generationSpan().getAttributes().get(AttributeKey.stringKey("sigil.conversation.title"));
+            String spanTitle = env.generationSpan().getAttributes().get(AttributeKey.stringKey("agento11y.conversation.title"));
             if (expect.spanTitlePresent()) {
                 assertThat(spanTitle).isEqualTo(title);
             } else {
@@ -1079,14 +1079,14 @@ class ContentCaptureModeTest {
             GenerationIngest.Generation gen = env.singleGeneration();
             assertThat(gen.getSystemPrompt()).isEqualTo("Be helpful.");
             assertThat(gen.getInput(0).getParts(0).getText()).isEqualTo("hello");
-            assertThat(gen.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
+            assertThat(gen.getMetadata().getFieldsMap().get("agento11y.conversation.title").getStringValue())
                     .isEqualTo(title);
-            assertThat(gen.getMetadata().getFieldsMap().get("sigil.sdk.content_capture_mode").getStringValue())
+            assertThat(gen.getMetadata().getFieldsMap().get("agento11y.sdk.content_capture_mode").getStringValue())
                     .isEqualTo("full_with_metadata_spans");
 
             // Span uses the streamText operation name and still drops the title.
             SpanData streamSpan = env.streamingGenerationSpan();
-            assertThat(streamSpan.getAttributes().get(AttributeKey.stringKey("sigil.conversation.title")))
+            assertThat(streamSpan.getAttributes().get(AttributeKey.stringKey("agento11y.conversation.title")))
                     .isNull();
         }
     }
@@ -1164,7 +1164,7 @@ class ContentCaptureModeTest {
             SpanData toolSpan = env.toolSpan();
             assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.call.arguments"))).isNull();
             assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.call.result"))).isNull();
-            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("sigil.conversation.title"))).isNull();
+            assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("agento11y.conversation.title"))).isNull();
             assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.description"))).isNull();
             // Identity attributes still emitted.
             assertThat(toolSpan.getAttributes().get(AttributeKey.stringKey("gen_ai.tool.name"))).isEqualTo("weather");

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
-	"github.com/grafana/sigil-sdk/go/proto/sigil/wire"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
+	"github.com/grafana/agento11y/go/proto/agento11y/wire"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,16 +27,16 @@ const (
 )
 
 type queuedGeneration struct {
-	generation *sigilv1.Generation
+	generation *agento11yv1.Generation
 }
 
 type queuedWorkflowStep struct {
-	workflowStep *sigilv1.WorkflowStep
+	workflowStep *agento11yv1.WorkflowStep
 }
 
 type generationExporter interface {
-	Export(ctx context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error)
-	ExportWorkflowSteps(ctx context.Context, request *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error)
+	Export(ctx context.Context, request *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error)
+	ExportWorkflowSteps(ctx context.Context, request *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error)
 	Shutdown(ctx context.Context) error
 }
 
@@ -48,18 +48,18 @@ func newNoopGenerationExporter(err error) generationExporter {
 	return &noopGenerationExporter{err: err}
 }
 
-func (e *noopGenerationExporter) Export(_ context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *noopGenerationExporter) Export(_ context.Context, request *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	if e.err != nil {
 		return nil, e.err
 	}
 	if request == nil {
-		return &sigilv1.ExportGenerationsResponse{}, nil
+		return &agento11yv1.ExportGenerationsResponse{}, nil
 	}
-	response := &sigilv1.ExportGenerationsResponse{
-		Results: make([]*sigilv1.ExportGenerationResult, 0, len(request.GetGenerations())),
+	response := &agento11yv1.ExportGenerationsResponse{
+		Results: make([]*agento11yv1.ExportGenerationResult, 0, len(request.GetGenerations())),
 	}
 	for _, generation := range request.GetGenerations() {
-		response.Results = append(response.Results, &sigilv1.ExportGenerationResult{
+		response.Results = append(response.Results, &agento11yv1.ExportGenerationResult{
 			GenerationId: generation.GetId(),
 			Accepted:     true,
 		})
@@ -67,18 +67,18 @@ func (e *noopGenerationExporter) Export(_ context.Context, request *sigilv1.Expo
 	return response, nil
 }
 
-func (e *noopGenerationExporter) ExportWorkflowSteps(_ context.Context, request *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
+func (e *noopGenerationExporter) ExportWorkflowSteps(_ context.Context, request *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
 	if e.err != nil {
 		return nil, e.err
 	}
 	if request == nil {
-		return &sigilv1.ExportWorkflowStepsResponse{}, nil
+		return &agento11yv1.ExportWorkflowStepsResponse{}, nil
 	}
-	response := &sigilv1.ExportWorkflowStepsResponse{
-		Results: make([]*sigilv1.ExportWorkflowStepResult, 0, len(request.GetWorkflowSteps())),
+	response := &agento11yv1.ExportWorkflowStepsResponse{
+		Results: make([]*agento11yv1.ExportWorkflowStepResult, 0, len(request.GetWorkflowSteps())),
 	}
 	for _, step := range request.GetWorkflowSteps() {
-		response.Results = append(response.Results, &sigilv1.ExportWorkflowStepResult{
+		response.Results = append(response.Results, &agento11yv1.ExportWorkflowStepResult{
 			StepId:   step.GetId(),
 			Accepted: true,
 		})
@@ -91,8 +91,8 @@ func (e *noopGenerationExporter) Shutdown(_ context.Context) error {
 }
 
 type grpcGenerationExporter struct {
-	client             sigilv1.GenerationIngestServiceClient
-	workflowStepClient sigilv1.WorkflowStepIngestServiceClient
+	client             agento11yv1.GenerationIngestServiceClient
+	workflowStepClient agento11yv1.WorkflowStepIngestServiceClient
 	conn               *grpc.ClientConn
 	headers            map[string]string
 }
@@ -138,8 +138,8 @@ func newGRPCGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 	}
 
 	return &grpcGenerationExporter{
-		client:             sigilv1.NewGenerationIngestServiceClient(conn),
-		workflowStepClient: sigilv1.NewWorkflowStepIngestServiceClient(conn),
+		client:             agento11yv1.NewGenerationIngestServiceClient(conn),
+		workflowStepClient: agento11yv1.NewWorkflowStepIngestServiceClient(conn),
 		conn:               conn,
 		headers:            headers,
 	}, nil
@@ -162,14 +162,14 @@ func splitUserAgent(headers map[string]string) (userAgent string, rest map[strin
 	return userAgent, rest
 }
 
-func (e *grpcGenerationExporter) Export(ctx context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *grpcGenerationExporter) Export(ctx context.Context, request *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	if len(e.headers) > 0 {
 		ctx = metadata.NewOutgoingContext(ctx, metadata.New(e.headers))
 	}
 	return e.client.ExportGenerations(ctx, request)
 }
 
-func (e *grpcGenerationExporter) ExportWorkflowSteps(ctx context.Context, request *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
+func (e *grpcGenerationExporter) ExportWorkflowSteps(ctx context.Context, request *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
 	if len(e.headers) > 0 {
 		ctx = metadata.NewOutgoingContext(ctx, metadata.New(e.headers))
 	}
@@ -216,7 +216,7 @@ func newHTTPGenerationExporter(cfg GenerationExportConfig) (generationExporter, 
 	}, nil
 }
 
-func (e *httpGenerationExporter) Export(ctx context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *httpGenerationExporter) Export(ctx context.Context, request *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	payload, err := wire.MarshalExportGenerationsJSON(request)
 	if err != nil {
 		return nil, fmt.Errorf("marshal generation request: %w", err)
@@ -256,7 +256,7 @@ func (e *httpGenerationExporter) Export(ctx context.Context, request *sigilv1.Ex
 	return exportResponse, nil
 }
 
-func (e *httpGenerationExporter) ExportWorkflowSteps(ctx context.Context, request *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
+func (e *httpGenerationExporter) ExportWorkflowSteps(ctx context.Context, request *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
 	payload, err := wire.MarshalExportWorkflowStepsJSON(request)
 	if err != nil {
 		return nil, fmt.Errorf("marshal workflow step request: %w", err)
@@ -521,8 +521,8 @@ func (c *Client) startWorker() {
 func (c *Client) runExportWorker() {
 	defer close(c.workerDone)
 
-	generationBatch := make([]*sigilv1.Generation, 0, c.config.GenerationExport.BatchSize)
-	workflowStepBatch := make([]*sigilv1.WorkflowStep, 0, c.config.GenerationExport.BatchSize)
+	generationBatch := make([]*agento11yv1.Generation, 0, c.config.GenerationExport.BatchSize)
+	workflowStepBatch := make([]*agento11yv1.WorkflowStep, 0, c.config.GenerationExport.BatchSize)
 	flushInterval := c.config.GenerationExport.FlushInterval
 	timer := time.NewTimer(flushInterval)
 	defer timer.Stop()
@@ -532,7 +532,7 @@ func (c *Client) runExportWorker() {
 			return nil
 		}
 
-		request := &sigilv1.ExportGenerationsRequest{Generations: generationBatch}
+		request := &agento11yv1.ExportGenerationsRequest{Generations: generationBatch}
 		err := c.exportWithRetry(request)
 		generationBatch = generationBatch[:0]
 		return err
@@ -542,7 +542,7 @@ func (c *Client) runExportWorker() {
 			return nil
 		}
 
-		request := &sigilv1.ExportWorkflowStepsRequest{WorkflowSteps: workflowStepBatch}
+		request := &agento11yv1.ExportWorkflowStepsRequest{WorkflowSteps: workflowStepBatch}
 		err := c.exportWorkflowStepsWithRetry(request)
 		workflowStepBatch = workflowStepBatch[:0]
 		return err
@@ -697,7 +697,7 @@ func resetTimer(timer *time.Timer, duration time.Duration) {
 	timer.Reset(duration)
 }
 
-func (c *Client) exportWithRetry(request *sigilv1.ExportGenerationsRequest) error {
+func (c *Client) exportWithRetry(request *agento11yv1.ExportGenerationsRequest) error {
 	attempts := c.config.GenerationExport.MaxRetries + 1
 	backoff := c.config.GenerationExport.InitialBackoff
 	if backoff <= 0 {
@@ -746,7 +746,7 @@ func (c *Client) exportWithRetry(request *sigilv1.ExportGenerationsRequest) erro
 	return lastErr
 }
 
-func (c *Client) exportWorkflowStepsWithRetry(request *sigilv1.ExportWorkflowStepsRequest) error {
+func (c *Client) exportWorkflowStepsWithRetry(request *agento11yv1.ExportWorkflowStepsRequest) error {
 	attempts := c.config.GenerationExport.MaxRetries + 1
 	backoff := c.config.GenerationExport.InitialBackoff
 	if backoff <= 0 {
@@ -813,7 +813,7 @@ func isRetryableExportValidationError(err error) bool {
 	return errors.As(err, &validationErr) && validationErr.retryable
 }
 
-func logRejectedExportResults(c *Client, response *sigilv1.ExportGenerationsResponse) {
+func logRejectedExportResults(c *Client, response *agento11yv1.ExportGenerationsResponse) {
 	for _, result := range response.GetResults() {
 		if result == nil || result.Accepted || duplicateGenerationExportResult(result) {
 			continue
@@ -822,7 +822,7 @@ func logRejectedExportResults(c *Client, response *sigilv1.ExportGenerationsResp
 	}
 }
 
-func logRejectedWorkflowStepExportResults(c *Client, response *sigilv1.ExportWorkflowStepsResponse) {
+func logRejectedWorkflowStepExportResults(c *Client, response *agento11yv1.ExportWorkflowStepsResponse) {
 	for _, result := range response.GetResults() {
 		if result == nil || result.Accepted {
 			continue
@@ -831,7 +831,7 @@ func logRejectedWorkflowStepExportResults(c *Client, response *sigilv1.ExportWor
 	}
 }
 
-func validateExportResponse(request *sigilv1.ExportGenerationsRequest, response *sigilv1.ExportGenerationsResponse) error {
+func validateExportResponse(request *agento11yv1.ExportGenerationsRequest, response *agento11yv1.ExportGenerationsResponse) error {
 	if response == nil {
 		return &exportValidationError{err: errors.New("nil generation export response"), retryable: true}
 	}
@@ -868,7 +868,7 @@ func validateExportResponse(request *sigilv1.ExportGenerationsRequest, response 
 	return nil
 }
 
-func duplicateGenerationExportResult(result *sigilv1.ExportGenerationResult) bool {
+func duplicateGenerationExportResult(result *agento11yv1.ExportGenerationResult) bool {
 	if result == nil || result.Accepted {
 		return false
 	}
@@ -878,7 +878,7 @@ func duplicateGenerationExportResult(result *sigilv1.ExportGenerationResult) boo
 		strings.Contains(msg, "duplicate entry")
 }
 
-func validateWorkflowStepExportResponse(request *sigilv1.ExportWorkflowStepsRequest, response *sigilv1.ExportWorkflowStepsResponse) error {
+func validateWorkflowStepExportResponse(request *agento11yv1.ExportWorkflowStepsRequest, response *agento11yv1.ExportWorkflowStepsResponse) error {
 	if response == nil {
 		return &exportValidationError{err: errors.New("nil workflow step export response"), retryable: true}
 	}

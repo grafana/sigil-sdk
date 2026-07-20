@@ -1,13 +1,26 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loggerMock } = vi.hoisted(() => ({
+const { loggerMock, homedirOverride } = vi.hoisted(() => ({
   loggerMock: { debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  homedirOverride: { value: undefined as string | undefined },
 }));
 
 vi.mock("./logger.js", () => ({ logger: loggerMock }));
+
+// sigilConfigEnvPath stats files under the resolved config root, so tests
+// exercising the $HOME/.config fallback must not consult the developer's
+// real home (which may contain a live config.env). Overridable homedir,
+// pass-through otherwise.
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return {
+    ...actual,
+    homedir: () => homedirOverride.value ?? actual.homedir(),
+  };
+});
 
 import {
   applySigilDotenv,
@@ -19,7 +32,7 @@ import { clearSigilEnv } from "./testEnv.js";
 
 describe("parseSigilDotenv", () => {
   it("parses the full sample from the Go reference test", () => {
-    // Mirrors plugins/sigil/internal/dotenv/dotenv_test.go::TestLoadDotenv
+    // Mirrors plugins/agento11y/internal/dotenv/dotenv_test.go::TestLoadDotenv
     const body = `# leading comment
 SIGIL_ENDPOINT=https://sigil.example.com
 export SIGIL_AUTH_TENANT_ID=alice
@@ -85,6 +98,11 @@ EMPTY=
     expect(got).toEqual({ SIGIL_ENDPOINT: "https://exported" });
   });
 
+  it("allows AGENTO11Y_-prefixed keys", () => {
+    const got = parseSigilDotenv("AGENTO11Y_ENDPOINT=https://ok\n");
+    expect(got).toEqual({ AGENTO11Y_ENDPOINT: "https://ok" });
+  });
+
   it("ignores keys outside the allow-list", () => {
     const body = `PATH=/tmp/not-loaded
 HOME=/tmp/not-loaded
@@ -116,33 +134,75 @@ OTEL_RESOURCE_ATTRIBUTES=service.name=other
 });
 
 describe("sigilConfigEnvPath", () => {
-  beforeEach(clearSigilEnv);
-  afterEach(clearSigilEnv);
+  let fakeHome: string;
+
+  beforeEach(() => {
+    clearSigilEnv();
+    fakeHome = mkdtempSync(join(tmpdir(), "sigil-pi-home-"));
+    homedirOverride.value = fakeHome;
+  });
+
+  afterEach(() => {
+    homedirOverride.value = undefined;
+    rmSync(fakeHome, { recursive: true, force: true });
+    clearSigilEnv();
+  });
 
   it("honors an absolute XDG_CONFIG_HOME", () => {
-    process.env.XDG_CONFIG_HOME = "/tmp/custom-config";
-    expect(sigilConfigEnvPath()).toBe("/tmp/custom-config/sigil/config.env");
+    // Fresh dir, not a fixed /tmp path: resolution is stat-based, so a
+    // leftover sigil/config.env at a shared path would flip the result.
+    const xdg = join(fakeHome, "custom-config");
+    process.env.XDG_CONFIG_HOME = xdg;
+    expect(sigilConfigEnvPath()).toBe(join(xdg, "agento11y", "config.env"));
   });
 
   it("ignores a relative XDG_CONFIG_HOME and falls back to $HOME/.config", () => {
     process.env.XDG_CONFIG_HOME = "relative-path";
     expect(sigilConfigEnvPath()).toBe(
-      join(homedir(), ".config", "sigil", "config.env"),
+      join(fakeHome, ".config", "agento11y", "config.env"),
     );
   });
 
-  it("falls back to $HOME/.config/sigil/config.env when XDG_CONFIG_HOME is unset", () => {
+  it("falls back to $HOME/.config/agento11y/config.env when XDG_CONFIG_HOME is unset", () => {
     expect(sigilConfigEnvPath()).toBe(
-      join(homedir(), ".config", "sigil", "config.env"),
+      join(fakeHome, ".config", "agento11y", "config.env"),
     );
   });
 
   it("ignores an XDG_CONFIG_HOME that is whitespace only", () => {
     process.env.XDG_CONFIG_HOME = "   ";
     expect(sigilConfigEnvPath()).toBe(
-      join(homedir(), ".config", "sigil", "config.env"),
+      join(fakeHome, ".config", "agento11y", "config.env"),
     );
   });
+
+  // Mirrors plugins/agento11y/internal/dotenv/dotenv_test.go::TestFilePathResolution.
+  const resolutionCases: {
+    name: string;
+    apps: string[];
+    wantApp: string;
+  }[] = [
+    { name: "neither exists defaults to new", apps: [], wantApp: "agento11y" },
+    { name: "only new exists", apps: ["agento11y"], wantApp: "agento11y" },
+    { name: "only legacy exists", apps: ["sigil"], wantApp: "sigil" },
+    {
+      name: "both exist prefers new",
+      apps: ["agento11y", "sigil"],
+      wantApp: "agento11y",
+    },
+  ];
+  for (const tc of resolutionCases) {
+    it(tc.name, () => {
+      process.env.XDG_CONFIG_HOME = fakeHome;
+      for (const app of tc.apps) {
+        mkdirSync(join(fakeHome, app), { recursive: true });
+        writeFileSync(join(fakeHome, app, "config.env"), "SIGIL_ENDPOINT=x\n");
+      }
+      expect(sigilConfigEnvPath()).toBe(
+        join(fakeHome, tc.wantApp, "config.env"),
+      );
+    });
+  }
 });
 
 describe("loadSigilDotenv", () => {
@@ -382,5 +442,88 @@ describe("applySigilDotenv", () => {
     rmSync(join(dir, "sigil"), { recursive: true, force: true });
     applySigilDotenv();
     expect(process.env.SIGIL_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it("materializes a file value under both spellings", () => {
+    writeConfig("SIGIL_AUTH_TOKEN=tok\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("tok");
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("tok");
+  });
+
+  it("file AGENTO11Y_ENDPOINT beats file SIGIL_ENDPOINT", () => {
+    writeConfig(
+      "AGENTO11Y_ENDPOINT=https://preferred\nSIGIL_ENDPOINT=https://legacy\n",
+    );
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://preferred");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://preferred");
+  });
+
+  it("shell SIGIL_ENDPOINT beats file AGENTO11Y_ENDPOINT", () => {
+    process.env.SIGIL_ENDPOINT = "https://from-shell";
+    writeConfig("AGENTO11Y_ENDPOINT=https://from-file\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://from-shell");
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://from-shell");
+  });
+
+  it("shell AGENTO11Y_ENDPOINT beats shell SIGIL_ENDPOINT", () => {
+    process.env.AGENTO11Y_ENDPOINT = "https://preferred-shell";
+    process.env.SIGIL_ENDPOINT = "https://legacy-shell";
+    writeConfig("SIGIL_ENDPOINT=https://from-file\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://preferred-shell");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://preferred-shell");
+  });
+
+  it("clears both spellings when the file value is removed", () => {
+    writeConfig("AGENTO11Y_AUTH_TOKEN=tok\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("tok");
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("tok");
+
+    writeConfig("");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBeUndefined();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it("releases the whole family when a runtime writer replaces one spelling", () => {
+    writeConfig("SIGIL_AUTH_TOKEN=from-file\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-file");
+
+    process.env.AGENTO11Y_AUTH_TOKEN = "from-writer";
+    writeConfig("SIGIL_AUTH_TOKEN=from-file-2\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-writer");
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-writer");
+  });
+
+  it("a runtime write to the legacy spelling wins over the file's preferred value", () => {
+    writeConfig("AGENTO11Y_AUTH_TOKEN=from-file\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-file");
+
+    process.env.SIGIL_AUTH_TOKEN = "from-writer";
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-writer");
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-writer");
+  });
+
+  it("re-fills both spellings from the file after the runtime override is cleared", () => {
+    writeConfig("SIGIL_AUTH_TOKEN=from-file\n");
+    applySigilDotenv();
+
+    process.env.SIGIL_AUTH_TOKEN = "from-writer";
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-writer");
+
+    delete process.env.SIGIL_AUTH_TOKEN;
+    delete process.env.AGENTO11Y_AUTH_TOKEN;
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-file");
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-file");
   });
 });

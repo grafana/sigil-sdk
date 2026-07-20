@@ -17,14 +17,14 @@ Or open the AI Observability plugin in your Grafana Cloud stack and use the onbo
 
 ## Quick start (manual)
 
-Set the [`SIGIL_*` env vars](#grafana-cloud-credentials) and construct the client. To configure it explicitly instead, see the per-SDK READMEs linked under [SDKs](#sdks).
+Set the [`AGENTO11Y_*` env vars](#grafana-cloud-credentials) and construct the client. To configure it explicitly instead, see the per-SDK READMEs linked under [SDKs](#sdks).
 
 ### TypeScript
 
 ```ts
-import { SigilClient } from "@grafana/sigil-sdk-js";
+import { SigilClient } from "@grafana/agento11y";
 
-const client = new SigilClient(); // reads SIGIL_* env vars
+const client = new SigilClient(); // reads AGENTO11Y_* env vars
 
 await client.startGeneration(
   { conversationId: "conv-1", model: { provider: "openai", name: "gpt-5" } },
@@ -39,9 +39,9 @@ await client.shutdown();
 ### Python
 
 ```python
-from sigil_sdk import Client, GenerationStart, ModelRef, assistant_text_message
+from agento11y import Client, GenerationStart, ModelRef, assistant_text_message
 
-client = Client()  # reads SIGIL_* env vars
+client = Client()  # reads AGENTO11Y_* env vars
 
 with client.start_generation(
     GenerationStart(
@@ -57,7 +57,7 @@ client.shutdown()
 ### Go
 
 ```go
-client := sigil.NewClient(sigil.Config{}) // reads SIGIL_* env vars
+client := sigil.NewClient(sigil.Config{}) // reads AGENTO11Y_* env vars
 defer func() { _ = client.Shutdown(context.Background()) }()
 
 ctx, rec := client.StartGeneration(context.Background(), sigil.GenerationStart{
@@ -75,11 +75,11 @@ rec.SetResult(sigil.Generation{
 
 | Language | Package | Path |
 |----------|---------|------|
-| Go | `github.com/grafana/sigil-sdk/go` | [`go/`](go/) |
-| Python | `sigil-sdk` | [`python/`](python/) |
-| TypeScript/JavaScript | `@grafana/sigil-sdk-js` | [`js/`](js/) |
-| .NET/C# | `Grafana.Sigil` | [`dotnet/`](dotnet/) |
-| Java | `com.grafana.sigil` | [`java/`](java/) |
+| Go | `github.com/grafana/agento11y/go` | [`go/`](go/) |
+| Python | `agento11y` | [`python/`](python/) |
+| TypeScript/JavaScript | `@grafana/agento11y` | [`js/`](js/) |
+| .NET/C# | `Grafana.Agento11y` | [`dotnet/`](dotnet/) |
+| Java | `com.grafana.agento11y` | [`java/`](java/) |
 
 ## Provider adapters
 
@@ -89,14 +89,14 @@ rec.SetResult(sigil.Generation{
 | Python | Anthropic, OpenAI, Gemini | [`python-providers/`](python-providers/) |
 | Java | Anthropic, OpenAI, Gemini | [`java/providers/`](java/providers/) |
 | .NET | Anthropic, OpenAI, Gemini | [`dotnet/src/`](dotnet/src/) |
-| TypeScript/JavaScript | Anthropic, OpenAI, Gemini | Subpath exports of `@grafana/sigil-sdk-js`. See [`js/README.md`](js/README.md). |
+| TypeScript/JavaScript | Anthropic, OpenAI, Gemini | Subpath exports of `@grafana/agento11y`. See [`js/README.md`](js/README.md). |
 
 ## Framework integrations
 
 | Language | Frameworks | Where |
 |----------|------------|-------|
 | Python | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands Agents, Claude Agent SDK, LiteLLM, Pydantic AI | [`python-frameworks/`](python-frameworks/) |
-| TypeScript/JavaScript | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands, Vercel AI SDK | Subpath exports of `@grafana/sigil-sdk-js`. See [`js/README.md`](js/README.md). |
+| TypeScript/JavaScript | LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands, Vercel AI SDK | Subpath exports of `@grafana/agento11y`. See [`js/README.md`](js/README.md). |
 | Go | Google ADK | [`go-frameworks/`](go-frameworks/) |
 | Java | Google ADK | [`java/frameworks/`](java/frameworks/) |
 
@@ -151,7 +151,7 @@ All four connection values (API URL, Instance ID, API token, and OTLP endpoint) 
 https://<your-stack>.grafana.net/plugins/grafana-sigil-app
 ```
 
-Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `SIGIL_AUTH_TOKEN` (Sigil ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
+Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `AGENTO11Y_AUTH_TOKEN` (Sigil ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
 
 See the [Grafana Cloud AI observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the full setup flow.
 

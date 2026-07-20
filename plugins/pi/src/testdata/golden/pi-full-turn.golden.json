@@ -100,9 +100,9 @@
         },
         "metadata": {
           "cost_usd": 0.003,
-          "sigil.conversation.title": "summarize the go files",
-          "sigil.sdk.name": "sdk-js",
-          "sigil.sdk.content_capture_mode": "full"
+          "agento11y.conversation.title": "summarize the go files",
+          "agento11y.sdk.name": "sdk-js",
+          "agento11y.sdk.content_capture_mode": "full"
         },
         "raw_artifacts": [],
         "call_error": "",

@@ -174,21 +174,28 @@ function opencodeMessageFixture() {
   };
 }
 
-const SDK_ENV_KEYS = [
-  "SIGIL_ENDPOINT",
-  "SIGIL_PROTOCOL",
-  "SIGIL_AUTH_MODE",
-  "SIGIL_AUTH_TENANT_ID",
-  "SIGIL_AUTH_TOKEN",
-  "SIGIL_HEADERS",
-  "SIGIL_AGENT_NAME",
-  "SIGIL_AGENT_VERSION",
-  "SIGIL_USER_ID",
-  "SIGIL_TAGS",
-  "SIGIL_CONTENT_CAPTURE_MODE",
-  "SIGIL_DEBUG",
+const SDK_ENV_SUFFIXES = [
+  "ENDPOINT",
+  "PROTOCOL",
+  "AUTH_MODE",
+  "AUTH_TENANT_ID",
+  "AUTH_TOKEN",
+  "HEADERS",
+  "AGENT_NAME",
+  "AGENT_VERSION",
+  "USER_ID",
+  "TAGS",
+  "CONTENT_CAPTURE_MODE",
+  "DEBUG",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
-  "SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT",
+] as const;
+
+const SDK_ENV_KEYS = [
+  ...SDK_ENV_SUFFIXES.flatMap((suffix) => [
+    `AGENTO11Y_${suffix}`,
+    `SIGIL_${suffix}`,
+  ]),
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
 ] as const;
 
 describe("opencode plugin: real-SDK golden export", () => {
@@ -347,7 +354,7 @@ describe("opencode plugin: real-SDK golden export", () => {
     });
 
     expectCommonTurnFields(turn);
-    expect(turn.metadata["sigil.sdk.content_capture_mode"]).toBe(
+    expect(turn.metadata["agento11y.sdk.content_capture_mode"]).toBe(
       contentCapture,
     );
     expect(messageFetches).toBe(contentCapture === "metadata_only" ? 0 : 1);
@@ -415,8 +422,8 @@ const normalizeFields: Record<string, string> = {
   trace_id: "<NORMALIZED>",
   span_id: "<NORMALIZED>",
   parent_span_id: "<NORMALIZED>",
-  "sigil.sdk.version": "<NORMALIZED>",
-  "sigil.sdk.commit": "<NORMALIZED>",
+  "agento11y.sdk.version": "<NORMALIZED>",
+  "agento11y.sdk.commit": "<NORMALIZED>",
   // sha256 derived from agent_version; see Pi golden test for the rationale.
   effective_version: "<NORMALIZED>",
   // The plugin resolves git.branch and cwd from the opencode plugin

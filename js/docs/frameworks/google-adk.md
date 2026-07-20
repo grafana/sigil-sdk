@@ -1,18 +1,18 @@
-# Google ADK Handler (`@grafana/sigil-sdk-js/google-adk`)
+# Google ADK Handler (`@grafana/agento11y/google-adk`)
 
 Use `SigilGoogleAdkHandler` to map Google ADK session/invocation callbacks to Sigil generations.
 
 ## Install
 
 ```bash
-pnpm add @grafana/sigil-sdk-js @google/adk
+pnpm add @grafana/agento11y @google/adk
 ```
 
 ## Quickstart
 
 ```ts
-import { SigilClient } from '@grafana/sigil-sdk-js';
-import { withSigilGoogleAdkPlugins } from '@grafana/sigil-sdk-js/google-adk';
+import { SigilClient } from '@grafana/agento11y';
+import { withSigilGoogleAdkPlugins } from '@grafana/agento11y/google-adk';
 
 const client = new SigilClient();
 const runnerConfig = withSigilGoogleAdkPlugins(undefined, client, {
@@ -24,7 +24,7 @@ const runnerConfig = withSigilGoogleAdkPlugins(undefined, client, {
 Or create the plugin explicitly:
 
 ```ts
-import { createSigilGoogleAdkPlugin } from '@grafana/sigil-sdk-js/google-adk';
+import { createSigilGoogleAdkPlugin } from '@grafana/agento11y/google-adk';
 
 const sigilPlugin = createSigilGoogleAdkPlugin(client, { providerResolver: 'auto' });
 const runnerConfig = { plugins: [sigilPlugin] };
@@ -36,8 +36,8 @@ The appended plugin implements the ADK callback surface (`beforeRunCallback`, `o
 ## Streaming snippet
 
 ```ts
-import { SigilClient } from '@grafana/sigil-sdk-js';
-import { SigilGoogleAdkHandler } from '@grafana/sigil-sdk-js/google-adk';
+import { SigilClient } from '@grafana/agento11y';
+import { SigilGoogleAdkHandler } from '@grafana/agento11y/google-adk';
 
 const client = new SigilClient();
 const handler = new SigilGoogleAdkHandler(client, { providerResolver: 'auto' });
@@ -64,14 +64,14 @@ Primary mapping is ADK conversation/session identity:
 
 ## Metadata and lineage
 
-- Required: `sigil.framework.run_type`
-- Optional lineage: `sigil.framework.run_id`, `sigil.framework.parent_run_id`, `sigil.framework.thread_id`, `sigil.framework.event_id`, `sigil.framework.component_name`
+- Required: `agento11y.framework.run_type`
+- Optional lineage: `agento11y.framework.run_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.thread_id`, `agento11y.framework.event_id`, `agento11y.framework.component_name`
 
 Tags:
 
-- `sigil.framework.name=google-adk`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
+- `agento11y.framework.name=google-adk`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
 
 ## Provider resolver
 

@@ -17,7 +17,7 @@ import { defaultConfig, SigilClient } from '../.test-dist/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const protoPath = join(__dirname, '../proto/sigil/v1/generation_ingest.proto');
+const protoPath = join(__dirname, '../proto/agento11y/v1/generation_ingest.proto');
 const protoLoadOptions = {
   keepCase: false,
   longs: String,
@@ -181,7 +181,7 @@ export async function createContentCaptureEnv(options = {}) {
 async function startGRPCServer(onRequest) {
   const packageDefinition = await protoLoader.load(protoPath, protoLoadOptions);
   const loaded = grpc.loadPackageDefinition(packageDefinition);
-  const service = loaded.sigil.v1.GenerationIngestService;
+  const service = loaded.agento11y.v1.GenerationIngestService;
 
   const server = new grpc.Server();
   server.addService(service.service, {

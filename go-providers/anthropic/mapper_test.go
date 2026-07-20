@@ -6,7 +6,7 @@ import (
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 )
 
 func TestFromRequestResponse(t *testing.T) {
@@ -96,17 +96,17 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Metadata == nil {
 		t.Fatalf("expected metadata map")
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
-		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
+		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"] != int64(2) {
-		t.Fatalf("expected server tool web_search_requests=2, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"] != int64(2) {
+		t.Fatalf("expected server tool web_search_requests=2, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(1) {
-		t.Fatalf("expected server tool web_fetch_requests=1, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(1) {
+		t.Fatalf("expected server tool web_fetch_requests=1, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
-		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
+		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"])
 	}
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
@@ -325,17 +325,17 @@ func TestFromStream(t *testing.T) {
 	if generation.Metadata == nil {
 		t.Fatalf("expected metadata map")
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
-		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
+		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"] != int64(1) {
-		t.Fatalf("expected server tool web_search_requests=1, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"] != int64(1) {
+		t.Fatalf("expected server tool web_search_requests=1, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(2) {
-		t.Fatalf("expected server tool web_fetch_requests=2, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(2) {
+		t.Fatalf("expected server tool web_fetch_requests=2, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
-		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
+		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"])
 	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))

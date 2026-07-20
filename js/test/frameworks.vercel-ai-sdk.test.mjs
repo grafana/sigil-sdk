@@ -70,9 +70,9 @@ test('vercel ai sdk generateText hooks record single-step success', async () => 
   assert.equal(generation.usage.cacheReadInputTokens, 2);
   assert.equal(generation.usage.cacheWriteInputTokens, 1);
   assert.equal(generation.usage.reasoningTokens, 3);
-  assert.equal(generation.tags['sigil.framework.name'], 'vercel-ai-sdk');
-  assert.equal(generation.metadata['sigil.framework.step_type'], 'initial');
-  assert.equal(generation.metadata['sigil.framework.reasoning_text'], 'reasoning detail');
+  assert.equal(generation.tags['agento11y.framework.name'], 'vercel-ai-sdk');
+  assert.equal(generation.metadata['agento11y.framework.step_type'], 'initial');
+  assert.equal(generation.metadata['agento11y.framework.reasoning_text'], 'reasoning detail');
 });
 
 test('vercel ai sdk prepareStep records input messages for ai sdk v6', async () => {
@@ -439,8 +439,8 @@ test('vercel ai sdk generateText hooks support multi-step loop and tool lifecycl
   });
 
   assert.equal(generations.length, 2);
-  assert.equal(generations[0].metadata['sigil.framework.step_type'], 'initial');
-  assert.equal(generations[1].metadata['sigil.framework.step_type'], 'tool-result');
+  assert.equal(generations[0].metadata['agento11y.framework.step_type'], 'initial');
+  assert.equal(generations[1].metadata['agento11y.framework.step_type'], 'tool-result');
   assert.equal(generations[0].conversationId, 'conv-loop');
   assert.equal(generations[1].conversationId, 'conv-loop');
   assert.equal(generations[1].input[1].role, 'tool');

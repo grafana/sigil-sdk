@@ -1,6 +1,6 @@
 // Pi high-level real-SDK golden test.
 //
-// Drives the @grafana/sigil-pi extension through a faked pi host (event
+// Drives the @grafana/agento11y-pi extension through a faked pi host (event
 // emitter shaped like the upstream ExtensionAPI), pointing the real Sigil
 // JS SDK at a local HTTP server that captures the export payload. The
 // normalized capture is compared against
@@ -319,6 +319,23 @@ describe("pi plugin: real-SDK golden export", () => {
     assertGoldenJSON(GOLDEN_PATH, exports);
   });
 
+  it("matches the same golden when configured via AGENTO11Y_* only", async () => {
+    for (const suffix of [
+      "ENDPOINT",
+      "AUTH_TENANT_ID",
+      "AUTH_TOKEN",
+      "AGENT_NAME",
+      "AGENT_VERSION",
+      "CONTENT_CAPTURE_MODE",
+    ]) {
+      process.env[`AGENTO11Y_${suffix}`] = process.env[`SIGIL_${suffix}`];
+      delete process.env[`SIGIL_${suffix}`];
+    }
+
+    const { exports } = await runFullTurn();
+    assertGoldenJSON(GOLDEN_PATH, exports);
+  });
+
   it("keeps user SIGIL_TAGS and lets built-in git.branch win collisions", async () => {
     // Drive the user-tag merge path: SIGIL_TAGS becomes a client-level
     // tag (js/src/config.ts) that the SDK merges under the per-generation
@@ -350,7 +367,7 @@ describe("pi plugin: real-SDK golden export", () => {
 
     const { turn } = await runFullTurn();
 
-    expect(turn.metadata["sigil.sdk.content_capture_mode"]).toBe(
+    expect(turn.metadata["agento11y.sdk.content_capture_mode"]).toBe(
       contentCapture,
     );
 
@@ -384,8 +401,8 @@ const normalizeFields: Record<string, string> = {
   trace_id: "<NORMALIZED>",
   span_id: "<NORMALIZED>",
   parent_span_id: "<NORMALIZED>",
-  "sigil.sdk.version": "<NORMALIZED>",
-  "sigil.sdk.commit": "<NORMALIZED>",
+  "agento11y.sdk.version": "<NORMALIZED>",
+  "agento11y.sdk.commit": "<NORMALIZED>",
   // effective_version is a sha256 derived from agent_version. Normalize so
   // a future agent_version bump does not silently change the golden hash.
   effective_version: "<NORMALIZED>",

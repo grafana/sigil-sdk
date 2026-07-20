@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from conftest import CapturingGenerationExporter
-from sigil_sdk import (
+from agento11y import (
     Client,
     ClientConfig,
     ContentCaptureMode,
@@ -25,7 +24,8 @@ from sigil_sdk import (
     ToolResult,
     create_secret_redaction_sanitizer,
 )
-from sigil_sdk.redaction import _resolve_redact_input_messages
+from agento11y.redaction import _resolve_redact_input_messages
+from conftest import CapturingGenerationExporter
 
 
 def _new_client(
@@ -255,7 +255,7 @@ def test_secret_redaction_sanitizer_redacts_tool_and_assistant_input_when_opted_
 
 def test_generation_sanitizer_failure_falls_back_to_metadata_only(caplog) -> None:
     exporter = CapturingGenerationExporter()
-    logger = logging.getLogger("sigil_sdk.test_redaction")
+    logger = logging.getLogger("agento11y.test_redaction")
     client = _new_client(
         exporter,
         generation_sanitizer=lambda _generation: (_ for _ in ()).throw(RuntimeError("boom")),
@@ -283,7 +283,7 @@ def test_generation_sanitizer_failure_falls_back_to_metadata_only(caplog) -> Non
         assert rec.err() is None
         generation = rec.last_generation
         assert generation is not None
-        assert generation.metadata["sigil.sdk.content_capture_mode"] == "metadata_only"
+        assert generation.metadata["agento11y.sdk.content_capture_mode"] == "metadata_only"
         assert generation.conversation_title == ""
         assert generation.system_prompt == ""
         assert generation.input[0].parts[0].text == ""
@@ -319,13 +319,58 @@ def test_resolve_redact_input_messages_blank_falls_back_to_false() -> None:
 
 
 def test_resolve_redact_input_messages_invalid_warns_and_falls_back(caplog) -> None:
-    with caplog.at_level(logging.WARNING, logger="sigil_sdk"):
+    with caplog.at_level(logging.WARNING, logger="agento11y"):
         got = _resolve_redact_input_messages(None, env={"SIGIL_REDACT_INPUT_MESSAGES": "maybe"})
     assert got is False
     assert any(
         "SIGIL_REDACT_INPUT_MESSAGES" in record.getMessage() and "maybe" in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_resolve_redact_input_messages_preferred_key() -> None:
+    assert _resolve_redact_input_messages(None, env={"AGENTO11Y_REDACT_INPUT_MESSAGES": "true"}) is True
+
+
+def test_resolve_redact_input_messages_preferred_wins_over_legacy() -> None:
+    env = {"AGENTO11Y_REDACT_INPUT_MESSAGES": "false", "SIGIL_REDACT_INPUT_MESSAGES": "true"}
+    assert _resolve_redact_input_messages(None, env=env) is False
+
+
+def test_resolve_redact_input_messages_blank_preferred_falls_through_to_legacy() -> None:
+    env = {"AGENTO11Y_REDACT_INPUT_MESSAGES": "   ", "SIGIL_REDACT_INPUT_MESSAGES": "true"}
+    assert _resolve_redact_input_messages(None, env=env) is True
+
+
+def test_resolve_redact_input_messages_explicit_beats_both_prefixes() -> None:
+    env = {"AGENTO11Y_REDACT_INPUT_MESSAGES": "false", "SIGIL_REDACT_INPUT_MESSAGES": "false"}
+    assert _resolve_redact_input_messages(True, env=env) is True
+
+
+def test_resolve_redact_input_messages_invalid_preferred_blocks_valid_legacy(caplog) -> None:
+    env = {"AGENTO11Y_REDACT_INPUT_MESSAGES": "maybe", "SIGIL_REDACT_INPUT_MESSAGES": "true"}
+    with caplog.at_level(logging.WARNING, logger="agento11y"):
+        assert _resolve_redact_input_messages(None, env=env) is False
+    assert any("AGENTO11Y_REDACT_INPUT_MESSAGES" in record.getMessage() for record in caplog.records)
+
+
+def test_create_secret_redaction_sanitizer_reads_preferred_env(monkeypatch) -> None:
+    monkeypatch.setenv("AGENTO11Y_REDACT_INPUT_MESSAGES", "true")
+    sanitizer = create_secret_redaction_sanitizer()
+    generation = Generation(
+        id="gen-env-preferred",
+        mode=GenerationMode.SYNC,
+        operation_name="generateText",
+        model=ModelRef(provider="openai", name="gpt-5"),
+        input=[
+            Message(
+                role=MessageRole.USER,
+                parts=[Part(kind=PartKind.TEXT, text="token glc_abcdefghijklmnopqrstuvwxyz0123")],
+            )
+        ],
+    )
+    sanitized = sanitizer(generation)
+    assert "glc_" not in sanitized.input[0].parts[0].text
 
 
 def test_create_secret_redaction_sanitizer_reads_env(monkeypatch) -> None:

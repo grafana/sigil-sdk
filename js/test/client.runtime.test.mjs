@@ -432,7 +432,7 @@ test('built-in HTTP exporter posts generation batches to configured endpoint', a
 
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'http',
@@ -460,7 +460,7 @@ test('built-in HTTP exporter posts generation batches to configured endpoint', a
 test('built-in none exporter records generations without sending', async () => {
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'none',
@@ -521,7 +521,7 @@ test('embedding recorder does not enqueue generation exports', async () => {
 function newClient(generationExporter, overrides, clientOverrides = {}) {
   const defaults = defaultConfig();
   return new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     ...clientOverrides,
     generationExport: {
       ...defaults.generationExport,

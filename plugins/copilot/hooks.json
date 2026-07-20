@@ -5,8 +5,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "sessionStart"
             },
@@ -20,8 +21,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "sessionEnd"
             },
@@ -35,8 +37,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "userPromptSubmitted"
             },
@@ -50,8 +53,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "preToolUse"
             },
@@ -65,8 +69,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "postToolUse"
             },
@@ -80,8 +85,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "postToolUseFailure"
             },
@@ -95,8 +101,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "errorOccurred"
             },
@@ -110,8 +117,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "subagentStart"
             },
@@ -125,8 +133,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "subagentStop"
             },
@@ -140,8 +149,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sigil copilot hook",
+            "command": "agento11y copilot hook || sigil copilot hook",
             "env": {
+              "AGENTO11Y_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_SURFACE": "copilot-cli",
               "SIGIL_COPILOT_HOOK_EVENT": "agentStop"
             },

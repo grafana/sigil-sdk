@@ -201,11 +201,11 @@ public final class DevexEmitter {
         String agentPersona = personaForTurn(turn);
 
         Map<String, String> tags = new LinkedHashMap<>();
-        tags.put("sigil.devex.language", LANGUAGE);
-        tags.put("sigil.devex.provider", source);
-        tags.put("sigil.devex.source", sourceTagFor(source));
-        tags.put("sigil.devex.scenario", scenarioFor(source, turn));
-        tags.put("sigil.devex.mode", mode.name());
+        tags.put("agento11y.devex.language", LANGUAGE);
+        tags.put("agento11y.devex.provider", source);
+        tags.put("agento11y.devex.source", sourceTagFor(source));
+        tags.put("agento11y.devex.scenario", scenarioFor(source, turn));
+        tags.put("agento11y.devex.mode", mode.name());
 
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("turn_index", turn);

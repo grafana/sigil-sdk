@@ -12,7 +12,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from sigil_sdk import (
+from agento11y import (
     AuthConfig,
     Client,
     ClientConfig,
@@ -45,14 +45,14 @@ sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ["SIGIL_ENDPOINT"],
+            endpoint=os.environ["AGENTO11Y_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
-                tenant_id=os.environ["SIGIL_AUTH_TENANT_ID"],
-                basic_password=os.environ["SIGIL_AUTH_TOKEN"],
+                tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
+                basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
             ),
         ),
-        # Client tags attach to every generation and become sigil.tag.<key>
+        # Client tags attach to every generation and become agento11y.tag.<key>
         # attributes on OTel spans and metrics, so keep them low-cardinality
         # (team, env). See docs/concepts/tags-and-metadata.md.
         tags={"team": "checkout", "env": "dev"},

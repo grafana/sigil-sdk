@@ -35,18 +35,25 @@ describe("logFilePath", () => {
 
 describe("logger", () => {
   let dir: string;
-  const saved = process.env.SIGIL_DEBUG;
+  const saved = {
+    sigil: process.env.SIGIL_DEBUG,
+    agento11y: process.env.AGENTO11Y_DEBUG,
+  };
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "sigil-pi-log-"));
     process.env.XDG_STATE_HOME = dir;
+    delete process.env.SIGIL_DEBUG;
+    delete process.env.AGENTO11Y_DEBUG;
     resetLoggerForTests();
   });
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
-    if (saved === undefined) delete process.env.SIGIL_DEBUG;
-    else process.env.SIGIL_DEBUG = saved;
+    if (saved.sigil === undefined) delete process.env.SIGIL_DEBUG;
+    else process.env.SIGIL_DEBUG = saved.sigil;
+    if (saved.agento11y === undefined) delete process.env.AGENTO11Y_DEBUG;
+    else process.env.AGENTO11Y_DEBUG = saved.agento11y;
     resetLoggerForTests();
   });
 
@@ -87,5 +94,25 @@ describe("logger", () => {
     const body = readLog();
     expect(body).toContain("after");
     expect(body).not.toContain("before");
+  });
+
+  it("honors AGENTO11Y_DEBUG", () => {
+    process.env.AGENTO11Y_DEBUG = "1";
+    logger.debug("preferred");
+    expect(readLog()).toContain("preferred");
+  });
+
+  it("nonblank AGENTO11Y_DEBUG=false wins over SIGIL_DEBUG=true", () => {
+    process.env.AGENTO11Y_DEBUG = "false";
+    process.env.SIGIL_DEBUG = "true";
+    logger.warn("hidden");
+    expect(() => readLog()).toThrow();
+  });
+
+  it("blank AGENTO11Y_DEBUG falls back to SIGIL_DEBUG", () => {
+    process.env.AGENTO11Y_DEBUG = "   ";
+    process.env.SIGIL_DEBUG = "true";
+    logger.warn("visible");
+    expect(readLog()).toContain("visible");
   });
 });

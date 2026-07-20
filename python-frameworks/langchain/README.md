@@ -1,19 +1,19 @@
 # Sigil Python Framework Module: LangChain
 
-`sigil-sdk-langchain` provides callback handlers that map LangChain lifecycle events into Sigil generation recorder lifecycles.
+`agento11y-langchain` provides callback handlers that map LangChain lifecycle events into Sigil generation recorder lifecycles.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-langchain
+pip install agento11y agento11y-langchain
 pip install langchain-openai
 ```
 
 ## Usage
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_langchain import with_sigil_langchain_callbacks
+from agento11y import Client
+from agento11y_langchain import with_sigil_langchain_callbacks
 
 client = Client()
 config = with_sigil_langchain_callbacks(None, client=client, provider_resolver="auto")
@@ -23,8 +23,8 @@ config = with_sigil_langchain_callbacks(None, client=client, provider_resolver="
 
 ```python
 from langchain_openai import ChatOpenAI
-from sigil_sdk import Client
-from sigil_sdk_langchain import SigilLangChainHandler, with_sigil_langchain_callbacks
+from agento11y import Client
+from agento11y_langchain import SigilLangChainHandler, with_sigil_langchain_callbacks
 
 client = Client()
 handler = SigilLangChainHandler(
@@ -72,16 +72,16 @@ client.shutdown()
   - model-name inference (`gpt-`/`o1`/`o3`/`o4` -> `openai`, `claude-` -> `anthropic`, `gemini-` -> `gemini`)
   - fallback -> `custom`
 - Framework tags/metadata are always set:
-  - `sigil.framework.name=langchain`
-  - `sigil.framework.source=handler`
-  - `sigil.framework.language=python`
-  - `metadata["sigil.framework.run_id"]=<run id>`
-  - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
-  - `metadata["sigil.framework.parent_run_id"]` (when available)
-  - `metadata["sigil.framework.component_name"]` (serialized component identity)
-  - `metadata["sigil.framework.run_type"]` (`llm`, `chat`, `tool`, `chain`, `retriever`)
-  - `metadata["sigil.framework.tags"]` (normalized callback tags)
-  - `metadata["sigil.framework.retry_attempt"]` (when available)
+  - `agento11y.framework.name=langchain`
+  - `agento11y.framework.source=handler`
+  - `agento11y.framework.language=python`
+  - `metadata["agento11y.framework.run_id"]=<run id>`
+  - `metadata["agento11y.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+  - `metadata["agento11y.framework.parent_run_id"]` (when available)
+  - `metadata["agento11y.framework.component_name"]` (serialized component identity)
+  - `metadata["agento11y.framework.run_type"]` (`llm`, `chat`, `tool`, `chain`, `retriever`)
+  - `metadata["agento11y.framework.tags"]` (normalized callback tags)
+  - `metadata["agento11y.framework.retry_attempt"]` (when available)
   - generation span attributes mirror low-cardinality framework metadata keys
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

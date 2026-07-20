@@ -35,9 +35,9 @@ import java.util.Map;
 
 /** Gemini wrappers and mappers using official Google GenAI Java SDK request/response types. */
 public final class GeminiAdapter {
-    private static final String THINKING_BUDGET_METADATA_KEY = "sigil.gen_ai.request.thinking.budget_tokens";
-    private static final String THINKING_LEVEL_METADATA_KEY = "sigil.gen_ai.request.thinking.level";
-    private static final String USAGE_TOOL_USE_PROMPT_TOKENS_METADATA_KEY = "sigil.gen_ai.usage.tool_use_prompt_tokens";
+    private static final String THINKING_BUDGET_METADATA_KEY = "agento11y.gen_ai.request.thinking.budget_tokens";
+    private static final String THINKING_LEVEL_METADATA_KEY = "agento11y.gen_ai.request.thinking.level";
+    private static final String USAGE_TOOL_USE_PROMPT_TOKENS_METADATA_KEY = "agento11y.gen_ai.usage.tool_use_prompt_tokens";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final ObjectMapper CANONICAL_JSON = new ObjectMapper()
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)

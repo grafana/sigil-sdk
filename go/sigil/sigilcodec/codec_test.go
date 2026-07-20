@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
-	"github.com/grafana/sigil-sdk/go/sigil/sigilcodec"
-	"github.com/grafana/sigil-sdk/go/sigil/sigilmodel"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
+	"github.com/grafana/agento11y/go/sigil/sigilcodec"
+	"github.com/grafana/agento11y/go/sigil/sigilmodel"
 )
 
 func TestToProtoMode(t *testing.T) {
 	cases := []struct {
 		name string
 		mode sigilmodel.GenerationMode
-		want sigilv1.GenerationMode
+		want agento11yv1.GenerationMode
 	}{
-		{name: "sync", mode: sigilmodel.GenerationModeSync, want: sigilv1.GenerationMode_GENERATION_MODE_SYNC},
-		{name: "stream", mode: sigilmodel.GenerationModeStream, want: sigilv1.GenerationMode_GENERATION_MODE_STREAM},
-		{name: "empty", mode: sigilmodel.GenerationMode(""), want: sigilv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
-		{name: "unknown", mode: sigilmodel.GenerationMode("UNKNOWN"), want: sigilv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
+		{name: "sync", mode: sigilmodel.GenerationModeSync, want: agento11yv1.GenerationMode_GENERATION_MODE_SYNC},
+		{name: "stream", mode: sigilmodel.GenerationModeStream, want: agento11yv1.GenerationMode_GENERATION_MODE_STREAM},
+		{name: "empty", mode: sigilmodel.GenerationMode(""), want: agento11yv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
+		{name: "unknown", mode: sigilmodel.GenerationMode("UNKNOWN"), want: agento11yv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,13 +78,13 @@ func TestToProtoRolesAndParts(t *testing.T) {
 		t.Fatalf("ToProto: %v", err)
 	}
 
-	if got.GetInput()[0].GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_USER {
+	if got.GetInput()[0].GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_USER {
 		t.Errorf("expected USER role, got %v", got.GetInput()[0].GetRole())
 	}
-	if got.GetOutput()[0].GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT {
+	if got.GetOutput()[0].GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_ASSISTANT {
 		t.Errorf("expected ASSISTANT role, got %v", got.GetOutput()[0].GetRole())
 	}
-	if got.GetOutput()[1].GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_TOOL {
+	if got.GetOutput()[1].GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_TOOL {
 		t.Errorf("expected TOOL role, got %v", got.GetOutput()[1].GetRole())
 	}
 
@@ -204,11 +204,11 @@ func TestToProtoArtifacts(t *testing.T) {
 	if len(arts) != 4 {
 		t.Fatalf("expected 4 artifacts, got %d", len(arts))
 	}
-	wantKinds := []sigilv1.ArtifactKind{
-		sigilv1.ArtifactKind_ARTIFACT_KIND_REQUEST,
-		sigilv1.ArtifactKind_ARTIFACT_KIND_RESPONSE,
-		sigilv1.ArtifactKind_ARTIFACT_KIND_TOOLS,
-		sigilv1.ArtifactKind_ARTIFACT_KIND_PROVIDER_EVENT,
+	wantKinds := []agento11yv1.ArtifactKind{
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_REQUEST,
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_RESPONSE,
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_TOOLS,
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_PROVIDER_EVENT,
 	}
 	for i, want := range wantKinds {
 		if arts[i].GetKind() != want {

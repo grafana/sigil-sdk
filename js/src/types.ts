@@ -25,7 +25,7 @@ export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
  *   sensitive content.
  * - `'full_with_metadata_spans'` — splits the proto and span paths for
  *   generation content. The proto export keeps full content; the OTel span
- *   omits `sigil.conversation.title`, `gen_ai.tool.call.arguments`,
+ *   omits `agento11y.conversation.title`, `gen_ai.tool.call.arguments`,
  *   `gen_ai.tool.call.result`, and `gen_ai.embeddings.input_texts`. Use this
  *   mode when the gRPC ingest destination is private but the OTel trace and
  *   metric destinations are shared and must not receive any content.
@@ -233,21 +233,24 @@ export interface SigilSdkConfig {
   /**
    * Default agent name applied to GenerationStart / EmbeddingStart /
    * ToolExecutionStart when the per-call value is empty. Read from
-   * `SIGIL_AGENT_NAME` automatically by `new SigilClient()`.
+   * `AGENTO11Y_AGENT_NAME` (`SIGIL_AGENT_NAME` fallback) automatically by
+   * `new SigilClient()`.
    */
   agentName?: string;
-  /** Default agent version. Read from `SIGIL_AGENT_VERSION`. */
+  /** Default agent version. Read from `AGENTO11Y_AGENT_VERSION` (`SIGIL_AGENT_VERSION` fallback). */
   agentVersion?: string;
-  /** Default user identifier. Read from `SIGIL_USER_ID`. */
+  /** Default user identifier. Read from `AGENTO11Y_USER_ID` (`SIGIL_USER_ID` fallback). */
   userId?: string;
   /**
    * Default tags merged into every generation (per-call tags win) and emitted on
-   * OTel spans/metrics as `sigil.tag.<key>`. Read from `SIGIL_TAGS` (CSV).
+   * OTel spans/metrics as `agento11y.tag.<key>`. Read from `AGENTO11Y_TAGS`
+   * (`SIGIL_TAGS` fallback) as CSV.
    */
   tags?: Record<string, string>;
   /**
    * When true, signals to downstream consumers (plugins, telemetry) that the
-   * SDK is running in verbose mode. Read from `SIGIL_DEBUG`. The SDK does not
+   * SDK is running in verbose mode. Read from `AGENTO11Y_DEBUG`
+   * (`SIGIL_DEBUG` fallback). The SDK does not
    * currently change its own logger based on this flag — plugins layer their
    * own log-file plumbing on top of it.
    */

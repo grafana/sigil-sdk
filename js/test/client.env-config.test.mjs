@@ -116,6 +116,82 @@ const configFromEnvCases = [
       assert.equal(cfg.agentName, undefined);
     },
   },
+  {
+    name: 'preferred AGENTO11Y_* spelling matches legacy',
+    env: {
+      AGENTO11Y_ENDPOINT: 'https://env:4318',
+      AGENTO11Y_PROTOCOL: 'grpc',
+      AGENTO11Y_INSECURE: 'true',
+      AGENTO11Y_HEADERS: 'X-A=1',
+      AGENTO11Y_AUTH_MODE: 'basic',
+      AGENTO11Y_AUTH_TENANT_ID: '42',
+      AGENTO11Y_AUTH_TOKEN: 'glc_xxx',
+      AGENTO11Y_AGENT_NAME: 'planner',
+      AGENTO11Y_AGENT_VERSION: '1.2.3',
+      AGENTO11Y_USER_ID: 'alice',
+      AGENTO11Y_TAGS: 'service=orchestrator,env=prod',
+      AGENTO11Y_CONTENT_CAPTURE_MODE: 'metadata_only',
+      AGENTO11Y_DEBUG: 'true',
+    },
+    check: (cfg) => {
+      assert.equal(cfg.generationExport.endpoint, 'https://env:4318');
+      assert.equal(cfg.generationExport.protocol, 'grpc');
+      assert.equal(cfg.generationExport.insecure, true);
+      assert.equal(cfg.generationExport.headers['X-A'], '1');
+      assert.equal(cfg.generationExport.auth.mode, 'basic');
+      assert.equal(cfg.generationExport.auth.tenantId, '42');
+      assert.equal(cfg.generationExport.auth.basicUser, '42');
+      assert.equal(cfg.generationExport.auth.basicPassword, 'glc_xxx');
+      assert.equal(cfg.agentName, 'planner');
+      assert.equal(cfg.agentVersion, '1.2.3');
+      assert.equal(cfg.userId, 'alice');
+      assert.deepEqual(cfg.tags, { service: 'orchestrator', env: 'prod' });
+      assert.equal(cfg.contentCapture, 'metadata_only');
+      assert.equal(cfg.debug, true);
+    },
+  },
+  {
+    name: 'preferred wins over legacy',
+    env: { AGENTO11Y_ENDPOINT: 'preferred.example:4318', SIGIL_ENDPOINT: 'legacy.example:4318' },
+    check: (cfg) => {
+      assert.equal(cfg.generationExport.endpoint, 'preferred.example:4318');
+    },
+  },
+  {
+    name: 'blank preferred falls through to legacy',
+    env: { AGENTO11Y_ENDPOINT: '   ', SIGIL_ENDPOINT: 'legacy.example:4318' },
+    check: (cfg) => {
+      assert.equal(cfg.generationExport.endpoint, 'legacy.example:4318');
+    },
+  },
+  {
+    name: 'invalid preferred content_capture_mode does not fall back to valid legacy',
+    env: { AGENTO11Y_CONTENT_CAPTURE_MODE: 'bogus', SIGIL_CONTENT_CAPTURE_MODE: 'full' },
+    check: (cfg) => {
+      assert.equal(cfg.contentCapture, 'default');
+    },
+  },
+  {
+    name: 'mixed-prefix auth resolves per field',
+    env: {
+      AGENTO11Y_AUTH_MODE: 'basic',
+      SIGIL_AUTH_TENANT_ID: '42',
+      AGENTO11Y_AUTH_TOKEN: 'glc_xxx',
+    },
+    check: (cfg) => {
+      assert.equal(cfg.generationExport.auth.mode, 'basic');
+      assert.equal(cfg.generationExport.auth.tenantId, '42');
+      assert.equal(cfg.generationExport.auth.basicUser, '42');
+      assert.equal(cfg.generationExport.auth.basicPassword, 'glc_xxx');
+    },
+  },
+  {
+    name: 'preferred TAGS replaces legacy TAGS entirely',
+    env: { AGENTO11Y_TAGS: 'team=ai', SIGIL_TAGS: 'service=orch,env=prod' },
+    check: (cfg) => {
+      assert.deepEqual(cfg.tags, { team: 'ai' });
+    },
+  },
 ];
 
 for (const tc of configFromEnvCases) {
@@ -191,6 +267,22 @@ const mergeConfigCases = [
       assert.deepEqual(cfg.tags, { service: 'orch', team: 'ai', env: 'staging' });
     },
   },
+  {
+    name: 'explicit caller wins over both spellings',
+    config: { generationExport: { endpoint: 'https://explicit:4318' } },
+    env: { AGENTO11Y_ENDPOINT: 'preferred.example:4318', SIGIL_ENDPOINT: 'legacy.example:4318' },
+    check: (cfg) => {
+      assert.equal(cfg.generationExport.endpoint, 'https://explicit:4318');
+    },
+  },
+  {
+    name: 'caller tags merge with preferred env tags',
+    config: { tags: { team: 'ai', env: 'staging' } },
+    env: { AGENTO11Y_TAGS: 'service=orch,env=prod' },
+    check: (cfg) => {
+      assert.deepEqual(cfg.tags, { service: 'orch', team: 'ai', env: 'staging' });
+    },
+  },
 ];
 
 for (const tc of mergeConfigCases) {
@@ -199,6 +291,17 @@ for (const tc of mergeConfigCases) {
     tc.check(cfg);
   });
 }
+
+test('mergeConfig: invalid preferred value warns with AGENTO11Y key', () => {
+  const warnings = [];
+  const cfg = mergeConfig(
+    { logger: { warn: (message) => warnings.push(message) } },
+    { AGENTO11Y_CONTENT_CAPTURE_MODE: 'bogus', SIGIL_CONTENT_CAPTURE_MODE: 'full' },
+  );
+  assert.equal(cfg.contentCapture, 'default');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /AGENTO11Y_CONTENT_CAPTURE_MODE.*bogus/);
+});
 
 // SigilClient integration: env-driven defaults applied to generation seeds.
 test('SigilClient applies default agent / user / tags from config', async () => {

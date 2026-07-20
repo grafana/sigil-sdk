@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { userAgent } from "@grafana/sigil-sdk-js";
+import { userAgent } from "@grafana/agento11y";
 
 function readPluginVersion(): string {
   try {
@@ -16,8 +16,8 @@ export const PLUGIN_VERSION = readPluginVersion();
 
 /**
  * Generation-export User-Agent for this plugin, most-specific token first:
- * `sigil-plugin-pi/<ver> sigil-sdk-js/<ver>`.
+ * `agento11y-plugin-pi/<ver> agento11y-sdk-js/<ver>`.
  */
 export function pluginUserAgent(): string {
-  return `sigil-plugin-pi/${PLUGIN_VERSION} ${userAgent()}`;
+  return `agento11y-plugin-pi/${PLUGIN_VERSION} ${userAgent()}`;
 }

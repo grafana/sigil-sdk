@@ -133,11 +133,11 @@ export function buildTagsAndMetadata(source, mode, turn, slot) {
   return {
     agentPersona,
     tags: {
-      'sigil.devex.language': LANGUAGE,
-      'sigil.devex.provider': source,
-      'sigil.devex.source': sourceTagFor(source),
-      'sigil.devex.scenario': scenarioFor(source, turn),
-      'sigil.devex.mode': mode,
+      'agento11y.devex.language': LANGUAGE,
+      'agento11y.devex.provider': source,
+      'agento11y.devex.source': sourceTagFor(source),
+      'agento11y.devex.scenario': scenarioFor(source, turn),
+      'agento11y.devex.mode': mode,
     },
     metadata: {
       turn_index: turn,

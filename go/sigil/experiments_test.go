@@ -122,6 +122,49 @@ func newExperimentTestClient(t *testing.T, serverURL string) *Client {
 	return client
 }
 
+func TestExperimentURLTemplateAliases(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "preferred template wins over legacy",
+			env: map[string]string{
+				envExperimentURLTemplatePreferred: "https://preferred.example/{run_id}",
+				envExperimentURLTemplate:          "https://legacy.example/{run_id}",
+			},
+			want: "https://preferred.example/run-1",
+		},
+		{
+			name: "legacy template still honored",
+			env:  map[string]string{envExperimentURLTemplate: "https://legacy.example/{run_id}"},
+			want: "https://legacy.example/run-1",
+		},
+		{
+			name: "blank preferred falls through to legacy",
+			env: map[string]string{
+				envExperimentURLTemplatePreferred: "   ",
+				envExperimentURLTemplate:          "https://legacy.example/{run_id}",
+			},
+			want: "https://legacy.example/run-1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envExperimentURLTemplatePreferred, "")
+			t.Setenv(envExperimentURLTemplate, "")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			client := newExperimentTestClient(t, "https://server.example")
+			if got := client.ExperimentURL("run-1"); got != tc.want {
+				t.Fatalf("ExperimentURL=%q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCreateExperimentUpsertsExternalRun(t *testing.T) {
 	recorder := &experimentRecorder{}
 	recorder.push(http.StatusOK, map[string]any{"run": experimentBody(map[string]any{

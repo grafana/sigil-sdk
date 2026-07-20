@@ -1,11 +1,11 @@
 # Grafana AI Observability Python Framework Module: Pydantic AI
 
-`sigil-sdk-pydantic-ai` provides an `AbstractCapability` implementation that maps Pydantic AI lifecycle hooks into Sigil generation recorder lifecycles.
+`agento11y-pydantic-ai` provides an `AbstractCapability` implementation that maps Pydantic AI lifecycle hooks into Sigil generation recorder lifecycles.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-pydantic-ai
+pip install agento11y agento11y-pydantic-ai
 pip install pydantic-ai
 ```
 
@@ -13,8 +13,8 @@ pip install pydantic-ai
 
 ```python
 from pydantic_ai import Agent
-from sigil_sdk import Client
-from sigil_sdk_pydantic_ai import create_sigil_pydantic_ai_capability
+from agento11y import Client
+from agento11y_pydantic_ai import create_sigil_pydantic_ai_capability
 
 client = Client()
 capability = create_sigil_pydantic_ai_capability(client=client, provider_resolver="auto")
@@ -30,8 +30,8 @@ client.shutdown()
 
 ```python
 from pydantic_ai import Agent
-from sigil_sdk import Client
-from sigil_sdk_pydantic_ai import with_sigil_pydantic_ai_capability
+from agento11y import Client
+from agento11y_pydantic_ai import with_sigil_pydantic_ai_capability
 
 client = Client()
 capabilities = with_sigil_pydantic_ai_capability(
@@ -71,8 +71,8 @@ Primary mapping is Pydantic AI run identity:
 
 ## Metadata and lineage
 
-- Required: `sigil.framework.run_type`
-- Optional: `sigil.framework.run_id`, `sigil.framework.parent_run_id`, `sigil.framework.thread_id`, `sigil.framework.event_id`, `sigil.framework.component_name`, `sigil.framework.retry_attempt`
+- Required: `agento11y.framework.run_type`
+- Optional: `agento11y.framework.run_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.thread_id`, `agento11y.framework.event_id`, `agento11y.framework.component_name`, `agento11y.framework.retry_attempt`
 
 ## Provider resolver
 
