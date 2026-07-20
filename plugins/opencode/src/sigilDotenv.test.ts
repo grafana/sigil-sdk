@@ -57,6 +57,16 @@ EMPTY=
     expect(got).toEqual({ SIGIL_ENDPOINT: "https://exported" });
   });
 
+  it("accepts AGENTO11Y_-prefixed keys", () => {
+    const body = `AGENTO11Y_ENDPOINT=https://preferred
+AGENTO11Y_AUTH_TOKEN=tok
+`;
+    expect(parseSigilDotenv(body)).toEqual({
+      AGENTO11Y_ENDPOINT: "https://preferred",
+      AGENTO11Y_AUTH_TOKEN: "tok",
+    });
+  });
+
   it("ignores keys outside the allow-list", () => {
     const body = `PATH=/tmp/not-loaded
 HOME=/tmp/not-loaded
@@ -201,5 +211,51 @@ describe("applySigilDotenv", () => {
     applySigilDotenv();
     expect(process.env.PATH).toBe(before);
     expect(process.env.SIGIL_ENDPOINT).toBe("https://ok");
+  });
+
+  it("materializes a file value under both spellings", () => {
+    writeConfig("SIGIL_ENDPOINT=https://from-file\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://from-file");
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://from-file");
+  });
+
+  it("shell SIGIL_ENDPOINT beats file AGENTO11Y_ENDPOINT", () => {
+    process.env.SIGIL_ENDPOINT = "https://shell-legacy";
+    writeConfig("AGENTO11Y_ENDPOINT=https://file-preferred\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://shell-legacy");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://shell-legacy");
+  });
+
+  it("file AGENTO11Y_ENDPOINT beats file SIGIL_ENDPOINT", () => {
+    writeConfig(
+      "SIGIL_ENDPOINT=https://file-legacy\nAGENTO11Y_ENDPOINT=https://file-preferred\n",
+    );
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://file-preferred");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://file-preferred");
+  });
+
+  it("mirrors a shell-only legacy value to the preferred name", () => {
+    process.env.SIGIL_AUTH_TOKEN = "tok";
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("tok");
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("tok");
+  });
+
+  it("treats whitespace shell values as unset during family resolution", () => {
+    process.env.AGENTO11Y_ENDPOINT = "   ";
+    writeConfig("SIGIL_ENDPOINT=https://file-legacy\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://file-legacy");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://file-legacy");
+  });
+
+  it("selects one whole TAGS value instead of merging spellings", () => {
+    writeConfig("AGENTO11Y_TAGS=a=1\nSIGIL_TAGS=b=2\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_TAGS).toBe("a=1");
+    expect(process.env.SIGIL_TAGS).toBe("a=1");
   });
 });

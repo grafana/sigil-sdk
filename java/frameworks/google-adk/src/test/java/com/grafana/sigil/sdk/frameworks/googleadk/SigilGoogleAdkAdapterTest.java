@@ -189,9 +189,9 @@ class SigilGoogleAdkAdapterTest {
 
             var parentSpan = env.tracerProvider.get("sigil-framework-test")
                     .spanBuilder("framework.request")
-                    .setAttribute(AttributeKey.stringKey("sigil.framework.name"), "google-adk")
-                    .setAttribute(AttributeKey.stringKey("sigil.framework.source"), "handler")
-                    .setAttribute(AttributeKey.stringKey("sigil.framework.language"), "java")
+                    .setAttribute(AttributeKey.stringKey("agento11y.framework.name"), "google-adk")
+                    .setAttribute(AttributeKey.stringKey("agento11y.framework.source"), "handler")
+                    .setAttribute(AttributeKey.stringKey("agento11y.framework.language"), "java")
                     .startSpan();
             try (Scope ignored = parentSpan.makeCurrent()) {
                 adapter.onRunStart(new SigilGoogleAdkAdapter.RunStartEvent()
@@ -231,9 +231,9 @@ class SigilGoogleAdkAdapterTest {
             assertThat(generation.getTraceId()).isEqualTo(generationSpan.getTraceId());
             assertThat(generation.getSpanId()).isEqualTo(generationSpan.getSpanId());
             assertThat(generation.getTags())
-                    .containsEntry("sigil.framework.name", "google-adk")
-                    .containsEntry("sigil.framework.source", "handler")
-                    .containsEntry("sigil.framework.language", "java")
+                    .containsEntry("agento11y.framework.name", "google-adk")
+                    .containsEntry("agento11y.framework.source", "handler")
+                    .containsEntry("agento11y.framework.language", "java")
                     .containsEntry("team", "infra");
             assertThat(generation.getMetadata())
                     .containsEntry("workspace", "sigil")
@@ -284,9 +284,9 @@ class SigilGoogleAdkAdapterTest {
             assertThat(generation.getOutput().get(0).getParts()).hasSize(1);
             assertThat(generation.getOutput().get(0).getParts().get(0).getText()).isEqualTo("hello world");
             assertThat(generation.getTags())
-                    .containsEntry("sigil.framework.name", "google-adk")
-                    .containsEntry("sigil.framework.source", "handler")
-                    .containsEntry("sigil.framework.language", "java");
+                    .containsEntry("agento11y.framework.name", "google-adk")
+                    .containsEntry("agento11y.framework.source", "handler")
+                    .containsEntry("agento11y.framework.language", "java");
             assertThat(env.metricNames())
                     .contains("gen_ai.client.operation.duration", "gen_ai.client.time_to_first_token");
         }

@@ -10,8 +10,8 @@ import (
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
 
-	sigil "github.com/grafana/sigil-sdk/go/sigil"
-	"github.com/grafana/sigil-sdk/go/sigil/sigiltest"
+	sigil "github.com/grafana/agento11y/go/sigil"
+	"github.com/grafana/agento11y/go/sigil/sigiltest"
 )
 
 const anthropicSpanErrorCategory = "error.category"
@@ -86,7 +86,7 @@ func TestConformance_AnthropicSyncMapping(t *testing.T) {
 	if got := sigiltest.StringValue(t, exported, "usage", "cache_write_input_tokens"); got != "10" {
 		t.Fatalf("unexpected usage.cache_write_input_tokens: got %q want %q", got, "10")
 	}
-	if got := sigiltest.FloatValue(t, exported, "metadata", "sigil.gen_ai.usage.server_tool_use.total_requests"); got != 3 {
+	if got := sigiltest.FloatValue(t, exported, "metadata", "agento11y.gen_ai.usage.server_tool_use.total_requests"); got != 3 {
 		t.Fatalf("unexpected server tool total requests: got %v want %v", got, float64(3))
 	}
 }

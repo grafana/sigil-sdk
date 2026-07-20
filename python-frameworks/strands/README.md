@@ -1,19 +1,19 @@
 # Sigil Python Framework Module: Strands Agents
 
-`sigil-sdk-strands` provides a Strands `HookProvider` bridge that maps agent, model, and tool lifecycle events into Sigil generation and tool recording.
+`agento11y-strands` provides a Strands `HookProvider` bridge that maps agent, model, and tool lifecycle events into Sigil generation and tool recording.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-strands
+pip install agento11y agento11y-strands
 pip install strands-agents
 ```
 
 ## Quickstart
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_strands import with_sigil_strands_hooks
+from agento11y import Client
+from agento11y_strands import with_sigil_strands_hooks
 from strands import Agent
 
 client = Client()
@@ -35,8 +35,8 @@ client.shutdown()
 ## Existing Agents
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_strands import with_sigil_strands_hooks
+from agento11y import Client
+from agento11y_strands import with_sigil_strands_hooks
 
 client = Client()
 with_sigil_strands_hooks(agent, client=client, provider_resolver="auto")
@@ -61,14 +61,14 @@ agent("What timezone did I give you?", invocation_state={"conversation_id": "cus
 
 Required framework tags:
 
-- `sigil.framework.name=strands`
-- `sigil.framework.source=hooks`
-- `sigil.framework.language=python`
+- `agento11y.framework.name=strands`
+- `agento11y.framework.source=hooks`
+- `agento11y.framework.language=python`
 
 Metadata includes:
 
-- required: `sigil.framework.run_type`
-- optional: `sigil.framework.run_id`, `sigil.framework.thread_id`, `sigil.framework.parent_run_id`, `sigil.framework.component_name`, `sigil.framework.event_id`
+- required: `agento11y.framework.run_type`
+- optional: `agento11y.framework.run_id`, `agento11y.framework.thread_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.component_name`, `agento11y.framework.event_id`
 
 ## Provider Resolver
 

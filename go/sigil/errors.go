@@ -24,8 +24,16 @@ var (
 	ErrEmbeddingValidationFailed = errors.New("sigil: embedding validation failed")
 	// ErrEnqueueFailed wraps generation enqueue failures.
 	ErrEnqueueFailed = errors.New("sigil: generation enqueue failed")
+	// ErrWorkflowStepValidationFailed wraps workflow-step validation failures.
+	ErrWorkflowStepValidationFailed = errors.New("sigil: workflow step validation failed")
+	// ErrWorkflowStepEnqueueFailed wraps workflow-step enqueue failures.
+	ErrWorkflowStepEnqueueFailed = errors.New("sigil: workflow step enqueue failed")
 	// ErrQueueFull is returned when the generation queue is at capacity.
 	ErrQueueFull = errors.New("sigil: generation queue is full")
+	// ErrWorkflowStepQueueFull is returned when the workflow-step queue is at
+	// capacity. It is a distinct sentinel from ErrQueueFull (which names the
+	// generation queue), mirroring the JS and Python SDKs' separate messages.
+	ErrWorkflowStepQueueFull = errors.New("sigil: workflow step queue is full")
 	// ErrClientShutdown is returned when enqueue happens after shutdown starts.
 	ErrClientShutdown = errors.New("sigil: client is shutting down")
 	// ErrMappingFailed wraps provider-to-generation mapping failures.
@@ -36,6 +44,18 @@ var (
 	ErrRatingConflict = errors.New("sigil: conversation rating conflict")
 	// ErrRatingTransportFailed wraps conversation rating transport failures.
 	ErrRatingTransportFailed = errors.New("sigil: conversation rating transport failed")
+	// ErrExperimentValidationFailed wraps experiment lifecycle validation failures.
+	ErrExperimentValidationFailed = errors.New("sigil: experiment validation failed")
+	// ErrExperimentNotFound wraps experiment lifecycle not-found responses.
+	ErrExperimentNotFound = errors.New("sigil: experiment not found")
+	// ErrExperimentConflict wraps experiment lifecycle conflict responses.
+	ErrExperimentConflict = errors.New("sigil: experiment conflict")
+	// ErrExperimentTransportFailed wraps experiment lifecycle transport failures.
+	ErrExperimentTransportFailed = errors.New("sigil: experiment transport failed")
+	// ErrScoreValidationFailed wraps score export validation failures.
+	ErrScoreValidationFailed = errors.New("sigil: score validation failed")
+	// ErrScoreExportFailed wraps score export transport failures or rejected scores.
+	ErrScoreExportFailed = errors.New("sigil: score export failed")
 	// ErrHookDenied is the sentinel returned when hook evaluation responds
 	// with action: "deny". Use errors.Is to detect this independently from
 	// HookDeniedError's typed assertion.

@@ -3,19 +3,21 @@ import type {
   ContentCaptureMode,
   Message,
   SigilClient,
-} from "@grafana/sigil-sdk-js";
+} from "@grafana/agento11y";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { createSigilClient } from "./client.js";
 import type { SigilPiConfig } from "./config.js";
 import { loadConfig } from "./config.js";
 import { detectPiVersion } from "./detectPiVersion.js";
 import { resolveGitBranch } from "./git.js";
-import { runToolCallGuard } from "./guard.js";
+import { runPreflightTransform, runToolCallGuard } from "./guard.js";
 import { resolvePiGenerationLineage } from "./lineage.js";
 import { logger } from "./logger.js";
 import {
+  applyRedactedText,
   type CachedRequestControls,
   extractRequestControls,
+  mapAgentMessagesForHook,
   mapGenerationResult,
   mapGenerationStart,
   mapTools,
@@ -26,8 +28,10 @@ import {
   type PiUserMessage,
   resolveConversationTitle,
   type ToolTiming,
+  toolResultText,
   userMessageText,
 } from "./mappers.js";
+import { buildBuiltinTags } from "./tags.js";
 import {
   createTelemetryProviders,
   type TelemetryProviders,
@@ -257,9 +261,58 @@ export default function (pi: ExtensionAPI) {
     firstTokenTime = Date.now();
   });
 
+  pi.on("context", async (event, _ctx) => {
+    if (!sigil || !config?.guards.enabled) return;
+    try {
+      const piMessages = event.messages;
+      if (!Array.isArray(piMessages) || piMessages.length === 0) return;
+
+      const forward = mapAgentMessagesForHook(piMessages);
+      if (forward.length === 0) return;
+
+      const result = await runPreflightTransform({
+        client: sigil,
+        agentName: config.agentName,
+        agentVersion: config.agentVersion,
+        model: lastSeenModel ?? { provider: "unknown", name: "unknown" },
+        messages: forward,
+        logger: { warn: (msg: string) => logger.warn(msg) },
+      });
+      if (!result) return;
+
+      // The server returns one redacted message per forwarded message. If the
+      // counts diverge we cannot align the redaction by index, so drop it and
+      // forward the originals unchanged.
+      if (result.messages.length !== forward.length) {
+        logger.debug(
+          `preflight transform dropped: got ${result.messages.length} messages, expected ${forward.length}`,
+        );
+        return;
+      }
+
+      const applied = applyRedactedText(piMessages, result.messages);
+      if (!applied) {
+        logger.debug(
+          "preflight transform dropped: could not align redacted messages with the outgoing conversation",
+        );
+        return;
+      }
+
+      // applyRedactedText mutated piMessages (pi's own AgentMessage[]) in
+      // place; returning it hands the redacted conversation back to pi.
+      return { messages: piMessages };
+    } catch (err) {
+      // Pi runs `context` handlers serially; any error here would otherwise
+      // surface as a turn failure. Drop the transform and let the original
+      // messages flow through.
+      logger.warn(`context handler failed: ${err}`);
+      return;
+    }
+  });
+
   pi.on("tool_call", async (event, _ctx) => {
     if (!sigil || !config?.guards.enabled) return;
-    return runToolCallGuard({
+    const res = await runToolCallGuard({
       client: sigil,
       agentName: config.agentName,
       agentVersion: config.agentVersion,
@@ -270,6 +323,30 @@ export default function (pi: ExtensionAPI) {
       failOpen: config.guards.failOpen,
       logger: { warn: (msg: string) => logger.warn(msg) },
     });
+    if (!res) return;
+    if ("block" in res) return { block: true, reason: res.reason };
+    // Postflight transform: the server returns the complete redacted argument
+    // set, so replace the tool input wholesale. A plain Object.assign would
+    // merge instead, leaving any key the server dropped (an unredacted
+    // original) in place. Pi sees the patched arguments at execution time; no
+    // re-validation runs after the mutation, so it is the server's
+    // responsibility to keep the schema intact.
+    //
+    // Redaction fails open: if the patch cannot be applied (e.g. event.input
+    // is null or frozen), log it and let the original arguments through rather
+    // than throwing, which pi would treat as a block.
+    try {
+      const input = event.input as Record<string, unknown>;
+      for (const key of Object.keys(input)) {
+        if (!Object.hasOwn(res.transform, key)) {
+          delete input[key];
+        }
+      }
+      Object.assign(input, res.transform);
+    } catch (err) {
+      logger.warn(`tool_call transform apply failed: ${err}`);
+    }
+    return;
   });
 
   pi.on("tool_execution_start", async (event, _ctx) => {
@@ -381,14 +458,14 @@ export default function (pi: ExtensionAPI) {
       );
 
       // Resolved per turn so mid-session checkouts land on the next
-      // generation. Gated on contentCapture=full because branch names
-      // can leak project context (diverges from claude-code/cursor,
-      // which always send it).
-      const gitBranch =
-        config.contentCapture === "full"
-          ? resolveGitBranch(process.cwd())
-          : undefined;
-      const builtinTags = gitBranch ? { "git.branch": gitBranch } : undefined;
+      // generation. Always sent, regardless of content capture mode:
+      // `git.branch` and `cwd` are low-cardinality session metadata,
+      // not message content, matching claude-code/cursor.
+      const turnCwd = process.cwd();
+      const builtinTags = buildBuiltinTags({
+        cwd: turnCwd,
+        gitBranch: resolveGitBranch(turnCwd),
+      });
 
       // Resolve lineage at `turn_end`, not `message_end`: pi awaits
       // extension `message_end` callbacks *before* calling
@@ -535,14 +612,7 @@ export function emitToolSpans(
       }
     }
     for (const tr of toolResults) {
-      const text = tr.content
-        .filter(
-          (c): c is { type: "text"; text: string } =>
-            c.type === "text" && !!c.text,
-        )
-        .map((c) => c.text)
-        .join("\n");
-      resultMap.set(tr.toolCallId, text);
+      resultMap.set(tr.toolCallId, toolResultText(tr.content));
     }
   }
 

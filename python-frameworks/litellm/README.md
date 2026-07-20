@@ -1,11 +1,11 @@
 # Sigil Python Framework Module: LiteLLM
 
-`sigil-sdk-litellm` is a LiteLLM callback handler that exports generation telemetry to Sigil.
+`agento11y-litellm` is a LiteLLM callback handler that exports generation telemetry to Sigil.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-litellm
+pip install agento11y agento11y-litellm
 pip install litellm
 ```
 
@@ -13,8 +13,8 @@ pip install litellm
 
 ```python
 import litellm
-from sigil_sdk import Client
-from sigil_sdk_litellm import SigilLiteLLMLogger
+from agento11y import Client
+from agento11y_litellm import SigilLiteLLMLogger
 
 client = Client()
 handler = SigilLiteLLMLogger(client=client)
@@ -34,8 +34,8 @@ client.shutdown()
 
 ```python
 import litellm
-from sigil_sdk import Client
-from sigil_sdk_litellm import SigilLiteLLMLogger
+from agento11y import Client
+from agento11y_litellm import SigilLiteLLMLogger
 
 client = Client()
 litellm.callbacks = [SigilLiteLLMLogger(client=client)]
@@ -60,7 +60,7 @@ All options are keyword-only on `SigilLiteLLMLogger`:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `client` | `sigil_sdk.Client` | required | Sigil SDK client instance |
+| `client` | `agento11y.Client` | required | Sigil SDK client instance |
 | `capture_inputs` | `bool` | `True` | Record input messages |
 | `capture_outputs` | `bool` | `True` | Record output messages |
 | `agent_name` | `str` | `""` | Default agent name (see below for per-request) |
@@ -97,7 +97,7 @@ When running LiteLLM as a proxy server in Docker, register the handler via a cal
 
 ```dockerfile
 FROM ghcr.io/berriai/litellm:v1.82.3-stable.patch.2
-RUN pip install sigil-sdk sigil-sdk-litellm
+RUN pip install agento11y agento11y-litellm
 ```
 
 **2. Create a callback file** (`sigil_callback.py`, same directory as `config.yaml`):
@@ -105,9 +105,9 @@ RUN pip install sigil-sdk sigil-sdk-litellm
 ```python
 import os
 
-from sigil_sdk import Client
-from sigil_sdk.config import AuthConfig, ClientConfig, GenerationExportConfig
-from sigil_sdk_litellm import SigilLiteLLMLogger
+from agento11y import Client
+from agento11y.config import AuthConfig, ClientConfig, GenerationExportConfig
+from agento11y_litellm import SigilLiteLLMLogger
 
 client = Client(ClientConfig(
     generation_export=GenerationExportConfig(
@@ -154,20 +154,23 @@ docker run -d \
   --config /app/config.yaml
 ```
 
-The callback file reads connection details from environment variables. Adjust the `AuthConfig` mode to match your deployment (see `sigil_sdk.config` for `tenant`, `bearer`, and `basic` modes).
+The callback file reads connection details from environment variables. Adjust the `AuthConfig` mode to match your deployment (see `agento11y.config` for `tenant`, `bearer`, and `basic` modes).
 
 ## Behavior
 
 - Mode mapping: non-stream calls -> `SYNC`, stream calls -> `STREAM` with first-token timestamp.
 - Provider detection: uses `custom_llm_provider` from LiteLLM's standard logging object.
 - Failed calls are recorded with the error attached via `set_call_error`.
-- Only chat completion call types (`completion`, `acompletion`) are recorded; embeddings and other call types are skipped.
+- Chat completion call types (`completion`, `acompletion`, `text_completion`, `atext_completion`) are recorded as generations.
+- Embedding call types (`embedding`, `aembedding`) are recorded as OTel embedding spans (no generation export). The span carries input/token counts and dimensions; the input text is attached only when the handler's `capture_inputs` is set and the SDK's `EmbeddingCaptureConfig.capture_input=True`. Embedding spans require a configured OTel tracer.
+- Image, audio, and transcription call types are skipped.
 - Framework tags are always set:
-  - `sigil.framework.name=litellm`
-  - `sigil.framework.source=handler`
-  - `sigil.framework.language=python`
+  - `agento11y.framework.name=litellm`
+  - `agento11y.framework.source=handler`
+  - `agento11y.framework.language=python`
 - LiteLLM `request_tags` are forwarded as `litellm.tag.<value>`.
 - Token usage includes detailed breakdowns (cached tokens, reasoning tokens) when the provider returns them.
 - Tool calls and tool results in messages are mapped to Sigil's tool call/result parts.
+- Reasoning/thinking text is captured as `THINKING` parts, ordered before the assistant text. It is read from `thinking_blocks` when present (including redacted blocks), otherwise from the flat `reasoning_content` string.
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

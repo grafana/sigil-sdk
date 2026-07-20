@@ -8,9 +8,9 @@ import (
 // Reserved generation metadata keys for Anthropic-style cache diagnostics.
 // See docs/guides/cache-diagnostics.md in the Sigil repo.
 const (
-	CacheDiagnosticsMissReasonKey        = "sigil.cache_diagnostics.miss_reason"
-	CacheDiagnosticsMissedInputTokensKey = "sigil.cache_diagnostics.missed_input_tokens"
-	CacheDiagnosticsPreviousMessageIDKey = "sigil.cache_diagnostics.previous_message_id"
+	CacheDiagnosticsMissReasonKey        = "agento11y.cache_diagnostics.miss_reason"
+	CacheDiagnosticsMissedInputTokensKey = "agento11y.cache_diagnostics.missed_input_tokens"
+	CacheDiagnosticsPreviousMessageIDKey = "agento11y.cache_diagnostics.previous_message_id"
 )
 
 // CacheDiagnosticsOption configures optional fields for SetCacheDiagnostics.

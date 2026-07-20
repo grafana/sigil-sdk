@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
-	"github.com/grafana/sigil-sdk/go/sigil/sigilcodec"
-	"github.com/grafana/sigil-sdk/go/sigil/sigilmodel"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
+	"github.com/grafana/agento11y/go/sigil/sigilcodec"
+	"github.com/grafana/agento11y/go/sigil/sigilmodel"
 )
 
 func TestToProtoMode(t *testing.T) {
 	cases := []struct {
 		name string
 		mode sigilmodel.GenerationMode
-		want sigilv1.GenerationMode
+		want agento11yv1.GenerationMode
 	}{
-		{name: "sync", mode: sigilmodel.GenerationModeSync, want: sigilv1.GenerationMode_GENERATION_MODE_SYNC},
-		{name: "stream", mode: sigilmodel.GenerationModeStream, want: sigilv1.GenerationMode_GENERATION_MODE_STREAM},
-		{name: "empty", mode: sigilmodel.GenerationMode(""), want: sigilv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
-		{name: "unknown", mode: sigilmodel.GenerationMode("UNKNOWN"), want: sigilv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
+		{name: "sync", mode: sigilmodel.GenerationModeSync, want: agento11yv1.GenerationMode_GENERATION_MODE_SYNC},
+		{name: "stream", mode: sigilmodel.GenerationModeStream, want: agento11yv1.GenerationMode_GENERATION_MODE_STREAM},
+		{name: "empty", mode: sigilmodel.GenerationMode(""), want: agento11yv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
+		{name: "unknown", mode: sigilmodel.GenerationMode("UNKNOWN"), want: agento11yv1.GenerationMode_GENERATION_MODE_UNSPECIFIED},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -42,6 +42,12 @@ func TestToProtoRolesAndParts(t *testing.T) {
 			Role: sigilmodel.RoleUser,
 			Parts: []sigilmodel.Part{
 				{Kind: sigilmodel.PartKindText, Text: "hi"},
+				{Kind: sigilmodel.PartKindMedia, Media: &sigilmodel.Media{
+					Kind:     "image",
+					URL:      "data:image/png;base64,abc123",
+					MIMEType: "image/png",
+					Name:     "prompt.png",
+				}},
 			},
 		}},
 		Output: []sigilmodel.Message{{
@@ -72,19 +78,23 @@ func TestToProtoRolesAndParts(t *testing.T) {
 		t.Fatalf("ToProto: %v", err)
 	}
 
-	if got.GetInput()[0].GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_USER {
+	if got.GetInput()[0].GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_USER {
 		t.Errorf("expected USER role, got %v", got.GetInput()[0].GetRole())
 	}
-	if got.GetOutput()[0].GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT {
+	if got.GetOutput()[0].GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_ASSISTANT {
 		t.Errorf("expected ASSISTANT role, got %v", got.GetOutput()[0].GetRole())
 	}
-	if got.GetOutput()[1].GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_TOOL {
+	if got.GetOutput()[1].GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_TOOL {
 		t.Errorf("expected TOOL role, got %v", got.GetOutput()[1].GetRole())
 	}
 
 	textPart := got.GetInput()[0].GetParts()[0]
 	if textPart.GetText() != "hi" {
 		t.Errorf("expected text part %q, got %q", "hi", textPart.GetText())
+	}
+	mediaPart := got.GetInput()[0].GetParts()[1]
+	if media := mediaPart.GetMedia(); media == nil || media.GetKind() != "image" || media.GetUrl() != "data:image/png;base64,abc123" || media.GetMimeType() != "image/png" || media.GetName() != "prompt.png" {
+		t.Errorf("media mismatch: %+v", media)
 	}
 	thinkPart := got.GetOutput()[0].GetParts()[0]
 	if thinkPart.GetThinking() != "let me think" {
@@ -97,6 +107,83 @@ func TestToProtoRolesAndParts(t *testing.T) {
 	toolResultPart := got.GetOutput()[1].GetParts()[0]
 	if res := toolResultPart.GetToolResult(); res == nil || res.GetToolCallId() != "tc-1" || string(res.GetContentJson()) != `{"hit":1}` {
 		t.Errorf("tool result mismatch: %+v", res)
+	}
+}
+
+func TestWorkflowStepToProtoMapsAllFields(t *testing.T) {
+	startedAt := time.Date(2026, 2, 11, 12, 0, 0, 0, time.UTC)
+	completedAt := startedAt.Add(time.Second)
+
+	got, err := sigilcodec.WorkflowStepToProto(sigilmodel.WorkflowStep{
+		ID:                  "wfs-route",
+		ConversationID:      "conv-workflow",
+		StepName:            "route",
+		Framework:           "custom",
+		StartedAt:           startedAt,
+		CompletedAt:         completedAt,
+		InputState:          map[string]any{"prompt": "hello", "count": 1},
+		OutputState:         map[string]any{"route": "answer"},
+		Error:               "boom",
+		Tags:                map[string]string{"env": "test"},
+		LinkedGenerationIDs: []string{"gen-1", "gen-2"},
+		ParentStepIDs:       []string{"wfs-root"},
+		AgentName:           "agent-workflow",
+		AgentVersion:        "v1",
+		TraceID:             "trace-1",
+		SpanID:              "span-1",
+		Metadata:            map[string]any{"run_id": "run-1"},
+	})
+	if err != nil {
+		t.Fatalf("WorkflowStepToProto: %v", err)
+	}
+
+	if got.GetId() != "wfs-route" {
+		t.Fatalf("expected id wfs-route, got %q", got.GetId())
+	}
+	if got.GetConversationId() != "conv-workflow" {
+		t.Fatalf("expected conversation id conv-workflow, got %q", got.GetConversationId())
+	}
+	if got.GetStepName() != "route" {
+		t.Fatalf("expected step name route, got %q", got.GetStepName())
+	}
+	if got.GetFramework() != "custom" {
+		t.Fatalf("expected framework custom, got %q", got.GetFramework())
+	}
+	if got.GetStartedAt().AsTime() != startedAt {
+		t.Fatalf("expected startedAt %s, got %s", startedAt, got.GetStartedAt().AsTime())
+	}
+	if got.GetCompletedAt().AsTime() != completedAt {
+		t.Fatalf("expected completedAt %s, got %s", completedAt, got.GetCompletedAt().AsTime())
+	}
+	if got.GetInputState().GetFields()["prompt"].GetStringValue() != "hello" {
+		t.Fatalf("expected input_state.prompt=hello, got %#v", got.GetInputState())
+	}
+	if got.GetInputState().GetFields()["count"].GetNumberValue() != 1 {
+		t.Fatalf("expected input_state.count=1, got %#v", got.GetInputState())
+	}
+	if got.GetOutputState().GetFields()["route"].GetStringValue() != "answer" {
+		t.Fatalf("expected output_state.route=answer, got %#v", got.GetOutputState())
+	}
+	if got.GetError() != "boom" {
+		t.Fatalf("expected error boom, got %q", got.GetError())
+	}
+	if got.GetTags()["env"] != "test" {
+		t.Fatalf("expected env tag, got %#v", got.GetTags())
+	}
+	if strings.Join(got.GetLinkedGenerationIds(), ",") != "gen-1,gen-2" {
+		t.Fatalf("unexpected linked generation ids: %#v", got.GetLinkedGenerationIds())
+	}
+	if strings.Join(got.GetParentStepIds(), ",") != "wfs-root" {
+		t.Fatalf("unexpected parent step ids: %#v", got.GetParentStepIds())
+	}
+	if got.GetAgentName() != "agent-workflow" || got.GetAgentVersion() != "v1" {
+		t.Fatalf("unexpected agent fields: %q %q", got.GetAgentName(), got.GetAgentVersion())
+	}
+	if got.GetTraceId() != "trace-1" || got.GetSpanId() != "span-1" {
+		t.Fatalf("unexpected trace fields: %q %q", got.GetTraceId(), got.GetSpanId())
+	}
+	if got.GetMetadata().GetFields()["run_id"].GetStringValue() != "run-1" {
+		t.Fatalf("expected metadata.run_id=run-1, got %#v", got.GetMetadata())
 	}
 }
 
@@ -117,11 +204,11 @@ func TestToProtoArtifacts(t *testing.T) {
 	if len(arts) != 4 {
 		t.Fatalf("expected 4 artifacts, got %d", len(arts))
 	}
-	wantKinds := []sigilv1.ArtifactKind{
-		sigilv1.ArtifactKind_ARTIFACT_KIND_REQUEST,
-		sigilv1.ArtifactKind_ARTIFACT_KIND_RESPONSE,
-		sigilv1.ArtifactKind_ARTIFACT_KIND_TOOLS,
-		sigilv1.ArtifactKind_ARTIFACT_KIND_PROVIDER_EVENT,
+	wantKinds := []agento11yv1.ArtifactKind{
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_REQUEST,
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_RESPONSE,
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_TOOLS,
+		agento11yv1.ArtifactKind_ARTIFACT_KIND_PROVIDER_EVENT,
 	}
 	for i, want := range wantKinds {
 		if arts[i].GetKind() != want {

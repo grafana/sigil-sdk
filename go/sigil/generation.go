@@ -4,7 +4,7 @@ import (
 	"maps"
 	"time"
 
-	"github.com/grafana/sigil-sdk/go/sigil/sigilmodel"
+	"github.com/grafana/agento11y/go/sigil/sigilmodel"
 )
 
 const (
@@ -202,6 +202,11 @@ func cloneParts(in []Part) []Part {
 			result := *in[i].ToolResult
 			result.ContentJSON = append([]byte(nil), result.ContentJSON...)
 			out[i].ToolResult = &result
+		}
+
+		if in[i].Media != nil {
+			media := *in[i].Media
+			out[i].Media = &media
 		}
 	}
 

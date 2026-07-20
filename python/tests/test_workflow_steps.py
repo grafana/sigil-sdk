@@ -9,24 +9,26 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from uuid import uuid4
 
-from sigil_sdk import (
+from agento11y import (
     Client,
     ClientConfig,
+    EnqueueError,
     GenerationExportConfig,
+    ValidationError,
     WorkflowStep,
 )
-from sigil_sdk.exporters.http import HTTPGenerationExporter, _normalize_endpoint
-from sigil_sdk.exporters.noop import NoopGenerationExporter
-from sigil_sdk.framework_handler import (
+from agento11y.exporters.http import HTTPGenerationExporter, _normalize_endpoint
+from agento11y.exporters.noop import NoopGenerationExporter
+from agento11y.framework_handler import (
     SigilFrameworkHandlerBase,
     _safe_serializable_dict,
 )
-from sigil_sdk.models import (
+from agento11y.models import (
     ExportWorkflowStepResult,
     ExportWorkflowStepsRequest,
     ExportWorkflowStepsResponse,
 )
-from sigil_sdk.proto_mapping import workflow_step_to_proto, workflow_step_to_proto_json
+from agento11y.proto_mapping import workflow_step_to_proto, workflow_step_to_proto_json
 
 # ---------------------------------------------------------------------------
 # proto mapping
@@ -48,8 +50,8 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
         input_state={"text": "hello", "n": 1},
         output_state={"category": "incident"},
         error="boom",
-        tags={"sigil.framework.name": "langgraph"},
-        metadata={"sigil.framework.run_id": "run-1"},
+        tags={"agento11y.framework.name": "langgraph"},
+        metadata={"agento11y.framework.run_id": "run-1"},
         linked_generation_ids=["gen_1", "gen_2"],
         parent_step_ids=["wfs_parent"],
         trace_id="trace-1",
@@ -65,7 +67,7 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
     assert proto.agent_name == "incident-pipeline"
     assert proto.agent_version == "v1"
     assert proto.error == "boom"
-    assert dict(proto.tags) == {"sigil.framework.name": "langgraph"}
+    assert dict(proto.tags) == {"agento11y.framework.name": "langgraph"}
     assert list(proto.linked_generation_ids) == ["gen_1", "gen_2"]
     assert list(proto.parent_step_ids) == ["wfs_parent"]
     assert proto.trace_id == "trace-1"
@@ -75,7 +77,7 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
     assert proto.input_state["text"] == "hello"
     assert proto.input_state["n"] == 1
     assert proto.output_state["category"] == "incident"
-    assert proto.metadata["sigil.framework.run_id"] == "run-1"
+    assert proto.metadata["agento11y.framework.run_id"] == "run-1"
 
 
 def test_workflow_step_to_proto_json_uses_snake_case_keys() -> None:
@@ -192,7 +194,7 @@ class _RecordingExporter:
 
     def export_generations(self, request):
         self.gen_batches.append(list(request.generations))
-        from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
+        from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
 
         return ExportGenerationsResponse(
             results=[
@@ -255,6 +257,113 @@ def test_client_retries_workflow_step_export() -> None:
 
     assert len(exporter.wf_batches) == 1
     assert exporter.wf_batches[0][0].id == "wfs_b"
+
+
+def test_enqueue_workflow_step_defaults_timestamps_and_merges_tags() -> None:
+    now = datetime(2026, 3, 12, 12, 0, 0, tzinfo=timezone.utc)
+    exporter = _RecordingExporter()
+    client = Client(
+        ClientConfig(
+            now=lambda: now,
+            tags={"client": "tag", "shared": "client"},
+            generation_export=GenerationExportConfig(
+                batch_size=10,
+                flush_interval=timedelta(0),
+            ),
+            generation_exporter=exporter,
+        )
+    )
+    try:
+        # No timestamps supplied: both default to the client clock. The step's
+        # own tag overrides the client-level tag on conflict.
+        client.enqueue_workflow_step(
+            WorkflowStep(id="wfs_a", conversation_id="c1", step_name="route", tags={"shared": "step"})
+        )
+        client.flush()
+    finally:
+        client.shutdown()
+
+    step = exporter.wf_batches[0][0]
+    assert step.started_at == now
+    assert step.completed_at == now
+    assert step.tags == {"client": "tag", "shared": "step"}
+
+
+def test_enqueue_workflow_step_rejects_invalid_step() -> None:
+    exporter = _RecordingExporter()
+    client = _client_with_exporter(exporter)
+    try:
+        # Missing step_name fails validation before it is queued.
+        try:
+            client.enqueue_workflow_step(WorkflowStep(id="wfs_a", conversation_id="c1"))
+            raise AssertionError("expected ValidationError")
+        except ValidationError:
+            pass
+        client.flush()
+    finally:
+        client.shutdown()
+
+    assert exporter.wf_batches == []
+
+
+def test_enqueue_workflow_step_validates_raw_input_before_defaulting() -> None:
+    # A step with only completed_at (started_at unset) is valid: the
+    # completed < started rule only applies when the caller supplied both.
+    # Validation runs on the raw input, so defaulting started_at to now() must
+    # not turn this into a spurious rejection. Matches Go and JS.
+    now = datetime(2026, 3, 12, 12, 0, 0, tzinfo=timezone.utc)
+    completed = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    exporter = _RecordingExporter()
+    client = Client(
+        ClientConfig(
+            now=lambda: now,
+            generation_export=GenerationExportConfig(batch_size=10, flush_interval=timedelta(0)),
+            generation_exporter=exporter,
+        )
+    )
+    try:
+        client.enqueue_workflow_step(
+            WorkflowStep(id="wfs_a", conversation_id="c1", step_name="route", completed_at=completed)
+        )
+        client.flush()
+    finally:
+        client.shutdown()
+
+    step = exporter.wf_batches[0][0]
+    assert step.started_at == now  # defaulted
+    assert step.completed_at == completed  # caller-supplied, preserved
+
+
+def test_enqueue_workflow_step_rejects_oversized_payload() -> None:
+    exporter = _RecordingExporter()
+    client = Client(
+        ClientConfig(
+            generation_export=GenerationExportConfig(
+                batch_size=10,
+                flush_interval=timedelta(0),
+                payload_max_bytes=32,
+            ),
+            generation_exporter=exporter,
+        )
+    )
+    try:
+        try:
+            client.enqueue_workflow_step(
+                WorkflowStep(
+                    id="wfs_a",
+                    conversation_id="c1",
+                    step_name="route",
+                    input_state={"blob": "x" * 1000},
+                )
+            )
+            raise AssertionError("expected EnqueueError")
+        except EnqueueError:
+            pass
+        client.flush()
+    finally:
+        client.shutdown()
+
+    assert exporter.wf_batches == []
 
 
 def test_noop_exporter_accepts_workflow_steps() -> None:

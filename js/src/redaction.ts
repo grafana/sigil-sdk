@@ -1,4 +1,5 @@
-import type { GenerationSanitizer, Message, MessagePart } from './types.js';
+import { type EnvPair, envRedactInputMessages, envTrimmed } from './config.js';
+import type { GenerationSanitizer, Message, MessagePart, SigilLogger } from './types.js';
 import { cloneGeneration } from './utils.js';
 
 /**
@@ -96,9 +97,22 @@ class SecretRedactor {
   }
 }
 
-export function createSecretRedactionSanitizer(options: SecretRedactionOptions = {}): GenerationSanitizer {
+/**
+ * Build a generation sanitizer that redacts known secret formats.
+ *
+ * `redactInputMessages` resolves as: explicit option > `AGENTO11Y_REDACT_INPUT_MESSAGES`
+ * (with `SIGIL_REDACT_INPUT_MESSAGES` fallback; accepts `1/0`, `true/false`,
+ * `yes/no`, `on/off`, case-insensitive) > `false`. An unrecognised env value is
+ * warned through `logger` and falls back to `false`, so a typo cannot silently
+ * flip redaction.
+ */
+export function createSecretRedactionSanitizer(
+  options: SecretRedactionOptions = {},
+  env: Record<string, string | undefined> = readProcessEnv(),
+  logger: SigilLogger = consoleLogger,
+): GenerationSanitizer {
   const redactor = new SecretRedactor(options.redactEmailAddresses ?? true);
-  const redactInputMessages = options.redactInputMessages ?? false;
+  const redactInputMessages = options.redactInputMessages ?? parseEnvBool(env, envRedactInputMessages, logger) ?? false;
 
   return (generation) => {
     const sanitized = cloneGeneration(generation);
@@ -209,3 +223,33 @@ function applyTier2Patterns(text: string, patterns: SecretPattern[]): string {
   }
   return result;
 }
+
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
+const FALSE_VALUES = new Set(['0', 'false', 'no', 'off']);
+
+function parseEnvBool(
+  env: Record<string, string | undefined>,
+  pair: EnvPair,
+  logger: SigilLogger,
+): boolean | undefined {
+  const selected = envTrimmed(env, pair);
+  if (selected === undefined) return undefined;
+  const normalized = selected.value.toLowerCase();
+  if (TRUE_VALUES.has(normalized)) return true;
+  if (FALSE_VALUES.has(normalized)) return false;
+  logger.warn?.(`sigil: ignoring invalid ${selected.key}: ${selected.value}`);
+  return undefined;
+}
+
+function readProcessEnv(): Record<string, string | undefined> {
+  if (typeof process !== 'undefined' && process.env !== undefined) {
+    return process.env;
+  }
+  return {};
+}
+
+const consoleLogger: SigilLogger = {
+  warn(message: string, ...args: unknown[]) {
+    console.warn(message, ...args);
+  },
+};

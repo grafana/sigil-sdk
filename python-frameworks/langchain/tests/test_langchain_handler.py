@@ -6,18 +6,18 @@ import asyncio
 from datetime import timedelta
 from uuid import uuid4
 
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig
-from sigil_sdk.client import GenerationRecorder
-from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_langchain import (
+from agento11y import Client, ClientConfig, GenerationExportConfig
+from agento11y.client import GenerationRecorder
+from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
+from agento11y_langchain import (
     SigilAsyncLangChainHandler,
     SigilLangChainHandler,
     create_sigil_langchain_handler,
     with_sigil_langchain_callbacks,
 )
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 class _CapturingExporter:
@@ -58,11 +58,11 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
             agent_name="agent-langchain",
             agent_version="v1",
             provider_resolver="auto",
-            extra_tags={"env": "test", "sigil.framework.name": "override"},
+            extra_tags={"env": "test", "agento11y.framework.name": "override"},
             extra_metadata={
                 "seed": 7,
-                "sigil.framework.run_id": "override-run",
-                "sigil.framework.thread_id": "override-thread",
+                "agento11y.framework.run_id": "override-run",
+                "agento11y.framework.thread_id": "override-thread",
             },
         )
 
@@ -96,24 +96,235 @@ def test_langchain_sync_lifecycle_sets_framework_tags_and_metadata() -> None:
         assert generation.mode.value == "SYNC"
         assert generation.model.provider == "openai"
         assert generation.model.name == "gpt-5"
-        assert generation.tags["sigil.framework.name"] == "langchain"
-        assert generation.tags["sigil.framework.source"] == "handler"
-        assert generation.tags["sigil.framework.language"] == "python"
+        assert generation.tags["agento11y.framework.name"] == "langchain"
+        assert generation.tags["agento11y.framework.source"] == "handler"
+        assert generation.tags["agento11y.framework.language"] == "python"
         assert generation.tags["env"] == "test"
         assert generation.conversation_id == "chain-thread-42"
-        assert generation.metadata["sigil.framework.run_id"] == str(run_id)
-        assert generation.metadata["sigil.framework.thread_id"] == "chain-thread-42"
-        assert generation.metadata["sigil.framework.parent_run_id"] == str(parent_run_id)
-        assert generation.metadata["sigil.framework.component_name"] == "ChatOpenAI"
-        assert generation.metadata["sigil.framework.run_type"] == "chat"
-        assert generation.metadata["sigil.framework.retry_attempt"] == 2
-        assert generation.metadata["sigil.framework.tags"] == ["prod", "blue"]
+        assert generation.metadata["agento11y.framework.run_id"] == str(run_id)
+        assert generation.metadata["agento11y.framework.thread_id"] == "chain-thread-42"
+        assert generation.metadata["agento11y.framework.parent_run_id"] == str(parent_run_id)
+        assert generation.metadata["agento11y.framework.component_name"] == "ChatOpenAI"
+        assert generation.metadata["agento11y.framework.run_type"] == "chat"
+        assert generation.metadata["agento11y.framework.retry_attempt"] == 2
+        assert generation.metadata["agento11y.framework.tags"] == ["prod", "blue"]
         assert generation.metadata["seed"] == 7
         assert generation.usage.input_tokens == 10
         assert generation.usage.output_tokens == 5
         assert generation.usage.total_tokens == 15
         assert generation.stop_reason == "stop"
         assert generation.output[0].parts[0].text == "world"
+    finally:
+        client.shutdown()
+
+
+def test_langchain_backfills_model_from_response_when_request_model_unknown() -> None:
+    """Regression: LangChain/LangGraph with a Bedrock inference profile does not
+    surface the model at request start, so it resolves to "unknown"/"custom".
+    The real model (a Bedrock inference-profile ARN) only arrives on the
+    response. It must be backfilled onto the generation model so the
+    token-usage metric (which drives cost) carries a resolvable model instead
+    of "unknown"."""
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    arn = "arn:aws:bedrock:ap-south-1:500440857146:inference-profile/global.anthropic.claude-sonnet-4-6"
+
+    try:
+        run_id = uuid4()
+        handler = SigilLangChainHandler(
+            client=client,
+            agent_name="agent-langchain",
+            agent_version="v1",
+            provider_resolver="auto",
+        )
+
+        # No "model" key in invocation_params — mirrors ChatBedrock with an
+        # auto-provisioner default config, where the model is only known on
+        # the response.
+        handler.on_chat_model_start(
+            {"name": "ChatBedrock"},
+            [[{"type": "human", "content": "hello"}]],
+            run_id=run_id,
+            invocation_params={},
+        )
+        handler.on_llm_end(
+            {
+                "generations": [[{"text": "world"}]],
+                "llm_output": {
+                    "model_name": arn,
+                    "finish_reason": "stop",
+                    "token_usage": {
+                        "prompt_tokens": 17011,
+                        "completion_tokens": 217,
+                        "total_tokens": 17228,
+                    },
+                },
+            },
+            run_id=run_id,
+        )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        # Model is backfilled from the response so cost can resolve.
+        assert generation.model.name == arn
+        assert generation.model.provider == "anthropic"
+        # response_model is still recorded.
+        assert generation.response_model == arn
+        assert generation.usage.input_tokens == 17011
+        assert generation.usage.output_tokens == 217
+    finally:
+        client.shutdown()
+
+
+def test_langchain_does_not_override_explicit_request_model() -> None:
+    """When the request model IS known, an ARN response model must not clobber
+    it — the explicit request model wins."""
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    try:
+        run_id = uuid4()
+        handler = SigilLangChainHandler(
+            client=client,
+            agent_name="agent-langchain",
+            agent_version="v1",
+            provider_resolver="auto",
+        )
+
+        handler.on_chat_model_start(
+            {"name": "ChatAnthropic"},
+            [[{"type": "human", "content": "hello"}]],
+            run_id=run_id,
+            invocation_params={"model": "claude-haiku-4-5-20251001"},
+        )
+        handler.on_llm_end(
+            {
+                "generations": [[{"text": "world"}]],
+                "llm_output": {
+                    "model_name": "some-other-response-model",
+                    "finish_reason": "stop",
+                    "token_usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            },
+            run_id=run_id,
+        )
+
+        client.flush()
+        generation = exporter.requests[0].generations[0]
+        assert generation.model.name == "claude-haiku-4-5-20251001"
+        assert generation.model.provider == "anthropic"
+        assert generation.response_model == "some-other-response-model"
+    finally:
+        client.shutdown()
+
+
+def test_langchain_infers_bedrock_provider_at_request_start() -> None:
+    """When a Bedrock-style model id IS surfaced at request start (no explicit
+    provider), the provider fallback must classify it from the vendor segment
+    instead of falling back to "custom", so the start span is resolvable too.
+    Uses positional vendor parsing that mirrors the backend: a dotted custom
+    name whose vendor word is not in the vendor position stays "custom"."""
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    try:
+        # Bedrock inference-profile id surfaced at start -> provider inferred.
+        run_id = uuid4()
+        handler = SigilLangChainHandler(
+            client=client,
+            agent_name="agent-langchain",
+            agent_version="v1",
+            provider_resolver="auto",
+        )
+        handler.on_chat_model_start(
+            {"name": "ChatBedrock"},
+            [[{"type": "human", "content": "hello"}]],
+            run_id=run_id,
+            invocation_params={"model": "us.anthropic.claude-sonnet-4-6"},
+        )
+        handler.on_llm_end(
+            {
+                "generations": [[{"text": "world"}]],
+                "llm_output": {
+                    "finish_reason": "stop",
+                    "token_usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            },
+            run_id=run_id,
+        )
+
+        # A dotted custom name with a vendor word out of position stays "custom".
+        custom_run_id = uuid4()
+        handler.on_chat_model_start(
+            {"name": "ChatCustom"},
+            [[{"type": "human", "content": "hello"}]],
+            run_id=custom_run_id,
+            invocation_params={"model": "my-team.anthropic.internal-model"},
+        )
+        handler.on_llm_end(
+            {
+                "generations": [[{"text": "world"}]],
+                "llm_output": {
+                    "finish_reason": "stop",
+                    "token_usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            },
+            run_id=custom_run_id,
+        )
+
+        client.flush()
+        generations = exporter.requests[0].generations
+        bedrock_gen = next(g for g in generations if g.model.name == "us.anthropic.claude-sonnet-4-6")
+        assert bedrock_gen.model.provider == "anthropic"
+        custom_gen = next(g for g in generations if g.model.name == "my-team.anthropic.internal-model")
+        assert custom_gen.model.provider == "custom"
+    finally:
+        client.shutdown()
+
+
+def test_langchain_non_canonical_provider_hint_does_not_block_bedrock_inference() -> None:
+    """LangChain reports Bedrock as ls_provider="amazon_bedrock" (and sometimes
+    "provider"). That hint normalizes to "custom" and must NOT short-circuit the
+    model-name inference that recovers the real vendor from the Bedrock id. A canonical
+    hint still wins, and a genuinely custom model keeps "custom"."""
+    exporter = _CapturingExporter()
+    client = _new_client(exporter)
+
+    cases = [
+        # (run label, invocation_params, expected provider)
+        ("ls", {"model": "us.anthropic.claude-sonnet-4-6-v1:0", "ls_provider": "amazon_bedrock"}, "anthropic"),
+        ("prov", {"model": "us.anthropic.claude-sonnet-4-6-v1:0", "provider": "amazon_bedrock"}, "anthropic"),
+        ("canonical", {"model": "claude-sonnet-4-5", "ls_provider": "openai"}, "openai"),
+        ("genuine_custom", {"model": "my-inhouse-model", "ls_provider": "my_platform"}, "custom"),
+    ]
+
+    try:
+        handler = SigilLangChainHandler(client=client, provider_resolver="auto")
+        run_ids = {}
+        for label, invocation_params, _ in cases:
+            run_id = uuid4()
+            run_ids[label] = run_id
+            handler.on_chat_model_start(
+                {"name": "ChatBedrock"},
+                [[{"type": "human", "content": "hello"}]],
+                run_id=run_id,
+                invocation_params=invocation_params,
+            )
+            handler.on_llm_end(
+                {
+                    "generations": [[{"text": "world"}]],
+                    "llm_output": {"model_name": invocation_params["model"]},
+                },
+                run_id=run_id,
+            )
+
+        client.flush()
+        generations = exporter.requests[0].generations
+        by_model = {g.model.name: g for g in generations}
+        for label, invocation_params, expected in cases:
+            gen = by_model[invocation_params["model"]]
+            assert gen.model.provider == expected, f"{label}: got {gen.model.provider}, want {expected}"
     finally:
         client.shutdown()
 
@@ -411,7 +622,7 @@ def test_langchain_error_sets_call_error_and_preserves_framework_tags() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert "provider unavailable" in generation.call_error
-        assert generation.tags["sigil.framework.name"] == "langchain"
+        assert generation.tags["agento11y.framework.name"] == "langchain"
     finally:
         client.shutdown()
 
@@ -430,7 +641,7 @@ def test_langchain_async_handler_records_generation() -> None:
         asyncio.run(_run())
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "langchain"
+        assert generation.tags["agento11y.framework.name"] == "langchain"
         assert generation.model.provider == "openai"
     finally:
         client.shutdown()
@@ -490,13 +701,13 @@ def test_langchain_tool_chain_and_retriever_callbacks_emit_spans() -> None:
         assert tool_span.attributes.get("gen_ai.tool.name") == "weather"
         assert tool_span.attributes.get("gen_ai.conversation.id") == "chain-thread-42"
 
-        assert chain_span.attributes.get("sigil.framework.run_type") == "chain"
-        assert chain_span.attributes.get("sigil.framework.component_name") == "PlanChain"
-        assert chain_span.attributes.get("sigil.framework.parent_run_id") == str(parent_run_id)
+        assert chain_span.attributes.get("agento11y.framework.run_type") == "chain"
+        assert chain_span.attributes.get("agento11y.framework.component_name") == "PlanChain"
+        assert chain_span.attributes.get("agento11y.framework.parent_run_id") == str(parent_run_id)
         assert chain_span.status.status_code.name == "OK"
 
-        assert retriever_span.attributes.get("sigil.framework.run_type") == "retriever"
-        assert retriever_span.attributes.get("sigil.framework.component_name") == "VectorRetriever"
+        assert retriever_span.attributes.get("agento11y.framework.run_type") == "retriever"
+        assert retriever_span.attributes.get("agento11y.framework.component_name") == "VectorRetriever"
         assert retriever_span.status.status_code.name == "ERROR"
         assert retriever_span.attributes.get("error.type") == "framework_error"
     finally:

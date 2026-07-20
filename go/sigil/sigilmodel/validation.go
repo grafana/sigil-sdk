@@ -9,7 +9,7 @@ import (
 // MetadataKeyContentCaptureMode is the generation metadata key the SDK uses
 // to record which content-capture mode produced the generation. Stripped
 // validation reads this to allow blank text/thinking parts.
-const MetadataKeyContentCaptureMode = "sigil.sdk.content_capture_mode"
+const MetadataKeyContentCaptureMode = "agento11y.sdk.content_capture_mode"
 
 // ContentCaptureModeMetadataOnly is the metadata marker value indicating
 // the generation has been stripped down to metadata.
@@ -19,6 +19,11 @@ const ContentCaptureModeMetadataOnly = "metadata_only"
 // pipeline.
 func (g Generation) Validate() error {
 	return ValidateGeneration(g)
+}
+
+// Validate enforces the workflow-step invariants required by ingest.
+func (s WorkflowStep) Validate() error {
+	return ValidateWorkflowStep(s)
 }
 
 // ValidateGeneration is the package-level form of Generation.Validate.
@@ -63,6 +68,23 @@ func ValidateGeneration(g Generation) error {
 	return nil
 }
 
+// ValidateWorkflowStep is the package-level form of WorkflowStep.Validate.
+func ValidateWorkflowStep(step WorkflowStep) error {
+	if strings.TrimSpace(step.ID) == "" {
+		return errors.New("workflow step id is required")
+	}
+	if strings.TrimSpace(step.ConversationID) == "" {
+		return errors.New("workflow step conversation_id is required")
+	}
+	if strings.TrimSpace(step.StepName) == "" {
+		return errors.New("workflow step step_name is required")
+	}
+	if !step.StartedAt.IsZero() && !step.CompletedAt.IsZero() && step.CompletedAt.Before(step.StartedAt) {
+		return errors.New("workflow step completed_at must not be earlier than started_at")
+	}
+	return nil
+}
+
 func isContentStripped(g Generation) bool {
 	if g.Metadata == nil {
 		return false
@@ -93,7 +115,7 @@ func validateMessage(path string, index int, message Message, contentStripped bo
 
 func validatePart(path string, messageIndex, partIndex int, role Role, part Part, contentStripped bool) error {
 	switch part.Kind {
-	case PartKindText, PartKindThinking, PartKindToolCall, PartKindToolResult:
+	case PartKindText, PartKindThinking, PartKindToolCall, PartKindToolResult, PartKindMedia:
 	default:
 		return fmt.Errorf("%s[%d].parts[%d].kind is invalid", path, messageIndex, partIndex)
 	}
@@ -109,6 +131,9 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 		fieldCount++
 	}
 	if part.ToolResult != nil {
+		fieldCount++
+	}
+	if part.Media != nil {
 		fieldCount++
 	}
 
@@ -147,6 +172,13 @@ func validatePart(path string, messageIndex, partIndex int, role Role, part Part
 		}
 		if strings.TrimSpace(part.ToolResult.ToolCallID) == "" && strings.TrimSpace(part.ToolResult.Name) == "" {
 			return fmt.Errorf("%s[%d].parts[%d].tool_result.tool_call_id or name is required", path, messageIndex, partIndex)
+		}
+	case PartKindMedia:
+		if part.Media == nil {
+			return fmt.Errorf("%s[%d].parts[%d].media is required", path, messageIndex, partIndex)
+		}
+		if !contentStripped && strings.TrimSpace(part.Media.URL) == "" {
+			return fmt.Errorf("%s[%d].parts[%d].media.url is required", path, messageIndex, partIndex)
 		}
 	}
 

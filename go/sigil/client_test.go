@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -102,13 +102,13 @@ func TestStartGenerationEnqueuesArtifacts(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrGenerationID].AsString() != generationRecorder.lastGeneration.ID {
-		t.Fatalf("expected sigil.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
+		t.Fatalf("expected agento11y.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
 	}
 	if attrs[spanAttrConversationID].AsString() != "conv-1" {
 		t.Fatalf("expected gen_ai.conversation.id=conv-1")
 	}
 	if attrs[spanAttrConversationTitle].AsString() != "Ticket triage" {
-		t.Fatalf("expected sigil.conversation.title=Ticket triage")
+		t.Fatalf("expected agento11y.conversation.title=Ticket triage")
 	}
 	if attrs[spanAttrAgentName].AsString() != "agent-support" {
 		t.Fatalf("expected gen_ai.agent.name=agent-support")
@@ -205,7 +205,7 @@ func TestStartGenerationCreatesChildSpanAndLinksGenerationToSpan(t *testing.T) {
 
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrGenerationID].AsString() != generationRecorder.lastGeneration.ID {
-		t.Fatalf("expected sigil.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
+		t.Fatalf("expected agento11y.generation.id=%q, got %q", generationRecorder.lastGeneration.ID, attrs[spanAttrGenerationID].AsString())
 	}
 }
 
@@ -261,8 +261,8 @@ func TestStartGenerationSpanNameIncludesModelAndOperation(t *testing.T) {
 		if span.Name() != "text_completion gpt-5" {
 			t.Fatalf("expected span name text_completion gpt-5, got %q", span.Name())
 		}
-		if _, ok := spanAttributeMap(span)["sigil.generation.mode"]; ok {
-			t.Fatalf("did not expect sigil.generation.mode")
+		if _, ok := spanAttributeMap(span)["agento11y.generation.mode"]; ok {
+			t.Fatalf("did not expect agento11y.generation.mode")
 		}
 	}
 }
@@ -535,8 +535,8 @@ func TestGenerationRecorderEndSupportsStreamingPattern(t *testing.T) {
 		t.Fatalf("expected ok span status, got %v", got)
 	}
 	attrs := spanAttributeMap(span)
-	if _, ok := attrs["sigil.generation.mode"]; ok {
-		t.Fatalf("did not expect sigil.generation.mode")
+	if _, ok := attrs["agento11y.generation.mode"]; ok {
+		t.Fatalf("did not expect agento11y.generation.mode")
 	}
 }
 
@@ -568,7 +568,7 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 		ToolChoice:      stringPtr("required"),
 		ThinkingEnabled: boolPtr(false),
 		Metadata: map[string]any{
-			"sigil.gen_ai.request.thinking.budget_tokens": int64(4096),
+			"agento11y.gen_ai.request.thinking.budget_tokens": int64(4096),
 		},
 		Usage: TokenUsage{
 			InputTokens:           10,
@@ -642,13 +642,13 @@ func TestGenerationRecorderEndSetsGenAIAttributes(t *testing.T) {
 		t.Fatalf("expected gen_ai.request.top_p=0.8")
 	}
 	if attrs[spanAttrRequestToolChoice].AsString() != "required" {
-		t.Fatalf("expected sigil.gen_ai.request.tool_choice=required")
+		t.Fatalf("expected agento11y.gen_ai.request.tool_choice=required")
 	}
 	if attrs[spanAttrRequestThinkingEnabled].AsBool() {
-		t.Fatalf("expected sigil.gen_ai.request.thinking.enabled=false")
+		t.Fatalf("expected agento11y.gen_ai.request.thinking.enabled=false")
 	}
 	if attrs[spanAttrRequestThinkingBudget].AsInt64() != 4096 {
-		t.Fatalf("expected sigil.gen_ai.request.thinking.budget_tokens=4096")
+		t.Fatalf("expected agento11y.gen_ai.request.thinking.budget_tokens=4096")
 	}
 	if attrs[sdkMetadataKeyName].AsString() != sdkName {
 		t.Fatalf("expected %s=%s", sdkMetadataKeyName, sdkName)
@@ -1095,7 +1095,7 @@ func TestStartToolExecutionSetsExecuteToolAttributes(t *testing.T) {
 		t.Fatalf("expected gen_ai.conversation.id=conv-tool")
 	}
 	if attrs[spanAttrConversationTitle].AsString() != "Weather lookup" {
-		t.Fatalf("expected sigil.conversation.title=Weather lookup")
+		t.Fatalf("expected agento11y.conversation.title=Weather lookup")
 	}
 	if attrs[spanAttrAgentName].AsString() != "agent-tools" {
 		t.Fatalf("expected gen_ai.agent.name=agent-tools")
@@ -1244,7 +1244,7 @@ func TestConversationTitleFromContext(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "Conversation from context" {
-		t.Fatalf("expected sigil.conversation.title=Conversation from context, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=Conversation from context, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1329,7 +1329,7 @@ func TestExplicitConversationTitleOverridesContext(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
-		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1358,7 +1358,7 @@ func TestWhitespaceConversationTitleFallsBackToMetadata(t *testing.T) {
 	span := onlyGenerationSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "Metadata title" {
-		t.Fatalf("expected sigil.conversation.title=Metadata title, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=Metadata title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1458,7 +1458,7 @@ func TestToolExecutionConversationTitleFromContext(t *testing.T) {
 	span := onlyToolSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "tool conversation" {
-		t.Fatalf("expected sigil.conversation.title=tool conversation, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=tool conversation, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1475,7 +1475,7 @@ func TestToolExecutionExplicitConversationTitleOverridesContext(t *testing.T) {
 	span := onlyToolSpan(t, recorder.Ended())
 	attrs := spanAttributeMap(span)
 	if attrs[spanAttrConversationTitle].AsString() != "explicit-title" {
-		t.Fatalf("expected sigil.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
+		t.Fatalf("expected agento11y.conversation.title=explicit-title, got %q", attrs[spanAttrConversationTitle].AsString())
 	}
 }
 
@@ -1656,6 +1656,242 @@ func TestSentinelErrorsAreMatchable(t *testing.T) {
 	}
 }
 
+func TestEnqueueWorkflowStepFlushesExport(t *testing.T) {
+	exporter := &capturingGenerationExporter{}
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			BatchSize:     10,
+			FlushInterval: time.Hour,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	startedAt := time.Date(2026, 2, 11, 12, 0, 0, 0, time.UTC)
+	err := client.EnqueueWorkflowStep(WorkflowStep{
+		ID:                  "wfs-route",
+		ConversationID:      "conv-workflow",
+		StepName:            "route",
+		Framework:           "custom",
+		StartedAt:           startedAt,
+		CompletedAt:         startedAt.Add(time.Second),
+		InputState:          map[string]any{"prompt": "hello"},
+		OutputState:         map[string]any{"route": "answer"},
+		Tags:                map[string]string{"env": "test"},
+		LinkedGenerationIDs: []string{"gen-route"},
+		ParentStepIDs:       []string{"wfs-root"},
+		AgentName:           "agent-workflow",
+		AgentVersion:        "v1",
+		TraceID:             "trace-1",
+		SpanID:              "span-1",
+		Metadata:            map[string]any{"run_id": "run-1"},
+	})
+	if err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Flush(ctx); err != nil {
+		t.Fatalf("flush workflow step: %v", err)
+	}
+
+	if got := exporter.workflowStepRequestCount(); got != 1 {
+		t.Fatalf("workflowStepRequestCount = %d, want 1", got)
+	}
+	exporter.mu.Lock()
+	request := exporter.workflowStepRequests[0]
+	exporter.mu.Unlock()
+	if len(request.WorkflowSteps) != 1 {
+		t.Fatalf("expected 1 workflow step, got %d", len(request.WorkflowSteps))
+	}
+	step := request.WorkflowSteps[0]
+	if step.GetId() != "wfs-route" {
+		t.Fatalf("expected workflow step id wfs-route, got %q", step.GetId())
+	}
+	if step.GetConversationId() != "conv-workflow" {
+		t.Fatalf("expected conversation id conv-workflow, got %q", step.GetConversationId())
+	}
+	if step.GetInputState().GetFields()["prompt"].GetStringValue() != "hello" {
+		t.Fatalf("expected input_state.prompt=hello, got %#v", step.GetInputState())
+	}
+}
+
+func TestShutdownFlushesPendingWorkflowStepExport(t *testing.T) {
+	exporter := &capturingGenerationExporter{}
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			BatchSize:     10,
+			FlushInterval: time.Hour,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	if err := client.EnqueueWorkflowStep(WorkflowStep{
+		ID:             "wfs-shutdown",
+		ConversationID: "conv-workflow",
+		StepName:       "finalize",
+	}); err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Shutdown(ctx); err != nil {
+		t.Fatalf("shutdown client: %v", err)
+	}
+
+	if got := exporter.workflowStepRequestCount(); got != 1 {
+		t.Fatalf("workflowStepRequestCount = %d, want 1", got)
+	}
+	exporter.mu.Lock()
+	request := exporter.workflowStepRequests[0]
+	exporter.mu.Unlock()
+	if len(request.WorkflowSteps) != 1 {
+		t.Fatalf("expected 1 workflow step, got %d", len(request.WorkflowSteps))
+	}
+	if got := request.WorkflowSteps[0].GetId(); got != "wfs-shutdown" {
+		t.Fatalf("workflow step id = %q, want wfs-shutdown", got)
+	}
+}
+
+func TestFlushRetriesWorkflowStepExport(t *testing.T) {
+	attempts := 0
+	exporter := &capturingGenerationExporter{
+		exportWorkflowSteps: func(_ context.Context, req *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
+			attempts++
+			if attempts < 3 {
+				return nil, errors.New("transient")
+			}
+			results := make([]*agento11yv1.ExportWorkflowStepResult, len(req.WorkflowSteps))
+			for i := range req.WorkflowSteps {
+				results[i] = &agento11yv1.ExportWorkflowStepResult{
+					StepId:   req.WorkflowSteps[i].Id,
+					Accepted: true,
+				}
+			}
+			return &agento11yv1.ExportWorkflowStepsResponse{Results: results}, nil
+		},
+	}
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			MaxRetries:     2,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     time.Millisecond,
+			FlushInterval:  time.Hour,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	if err := client.EnqueueWorkflowStep(WorkflowStep{
+		ID:             "wfs-retry",
+		ConversationID: "conv-workflow",
+		StepName:       "answer",
+	}); err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Flush(ctx); err != nil {
+		t.Fatalf("flush workflow step: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestEnqueueWorkflowStepValidationErrorIsMatchable(t *testing.T) {
+	client, _, _ := newTestClient(t, Config{})
+
+	err := client.EnqueueWorkflowStep(WorkflowStep{
+		ID:             "wfs-invalid",
+		ConversationID: "conv-workflow",
+	})
+	if err == nil {
+		t.Fatal("expected workflow step validation error")
+	}
+	if !errors.Is(err, ErrWorkflowStepValidationFailed) {
+		t.Fatalf("expected errors.Is(err, ErrWorkflowStepValidationFailed), got %v", err)
+	}
+}
+
+func TestEnqueueWorkflowStepQueueFullMessageNamesWorkflowStep(t *testing.T) {
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport:  GenerationExportConfig{QueueSize: 1},
+		testDisableWorker: true,
+	})
+
+	step := WorkflowStep{ID: "wfs", ConversationID: "conv-workflow", StepName: "route"}
+	if err := client.EnqueueWorkflowStep(step); err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	// Worker is disabled, so the second enqueue fills the queue of size 1.
+	err := client.EnqueueWorkflowStep(step)
+	if err == nil {
+		t.Fatal("expected queue-full error")
+	}
+	if !errors.Is(err, ErrWorkflowStepQueueFull) {
+		t.Fatalf("expected errors.Is(err, ErrWorkflowStepQueueFull), got %v", err)
+	}
+	if !errors.Is(err, ErrWorkflowStepEnqueueFailed) {
+		t.Fatalf("expected errors.Is(err, ErrWorkflowStepEnqueueFailed), got %v", err)
+	}
+	if strings.Contains(err.Error(), "generation queue") {
+		t.Fatalf("queue-full message should not name the generation queue, got %q", err.Error())
+	}
+}
+
+func TestFlushReportsBothGenerationAndWorkflowStepAsyncErrors(t *testing.T) {
+	genErr := errors.New("generation boom")
+	wfErr := errors.New("workflow step boom")
+	exporter := &capturingGenerationExporter{err: genErr, workflowStepErr: wfErr}
+
+	// BatchSize 1 makes each enqueue flush asynchronously in the worker, so
+	// both the generation and the workflow-step export fail before the
+	// explicit Flush. Both async failures must survive to the Flush result.
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			BatchSize:      1,
+			MaxRetries:     0,
+			FlushInterval:  time.Hour,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     time.Millisecond,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	ctx, rec := client.StartGeneration(context.Background(), GenerationStart{
+		ConversationID: "conv-async",
+		Model:          ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-6"},
+	})
+	rec.SetResult(Generation{
+		Input:  []Message{UserTextMessage("hi")},
+		Output: []Message{AssistantTextMessage("yo")},
+	}, nil)
+	rec.End()
+	_ = ctx
+
+	if err := client.EnqueueWorkflowStep(WorkflowStep{
+		ID:             "wfs-async",
+		ConversationID: "conv-async",
+		StepName:       "route",
+	}); err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+
+	flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err := client.Flush(flushCtx)
+	if err == nil {
+		t.Fatal("expected Flush to report async export failures")
+	}
+	if !errors.Is(err, genErr) {
+		t.Fatalf("Flush error should include the generation failure, got %v", err)
+	}
+	if !errors.Is(err, wfErr) {
+		t.Fatalf("Flush error should include the workflow-step failure, got %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -1686,15 +1922,20 @@ func newTestClient(t *testing.T, config Config) (*Client, *tracetest.SpanRecorde
 }
 
 type capturingGenerationExporter struct {
-	mu       sync.Mutex
-	requests []*sigilv1.ExportGenerationsRequest
-	attempts int
-	err      error
-	response *sigilv1.ExportGenerationsResponse
-	export   func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error)
+	mu                   sync.Mutex
+	requests             []*agento11yv1.ExportGenerationsRequest
+	workflowStepRequests []*agento11yv1.ExportWorkflowStepsRequest
+	attempts             int
+	workflowStepAttempts int
+	err                  error
+	workflowStepErr      error
+	response             *agento11yv1.ExportGenerationsResponse
+	workflowStepResponse *agento11yv1.ExportWorkflowStepsResponse
+	export               func(context.Context, *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error)
+	exportWorkflowSteps  func(context.Context, *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error)
 }
 
-func (e *capturingGenerationExporter) Export(ctx context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *capturingGenerationExporter) Export(ctx context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	e.mu.Lock()
 	e.attempts++
 	err := e.err
@@ -1714,14 +1955,44 @@ func (e *capturingGenerationExporter) Export(ctx context.Context, req *sigilv1.E
 		return e.response, nil
 	}
 
-	results := make([]*sigilv1.ExportGenerationResult, len(req.Generations))
+	results := make([]*agento11yv1.ExportGenerationResult, len(req.Generations))
 	for i := range req.Generations {
-		results[i] = &sigilv1.ExportGenerationResult{
+		results[i] = &agento11yv1.ExportGenerationResult{
 			GenerationId: req.Generations[i].Id,
 			Accepted:     true,
 		}
 	}
-	return &sigilv1.ExportGenerationsResponse{Results: results}, nil
+	return &agento11yv1.ExportGenerationsResponse{Results: results}, nil
+}
+
+func (e *capturingGenerationExporter) ExportWorkflowSteps(ctx context.Context, req *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
+	e.mu.Lock()
+	e.workflowStepAttempts++
+	err := e.workflowStepErr
+	if err == nil {
+		e.workflowStepRequests = append(e.workflowStepRequests, req)
+	}
+	e.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	if e.exportWorkflowSteps != nil {
+		return e.exportWorkflowSteps(ctx, req)
+	}
+
+	if e.workflowStepResponse != nil {
+		return e.workflowStepResponse, nil
+	}
+
+	results := make([]*agento11yv1.ExportWorkflowStepResult, len(req.WorkflowSteps))
+	for i := range req.WorkflowSteps {
+		results[i] = &agento11yv1.ExportWorkflowStepResult{
+			StepId:   req.WorkflowSteps[i].Id,
+			Accepted: true,
+		}
+	}
+	return &agento11yv1.ExportWorkflowStepsResponse{Results: results}, nil
 }
 
 func (e *capturingGenerationExporter) Shutdown(_ context.Context) error {
@@ -1734,10 +2005,16 @@ func (e *capturingGenerationExporter) requestCount() int {
 	return len(e.requests)
 }
 
+func (e *capturingGenerationExporter) workflowStepRequestCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.workflowStepRequests)
+}
+
 func TestFlushReturnsErrorOnRejectedGenerationResult(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		response: &sigilv1.ExportGenerationsResponse{
-			Results: []*sigilv1.ExportGenerationResult{
+		response: &agento11yv1.ExportGenerationsResponse{
+			Results: []*agento11yv1.ExportGenerationResult{
 				{
 					GenerationId: "gen-rejected",
 					Accepted:     false,
@@ -1781,9 +2058,52 @@ func TestFlushReturnsErrorOnRejectedGenerationResult(t *testing.T) {
 	}
 }
 
+func TestFlushTreatsDuplicateGenerationResultAsSuccess(t *testing.T) {
+	exporter := &capturingGenerationExporter{
+		response: &agento11yv1.ExportGenerationsResponse{
+			Results: []*agento11yv1.ExportGenerationResult{
+				{
+					GenerationId: "gen-duplicate",
+					Accepted:     false,
+					Error:        "generation already exists",
+				},
+			},
+		},
+	}
+	client, _, _ := newTestClient(t, Config{
+		GenerationExport: GenerationExportConfig{
+			MaxRetries:     1,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     10 * time.Millisecond,
+		},
+		testGenerationExporter: exporter,
+	})
+
+	_, rec := client.StartGeneration(context.Background(), GenerationStart{
+		ID:    "gen-duplicate",
+		Model: ModelRef{Provider: "openai", Name: "gpt-5.4"},
+	})
+	rec.SetResult(Generation{
+		Output: []Message{AssistantTextMessage("hello")},
+	}, nil)
+	rec.End()
+	if err := rec.Err(); err != nil {
+		t.Fatalf("unexpected recorder error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Flush(ctx); err != nil {
+		t.Fatalf("expected duplicate generation result to succeed, got %v", err)
+	}
+	if got := exporter.requestCount(); got != 1 {
+		t.Fatalf("requestCount = %d, want 1", got)
+	}
+}
+
 func TestFlushReturnsErrorOnNilGenerationExportResponse(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		export: func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+		export: func(context.Context, *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 			return nil, nil
 		},
 	}
@@ -1824,7 +2144,7 @@ func TestFlushReturnsErrorOnNilGenerationExportResponse(t *testing.T) {
 
 func TestFlushNilGenerationExportResponseDoesNotPanic(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		export: func(context.Context, *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+		export: func(context.Context, *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 			return nil, nil
 		},
 	}
@@ -1869,19 +2189,19 @@ func TestFlushNilGenerationExportResponseDoesNotPanic(t *testing.T) {
 func TestFlushRetriesMalformedGenerationExportResponse(t *testing.T) {
 	attempts := 0
 	exporter := &capturingGenerationExporter{
-		export: func(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+		export: func(_ context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 			attempts++
 			if attempts == 1 {
-				return &sigilv1.ExportGenerationsResponse{}, nil
+				return &agento11yv1.ExportGenerationsResponse{}, nil
 			}
-			results := make([]*sigilv1.ExportGenerationResult, len(req.Generations))
+			results := make([]*agento11yv1.ExportGenerationResult, len(req.Generations))
 			for i := range req.Generations {
-				results[i] = &sigilv1.ExportGenerationResult{
+				results[i] = &agento11yv1.ExportGenerationResult{
 					GenerationId: req.Generations[i].Id,
 					Accepted:     true,
 				}
 			}
-			return &sigilv1.ExportGenerationsResponse{Results: results}, nil
+			return &agento11yv1.ExportGenerationsResponse{Results: results}, nil
 		},
 	}
 	client, _, _ := newTestClient(t, Config{
@@ -1917,8 +2237,8 @@ func TestFlushRetriesMalformedGenerationExportResponse(t *testing.T) {
 
 func TestFlushReturnsErrorOnNilGenerationResult(t *testing.T) {
 	exporter := &capturingGenerationExporter{
-		response: &sigilv1.ExportGenerationsResponse{
-			Results: []*sigilv1.ExportGenerationResult{nil},
+		response: &agento11yv1.ExportGenerationsResponse{
+			Results: []*agento11yv1.ExportGenerationResult{nil},
 		},
 	}
 	client, _, _ := newTestClient(t, Config{

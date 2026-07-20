@@ -24,11 +24,11 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
     const handler = new SigilLangGraphHandler(client, {
       agentName: 'agent-langgraph',
       agentVersion: 'v1',
-      extraTags: { env: 'test', 'sigil.framework.name': 'override' },
+      extraTags: { env: 'test', 'agento11y.framework.name': 'override' },
       extraMetadata: {
         seed: 9,
-        'sigil.framework.run_id': 'override-run',
-        'sigil.framework.thread_id': 'override-thread',
+        'agento11y.framework.run_id': 'override-run',
+        'agento11y.framework.thread_id': 'override-thread',
       },
     });
 
@@ -60,19 +60,19 @@ test('langgraph handler records sync lifecycle with framework tags', async () =>
 
   assert.equal(generation.mode, 'SYNC');
   assert.equal(generation.model.provider, 'openai');
-  assert.equal(generation.tags['sigil.framework.name'], 'langgraph');
-  assert.equal(generation.tags['sigil.framework.source'], 'handler');
-  assert.equal(generation.tags['sigil.framework.language'], 'javascript');
+  assert.equal(generation.tags['agento11y.framework.name'], 'langgraph');
+  assert.equal(generation.tags['agento11y.framework.source'], 'handler');
+  assert.equal(generation.tags['agento11y.framework.language'], 'javascript');
   assert.equal(generation.tags.env, 'test');
   assert.equal(generation.conversationId, 'graph-thread-42');
-  assert.equal(generation.metadata['sigil.framework.run_id'], 'run-sync');
-  assert.equal(generation.metadata['sigil.framework.thread_id'], 'graph-thread-42');
-  assert.equal(generation.metadata['sigil.framework.parent_run_id'], 'parent-run-sync');
-  assert.equal(generation.metadata['sigil.framework.component_name'], 'ChatOpenAI');
-  assert.equal(generation.metadata['sigil.framework.run_type'], 'chat');
-  assert.equal(generation.metadata['sigil.framework.retry_attempt'], 2);
-  assert.deepEqual(generation.metadata['sigil.framework.tags'], ['prod', 'blue']);
-  assert.equal(generation.metadata['sigil.framework.langgraph.node'], 'answer_node');
+  assert.equal(generation.metadata['agento11y.framework.run_id'], 'run-sync');
+  assert.equal(generation.metadata['agento11y.framework.thread_id'], 'graph-thread-42');
+  assert.equal(generation.metadata['agento11y.framework.parent_run_id'], 'parent-run-sync');
+  assert.equal(generation.metadata['agento11y.framework.component_name'], 'ChatOpenAI');
+  assert.equal(generation.metadata['agento11y.framework.run_type'], 'chat');
+  assert.equal(generation.metadata['agento11y.framework.retry_attempt'], 2);
+  assert.deepEqual(generation.metadata['agento11y.framework.tags'], ['prod', 'blue']);
+  assert.equal(generation.metadata['agento11y.framework.langgraph.node'], 'answer_node');
   assert.equal(generation.metadata.seed, 9);
 });
 
@@ -190,6 +190,26 @@ test('langgraph provider mapping covers openai anthopic gemini and fallback', as
   assert.deepEqual(providers, ['openai', 'anthropic', 'gemini', 'custom']);
 });
 
+test('langgraph backfills Bedrock inference-profile model from the response', async () => {
+  // langgraph delegates to the shared handler, so the Bedrock backfill applies here too.
+  const arnModel = 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6-v1:0';
+  const generation = await captureSingleGeneration(async (client) => {
+    const handler = new SigilLangGraphHandler(client);
+
+    await handler.handleChatModelStart({ name: 'ChatBedrock' }, [[{ type: 'human', content: 'hi' }]], 'run-bedrock');
+    await handler.handleLLMEnd(
+      {
+        generations: [[{ text: 'ok' }]],
+        llm_output: { model_name: arnModel, token_usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 } },
+      },
+      'run-bedrock',
+    );
+  });
+
+  assert.equal(generation.model.name, arnModel);
+  assert.equal(generation.model.provider, 'anthropic');
+});
+
 test('langgraph handler sets call_error on llm error', async () => {
   const generation = await captureSingleGeneration(async (client) => {
     const handler = new SigilLangGraphHandler(client);
@@ -199,7 +219,7 @@ test('langgraph handler sets call_error on llm error', async () => {
   });
 
   assert.match(generation.callError ?? '', /provider unavailable/);
-  assert.equal(generation.tags['sigil.framework.name'], 'langgraph');
+  assert.equal(generation.tags['agento11y.framework.name'], 'langgraph');
 });
 
 test('langgraph handler explicitly has no embedding lifecycle', async () => {
@@ -275,15 +295,15 @@ test('langgraph handler maps tool callbacks and emits chain/retriever spans', as
     assert.equal(toolSpan.attributes['gen_ai.conversation.id'], 'graph-thread-42');
 
     assert.ok(chainSpan);
-    assert.equal(chainSpan.attributes['sigil.framework.run_type'], 'chain');
-    assert.equal(chainSpan.attributes['sigil.framework.component_name'], 'PlanChain');
-    assert.equal(chainSpan.attributes['sigil.framework.langgraph.node'], 'chain_node');
+    assert.equal(chainSpan.attributes['agento11y.framework.run_type'], 'chain');
+    assert.equal(chainSpan.attributes['agento11y.framework.component_name'], 'PlanChain');
+    assert.equal(chainSpan.attributes['agento11y.framework.langgraph.node'], 'chain_node');
     assert.equal(chainSpan.status.code, SpanStatusCode.OK);
 
     assert.ok(retrieverSpan);
-    assert.equal(retrieverSpan.attributes['sigil.framework.run_type'], 'retriever');
-    assert.equal(retrieverSpan.attributes['sigil.framework.component_name'], 'VectorRetriever');
-    assert.equal(retrieverSpan.attributes['sigil.framework.langgraph.node'], 'retriever_node');
+    assert.equal(retrieverSpan.attributes['agento11y.framework.run_type'], 'retriever');
+    assert.equal(retrieverSpan.attributes['agento11y.framework.component_name'], 'VectorRetriever');
+    assert.equal(retrieverSpan.attributes['agento11y.framework.langgraph.node'], 'retriever_node');
     assert.equal(retrieverSpan.attributes['error.type'], 'framework_error');
     assert.equal(retrieverSpan.status.code, SpanStatusCode.ERROR);
   } finally {

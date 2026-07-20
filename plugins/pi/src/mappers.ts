@@ -4,7 +4,7 @@ import type {
   GenerationStart,
   Message,
   ToolDefinition,
-} from "@grafana/sigil-sdk-js";
+} from "@grafana/agento11y";
 
 // includesToolBodies decides whether tool argument JSON, tool result content,
 // and tool description/schema are included in the proto export.
@@ -252,10 +252,10 @@ export function mapGenerationStart(
       start.toolChoice = requestControls.toolChoice;
     }
     if (typeof requestControls.thinkingBudgetTokens === "number") {
-      // The SDK reads `sigil.gen_ai.request.thinking.budget_tokens` from
+      // The SDK reads `agento11y.gen_ai.request.thinking.budget_tokens` from
       // generation metadata and surfaces it as the matching span attribute.
       start.metadata = {
-        "sigil.gen_ai.request.thinking.budget_tokens":
+        "agento11y.gen_ai.request.thinking.budget_tokens":
           requestControls.thinkingBudgetTokens,
       };
     }
@@ -313,6 +313,291 @@ export function mapGenerationResult(
   }
 
   return result;
+}
+
+/**
+ * Pi's AgentMessage union as exposed in the `context` event. Declared
+ * structurally to avoid hard-importing pi-ai/pi-agent-core types at runtime.
+ * Matches `UserMessage | AssistantMessage | ToolResultMessage` from
+ * @mariozechner/pi-ai, plus any custom AgentMessage extensions, which we
+ * pass through without touching.
+ */
+export type PiAgentMessage =
+  | PiUserMessage
+  | PiAssistantMessage
+  | PiToolResult
+  | { role?: string };
+
+/**
+ * Map pi's `ContextEvent.messages` (the full conversation pi is about to
+ * send to the model) to Sigil `Message[]` for a preflight hook evaluation.
+ *
+ * Differences from `mapUserMessage`/`mapAssistantOutput`:
+ * - All roles (user, assistant, tool) are mapped 1:1 so the redacted
+ *   round-trip can be aligned by index. Returning fewer messages would
+ *   break that alignment.
+ * - `contentCapture` is intentionally NOT applied. The hook server only
+ *   sees these messages in memory and never persists them; redacting them
+ *   here would defeat the point of running transforms (Vercel adapter
+ *   takes the same approach for the same reason).
+ * - Provider-signed `thinking` parts are dropped from the forward payload:
+ *   they carry an opaque provider signature, are not transformable, and
+ *   would needlessly inflate the hook request. The original pi message is
+ *   kept by the caller, so the `thinking` block survives untouched on the
+ *   write-back side.
+ * - Image content is skipped (Sigil's `MessagePart` union has no image
+ *   type), mirroring `mapUserMessage`.
+ */
+export function mapAgentMessagesForHook(messages: PiAgentMessage[]): Message[] {
+  return messages.map(mapAgentMessageForHook);
+}
+
+function mapAgentMessageForHook(msg: PiAgentMessage): Message {
+  // Null / non-object slot. Emit a placeholder so the 1:1 index alignment
+  // between forward and write-back arrays is preserved; dropping it here
+  // would shrink `forward` below `piMessages` and force the whole transform
+  // to be discarded on write-back. The write-back side skips slots it cannot
+  // touch.
+  if (!msg || typeof msg !== "object") {
+    return { role: "unknown", parts: [] };
+  }
+  const role = (msg as { role?: unknown }).role;
+
+  if (role === "user") {
+    return mapUserMessageForHook(msg as PiUserMessage);
+  }
+  if (role === "assistant") {
+    return mapAssistantMessageForHook(msg as PiAssistantMessage);
+  }
+  if (role === "toolResult") {
+    return mapToolResultForHook(msg as PiToolResult);
+  }
+  // Unknown / custom AgentMessage subtype. Emit a placeholder so the
+  // index alignment between forward and write-back arrays is preserved.
+  return { role: String(role ?? "unknown"), parts: [] };
+}
+
+function mapUserMessageForHook(msg: PiUserMessage): Message {
+  const text = userMessageText(msg);
+  return {
+    role: "user",
+    parts: text.length > 0 ? [{ type: "text", text }] : [],
+  };
+}
+
+function mapAssistantMessageForHook(msg: PiAssistantMessage): Message {
+  // Concatenate all assistant text parts into a single text part. `thinking`
+  // blocks carry an opaque provider signature that must round-trip unchanged,
+  // so they are dropped from the forward payload. `toolCall` blocks are
+  // dropped here too: postflight tool-arg redaction has its own path through
+  // `runToolCallGuard`, and forwarding the call here would duplicate it.
+  const textParts: string[] = [];
+  const partList: NonNullable<Message["parts"]> = [];
+  for (const block of msg.content) {
+    if (block.type === "text" && block.text.length > 0) {
+      textParts.push(block.text);
+    }
+  }
+  if (textParts.length > 0) {
+    partList.push({ type: "text", text: textParts.join("\n") });
+  }
+  return { role: "assistant", parts: partList };
+}
+
+/**
+ * Join a pi tool result's text content into a single string, dropping
+ * non-text parts (e.g. images). Shared by the hook mappers and the tool-span
+ * emitter so tool output is flattened the same way everywhere.
+ */
+export function toolResultText(
+  content: Array<{ type: string; text?: string }>,
+): string {
+  return content
+    .filter(
+      (c): c is { type: "text"; text: string } => c.type === "text" && !!c.text,
+    )
+    .map((c) => c.text)
+    .join("\n");
+}
+
+function mapToolResultForHook(tr: PiToolResult): Message {
+  const text = toolResultText(tr.content);
+  return {
+    role: "tool",
+    parts: [
+      {
+        type: "tool_result",
+        toolResult: {
+          toolCallId: tr.toolCallId,
+          name: tr.toolName,
+          content: text,
+          isError: tr.isError,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * Write redacted text from a Sigil-side preflight transform back into the
+ * original pi messages, in place. Returns true on a clean apply, false when
+ * any safety check fails (counts diverge, role mismatch, no text part where
+ * one is expected). On a false return, callers must NOT replace pi's
+ * outgoing `messages` — the transform is dropped and the original text
+ * flows through unchanged.
+ *
+ * `thinking` parts on assistant messages are never touched: their opaque
+ * provider signature must round-trip unchanged. Only the assistant text
+ * blocks are overwritten, and only when the redacted message exposes a
+ * single text part covering them all.
+ */
+export function applyRedactedText(
+  piMessages: PiAgentMessage[],
+  redactedSigilMessages: Message[],
+): boolean {
+  if (piMessages.length !== redactedSigilMessages.length) {
+    return false;
+  }
+  for (let i = 0; i < piMessages.length; i++) {
+    const pi = piMessages[i];
+    const sig = redactedSigilMessages[i];
+    if (!sig) return false;
+    // Null / non-object pi slot: nothing writable here. The mapper emitted a
+    // placeholder to keep alignment, so skip it rather than dropping the
+    // redaction for every other message in the turn.
+    if (typeof pi !== "object" || pi === null) continue;
+    const ok = applyRedactedToMessage(pi, sig);
+    if (!ok) return false;
+  }
+  return true;
+}
+
+function applyRedactedToMessage(pi: PiAgentMessage, sig: Message): boolean {
+  const role = (pi as { role?: unknown }).role;
+  if (role === "user") {
+    return applyRedactedToUser(pi as PiUserMessage, sig);
+  }
+  if (role === "assistant") {
+    return applyRedactedToAssistant(pi as PiAssistantMessage, sig);
+  }
+  if (role === "toolResult") {
+    return applyRedactedToToolResult(pi as PiToolResult, sig);
+  }
+  // Unknown role: leave untouched, but accept (alignment preserved).
+  return true;
+}
+
+function extractTextFromSigilMessage(sig: Message): string | null {
+  // Accept both shapes: legacy `content` shorthand and the typed `parts`
+  // array. The Sigil server emits typed parts on the transformed payload,
+  // but tolerate either to keep round-tripping robust to wire changes.
+  if (typeof sig.content === "string") return sig.content;
+  if (!sig.parts) return null;
+  let acc = "";
+  let seenText = false;
+  for (const p of sig.parts) {
+    if (p.type === "text") {
+      if (seenText) acc += "\n";
+      acc += p.text;
+      seenText = true;
+    }
+  }
+  return seenText ? acc : null;
+}
+
+function applyRedactedToUser(pi: PiUserMessage, sig: Message): boolean {
+  const redacted = extractTextFromSigilMessage(sig);
+  if (redacted === null) {
+    // Server stripped the message to nothing (e.g. image-only original).
+    // Leave pi untouched — there is nothing meaningful to write back.
+    return true;
+  }
+  if (typeof pi.content === "string") {
+    pi.content = redacted;
+    return true;
+  }
+  // Array-shaped content: collapse all text parts into the first text
+  // slot and empty the rest. We do not attempt to split the redacted text
+  // back across multiple slots because the regex transform may have
+  // changed or added newlines, and a misaligned split would silently
+  // misrepresent message structure. Image parts are left untouched.
+  return collapseTextParts(
+    pi.content as Array<PiTextContent | PiImageContent>,
+    redacted,
+  );
+}
+
+function applyRedactedToAssistant(
+  pi: PiAssistantMessage,
+  sig: Message,
+): boolean {
+  const redacted = extractTextFromSigilMessage(sig);
+  if (redacted === null) {
+    // No text in the redacted payload (e.g. assistant turn had only tool
+    // calls / thinking originally). Leave pi untouched.
+    return true;
+  }
+  // Collapse text blocks but never touch `thinking` or `toolCall` blocks:
+  // their provider signatures must round-trip unchanged.
+  return collapseTextParts(
+    pi.content as Array<{ type: string; text?: string }>,
+    redacted,
+  );
+}
+
+function applyRedactedToToolResult(pi: PiToolResult, sig: Message): boolean {
+  // For tool-result messages the server keeps the `tool_result` part shape
+  // and redacts `toolResult.content` in place (grafana/sigil
+  // `internal/eval/hooks/transform.go`). The text part path is intentionally
+  // ignored here: the SDK does not synthesize a standalone text part for
+  // redacted tool results, so falling back to `extractTextFromSigilMessage`
+  // would silently miss the redaction.
+  const redacted = extractToolResultContent(sig);
+  if (redacted === null) return true;
+  return collapseTextParts(
+    pi.content as Array<{ type: string; text?: string }>,
+    redacted,
+  );
+}
+
+function extractToolResultContent(sig: Message): string | null {
+  if (!sig.parts) return null;
+  for (const p of sig.parts) {
+    if (p.type !== "tool_result") continue;
+    const c = p.toolResult?.content;
+    if (typeof c === "string") return c;
+  }
+  return null;
+}
+
+/**
+ * Walk a content array, replace the first `text` block's text with
+ * `redacted`, and clear text on any other `text` blocks. Non-text blocks
+ * (`thinking`, `toolCall`, `image`) are left untouched. Returns true if at
+ * least one text block was found and updated, or if there were no text
+ * blocks at all (nothing to redact). Mutates `parts` in place.
+ */
+function collapseTextParts(
+  parts: Array<{ type: string; text?: string }>,
+  redacted: string,
+): boolean {
+  let firstText: { type: string; text?: string } | undefined;
+  let firstTextIndex = -1;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part?.type === "text") {
+      firstText = part;
+      firstTextIndex = i;
+      break;
+    }
+  }
+  if (!firstText) return true;
+  firstText.text = redacted;
+  for (let i = firstTextIndex + 1; i < parts.length; i++) {
+    const part = parts[i];
+    if (part?.type === "text") part.text = "";
+  }
+  return true;
 }
 
 /**
@@ -557,13 +842,7 @@ function mapToolResultsOutput(
   for (const tr of toolResults) {
     let content = "";
     if (includeBody) {
-      content = tr.content
-        .filter(
-          (c): c is { type: "text"; text: string } =>
-            c.type === "text" && !!c.text,
-        )
-        .map((c) => c.text)
-        .join("\n");
+      content = toolResultText(tr.content);
     }
 
     messages.push({

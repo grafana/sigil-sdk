@@ -1,11 +1,11 @@
 # Sigil Python Provider Helper: Gemini
 
-`sigil-sdk-gemini` provides strict Gemini Models wrappers and mappers for Sigil.
+`agento11y-gemini` provides strict Gemini Models wrappers and mappers for Sigil.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-gemini google-genai
+pip install agento11y agento11y-gemini google-genai
 ```
 
 ## Public API
@@ -26,8 +26,8 @@ pip install sigil-sdk sigil-sdk-gemini google-genai
 
 ```python
 from google.genai import types as genai_types
-from sigil_sdk import Client, ClientConfig
-from sigil_sdk_gemini import GeminiOptions, models
+from agento11y import Client, ClientConfig
+from agento11y_gemini import GeminiOptions, models
 
 client = Client(ClientConfig())
 
@@ -52,7 +52,7 @@ response = models.generate_content(
 ## Wrapper Mode (Stream)
 
 ```python
-from sigil_sdk_gemini import GeminiStreamSummary, models
+from agento11y_gemini import GeminiStreamSummary, models
 
 summary = models.generate_content_stream(
     client,
@@ -105,6 +105,6 @@ Raw artifacts are default OFF and should only be enabled for diagnostics.
 Gemini-specific fields are mapped as follows:
 
 - `usage.thoughts_token_count` -> normalized `usage.reasoning_tokens`
-- `usage.tool_use_prompt_token_count` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
-- `config.thinking_config.thinking_budget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
-- `config.thinking_config.thinking_level` -> metadata `sigil.gen_ai.request.thinking.level`
+- `usage.tool_use_prompt_token_count` -> metadata `agento11y.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinking_config.thinking_budget` -> metadata `agento11y.gen_ai.request.thinking.budget_tokens`
+- `config.thinking_config.thinking_level` -> metadata `agento11y.gen_ai.request.thinking.level`

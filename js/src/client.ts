@@ -63,6 +63,7 @@ import type {
   ToolExecutionRecorder,
   ToolExecutionResult,
   ToolExecutionStart,
+  WorkflowStep,
 } from './types.js';
 import {
   asError,
@@ -78,6 +79,7 @@ import {
   cloneToolExecution,
   cloneToolExecutionResult,
   cloneToolExecutionStart,
+  cloneWorkflowStep,
   defaultOperationNameForMode,
   defaultSleep,
   encodedSizeBytes,
@@ -87,20 +89,21 @@ import {
   validateEmbeddingStart,
   validateGeneration,
   validateToolExecution,
+  validateWorkflowStep,
 } from './utils.js';
 
-const spanAttrGenerationID = 'sigil.generation.id';
-const spanAttrSDKName = 'sigil.sdk.name';
-const spanAttrFrameworkRunID = 'sigil.framework.run_id';
-const spanAttrFrameworkThreadID = 'sigil.framework.thread_id';
-const spanAttrFrameworkParentRunID = 'sigil.framework.parent_run_id';
-const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
-const spanAttrFrameworkRunType = 'sigil.framework.run_type';
-const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
-const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
-const spanAttrFrameworkEventID = 'sigil.framework.event_id';
+const spanAttrGenerationID = 'agento11y.generation.id';
+const spanAttrSDKName = 'agento11y.sdk.name';
+const spanAttrFrameworkRunID = 'agento11y.framework.run_id';
+const spanAttrFrameworkThreadID = 'agento11y.framework.thread_id';
+const spanAttrFrameworkParentRunID = 'agento11y.framework.parent_run_id';
+const spanAttrFrameworkComponentName = 'agento11y.framework.component_name';
+const spanAttrFrameworkRunType = 'agento11y.framework.run_type';
+const spanAttrFrameworkRetryAttempt = 'agento11y.framework.retry_attempt';
+const spanAttrFrameworkLangGraphNode = 'agento11y.framework.langgraph.node';
+const spanAttrFrameworkEventID = 'agento11y.framework.event_id';
 const spanAttrConversationID = 'gen_ai.conversation.id';
-const spanAttrConversationTitle = 'sigil.conversation.title';
+const spanAttrConversationTitle = 'agento11y.conversation.title';
 const spanAttrUserID = 'user.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
@@ -112,9 +115,9 @@ const spanAttrRequestModel = 'gen_ai.request.model';
 const spanAttrRequestMaxTokens = 'gen_ai.request.max_tokens';
 const spanAttrRequestTemperature = 'gen_ai.request.temperature';
 const spanAttrRequestTopP = 'gen_ai.request.top_p';
-const spanAttrRequestToolChoice = 'sigil.gen_ai.request.tool_choice';
-const spanAttrRequestThinkingEnabled = 'sigil.gen_ai.request.thinking.enabled';
-const spanAttrRequestThinkingBudget = 'sigil.gen_ai.request.thinking.budget_tokens';
+const spanAttrRequestToolChoice = 'agento11y.gen_ai.request.tool_choice';
+const spanAttrRequestThinkingEnabled = 'agento11y.gen_ai.request.thinking.enabled';
+const spanAttrRequestThinkingBudget = 'agento11y.gen_ai.request.thinking.budget_tokens';
 const spanAttrResponseID = 'gen_ai.response.id';
 const spanAttrResponseModel = 'gen_ai.response.model';
 const spanAttrFinishReasons = 'gen_ai.response.finish_reasons';
@@ -133,6 +136,7 @@ const spanAttrToolType = 'gen_ai.tool.type';
 const spanAttrToolDescription = 'gen_ai.tool.description';
 const spanAttrToolCallArguments = 'gen_ai.tool.call.arguments';
 const spanAttrToolCallResult = 'gen_ai.tool.call.result';
+const spanAttrTagPrefix = 'agento11y.tag.';
 const maxRatingConversationIdLen = 255;
 const maxRatingIdLen = 128;
 const maxRatingGenerationIdLen = 255;
@@ -161,7 +165,7 @@ const tokenUsageBuckets: number[] = [
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
-const metadataUserIDKey = 'sigil.user.id';
+const metadataUserIDKey = 'agento11y.user.id';
 const metadataLegacyUserIDKey = 'user.id';
 
 function serializeToolResultPayload(value: unknown): { content: string; contentJSON?: string } {
@@ -227,8 +231,10 @@ export class SigilClient {
   private readonly ttftHistogram: Histogram;
   private readonly toolCallsHistogram: Histogram;
   private readonly generations: Generation[] = [];
+  private readonly workflowSteps: WorkflowStep[] = [];
   private readonly toolExecutions: ToolExecution[] = [];
   private readonly pendingGenerations: Generation[] = [];
+  private readonly pendingWorkflowSteps: WorkflowStep[] = [];
 
   private flushPromise: Promise<void> | undefined;
   private flushRequested = false;
@@ -271,6 +277,26 @@ export class SigilClient {
       }, this.config.generationExport.flushIntervalMs);
       maybeUnref(this.flushTimer);
     }
+  }
+
+  /** Enqueues a workflow execution node for export. */
+  enqueueWorkflowStep(step: WorkflowStep): void {
+    this.assertOpen();
+    // Validate the raw input before defaulting timestamps, matching Go and
+    // Python. The completedAt < startedAt rule only fires when the caller
+    // supplied both; defaulting startedAt to now() first would spuriously
+    // reject a step for which the caller only provided completedAt.
+    const validationError = validateWorkflowStep(step);
+    if (validationError !== undefined) {
+      throw new Error(`sigil workflow step validation failed: ${validationError.message}`);
+    }
+    const normalized = this.normalizeWorkflowStep(step);
+    // Enqueue first: internalEnqueueWorkflowStep throws on a payload/queue
+    // rejection, and enqueueWorkflowStep propagates it. Recording into the
+    // debug buffer only after a successful enqueue keeps debugSnapshot from
+    // listing a step the caller was told failed to enqueue.
+    this.internalEnqueueWorkflowStep(normalized);
+    this.workflowSteps.push(cloneWorkflowStep(normalized));
   }
 
   /**
@@ -588,8 +614,10 @@ export class SigilClient {
   debugSnapshot(): SigilDebugSnapshot {
     return {
       generations: this.generations.map(cloneGeneration),
+      workflowSteps: this.workflowSteps.map(cloneWorkflowStep),
       toolExecutions: this.toolExecutions.map(cloneToolExecution),
       queueSize: this.pendingGenerations.length,
+      workflowStepQueueSize: this.pendingWorkflowSteps.length,
     };
   }
 
@@ -645,6 +673,41 @@ export class SigilClient {
     if (this.pendingGenerations.length >= batchSize) {
       this.triggerAsyncFlush();
     }
+  }
+
+  internalEnqueueWorkflowStep(step: WorkflowStep): void {
+    if (this.shuttingDown || this.closed) {
+      throw new Error('sigil client is shutdown');
+    }
+
+    const payloadMaxBytes = this.config.generationExport.payloadMaxBytes;
+    if (payloadMaxBytes > 0) {
+      const payloadBytes = encodedSizeBytes(step);
+      if (payloadBytes > payloadMaxBytes) {
+        throw new Error(`workflow step payload exceeds max bytes (${payloadBytes} > ${payloadMaxBytes})`);
+      }
+    }
+
+    const queueSize = Math.max(1, this.config.generationExport.queueSize);
+    if (this.pendingWorkflowSteps.length >= queueSize) {
+      throw new Error('workflow step queue is full');
+    }
+
+    this.pendingWorkflowSteps.push(cloneWorkflowStep(step));
+
+    const batchSize = Math.max(1, this.config.generationExport.batchSize);
+    if (this.pendingWorkflowSteps.length >= batchSize) {
+      this.triggerAsyncFlush();
+    }
+  }
+
+  private normalizeWorkflowStep(step: WorkflowStep): WorkflowStep {
+    const normalized = cloneWorkflowStep(step);
+    const startedAt = normalized.startedAt ?? this.internalNow();
+    normalized.startedAt = new Date(startedAt);
+    normalized.completedAt = new Date(normalized.completedAt ?? normalized.startedAt);
+    normalized.tags = mergeStringRecords(this.config.tags, normalized.tags);
+    return normalized;
   }
 
   internalLogWarn(message: string, error?: unknown): void {
@@ -727,6 +790,7 @@ export class SigilClient {
       thinkingEnabled: seed.thinkingEnabled,
       metadata: seed.metadata,
     });
+    setTagSpanAttributes(span, this.config.tags);
 
     return span;
   }
@@ -737,6 +801,7 @@ export class SigilClient {
       startTime: startedAt,
     });
     setEmbeddingStartSpanAttributes(span, seed);
+    setTagSpanAttributes(span, this.config.tags);
     return span;
   }
 
@@ -747,6 +812,7 @@ export class SigilClient {
     });
 
     setToolSpanAttributes(span, seed);
+    setTagSpanAttributes(span, this.config.tags);
     return span;
   }
 
@@ -964,9 +1030,11 @@ export class SigilClient {
       generation.agentName,
       generation.agentVersion,
     );
+    const tagAttributes = tagMetricAttributes(this.config.tags);
     this.operationDurationHistogram.record(durationSeconds, {
       [spanAttrOperationName]: generation.operationName,
       ...identityAttributes,
+      ...tagAttributes,
       [spanAttrErrorType]: errorType,
       [spanAttrErrorCategory]: errorCategory,
     });
@@ -982,6 +1050,7 @@ export class SigilClient {
 
     this.toolCallsHistogram.record(countToolCallParts(generation.output ?? []), {
       ...identityAttributes,
+      ...tagAttributes,
     });
 
     if (generation.operationName === 'streamText' && firstTokenAt !== undefined) {
@@ -989,6 +1058,7 @@ export class SigilClient {
       if (ttftSeconds >= 0) {
         this.ttftHistogram.record(ttftSeconds, {
           ...identityAttributes,
+          ...tagAttributes,
         });
       }
     }
@@ -1009,9 +1079,11 @@ export class SigilClient {
       seed.agentName,
       seed.agentVersion,
     );
+    const tagAttributes = tagMetricAttributes(this.config.tags);
     this.operationDurationHistogram.record(durationSeconds, {
       [spanAttrOperationName]: defaultEmbeddingOperationName,
       ...identityAttributes,
+      ...tagAttributes,
       [spanAttrErrorType]: errorType,
       [spanAttrErrorCategory]: errorCategory,
     });
@@ -1020,6 +1092,7 @@ export class SigilClient {
       this.tokenUsageHistogram.record(result.inputTokens, {
         [spanAttrOperationName]: defaultEmbeddingOperationName,
         ...identityAttributes,
+        ...tagAttributes,
         [metricAttrTokenType]: metricTokenTypeInput,
       });
     }
@@ -1037,6 +1110,7 @@ export class SigilClient {
         generation.agentName,
         generation.agentVersion,
       ),
+      ...tagMetricAttributes(this.config.tags),
       [metricAttrTokenType]: tokenType,
     });
   }
@@ -1056,6 +1130,7 @@ export class SigilClient {
         toolExecution.agentName,
         toolExecution.agentVersion,
       ),
+      ...tagMetricAttributes(this.config.tags),
       [spanAttrErrorType]: errorType,
       [spanAttrErrorCategory]: errorCategory,
     });
@@ -1092,23 +1167,45 @@ export class SigilClient {
       return this.flushPromise;
     }
 
-    this.flushPromise = this.drainPendingGenerations().finally(() => {
+    this.flushPromise = this.drainPendingExports().finally(() => {
       this.flushPromise = undefined;
     });
 
     return this.flushPromise;
   }
 
-  private async drainPendingGenerations(): Promise<void> {
+  private async drainPendingExports(): Promise<void> {
+    const errors: Error[] = [];
     do {
       this.flushRequested = false;
 
       while (this.pendingGenerations.length > 0) {
         const batchSize = Math.max(1, this.config.generationExport.batchSize);
         const batch = this.pendingGenerations.splice(0, batchSize).map(cloneGeneration);
-        await this.exportWithRetry(batch);
+        try {
+          await this.exportWithRetry(batch);
+        } catch (error) {
+          errors.push(asError(error));
+        }
       }
-    } while (this.flushRequested || this.pendingGenerations.length > 0);
+
+      while (this.pendingWorkflowSteps.length > 0) {
+        const batchSize = Math.max(1, this.config.generationExport.batchSize);
+        const batch = this.pendingWorkflowSteps.splice(0, batchSize).map(cloneWorkflowStep);
+        try {
+          await this.exportWorkflowStepsWithRetry(batch);
+        } catch (error) {
+          errors.push(asError(error));
+        }
+      }
+    } while (this.flushRequested || this.pendingGenerations.length > 0 || this.pendingWorkflowSteps.length > 0);
+
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, 'sigil export failed');
+    }
   }
 
   private async exportWithRetry(generations: Generation[]): Promise<void> {
@@ -1143,10 +1240,50 @@ export class SigilClient {
     throw lastError ?? new Error('generation export failed');
   }
 
+  private async exportWorkflowStepsWithRetry(workflowSteps: WorkflowStep[]): Promise<void> {
+    const maxRetries = Math.max(0, this.config.generationExport.maxRetries);
+    const attempts = maxRetries + 1;
+    const baseBackoffMs =
+      this.config.generationExport.initialBackoffMs > 0 ? this.config.generationExport.initialBackoffMs : 100;
+    const maxBackoffMs =
+      this.config.generationExport.maxBackoffMs > 0 ? this.config.generationExport.maxBackoffMs : baseBackoffMs;
+
+    let backoffMs = baseBackoffMs;
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const response = await this.generationExporter.exportWorkflowSteps({
+          workflowSteps: workflowSteps.map(cloneWorkflowStep),
+        });
+        this.logRejectedWorkflowStepResults(response.results);
+        return;
+      } catch (error) {
+        lastError = asError(error);
+        if (attempt === attempts - 1) {
+          break;
+        }
+
+        await this.sleepFn(backoffMs);
+        backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
+      }
+    }
+
+    throw lastError ?? new Error('workflow step export failed');
+  }
+
   private logRejectedResults(results: Array<{ generationId: string; accepted: boolean; error?: string }>): void {
     for (const result of results) {
       if (!result.accepted) {
         this.logWarn(`sigil generation rejected id=${result.generationId}`, result.error);
+      }
+    }
+  }
+
+  private logRejectedWorkflowStepResults(results: Array<{ stepId: string; accepted: boolean; error?: string }>): void {
+    for (const result of results) {
+      if (!result.accepted) {
+        this.logWarn(`sigil workflow step rejected id=${result.stepId}`, result.error);
       }
     }
   }
@@ -1294,7 +1431,7 @@ class GenerationRecorderImpl implements GenerationRecorder {
       agentVersion: firstNonEmptyString(this.result?.agentVersion, this.seed.agentVersion),
       mode: this.mode,
       operationName: this.result?.operationName ?? this.seed.operationName ?? defaultOperationNameForMode(this.mode),
-      model: cloneModelRef(this.seed.model),
+      model: cloneModelRef(this.result?.model ?? this.seed.model),
       systemPrompt: this.seed.systemPrompt,
       responseId: this.result?.responseId,
       responseModel: this.result?.responseModel,
@@ -1683,6 +1820,33 @@ function toolSpanName(toolName: string): string {
     return 'execute_tool unknown';
   }
   return `execute_tool ${normalized}`;
+}
+
+function tagMetricAttributes(tags: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (tags === undefined) {
+    return out;
+  }
+  const pairs: { key: string; value: string }[] = [];
+  for (const [k, v] of Object.entries(tags)) {
+    const key = k.trim();
+    if (key.length === 0) {
+      continue;
+    }
+    pairs.push({ key, value: (v ?? '').trim() });
+  }
+  pairs.sort((a, b) => a.key.localeCompare(b.key));
+  for (const { key, value } of pairs) {
+    out[`${spanAttrTagPrefix}${key}`] = value;
+  }
+  return out;
+}
+
+function setTagSpanAttributes(span: Span, tags: Record<string, string> | undefined): void {
+  const attrs = tagMetricAttributes(tags);
+  for (const [key, value] of Object.entries(attrs)) {
+    span.setAttribute(key, value);
+  }
 }
 
 function metricIdentityAttributes(

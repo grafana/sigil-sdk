@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import copy
 import os
+import sys
+from pathlib import Path
+
+_PYTHON_ROOT = Path(__file__).resolve().parents[1]
+if str(_PYTHON_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_ROOT))
 
 import pytest
-from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
+from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
 
 
 @pytest.fixture(autouse=True)
 def _clear_sigil_env(monkeypatch):
-    """Strip ambient SIGIL_* / OTEL_* so Client() doesn't pick up the dev's shell."""
+    """Strip ambient AGENTO11Y_* / SIGIL_* / OTEL_* so Client() doesn't pick up the dev's shell."""
     for key in list(os.environ):
-        if key.startswith("SIGIL_") or key.startswith("OTEL_"):
+        if key.startswith(("AGENTO11Y_", "SIGIL_", "OTEL_")):
             monkeypatch.delenv(key, raising=False)
     yield
 

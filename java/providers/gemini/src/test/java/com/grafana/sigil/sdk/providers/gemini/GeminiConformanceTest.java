@@ -47,12 +47,12 @@ class GeminiConformanceTest {
         assertThat(exporter.generations.get(0).getTopP()).isEqualTo(0.75);
         assertThat(exporter.generations.get(0).getToolChoice()).isEqualTo("auto");
         assertThat(exporter.generations.get(0).getThinkingEnabled()).isTrue();
-        assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.request.thinking.budget_tokens")).isEqualTo(1536L);
-        Object thinkingLevel = exporter.generations.get(0).getMetadata().get("sigil.gen_ai.request.thinking.level");
+        assertThat(exporter.generations.get(0).getMetadata().get("agento11y.gen_ai.request.thinking.budget_tokens")).isEqualTo(1536L);
+        Object thinkingLevel = exporter.generations.get(0).getMetadata().get("agento11y.gen_ai.request.thinking.level");
         if (thinkingLevel != null) {
             assertThat(thinkingLevel).isEqualTo("high");
         }
-        assertThat(exporter.generations.get(0).getMetadata().get("sigil.gen_ai.usage.tool_use_prompt_tokens")).isEqualTo(5L);
+        assertThat(exporter.generations.get(0).getMetadata().get("agento11y.gen_ai.usage.tool_use_prompt_tokens")).isEqualTo(5L);
         assertThat(exporter.generations.get(1).getMode()).isEqualTo(GenerationMode.STREAM);
     }
 

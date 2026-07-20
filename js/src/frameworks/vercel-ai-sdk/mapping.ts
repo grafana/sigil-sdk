@@ -16,8 +16,8 @@ const frameworkConversationPrefix = 'sigil:framework:vercel-ai-sdk:';
 const frameworkName = 'vercel-ai-sdk';
 const frameworkSource = 'framework';
 const frameworkLanguage = 'typescript';
-const stepTypeMetadataKey = 'sigil.framework.step_type';
-const reasoningTextMetadataKey = 'sigil.framework.reasoning_text';
+const stepTypeMetadataKey = 'agento11y.framework.step_type';
+const reasoningTextMetadataKey = 'agento11y.framework.reasoning_text';
 const maxMetadataDepth = 5;
 
 type AnyRecord = Record<string, unknown>;
@@ -33,9 +33,9 @@ export function frameworkIdentity(): { name: string; source: string; language: s
 export function buildFrameworkTags(extraTags: Record<string, string> | undefined): Record<string, string> {
   return {
     ...(extraTags ?? {}),
-    'sigil.framework.name': frameworkName,
-    'sigil.framework.source': frameworkSource,
-    'sigil.framework.language': frameworkLanguage,
+    'agento11y.framework.name': frameworkName,
+    'agento11y.framework.source': frameworkSource,
+    'agento11y.framework.language': frameworkLanguage,
   };
 }
 
@@ -46,9 +46,9 @@ export function buildFrameworkMetadata(
 ): Record<string, unknown> {
   const raw: Record<string, unknown> = {
     ...(extraMetadata ?? {}),
-    'sigil.framework.name': frameworkName,
-    'sigil.framework.source': frameworkSource,
-    'sigil.framework.language': frameworkLanguage,
+    'agento11y.framework.name': frameworkName,
+    'agento11y.framework.source': frameworkSource,
+    'agento11y.framework.language': frameworkLanguage,
   };
   if (stepType !== undefined) {
     raw[stepTypeMetadataKey] = stepType;

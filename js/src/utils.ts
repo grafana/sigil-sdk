@@ -13,6 +13,7 @@ import type {
   ToolExecution,
   ToolExecutionResult,
   ToolExecutionStart,
+  WorkflowStep,
 } from './types.js';
 
 const textEncoder = new TextEncoder();
@@ -120,6 +121,26 @@ export function validateEmbeddingResult(result: EmbeddingResult): Error | undefi
   return undefined;
 }
 
+export function validateWorkflowStep(step: WorkflowStep): Error | undefined {
+  if (step.id.trim().length === 0) {
+    return new Error('workflow step id is required');
+  }
+  if (step.conversationId.trim().length === 0) {
+    return new Error('workflow step conversationId is required');
+  }
+  if (step.stepName.trim().length === 0) {
+    return new Error('workflow step stepName is required');
+  }
+  if (
+    step.startedAt !== undefined &&
+    step.completedAt !== undefined &&
+    step.completedAt.getTime() < step.startedAt.getTime()
+  ) {
+    return new Error('workflow step completedAt must not be earlier than startedAt');
+  }
+  return undefined;
+}
+
 export function asError(value: unknown): Error {
   if (value instanceof Error) {
     return value;
@@ -186,6 +207,7 @@ export function cloneGeneration(generation: Generation): Generation {
 export function cloneGenerationResult(result: GenerationResult): GenerationResult {
   return {
     ...result,
+    model: result.model ? cloneModelRef(result.model) : undefined,
     input: result.input?.map(cloneMessage),
     output: result.output?.map(cloneMessage),
     tools: result.tools?.map(cloneToolDefinition),
@@ -244,6 +266,20 @@ export function cloneToolExecutionResult(result: ToolExecutionResult): ToolExecu
   return {
     ...result,
     completedAt: result.completedAt ? new Date(result.completedAt) : undefined,
+  };
+}
+
+export function cloneWorkflowStep(step: WorkflowStep): WorkflowStep {
+  return {
+    ...step,
+    startedAt: step.startedAt ? new Date(step.startedAt) : undefined,
+    completedAt: step.completedAt ? new Date(step.completedAt) : undefined,
+    inputState: step.inputState ? { ...step.inputState } : undefined,
+    outputState: step.outputState ? { ...step.outputState } : undefined,
+    tags: step.tags ? { ...step.tags } : undefined,
+    linkedGenerationIds: step.linkedGenerationIds ? [...step.linkedGenerationIds] : undefined,
+    parentStepIds: step.parentStepIds ? [...step.parentStepIds] : undefined,
+    metadata: step.metadata ? { ...step.metadata } : undefined,
   };
 }
 

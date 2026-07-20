@@ -5,11 +5,7 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
-from conftest import CapturingGenerationExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk import (
+from agento11y import (
     Client,
     ClientConfig,
     EmbeddingCaptureConfig,
@@ -22,6 +18,10 @@ from sigil_sdk import (
     ToolCall,
     tool_call_part,
 )
+from conftest import CapturingGenerationExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 def _new_client(exporter: CapturingGenerationExporter, span_exporter: InMemorySpanExporter) -> Client:
@@ -121,6 +121,41 @@ def test_execute_tool_calls_executor_error() -> None:
         err_spans = [s for s in spans.get_finished_spans() if s.name == "execute_tool boom"]
         assert len(err_spans) == 1
         assert err_spans[0].status.status_code.name == "ERROR"
+    finally:
+        client.shutdown()
+
+
+def test_execute_tool_calls_nests_executor_spans_under_tool_span() -> None:
+    """Spans created inside the executor must nest under the execute_tool span, not become
+    flat siblings of it (i.e. the executor runs in the tool span's context)."""
+    exporter = CapturingGenerationExporter()
+    spans = InMemorySpanExporter()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(spans))
+    tracer = tp.get_tracer("test")
+    client = _new_client(exporter, spans)
+    try:
+        messages = [
+            Message(
+                role=MessageRole.ASSISTANT,
+                parts=[tool_call_part(ToolCall(id="c1", name="weather", input_json=b"{}"))],
+            )
+        ]
+
+        def run(_name: str, _args: object) -> object:
+            # An RPC-like span the executor opens while doing its work.
+            with tracer.start_as_current_span("downstream.rpc"):
+                pass
+            return {"ok": True}
+
+        client.execute_tool_calls(messages, run, options=ExecuteToolCallsOptions())
+
+        finished = {s.name: s for s in spans.get_finished_spans()}
+        tool_span = finished["execute_tool weather"]
+        child_span = finished["downstream.rpc"]
+        assert child_span.parent is not None
+        assert child_span.parent.span_id == tool_span.context.span_id
+        assert child_span.context.trace_id == tool_span.context.trace_id
     finally:
         client.shutdown()
 

@@ -2,6 +2,7 @@ package sigil
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -12,15 +13,17 @@ func mapLookup(env map[string]string) envLookup {
 	}
 }
 
-// TestResolveFromEnv covers the env-only resolution layer: every SIGIL_*
-// variable, malformed-input handling, and the partial-config contract that
-// invalid fields are skipped without dropping the valid ones.
+// TestResolveFromEnv covers the env-only resolution layer: every supported
+// variable under both its AGENTO11Y_* and SIGIL_* spellings, malformed-input
+// handling, and the partial-config contract that invalid fields are skipped
+// without dropping the valid ones.
 func TestResolveFromEnv(t *testing.T) {
 	cases := []struct {
-		name    string
-		env     map[string]string
-		wantErr bool
-		check   func(t *testing.T, cfg Config)
+		name            string
+		env             map[string]string
+		wantErr         bool
+		wantErrContains string
+		check           func(t *testing.T, cfg Config)
 	}{
 		{
 			name: "no env uses defaults",
@@ -200,6 +203,165 @@ func TestResolveFromEnv(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "preferred-only env matches legacy-only resolution",
+			env: map[string]string{
+				"AGENTO11Y_ENDPOINT":             "https://env:4318",
+				"AGENTO11Y_PROTOCOL":             "http",
+				"AGENTO11Y_INSECURE":             "true",
+				"AGENTO11Y_HEADERS":              "X-A=1,X-B=two",
+				"AGENTO11Y_AUTH_MODE":            "basic",
+				"AGENTO11Y_AUTH_TENANT_ID":       "42",
+				"AGENTO11Y_AUTH_TOKEN":           "glc_xxx",
+				"AGENTO11Y_AGENT_NAME":           "planner",
+				"AGENTO11Y_AGENT_VERSION":        "1.2.3",
+				"AGENTO11Y_USER_ID":              "alice@example.com",
+				"AGENTO11Y_TAGS":                 "service=orchestrator,env=prod",
+				"AGENTO11Y_CONTENT_CAPTURE_MODE": "metadata_only",
+				"AGENTO11Y_DEBUG":                "true",
+			},
+			check: func(t *testing.T, cfg Config) {
+				legacy := map[string]string{
+					"SIGIL_ENDPOINT":             "https://env:4318",
+					"SIGIL_PROTOCOL":             "http",
+					"SIGIL_INSECURE":             "true",
+					"SIGIL_HEADERS":              "X-A=1,X-B=two",
+					"SIGIL_AUTH_MODE":            "basic",
+					"SIGIL_AUTH_TENANT_ID":       "42",
+					"SIGIL_AUTH_TOKEN":           "glc_xxx",
+					"SIGIL_AGENT_NAME":           "planner",
+					"SIGIL_AGENT_VERSION":        "1.2.3",
+					"SIGIL_USER_ID":              "alice@example.com",
+					"SIGIL_TAGS":                 "service=orchestrator,env=prod",
+					"SIGIL_CONTENT_CAPTURE_MODE": "metadata_only",
+					"SIGIL_DEBUG":                "true",
+				}
+				legacyCfg, err := resolveFromEnv(mapLookup(legacy), DefaultConfig())
+				if err != nil {
+					t.Fatalf("legacy resolve: %v", err)
+				}
+				if cfg.GenerationExport.Endpoint != legacyCfg.GenerationExport.Endpoint {
+					t.Errorf("Endpoint=%q want %q", cfg.GenerationExport.Endpoint, legacyCfg.GenerationExport.Endpoint)
+				}
+				if cfg.GenerationExport.Protocol != legacyCfg.GenerationExport.Protocol {
+					t.Errorf("Protocol=%q want %q", cfg.GenerationExport.Protocol, legacyCfg.GenerationExport.Protocol)
+				}
+				if *cfg.GenerationExport.Insecure != *legacyCfg.GenerationExport.Insecure {
+					t.Errorf("Insecure mismatch")
+				}
+				if cfg.GenerationExport.Auth != legacyCfg.GenerationExport.Auth {
+					t.Errorf("Auth=%+v want %+v", cfg.GenerationExport.Auth, legacyCfg.GenerationExport.Auth)
+				}
+				if cfg.AgentName != legacyCfg.AgentName || cfg.AgentVersion != legacyCfg.AgentVersion || cfg.UserID != legacyCfg.UserID {
+					t.Errorf("identity fields mismatch: %+v vs %+v", cfg, legacyCfg)
+				}
+				if cfg.Tags["service"] != "orchestrator" || cfg.Tags["env"] != "prod" {
+					t.Errorf("Tags=%v", cfg.Tags)
+				}
+				if cfg.ContentCapture != legacyCfg.ContentCapture {
+					t.Errorf("ContentCapture=%v want %v", cfg.ContentCapture, legacyCfg.ContentCapture)
+				}
+				if *cfg.Debug != *legacyCfg.Debug {
+					t.Errorf("Debug mismatch")
+				}
+			},
+		},
+		{
+			name: "preferred wins over legacy on conflict",
+			env: map[string]string{
+				"AGENTO11Y_ENDPOINT": "preferred.example:4318",
+				"SIGIL_ENDPOINT":     "legacy.example:4318",
+			},
+			check: func(t *testing.T, cfg Config) {
+				if cfg.GenerationExport.Endpoint != "preferred.example:4318" {
+					t.Errorf("Endpoint=%q want preferred.example:4318", cfg.GenerationExport.Endpoint)
+				}
+			},
+		},
+		{
+			name: "blank preferred falls through to legacy",
+			env: map[string]string{
+				"AGENTO11Y_ENDPOINT": "   ",
+				"SIGIL_ENDPOINT":     "legacy.example:4318",
+			},
+			check: func(t *testing.T, cfg Config) {
+				if cfg.GenerationExport.Endpoint != "legacy.example:4318" {
+					t.Errorf("Endpoint=%q want legacy.example:4318", cfg.GenerationExport.Endpoint)
+				}
+			},
+		},
+		{
+			name: "invalid preferred capture mode blocks valid legacy fallback",
+			env: map[string]string{
+				"AGENTO11Y_CONTENT_CAPTURE_MODE": "bogus",
+				"SIGIL_CONTENT_CAPTURE_MODE":     "metadata_only",
+			},
+			wantErr:         true,
+			wantErrContains: "AGENTO11Y_CONTENT_CAPTURE_MODE",
+			check: func(t *testing.T, cfg Config) {
+				if cfg.ContentCapture != ContentCaptureModeDefault {
+					t.Errorf("ContentCapture=%v want default (legacy must not resurface)", cfg.ContentCapture)
+				}
+			},
+		},
+		{
+			name: "invalid preferred auth mode blocks valid legacy fallback",
+			env: map[string]string{
+				"AGENTO11Y_AUTH_MODE": "garbage",
+				"SIGIL_AUTH_MODE":     "bearer",
+			},
+			wantErr:         true,
+			wantErrContains: "AGENTO11Y_AUTH_MODE",
+			check: func(t *testing.T, cfg Config) {
+				if cfg.GenerationExport.Auth.Mode != ExportAuthModeNone {
+					t.Errorf("Mode=%q want none (legacy must not resurface)", cfg.GenerationExport.Auth.Mode)
+				}
+			},
+		},
+		{
+			name:            "invalid legacy capture mode error names legacy key",
+			env:             map[string]string{"SIGIL_CONTENT_CAPTURE_MODE": "bogus"},
+			wantErr:         true,
+			wantErrContains: "SIGIL_CONTENT_CAPTURE_MODE",
+		},
+		{
+			name: "mixed-prefix auth fields resolve per field",
+			env: map[string]string{
+				"AGENTO11Y_AUTH_MODE":  "basic",
+				"SIGIL_AUTH_TENANT_ID": "42",
+				"SIGIL_AUTH_TOKEN":     "glc_xxx",
+			},
+			check: func(t *testing.T, cfg Config) {
+				auth := cfg.GenerationExport.Auth
+				if auth.Mode != ExportAuthModeBasic {
+					t.Errorf("Mode=%q want basic", auth.Mode)
+				}
+				if auth.TenantID != "42" {
+					t.Errorf("TenantID=%q want 42", auth.TenantID)
+				}
+				if auth.BasicPassword != "glc_xxx" {
+					t.Errorf("BasicPassword=%q want glc_xxx", auth.BasicPassword)
+				}
+			},
+		},
+		{
+			name: "preferred tags replace legacy tags without merging",
+			env: map[string]string{
+				"AGENTO11Y_TAGS": "team=ai",
+				"SIGIL_TAGS":     "service=orch,env=prod",
+			},
+			check: func(t *testing.T, cfg Config) {
+				if cfg.Tags["team"] != "ai" {
+					t.Errorf("Tags[team]=%q want ai", cfg.Tags["team"])
+				}
+				if _, ok := cfg.Tags["service"]; ok {
+					t.Errorf("Tags=%v: legacy tags must not merge into preferred tags", cfg.Tags)
+				}
+				if len(cfg.Tags) != 1 {
+					t.Errorf("Tags=%v want exactly the preferred value", cfg.Tags)
+				}
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,6 +371,9 @@ func TestResolveFromEnv(t *testing.T) {
 			}
 			if !tc.wantErr && err != nil {
 				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErrContains != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErrContains)) {
+				t.Fatalf("error %v does not mention %q", err, tc.wantErrContains)
 			}
 			if tc.check != nil {
 				tc.check(t, cfg)
@@ -456,6 +621,65 @@ func TestNewClient_EnvHandling(t *testing.T) {
 				}
 				if auth.BearerToken != "envtok" {
 					t.Errorf("BearerToken=%q want envtok (filled from SIGIL_AUTH_TOKEN)", auth.BearerToken)
+				}
+			},
+		},
+		{
+			name: "reads preferred env into empty config",
+			env: map[string]string{
+				"AGENTO11Y_AGENT_NAME": "from-env",
+				"AGENTO11Y_USER_ID":    "alice",
+				"AGENTO11Y_TAGS":       "team=ai",
+				"AGENTO11Y_PROTOCOL":   "none",
+			},
+			check: func(t *testing.T, c *Client) {
+				if c.config.AgentName != "from-env" {
+					t.Errorf("AgentName=%q", c.config.AgentName)
+				}
+				if c.config.UserID != "alice" {
+					t.Errorf("UserID=%q", c.config.UserID)
+				}
+				if c.config.Tags["team"] != "ai" {
+					t.Errorf("Tags=%v", c.config.Tags)
+				}
+				if c.config.GenerationExport.Protocol != GenerationExportProtocolNone {
+					t.Errorf("Protocol=%v", c.config.GenerationExport.Protocol)
+				}
+			},
+		},
+		{
+			name: "explicit caller value wins over both branded prefixes",
+			env: map[string]string{
+				"AGENTO11Y_ENDPOINT": "preferred-endpoint:4318",
+				"SIGIL_ENDPOINT":     "legacy-endpoint:4318",
+			},
+			cfg: Config{
+				GenerationExport: GenerationExportConfig{
+					Endpoint: "explicit-endpoint:4318",
+					Protocol: GenerationExportProtocolNone,
+				},
+			},
+			check: func(t *testing.T, c *Client) {
+				if c.config.GenerationExport.Endpoint != "explicit-endpoint:4318" {
+					t.Errorf("Endpoint=%q want explicit-endpoint:4318", c.config.GenerationExport.Endpoint)
+				}
+			},
+		},
+		{
+			name: "caller tags merge with preferred env tags",
+			env: map[string]string{
+				"AGENTO11Y_TAGS":     "service=orch,env=prod",
+				"AGENTO11Y_PROTOCOL": "none",
+			},
+			cfg: Config{
+				Tags: map[string]string{"team": "ai", "env": "staging"},
+			},
+			check: func(t *testing.T, c *Client) {
+				if got := c.config.Tags["service"]; got != "orch" {
+					t.Errorf("Tags[service]=%q want orch (env-filled)", got)
+				}
+				if got := c.config.Tags["env"]; got != "staging" {
+					t.Errorf("Tags[env]=%q want staging (caller wins on collision)", got)
 				}
 			},
 		},

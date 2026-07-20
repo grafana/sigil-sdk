@@ -37,7 +37,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 final class OpenAiGenerationMapper {
-    private static final String THINKING_BUDGET_METADATA_KEY = "sigil.gen_ai.request.thinking.budget_tokens";
+    private static final String THINKING_BUDGET_METADATA_KEY = "agento11y.gen_ai.request.thinking.budget_tokens";
     private static final ObjectMapper JSON = ObjectMappers.jsonMapper();
     private static final ObjectMapper CANONICAL_JSON = new ObjectMapper()
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)

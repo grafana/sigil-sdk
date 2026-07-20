@@ -19,9 +19,10 @@ const { SigilClientMock, createSecretRedactionSanitizerMock, SANITIZER } =
     };
   });
 
-vi.mock("@grafana/sigil-sdk-js", () => ({
+vi.mock("@grafana/agento11y", () => ({
   SigilClient: SigilClientMock,
   createSecretRedactionSanitizer: createSecretRedactionSanitizerMock,
+  userAgent: () => "agento11y-sdk-js/0.0.0-test",
 }));
 
 import { createSigilClient } from "./client.js";
@@ -65,6 +66,11 @@ describe("createSigilClient", () => {
         protocol: "http",
         endpoint: "http://localhost:8080/api/v1/generations:export",
         auth: { mode: "none" },
+        headers: {
+          "User-Agent": expect.stringMatching(
+            /^agento11y-plugin-pi\/.+ agento11y-sdk-js\/0\.0\.0-test$/,
+          ),
+        },
       },
       api: { endpoint: "http://localhost:8080" },
       hooks: {
@@ -77,6 +83,15 @@ describe("createSigilClient", () => {
       logger: expect.any(Object),
       generationSanitizer: SANITIZER,
     });
+  });
+
+  it("sets the plugin User-Agent on the generation export", () => {
+    createSigilClient(makeConfig());
+
+    const [arg] = SigilClientMock.mock.calls[0]!;
+    const ua = arg.generationExport.headers["User-Agent"];
+    expect(ua.startsWith("agento11y-plugin-pi/")).toBe(true);
+    expect(ua.endsWith("agento11y-sdk-js/0.0.0-test")).toBe(true);
   });
 
   it("appends the export path for a prefix-mounted endpoint", () => {
@@ -114,6 +129,11 @@ describe("createSigilClient", () => {
           basicUser: "12345",
           basicPassword: "pass",
           tenantId: "12345",
+        },
+        headers: {
+          "User-Agent": expect.stringMatching(
+            /^agento11y-plugin-pi\/.+ agento11y-sdk-js\/0\.0\.0-test$/,
+          ),
         },
       },
       api: { endpoint: "http://localhost:8080" },

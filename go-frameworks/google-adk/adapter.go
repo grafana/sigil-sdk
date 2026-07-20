@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 )
 
 const (
@@ -21,14 +21,14 @@ const (
 )
 
 const (
-	metadataRunID         = "sigil.framework.run_id"
-	metadataThreadID      = "sigil.framework.thread_id"
-	metadataParentRunID   = "sigil.framework.parent_run_id"
-	metadataComponentName = "sigil.framework.component_name"
-	metadataRunType       = "sigil.framework.run_type"
-	metadataTags          = "sigil.framework.tags"
-	metadataRetryAttempt  = "sigil.framework.retry_attempt"
-	metadataEventID       = "sigil.framework.event_id"
+	metadataRunID         = "agento11y.framework.run_id"
+	metadataThreadID      = "agento11y.framework.thread_id"
+	metadataParentRunID   = "agento11y.framework.parent_run_id"
+	metadataComponentName = "agento11y.framework.component_name"
+	metadataRunType       = "agento11y.framework.run_type"
+	metadataTags          = "agento11y.framework.tags"
+	metadataRetryAttempt  = "agento11y.framework.retry_attempt"
+	metadataEventID       = "agento11y.framework.event_id"
 )
 
 // ProviderResolver resolves provider names for framework runs.
@@ -239,9 +239,9 @@ func (a *Adapter) OnRunStart(ctx context.Context, event RunStartEvent) error {
 
 	tags := make(map[string]string, len(a.opts.ExtraTags)+3)
 	maps.Copy(tags, a.opts.ExtraTags)
-	tags["sigil.framework.name"] = frameworkName
-	tags["sigil.framework.source"] = frameworkSource
-	tags["sigil.framework.language"] = frameworkLanguage
+	tags["agento11y.framework.name"] = frameworkName
+	tags["agento11y.framework.source"] = frameworkSource
+	tags["agento11y.framework.language"] = frameworkLanguage
 
 	start := sigil.GenerationStart{
 		ConversationID: conversationID,

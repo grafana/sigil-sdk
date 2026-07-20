@@ -140,8 +140,8 @@ public final class SigilClientConfig {
 
     /**
      * Default {@code gen_ai.agent.name} for generations that don't supply one
-     * per-call. Filled from {@code SIGIL_AGENT_NAME} when the caller leaves
-     * this empty.
+     * per-call. Filled from {@code AGENTO11Y_AGENT_NAME} (legacy
+     * {@code SIGIL_AGENT_NAME}) when the caller leaves this empty.
      */
     public String getAgentName() {
         return agentName;
@@ -154,7 +154,8 @@ public final class SigilClientConfig {
 
     /**
      * Default {@code gen_ai.agent.version} for generations that don't supply
-     * one per-call. Filled from {@code SIGIL_AGENT_VERSION}.
+     * one per-call. Filled from {@code AGENTO11Y_AGENT_VERSION} (legacy
+     * {@code SIGIL_AGENT_VERSION}).
      */
     public String getAgentVersion() {
         return agentVersion;
@@ -167,7 +168,7 @@ public final class SigilClientConfig {
 
     /**
      * Default {@code user.id} for generations that don't supply one per-call.
-     * Filled from {@code SIGIL_USER_ID}.
+     * Filled from {@code AGENTO11Y_USER_ID} (legacy {@code SIGIL_USER_ID}).
      */
     public String getUserId() {
         return userId;
@@ -180,7 +181,8 @@ public final class SigilClientConfig {
 
     /**
      * Tags merged into every {@link GenerationStart#getTags()}. Per-call tags
-     * win on key collision. Filled from {@code SIGIL_TAGS}.
+     * win on key collision. Filled from {@code AGENTO11Y_TAGS} (legacy
+     * {@code SIGIL_TAGS}).
      *
      * <p>The returned map is unmodifiable; use {@link #setTags(Map)} to
      * replace it.</p>
@@ -196,9 +198,9 @@ public final class SigilClientConfig {
 
     /**
      * Tri-state debug flag mirroring Go's {@code *bool}. {@code null} means
-     * "not set" — filled from {@code SIGIL_DEBUG} when the caller hasn't
-     * supplied a value. Explicit {@code Boolean.FALSE} overrides
-     * {@code SIGIL_DEBUG=true}.
+     * "not set" — filled from {@code AGENTO11Y_DEBUG} (legacy
+     * {@code SIGIL_DEBUG}) when the caller hasn't supplied a value. Explicit
+     * {@code Boolean.FALSE} overrides {@code AGENTO11Y_DEBUG=true}.
      */
     public Boolean getDebug() {
         return debug;

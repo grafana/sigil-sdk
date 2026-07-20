@@ -14,8 +14,8 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { Resource } from "@opentelemetry/resources";
-import { createSigilClient } from "@grafana/sigil-sdk-js";
-import type { GenerationRecorder } from "@grafana/sigil-sdk-js";
+import { createSigilClient } from "@grafana/agento11y";
+import type { GenerationRecorder } from "@grafana/agento11y";
 
 const resource = new Resource({ "service.name": "getting-started-typescript" });
 
@@ -37,13 +37,17 @@ const model = "gpt-4.1-mini";
 const sigil = createSigilClient({
   generationExport: {
     protocol: "http",
-    endpoint: process.env.SIGIL_ENDPOINT!,
+    endpoint: process.env.AGENTO11Y_ENDPOINT!,
     auth: {
       mode: "basic",
-      tenantId: process.env.SIGIL_AUTH_TENANT_ID!,
-      basicPassword: process.env.SIGIL_AUTH_TOKEN!,
+      tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID!,
+      basicPassword: process.env.AGENTO11Y_AUTH_TOKEN!,
     },
   },
+  // Client tags attach to every generation and become agento11y.tag.<key>
+  // attributes on OTel spans and metrics, so keep them low-cardinality
+  // (team, env). See docs/concepts/tags-and-metadata.md.
+  tags: { team: "checkout", env: "dev" },
 });
 
 const prompt = "Explain what LLM observability is in two sentences.";
@@ -66,6 +70,13 @@ await sigil.startGeneration(
     agentName: "getting-started",
     agentVersion: "1.0.0",
     model: { provider: "openai", name: model },
+    // userId sets the user.id span attribute (all SDKs); use it for end-user
+    // identity instead of a high-cardinality tag.
+    userId: "demo-user",
+    // Per-generation tags and metadata are export-only: searchable on the
+    // generation in Sigil, never emitted on spans or metrics.
+    tags: { feature: "summarize" },
+    metadata: { promptVersion: "v2" },
   },
   (rec: GenerationRecorder) => {
     rec.setResult({

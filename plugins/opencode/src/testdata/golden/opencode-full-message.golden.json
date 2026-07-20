@@ -3,10 +3,10 @@
     "path": "/api/v1/generations:export",
     "generations": [
       {
-        "id": "<NORMALIZED-ID>",
+        "id": "opencode-d0c11673ecf0262346ca8e82",
         "conversation_id": "opencode-sess-1",
-        "operation_name": "generateText",
-        "mode": "GENERATION_MODE_SYNC",
+        "operation_name": "streamText",
+        "mode": "GENERATION_MODE_STREAM",
         "trace_id": "<NORMALIZED>",
         "span_id": "<NORMALIZED>",
         "model": {
@@ -15,7 +15,7 @@
         },
         "response_id": "",
         "response_model": "claude-sonnet-4-opencode",
-        "system_prompt": "you are a helpful assistant",
+        "system_prompt": "you are a helpful assistant\n<env>cwd: /repo/oc-app</env>",
         "input": [
           {
             "role": "MESSAGE_ROLE_USER",
@@ -70,13 +70,7 @@
           {
             "name": "Bash",
             "description": "",
-            "type": "",
-            "input_schema_json": ""
-          },
-          {
-            "name": "Read",
-            "description": "",
-            "type": "",
+            "type": "function",
             "input_schema_json": ""
           }
         ],
@@ -91,11 +85,14 @@
         "stop_reason": "end_turn",
         "started_at": "<NORMALIZED>",
         "completed_at": "<NORMALIZED>",
-        "tags": {},
+        "tags": {
+          "git.branch": "<NORMALIZED>",
+          "cwd": "<NORMALIZED>"
+        },
         "metadata": {
           "cost": 0.005,
-          "sigil.sdk.name": "sdk-js",
-          "sigil.sdk.content_capture_mode": "full"
+          "agento11y.sdk.name": "sdk-js",
+          "agento11y.sdk.content_capture_mode": "full"
         },
         "raw_artifacts": [],
         "call_error": "",

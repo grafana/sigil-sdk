@@ -10,10 +10,10 @@ import (
 	osdk "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/shared"
 
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 )
 
-const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
+const thinkingBudgetMetadataKey = "agento11y.gen_ai.request.thinking.budget_tokens"
 
 // ChatCompletionsFromRequestResponse maps an OpenAI chat-completions request/response pair to sigil.Generation.
 func ChatCompletionsFromRequestResponse(req osdk.ChatCompletionNewParams, resp *osdk.ChatCompletion, opts ...Option) (sigil.Generation, error) {

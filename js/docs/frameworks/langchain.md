@@ -1,18 +1,18 @@
-# LangChain Handler (`@grafana/sigil-sdk-js/langchain`)
+# LangChain Handler (`@grafana/agento11y/langchain`)
 
 Use `SigilLangChainHandler` to map LangChain callback lifecycle events to Sigil generation records.
 
 ## Install
 
 ```bash
-pnpm add @grafana/sigil-sdk-js @langchain/core @langchain/openai
+pnpm add @grafana/agento11y @langchain/core @langchain/openai
 ```
 
 ## Usage
 
 ```ts
-import { SigilClient } from '@grafana/sigil-sdk-js';
-import { withSigilLangChainCallbacks } from '@grafana/sigil-sdk-js/langchain';
+import { SigilClient } from '@grafana/agento11y';
+import { withSigilLangChainCallbacks } from '@grafana/agento11y/langchain';
 
 const client = new SigilClient();
 const config = withSigilLangChainCallbacks(undefined, client, {
@@ -25,11 +25,11 @@ const config = withSigilLangChainCallbacks(undefined, client, {
 
 ```ts
 import { ChatOpenAI } from '@langchain/openai';
-import { SigilClient } from '@grafana/sigil-sdk-js';
+import { SigilClient } from '@grafana/agento11y';
 import {
   SigilLangChainHandler,
   withSigilLangChainCallbacks,
-} from '@grafana/sigil-sdk-js/langchain';
+} from '@grafana/agento11y/langchain';
 
 const client = new SigilClient();
 const handler = new SigilLangChainHandler(client, {
@@ -76,17 +76,17 @@ await client.shutdown();
 
 Framework tags and metadata are always injected:
 
-- `sigil.framework.name=langchain`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
-- `metadata["sigil.framework.run_id"]=<framework run id>`
-- `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
-- `metadata["sigil.framework.parent_run_id"]=<parent run id>` (when available)
-- `metadata["sigil.framework.component_name"]=<serialized component name>`
-- `metadata["sigil.framework.run_type"]=<llm|chat|tool|chain|retriever>`
-- `metadata["sigil.framework.tags"]=<normalized callback tags>`
-- `metadata["sigil.framework.retry_attempt"]=<attempt>` (when available)
-- `metadata["sigil.framework.event_id"]=<event id>` (when available)
+- `agento11y.framework.name=langchain`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
+- `metadata["agento11y.framework.run_id"]=<framework run id>`
+- `metadata["agento11y.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+- `metadata["agento11y.framework.parent_run_id"]=<parent run id>` (when available)
+- `metadata["agento11y.framework.component_name"]=<serialized component name>`
+- `metadata["agento11y.framework.run_type"]=<llm|chat|tool|chain|retriever>`
+- `metadata["agento11y.framework.tags"]=<normalized callback tags>`
+- `metadata["agento11y.framework.retry_attempt"]=<attempt>` (when available)
+- `metadata["agento11y.framework.event_id"]=<event id>` (when available)
 - generation span attributes mirror low-cardinality framework metadata keys
 
 Conversation mapping is conversation-first:

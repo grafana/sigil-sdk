@@ -10,15 +10,17 @@ public final class GenerationExportConfig {
      * Export protocol. {@code null} means "not set" — env layer or
      * {@link SigilClient} resolves it to {@link GenerationExportProtocol#HTTP}.
      * An explicit {@code setProtocol(...)} call is preserved (caller-wins) and
-     * not overridden by {@code SIGIL_PROTOCOL}.
+     * not overridden by {@code AGENTO11Y_PROTOCOL} (legacy
+     * {@code SIGIL_PROTOCOL}).
      */
     private GenerationExportProtocol protocol;
     /**
      * Export endpoint. Empty string means "not set" — env layer or
-     * {@link SigilClient} resolves it to {@code http://localhost:8080}.
+     * {@link SigilClient} resolves it from {@code AGENTO11Y_ENDPOINT} (legacy
+     * {@code SIGIL_ENDPOINT}) when configured.
      * The HTTP exporter auto-appends {@code /api/v1/generations:export}
      * when the URL has no path. An explicit non-empty value is preserved
-     * (caller-wins) and not overridden by {@code SIGIL_ENDPOINT}.
+     * (caller-wins) and not overridden by env.
      */
     private String endpoint = "";
     private final Map<String, String> headers = new LinkedHashMap<>();
@@ -74,8 +76,9 @@ public final class GenerationExportConfig {
 
     /**
      * Returns the tri-state insecure flag. {@code null} means "not set" — the
-     * resolved value is {@code false} (TLS on) unless {@code SIGIL_INSECURE}
-     * provides a value or the caller explicitly sets one.
+     * resolved value is {@code false} (TLS on) unless {@code AGENTO11Y_INSECURE}
+     * (legacy {@code SIGIL_INSECURE}) provides a value or the caller explicitly
+     * sets one.
      *
      * <p>Use {@link #isInsecureResolved()} to read the boolean for transport
      * decisions.</p>

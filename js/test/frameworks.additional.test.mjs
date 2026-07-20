@@ -82,16 +82,16 @@ for (const framework of frameworks) {
       );
     });
 
-    assert.equal(generation.tags['sigil.framework.name'], framework.name);
-    assert.equal(generation.tags['sigil.framework.source'], 'handler');
-    assert.equal(generation.tags['sigil.framework.language'], 'javascript');
+    assert.equal(generation.tags['agento11y.framework.name'], framework.name);
+    assert.equal(generation.tags['agento11y.framework.source'], 'handler');
+    assert.equal(generation.tags['agento11y.framework.language'], 'javascript');
     assert.equal(generation.conversationId, 'framework-conversation-42');
-    assert.equal(generation.metadata['sigil.framework.run_id'], 'run-sync');
-    assert.equal(generation.metadata['sigil.framework.parent_run_id'], 'parent-run-sync');
-    assert.equal(generation.metadata['sigil.framework.thread_id'], 'framework-thread-42');
-    assert.equal(generation.metadata['sigil.framework.event_id'], 'framework-event-42');
-    assert.equal(generation.metadata['sigil.framework.run_type'], 'chat');
-    assert.equal(generation.metadata['sigil.framework.retry_attempt'], 1);
+    assert.equal(generation.metadata['agento11y.framework.run_id'], 'run-sync');
+    assert.equal(generation.metadata['agento11y.framework.parent_run_id'], 'parent-run-sync');
+    assert.equal(generation.metadata['agento11y.framework.thread_id'], 'framework-thread-42');
+    assert.equal(generation.metadata['agento11y.framework.event_id'], 'framework-event-42');
+    assert.equal(generation.metadata['agento11y.framework.run_type'], 'chat');
+    assert.equal(generation.metadata['agento11y.framework.retry_attempt'], 1);
   });
 
   test(`${framework.name} handler keeps thread metadata when conversation and thread ids are split across payloads`, async () => {
@@ -128,8 +128,8 @@ for (const framework of frameworks) {
     });
 
     assert.equal(generation.conversationId, 'framework-conversation-split-42');
-    assert.equal(generation.metadata['sigil.framework.thread_id'], 'framework-thread-split-42');
-    assert.equal(generation.metadata['sigil.framework.event_id'], 'framework-event-split-42');
+    assert.equal(generation.metadata['agento11y.framework.thread_id'], 'framework-thread-split-42');
+    assert.equal(generation.metadata['agento11y.framework.event_id'], 'framework-event-split-42');
   });
 
   test(`${framework.name} handler uses deterministic conversation fallback when framework id is missing`, async () => {
@@ -397,9 +397,9 @@ test('withSigilOpenAIAgentsHooks wires to hook emitter lifecycle', async () => {
     hooks.emit('agent_end', context, agent, 'ignored');
   });
 
-  assert.equal(generation.tags['sigil.framework.name'], 'openai-agents');
+  assert.equal(generation.tags['agento11y.framework.name'], 'openai-agents');
   assert.equal(generation.conversationId, 'oa-conversation-42');
-  assert.equal(generation.metadata['sigil.framework.run_type'], 'chat');
+  assert.equal(generation.metadata['agento11y.framework.run_type'], 'chat');
   assert.equal(generation.usage.inputTokens, 11);
   assert.equal(generation.usage.outputTokens, 7);
   assert.equal(generation.usage.totalTokens, 18);
@@ -467,7 +467,7 @@ test('withSigilOpenAIAgentsHooks handles agent_error and clears stack state', as
 
   const secondGeneration = generations.find((generation) => extractFirstText(generation.output) === 'ok');
   assert.ok(secondGeneration);
-  assert.equal(secondGeneration.metadata['sigil.framework.parent_run_id'], undefined);
+  assert.equal(secondGeneration.metadata['agento11y.framework.parent_run_id'], undefined);
 });
 
 test('withSigilOpenAIAgentsHooks closes tool runs when tool call id is missing', async () => {
@@ -555,7 +555,7 @@ test('withSigilLlamaIndexCallbacks registers through callback manager API', asyn
     });
   });
 
-  assert.equal(generation.tags['sigil.framework.name'], 'llamaindex');
+  assert.equal(generation.tags['agento11y.framework.name'], 'llamaindex');
   assert.equal(generation.conversationId, 'llama-conversation-9');
   assert.equal(generation.usage.inputTokens, 3);
   assert.equal(generation.usage.outputTokens, 4);
@@ -673,7 +673,7 @@ test('withSigilLlamaIndexCallbacks handles llm-error and clears run state', asyn
   assert.ok(errored);
   const secondGeneration = generations.find((generation) => extractFirstText(generation.output) === 'ok');
   assert.ok(secondGeneration);
-  assert.equal(secondGeneration.metadata['sigil.framework.parent_run_id'], undefined);
+  assert.equal(secondGeneration.metadata['agento11y.framework.parent_run_id'], undefined);
 });
 
 test('withSigilLlamaIndexCallbacks closes id-less tool runs', async () => {
@@ -789,9 +789,9 @@ test('withSigilGoogleAdkPlugins appends an ADK plugin callback implementation', 
     await plugin.afterRunCallback({ invocationContext });
   });
 
-  assert.equal(generation.tags['sigil.framework.name'], 'google-adk');
+  assert.equal(generation.tags['agento11y.framework.name'], 'google-adk');
   assert.equal(generation.conversationId, 'conversation-42');
-  assert.equal(generation.metadata['sigil.framework.thread_id'], 'thread-42');
+  assert.equal(generation.metadata['agento11y.framework.thread_id'], 'thread-42');
   assert.equal(generation.mode, 'SYNC');
 });
 
@@ -961,7 +961,7 @@ test('google adk plugin emits agent chain spans that parent llm runs', async () 
     await plugin.afterRunCallback({ invocationContext });
   });
 
-  const parentRunId = generation.metadata['sigil.framework.parent_run_id'];
+  const parentRunId = generation.metadata['agento11y.framework.parent_run_id'];
   assert.equal(typeof parentRunId, 'string');
   assert.equal(parentRunId.startsWith('adk_agent:'), true);
 });

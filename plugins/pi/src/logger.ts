@@ -7,12 +7,12 @@ import { format } from "node:util";
 // terminal via console.* corrupts the live TUI frame (pi does not take over
 // stdout in interactive mode — see core/output-guard.ts). So all diagnostics
 // go to a file instead, matching the shared sigil binary, which writes its
-// SIGIL_DEBUG log to $XDG_STATE_HOME/sigil/logs/sigil.log (see
-// plugins/sigil/internal/xdg and internal/cli InitLogger). Logging is silent
-// unless SIGIL_DEBUG is truthy.
+// debug log to $XDG_STATE_HOME/sigil/logs/sigil.log (see
+// plugins/agento11y/internal/xdg and internal/cli InitLogger). Logging is silent
+// unless AGENTO11Y_DEBUG (SIGIL_DEBUG fallback) is truthy.
 const APP_NAME = "sigil";
 
-/** Mirrors plugins/sigil/internal/xdg.StateRoot for app "sigil". */
+/** Mirrors plugins/agento11y/internal/xdg.StateRoot for app "sigil". */
 export function stateRoot(appName = APP_NAME): string {
   const xdg = (process.env.XDG_STATE_HOME ?? "").trim();
   if (xdg && isAbsolute(xdg)) return join(xdg, appName);
@@ -21,7 +21,7 @@ export function stateRoot(appName = APP_NAME): string {
   return join(tmpdir(), appName);
 }
 
-/** Mirrors plugins/sigil/internal/xdg.LogFilePath for app "sigil". */
+/** Mirrors plugins/agento11y/internal/xdg.LogFilePath for app "sigil". */
 export function logFilePath(appName = APP_NAME): string {
   return join(stateRoot(appName), "logs", `${appName}.log`);
 }
@@ -33,8 +33,15 @@ export interface SigilPiLogger {
 }
 
 function debugEnabled(): boolean {
-  const v = (process.env.SIGIL_DEBUG ?? "").trim().toLowerCase();
-  return ["1", "true", "yes", "on"].includes(v);
+  // First nonblank of AGENTO11Y_DEBUG, SIGIL_DEBUG decides; the other
+  // spelling is not consulted. (config.ts has the same selection helper,
+  // but importing it here would create a module cycle.)
+  for (const key of ["AGENTO11Y_DEBUG", "SIGIL_DEBUG"]) {
+    const v = (process.env[key] ?? "").trim().toLowerCase();
+    if (v === "") continue;
+    return ["1", "true", "yes", "on"].includes(v);
+  }
+  return false;
 }
 
 // Cache the last directory we successfully created so we don't mkdir on every
@@ -56,7 +63,7 @@ function ensureLogDir(path: string): boolean {
 
 function emit(level: string, message: string, args: unknown[]): void {
   // Re-read the env per write: loadConfig() applies the sigil dotenv file,
-  // which may set SIGIL_DEBUG after the module first loads.
+  // which may set the debug variable after the module first loads.
   if (!debugEnabled()) return;
   const path = logFilePath();
   if (!ensureLogDir(path)) return;

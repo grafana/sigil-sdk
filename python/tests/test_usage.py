@@ -5,8 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from sigil_sdk.models import TokenUsage
-from sigil_sdk.usage import (
+from agento11y.models import TokenUsage
+from agento11y.usage import (
     from_anthropic,
     from_gemini,
     from_generic,
@@ -205,8 +205,8 @@ class TestFromGemini:
             "tool_use_prompt_token_count": 15,
         }
         usage = from_gemini(raw)
-        assert usage.input_tokens == 500
-        assert usage.output_tokens == 250
+        assert usage.input_tokens == 515
+        assert usage.output_tokens == 285
         assert usage.total_tokens == 800
         assert usage.cache_read_input_tokens == 60
         # When both upstream fields are present, prefer cache_write_input_token_count.
@@ -222,6 +222,8 @@ class TestFromGemini:
             "tool_use_prompt_token_count": 10,
         }
         usage = from_gemini(raw)
+        assert usage.input_tokens == 110
+        assert usage.output_tokens == 70
         assert usage.total_tokens == 180  # 100 + 50 + 10 + 20
 
     def test_partial(self):

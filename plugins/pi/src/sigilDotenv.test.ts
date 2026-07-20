@@ -19,7 +19,7 @@ import { clearSigilEnv } from "./testEnv.js";
 
 describe("parseSigilDotenv", () => {
   it("parses the full sample from the Go reference test", () => {
-    // Mirrors plugins/sigil/internal/dotenv/dotenv_test.go::TestLoadDotenv
+    // Mirrors plugins/agento11y/internal/dotenv/dotenv_test.go::TestLoadDotenv
     const body = `# leading comment
 SIGIL_ENDPOINT=https://sigil.example.com
 export SIGIL_AUTH_TENANT_ID=alice
@@ -83,6 +83,11 @@ EMPTY=
   it("honors the optional 'export ' prefix", () => {
     const got = parseSigilDotenv(`export SIGIL_ENDPOINT=https://exported\n`);
     expect(got).toEqual({ SIGIL_ENDPOINT: "https://exported" });
+  });
+
+  it("allows AGENTO11Y_-prefixed keys", () => {
+    const got = parseSigilDotenv("AGENTO11Y_ENDPOINT=https://ok\n");
+    expect(got).toEqual({ AGENTO11Y_ENDPOINT: "https://ok" });
   });
 
   it("ignores keys outside the allow-list", () => {
@@ -382,5 +387,88 @@ describe("applySigilDotenv", () => {
     rmSync(join(dir, "sigil"), { recursive: true, force: true });
     applySigilDotenv();
     expect(process.env.SIGIL_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it("materializes a file value under both spellings", () => {
+    writeConfig("SIGIL_AUTH_TOKEN=tok\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("tok");
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("tok");
+  });
+
+  it("file AGENTO11Y_ENDPOINT beats file SIGIL_ENDPOINT", () => {
+    writeConfig(
+      "AGENTO11Y_ENDPOINT=https://preferred\nSIGIL_ENDPOINT=https://legacy\n",
+    );
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://preferred");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://preferred");
+  });
+
+  it("shell SIGIL_ENDPOINT beats file AGENTO11Y_ENDPOINT", () => {
+    process.env.SIGIL_ENDPOINT = "https://from-shell";
+    writeConfig("AGENTO11Y_ENDPOINT=https://from-file\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://from-shell");
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://from-shell");
+  });
+
+  it("shell AGENTO11Y_ENDPOINT beats shell SIGIL_ENDPOINT", () => {
+    process.env.AGENTO11Y_ENDPOINT = "https://preferred-shell";
+    process.env.SIGIL_ENDPOINT = "https://legacy-shell";
+    writeConfig("SIGIL_ENDPOINT=https://from-file\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_ENDPOINT).toBe("https://preferred-shell");
+    expect(process.env.SIGIL_ENDPOINT).toBe("https://preferred-shell");
+  });
+
+  it("clears both spellings when the file value is removed", () => {
+    writeConfig("AGENTO11Y_AUTH_TOKEN=tok\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("tok");
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("tok");
+
+    writeConfig("");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBeUndefined();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it("releases the whole family when a runtime writer replaces one spelling", () => {
+    writeConfig("SIGIL_AUTH_TOKEN=from-file\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-file");
+
+    process.env.AGENTO11Y_AUTH_TOKEN = "from-writer";
+    writeConfig("SIGIL_AUTH_TOKEN=from-file-2\n");
+    applySigilDotenv();
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-writer");
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-writer");
+  });
+
+  it("a runtime write to the legacy spelling wins over the file's preferred value", () => {
+    writeConfig("AGENTO11Y_AUTH_TOKEN=from-file\n");
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-file");
+
+    process.env.SIGIL_AUTH_TOKEN = "from-writer";
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-writer");
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-writer");
+  });
+
+  it("re-fills both spellings from the file after the runtime override is cleared", () => {
+    writeConfig("SIGIL_AUTH_TOKEN=from-file\n");
+    applySigilDotenv();
+
+    process.env.SIGIL_AUTH_TOKEN = "from-writer";
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-writer");
+
+    delete process.env.SIGIL_AUTH_TOKEN;
+    delete process.env.AGENTO11Y_AUTH_TOKEN;
+    applySigilDotenv();
+    expect(process.env.SIGIL_AUTH_TOKEN).toBe("from-file");
+    expect(process.env.AGENTO11Y_AUTH_TOKEN).toBe("from-file");
   });
 });

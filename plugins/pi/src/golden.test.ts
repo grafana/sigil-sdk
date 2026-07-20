@@ -1,6 +1,6 @@
 // Pi high-level real-SDK golden test.
 //
-// Drives the @grafana/sigil-pi extension through a faked pi host (event
+// Drives the @grafana/agento11y-pi extension through a faked pi host (event
 // emitter shaped like the upstream ExtensionAPI), pointing the real Sigil
 // JS SDK at a local HTTP server that captures the export payload. The
 // normalized capture is compared against
@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import registerExtension from "./index.js";
-import { resetSigilDotenvStateForTests } from "./sigilDotenv.js";
+import { restoreEnv, snapshotAndClearTestEnv } from "./testEnv.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_PATH = join(
@@ -114,50 +114,6 @@ function closeServer(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((err) => (err ? reject(err) : resolve()));
   });
-}
-
-function snapshotAndClearTestEnv(): Record<string, string | undefined> {
-  const keys = new Set<string>(["HOME", "USERPROFILE", "XDG_CONFIG_HOME"]);
-  for (const key of Object.keys(process.env)) {
-    if (
-      key.startsWith("SIGIL_") ||
-      key.startsWith("SIGIL_PI_") ||
-      key.startsWith("OTEL_")
-    ) {
-      keys.add(key);
-    }
-  }
-
-  const saved: Record<string, string | undefined> = {};
-  for (const key of keys) {
-    saved[key] = process.env[key];
-    delete process.env[key];
-  }
-  resetSigilDotenvStateForTests();
-  return saved;
-}
-
-function restoreEnv(saved: Record<string, string | undefined>): void {
-  for (const key of Object.keys(process.env)) {
-    if (
-      key === "HOME" ||
-      key === "USERPROFILE" ||
-      key === "XDG_CONFIG_HOME" ||
-      key.startsWith("SIGIL_") ||
-      key.startsWith("SIGIL_PI_") ||
-      key.startsWith("OTEL_")
-    ) {
-      delete process.env[key];
-    }
-  }
-  for (const [key, value] of Object.entries(saved)) {
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-  resetSigilDotenvStateForTests();
 }
 
 // piTurnFixture returns the message payloads used by the golden test:
@@ -363,6 +319,44 @@ describe("pi plugin: real-SDK golden export", () => {
     assertGoldenJSON(GOLDEN_PATH, exports);
   });
 
+  it("matches the same golden when configured via AGENTO11Y_* only", async () => {
+    for (const suffix of [
+      "ENDPOINT",
+      "AUTH_TENANT_ID",
+      "AUTH_TOKEN",
+      "AGENT_NAME",
+      "AGENT_VERSION",
+      "CONTENT_CAPTURE_MODE",
+    ]) {
+      process.env[`AGENTO11Y_${suffix}`] = process.env[`SIGIL_${suffix}`];
+      delete process.env[`SIGIL_${suffix}`];
+    }
+
+    const { exports } = await runFullTurn();
+    assertGoldenJSON(GOLDEN_PATH, exports);
+  });
+
+  it("keeps user SIGIL_TAGS and lets built-in git.branch win collisions", async () => {
+    // Drive the user-tag merge path: SIGIL_TAGS becomes a client-level
+    // tag (js/src/config.ts) that the SDK merges under the per-generation
+    // (seed) tags, so the built-in git.branch must win over the
+    // user-supplied one. team=ai must survive because it does not collide.
+    process.env.SIGIL_TAGS = "team=ai,git.branch=should-lose";
+
+    await runFullTurn();
+
+    // Inspect the raw export capture (pre-normalization) so we can assert
+    // on the actual git.branch value. The normalizeFields rule rewrites
+    // git.branch to "<NORMALIZED>" by key, which would hide a regression
+    // where the user value won.
+    const allRawGen = serverEnv.captures.flatMap((c) => c.generations);
+    const rawTurn = allRawGen.find((g: any) => g?.agent_name === "pi") as any;
+    expect(rawTurn).toBeDefined();
+    expect(rawTurn.tags.team).toBe("ai");
+    expect(rawTurn.tags["git.branch"]).toBeDefined();
+    expect(rawTurn.tags["git.branch"]).not.toBe("should-lose");
+  });
+
   it.each([
     "full",
     "no_tool_content",
@@ -373,7 +367,7 @@ describe("pi plugin: real-SDK golden export", () => {
 
     const { turn } = await runFullTurn();
 
-    expect(turn.metadata["sigil.sdk.content_capture_mode"]).toBe(
+    expect(turn.metadata["agento11y.sdk.content_capture_mode"]).toBe(
       contentCapture,
     );
 
@@ -407,16 +401,18 @@ const normalizeFields: Record<string, string> = {
   trace_id: "<NORMALIZED>",
   span_id: "<NORMALIZED>",
   parent_span_id: "<NORMALIZED>",
-  "sigil.sdk.version": "<NORMALIZED>",
-  "sigil.sdk.commit": "<NORMALIZED>",
+  "agento11y.sdk.version": "<NORMALIZED>",
+  "agento11y.sdk.commit": "<NORMALIZED>",
   // effective_version is a sha256 derived from agent_version. Normalize so
   // a future agent_version bump does not silently change the golden hash.
   effective_version: "<NORMALIZED>",
-  // The plugin resolves git.branch from process.cwd(), which varies per
-  // developer checkout. Normalize so the golden is stable in CI. The Go
-  // harness does not need the same rule because Go fixtures pass cwd /
-  // git.branch in via transcript or event data, not from process.cwd().
+  // The plugin resolves git.branch and cwd from process.cwd(), which
+  // varies per developer checkout. Normalize so the golden is stable in
+  // CI. The Go harness does not need the same rule because Go fixtures
+  // pass cwd / git.branch in via transcript or event data, not from
+  // process.cwd().
   "git.branch": "<NORMALIZED>",
+  cwd: "<NORMALIZED>",
 };
 
 const normalizeKeySuffixes = [".started_at", ".completed_at", ".timestamp"];

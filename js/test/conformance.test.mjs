@@ -24,7 +24,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const protoPath = join(__dirname, '../proto/sigil/v1/generation_ingest.proto');
+const protoPath = join(__dirname, '../proto/agento11y/v1/generation_ingest.proto');
 const protoLoadOptions = {
   keepCase: false,
   longs: String,
@@ -120,8 +120,8 @@ test('conformance sync roundtrip semantics', async () => {
     assert.equal(generation.agentVersion, 'v-roundtrip');
     assert.equal(generation.traceId, span.spanContext().traceId);
     assert.equal(generation.spanId, span.spanContext().spanId);
-    assert.equal(generation.metadata?.fields?.['sigil.conversation.title']?.stringValue, 'Roundtrip conversation');
-    assert.equal(generation.metadata?.fields?.['sigil.user.id']?.stringValue, 'user-roundtrip');
+    assert.equal(generation.metadata?.fields?.['agento11y.conversation.title']?.stringValue, 'Roundtrip conversation');
+    assert.equal(generation.metadata?.fields?.['agento11y.user.id']?.stringValue, 'user-roundtrip');
     assert.equal(generation.input?.[0]?.parts?.[0]?.text, 'hello');
     assert.equal(generation.output?.[0]?.parts?.[0]?.thinking, 'reasoning');
     assert.equal(generation.output?.[0]?.parts?.[1]?.toolCall?.name, 'weather');
@@ -143,7 +143,7 @@ test('conformance sync roundtrip semantics', async () => {
     assert.equal(generation.tags?.region, 'eu');
     assert.equal((generation.rawArtifacts ?? []).length, 2);
     assert.equal(span.attributes['gen_ai.operation.name'], 'generateText');
-    assert.equal(span.attributes['sigil.conversation.title'], 'Roundtrip conversation');
+    assert.equal(span.attributes['agento11y.conversation.title'], 'Roundtrip conversation');
     assert.equal(span.attributes['user.id'], 'user-roundtrip');
     assert.ok(metricNames.includes('gen_ai.client.operation.duration'));
     assert.ok(metricNames.includes('gen_ai.client.token.usage'));
@@ -155,6 +155,56 @@ test('conformance sync roundtrip semantics', async () => {
       ),
       'token usage metrics should include the agent version attribute',
     );
+  } finally {
+    await env.close();
+  }
+});
+
+test('conformance workflow step roundtrip semantics', async () => {
+  const now = new Date(Date.UTC(2026, 2, 12, 12, 0, 0));
+  const env = await createConformanceEnv({
+    clientConfig: {
+      now: () => new Date(now),
+      tags: {
+        client: 'tag',
+        shared: 'client',
+      },
+    },
+  });
+
+  try {
+    env.client.enqueueWorkflowStep({
+      id: 'wfs-roundtrip',
+      conversationId: 'conv-workflow',
+      stepName: 'route',
+      framework: 'custom',
+      inputState: { prompt: 'hello', count: 1 },
+      outputState: { route: 'answer' },
+      tags: { shared: 'step' },
+      linkedGenerationIds: ['gen-roundtrip'],
+      parentStepIds: ['wfs-root'],
+      agentName: 'agent-workflow',
+      agentVersion: 'v1',
+      traceId: '0123456789abcdef0123456789abcdef',
+      spanId: '0123456789abcdef',
+      metadata: { run_id: 'run-1' },
+    });
+
+    await env.client.shutdown();
+
+    const step = env.singleWorkflowStep();
+    assert.equal(step.id, 'wfs-roundtrip');
+    assert.equal(step.conversationId, 'conv-workflow');
+    assert.equal(step.stepName, 'route');
+    assert.equal(toDate(step.startedAt).toISOString(), now.toISOString());
+    assert.equal(toDate(step.completedAt).toISOString(), now.toISOString());
+    assert.equal(step.tags?.client, 'tag');
+    assert.equal(step.tags?.shared, 'step');
+    assert.equal(step.inputState?.fields?.prompt?.stringValue, 'hello');
+    assert.equal(step.outputState?.fields?.route?.stringValue, 'answer');
+    assert.equal(step.metadata?.fields?.run_id?.stringValue, 'run-1');
+    assert.deepEqual(step.linkedGenerationIds, ['gen-roundtrip']);
+    assert.deepEqual(step.parentStepIds, ['wfs-root']);
   } finally {
     await env.close();
   }
@@ -182,7 +232,7 @@ for (const testCase of [
           model: { provider: 'openai', name: 'gpt-5' },
           conversationTitle: testCase.startTitle,
           metadata:
-            testCase.metadataTitle.length > 0 ? { 'sigil.conversation.title': testCase.metadataTitle } : undefined,
+            testCase.metadataTitle.length > 0 ? { 'agento11y.conversation.title': testCase.metadataTitle } : undefined,
         });
         recorder.setResult({});
         recorder.end();
@@ -193,13 +243,13 @@ for (const testCase of [
       const generation = env.singleGeneration();
       const span = env.latestGenerationSpan();
       if (testCase.expected.length === 0) {
-        assert.equal(generation.metadata?.fields?.['sigil.conversation.title'], undefined);
-        assert.equal(span.attributes['sigil.conversation.title'], undefined);
+        assert.equal(generation.metadata?.fields?.['agento11y.conversation.title'], undefined);
+        assert.equal(span.attributes['agento11y.conversation.title'], undefined);
         return;
       }
 
-      assert.equal(generation.metadata?.fields?.['sigil.conversation.title']?.stringValue, testCase.expected);
-      assert.equal(span.attributes['sigil.conversation.title'], testCase.expected);
+      assert.equal(generation.metadata?.fields?.['agento11y.conversation.title']?.stringValue, testCase.expected);
+      assert.equal(span.attributes['agento11y.conversation.title'], testCase.expected);
     } finally {
       await env.close();
     }
@@ -263,7 +313,7 @@ for (const testCase of [
       await runWithMaybeContext(testCase.contextUserId, withUserId, async () => {
         const metadata = {};
         if (testCase.canonicalUserId.length > 0) {
-          metadata['sigil.user.id'] = testCase.canonicalUserId;
+          metadata['agento11y.user.id'] = testCase.canonicalUserId;
         }
         if (testCase.legacyUserId.length > 0) {
           metadata['user.id'] = testCase.legacyUserId;
@@ -282,7 +332,7 @@ for (const testCase of [
       await env.client.shutdown();
       const generation = env.singleGeneration();
       const span = env.latestGenerationSpan();
-      assert.equal(generation.metadata?.fields?.['sigil.user.id']?.stringValue, testCase.expected);
+      assert.equal(generation.metadata?.fields?.['agento11y.user.id']?.stringValue, testCase.expected);
       assert.equal(span.attributes['user.id'], testCase.expected);
     } finally {
       await env.close();
@@ -448,7 +498,7 @@ test('conformance tool execution semantics', async () => {
     assert.equal(span.attributes['gen_ai.tool.type'], 'function');
     assert.match(String(span.attributes['gen_ai.tool.call.arguments'] ?? ''), /Paris/);
     assert.match(String(span.attributes['gen_ai.tool.call.result'] ?? ''), /sunny/);
-    assert.equal(span.attributes['sigil.conversation.title'], 'Context title');
+    assert.equal(span.attributes['agento11y.conversation.title'], 'Context title');
     assert.equal(span.attributes['gen_ai.agent.name'], 'agent-context');
     assert.equal(span.attributes['gen_ai.agent.version'], 'v-context');
     assert.ok(metricNames.includes('gen_ai.client.operation.duration'));
@@ -649,6 +699,38 @@ test('conformance effective_version result overrides start', async () => {
   }
 });
 
+test('conformance client tag attributes', async () => {
+  const env = await createConformanceEnv({
+    clientConfig: {
+      tags: { team: 'payments' },
+    },
+  });
+
+  try {
+    const recorder = env.client.startGeneration({
+      model: { provider: 'openai', name: 'gpt-5' },
+      tags: { call_only: 'yes' },
+    });
+    recorder.setResult({
+      usage: { inputTokens: 4, outputTokens: 2 },
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    const span = env.latestGenerationSpan();
+    assert.equal(span.attributes['agento11y.tag.team'], 'payments');
+    assert.equal(span.attributes['agento11y.tag.call_only'], undefined);
+
+    const durationAttributes = await env.metricDataPointAttributes('gen_ai.client.operation.duration');
+    assert.ok(
+      durationAttributes.some((attributes) => attributes['agento11y.tag.team'] === 'payments'),
+      'expected agento11y.tag.team on operation.duration data point',
+    );
+  } finally {
+    await env.close();
+  }
+});
+
 test('conformance shutdown flush semantics', async () => {
   const env = await createConformanceEnv({ batchSize: 10 });
 
@@ -674,10 +756,65 @@ test('conformance shutdown flush semantics', async () => {
   }
 });
 
+// Guards the agento11y rename: the SDK emits only agento11y.* names for
+// SDK-owned span attributes, metadata keys, and tag projections, while
+// caller-supplied metadata and tags pass through untouched even when they
+// use the legacy sigil.* namespace.
+test('conformance no SDK-owned legacy sigil namespace', async () => {
+  const env = await createConformanceEnv();
+
+  try {
+    const recorder = env.client.startGeneration({
+      id: 'gen-legacy-namespace',
+      conversationId: 'conv-legacy-namespace',
+      conversationTitle: 'Legacy namespace check',
+      userId: 'user-legacy',
+      agentName: 'agent-legacy',
+      agentVersion: '1.0.0',
+      model: { provider: 'anthropic', name: 'claude-sonnet-4-5' },
+      toolChoice: 'auto',
+      thinkingEnabled: true,
+      tags: { 'sigil.caller_tag': 'caller-tag' },
+      metadata: { 'sigil.caller_key': 'caller-value' },
+    });
+    recorder.setResult({
+      output: [{ role: 'assistant', parts: [{ type: 'text', text: 'ok' }] }],
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    });
+    recorder.end();
+    assert.equal(recorder.getError(), undefined);
+
+    await env.client.shutdown();
+
+    const span = env.latestGenerationSpan();
+    const legacySpanAttrs = Object.keys(span.attributes).filter((key) => key.startsWith('sigil.'));
+    assert.deepEqual(legacySpanAttrs, []);
+    assert.equal(span.attributes['agento11y.generation.id'], 'gen-legacy-namespace');
+    assert.equal(span.attributes['agento11y.sdk.name'], 'sdk-js');
+
+    const generation = env.singleGeneration();
+    const metadataKeys = Object.keys(generation.metadata?.fields ?? {});
+    const legacyMetadataKeys = metadataKeys.filter((key) => key.startsWith('sigil.') && key !== 'sigil.caller_key');
+    assert.deepEqual(legacyMetadataKeys, []);
+    assert.equal(generation.metadata?.fields?.['sigil.caller_key']?.stringValue, 'caller-value');
+    assert.equal(generation.metadata?.fields?.['agento11y.sdk.name']?.stringValue, 'sdk-js');
+    assert.equal(generation.metadata?.fields?.['agento11y.user.id']?.stringValue, 'user-legacy');
+    assert.equal(generation.tags?.['sigil.caller_tag'], 'caller-tag');
+  } finally {
+    await env.close();
+  }
+});
+
 async function createConformanceEnv(options = {}) {
   const receivedRequests = [];
-  const grpcServer = await startGRPCServer((request) => {
-    receivedRequests.push(request);
+  const receivedWorkflowStepRequests = [];
+  const grpcServer = await startGRPCServer({
+    onGenerationRequest(request) {
+      receivedRequests.push(request);
+    },
+    onWorkflowStepRequest(request) {
+      receivedWorkflowStepRequests.push(request);
+    },
   });
 
   let ratingPath = '';
@@ -732,6 +869,7 @@ async function createConformanceEnv(options = {}) {
   const client = new SigilClient({
     tracer: tracerProvider.getTracer('sigil-conformance-test'),
     meter: meterProvider.getMeter('sigil-conformance-test'),
+    ...(options.clientConfig ?? {}),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'grpc',
@@ -753,6 +891,7 @@ async function createConformanceEnv(options = {}) {
   return {
     client,
     receivedRequests,
+    receivedWorkflowStepRequests,
     get ratingPath() {
       return ratingPath;
     },
@@ -763,6 +902,11 @@ async function createConformanceEnv(options = {}) {
       assert.equal(receivedRequests.length, 1);
       assert.equal(receivedRequests[0].generations?.length, 1);
       return receivedRequests[0].generations[0];
+    },
+    singleWorkflowStep() {
+      assert.equal(receivedWorkflowStepRequests.length, 1);
+      assert.equal(receivedWorkflowStepRequests[0].workflowSteps?.length, 1);
+      return receivedWorkflowStepRequests[0].workflowSteps[0];
     },
     latestGenerationSpan() {
       const spans = spanExporter.getFinishedSpans().filter((span) => {
@@ -851,18 +995,36 @@ function close(server) {
   });
 }
 
-async function startGRPCServer(onRequest) {
+function toDate(timestamp) {
+  const seconds = Number(timestamp?.seconds ?? 0);
+  const nanos = Number(timestamp?.nanos ?? 0);
+  return new Date(seconds * 1000 + Math.floor(nanos / 1_000_000));
+}
+
+async function startGRPCServer({ onGenerationRequest, onWorkflowStepRequest }) {
   const packageDefinition = await protoLoader.load(protoPath, protoLoadOptions);
   const loaded = grpc.loadPackageDefinition(packageDefinition);
-  const service = loaded.sigil.v1.GenerationIngestService;
+  const generationService = loaded.agento11y.v1.GenerationIngestService;
+  const workflowStepService = loaded.agento11y.v1.WorkflowStepIngestService;
 
   const server = new grpc.Server();
-  server.addService(service.service, {
+  server.addService(generationService.service, {
     ExportGenerations(call, callback) {
-      onRequest(call.request, call.metadata.getMap());
+      onGenerationRequest(call.request, call.metadata.getMap());
       callback(null, {
         results: (call.request.generations ?? []).map((generation) => ({
           generationId: generation.id,
+          accepted: true,
+        })),
+      });
+    },
+  });
+  server.addService(workflowStepService.service, {
+    ExportWorkflowSteps(call, callback) {
+      onWorkflowStepRequest(call.request, call.metadata.getMap());
+      callback(null, {
+        results: (call.request.workflowSteps ?? []).map((step) => ({
+          stepId: step.id,
           accepted: true,
         })),
       });

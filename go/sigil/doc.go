@@ -81,5 +81,5 @@
 //
 // Linking is bi-directional:
 //   - Generation.TraceID/SpanID point to the created span.
-//   - The span includes the generation ID in attribute "sigil.generation.id".
+//   - The span includes the generation ID in attribute "agento11y.generation.id".
 package sigil

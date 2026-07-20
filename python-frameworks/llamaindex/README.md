@@ -1,19 +1,19 @@
 # Sigil Python Framework Module: LlamaIndex
 
-`sigil-sdk-llamaindex` provides callback handlers that map LlamaIndex workflow/agent events into Sigil generation recorder lifecycles.
+`agento11y-llamaindex` provides callback handlers that map LlamaIndex workflow/agent events into Sigil generation recorder lifecycles.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-llamaindex
+pip install agento11y agento11y-llamaindex
 pip install llama-index
 ```
 
 ## Quickstart
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_llamaindex import with_sigil_llamaindex_callbacks
+from agento11y import Client
+from agento11y_llamaindex import with_sigil_llamaindex_callbacks
 
 client = Client()
 config = with_sigil_llamaindex_callbacks(None, client=client, provider_resolver="auto")
@@ -23,8 +23,8 @@ config = with_sigil_llamaindex_callbacks(None, client=client, provider_resolver=
 ## Native callback manager wiring
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_llamaindex import with_sigil_llamaindex_callbacks
+from agento11y import Client
+from agento11y_llamaindex import with_sigil_llamaindex_callbacks
 
 client = Client()
 config = with_sigil_llamaindex_callbacks(None, client=client, provider_resolver="auto")
@@ -41,8 +41,8 @@ Conversation ID precedence:
 
 ## Metadata and lineage
 
-- Required: `sigil.framework.run_type`
-- Optional lineage: `sigil.framework.run_id`, `sigil.framework.thread_id`, `sigil.framework.parent_run_id`, `sigil.framework.component_name`, `sigil.framework.retry_attempt`, `sigil.framework.event_id`
+- Required: `agento11y.framework.run_type`
+- Optional lineage: `agento11y.framework.run_id`, `agento11y.framework.thread_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.component_name`, `agento11y.framework.retry_attempt`, `agento11y.framework.event_id`
 
 ## Provider resolver
 

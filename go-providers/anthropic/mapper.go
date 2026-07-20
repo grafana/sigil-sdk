@@ -8,13 +8,13 @@ import (
 	"strings"
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 )
 
-const thinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens"
-const usageServerToolUseWebSearchMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_search_requests"
-const usageServerToolUseWebFetchMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_fetch_requests"
-const usageServerToolUseTotalMetadataKey = "sigil.gen_ai.usage.server_tool_use.total_requests"
+const thinkingBudgetMetadataKey = "agento11y.gen_ai.request.thinking.budget_tokens"
+const usageServerToolUseWebSearchMetadataKey = "agento11y.gen_ai.usage.server_tool_use.web_search_requests"
+const usageServerToolUseWebFetchMetadataKey = "agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"
+const usageServerToolUseTotalMetadataKey = "agento11y.gen_ai.usage.server_tool_use.total_requests"
 const toolSearchRegexToolUseType = "tool_search_tool_regex"
 const toolSearchBM25ToolUseType = "tool_search_tool_bm25"
 const toolSearchRegexToolResultType = "tool_search_tool_regex_tool_result"
@@ -171,6 +171,19 @@ func mapResponseMessages(content []asdk.BetaContentBlockUnion) []sigil.Message {
 	return out
 }
 
+// thinkingPart builds a thinking Part, skipping blocks with empty content.
+// Adaptive thinking (e.g. Claude Sonnet 5) can emit signature-only thinking
+// blocks with no text; a Part without a payload fails generation validation,
+// so empty blocks are dropped like empty text blocks.
+func thinkingPart(content, providerType string) (sigil.Part, bool) {
+	if content == "" {
+		return sigil.Part{}, false
+	}
+	part := sigil.ThinkingPart(content)
+	part.Metadata.ProviderType = providerType
+	return part, true
+}
+
 func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	if block.OfText != nil {
 		text := block.OfText.Text
@@ -180,14 +193,13 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 		return sigil.TextPart(text), true
 	}
 	if block.OfThinking != nil {
-		part := sigil.ThinkingPart(block.OfThinking.Thinking)
-		part.Metadata.ProviderType = "thinking"
-		return part, true
+		return thinkingPart(block.OfThinking.Thinking, "thinking")
 	}
 	if block.OfRedactedThinking != nil {
-		part := sigil.ThinkingPart(block.OfRedactedThinking.Data)
-		part.Metadata.ProviderType = "redacted_thinking"
-		return part, true
+		return thinkingPart(block.OfRedactedThinking.Data, "redacted_thinking")
+	}
+	if block.OfImage != nil {
+		return imageBlockPart(block.OfImage)
 	}
 	if block.OfToolUse != nil {
 		inputJSON, _ := marshalAny(block.OfToolUse.Input)
@@ -304,13 +316,11 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 		}
 		return sigil.TextPart(text), true
 	case "thinking":
-		part := sigil.ThinkingPart(derefString(block.GetThinking()))
-		part.Metadata.ProviderType = typ
-		return part, true
+		return thinkingPart(derefString(block.GetThinking()), typ)
 	case "redacted_thinking":
-		part := sigil.ThinkingPart(derefString(block.GetData()))
-		part.Metadata.ProviderType = typ
-		return part, true
+		return thinkingPart(derefString(block.GetData()), typ)
+	case "image":
+		return imageBlockPart(block.OfImage)
 	case "tool_use", "server_tool_use", "mcp_tool_use":
 		inputJSON, _ := marshalAny(derefAny(block.GetInput()))
 		providerType := providerTypeForToolUse(typ, derefString(block.GetName()))
@@ -344,6 +354,56 @@ func mapRequestBlock(block asdk.BetaContentBlockParamUnion) (sigil.Part, bool) {
 	}
 }
 
+func imageBlockPart(block *asdk.BetaImageBlockParam) (sigil.Part, bool) {
+	if block == nil {
+		return sigil.Part{}, false
+	}
+	return imagePartFromSource(
+		derefString(block.Source.GetData()),
+		derefString(block.Source.GetMediaType()),
+		derefString(block.Source.GetURL()),
+	)
+}
+
+func imagePartFromSource(base64Data, mediaType, sourceURL string) (sigil.Part, bool) {
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	url := strings.TrimSpace(sourceURL)
+	if mediaType == "" {
+		mediaType = mediaTypeFromDataURL(url)
+	}
+	if url == "" {
+		data := strings.TrimSpace(base64Data)
+		if mediaType == "" || data == "" {
+			return sigil.Part{}, false
+		}
+		url = "data:" + mediaType + ";base64," + data
+	}
+
+	part := sigil.MediaPart(sigil.Media{
+		Kind:     "image",
+		URL:      url,
+		MIMEType: mediaType,
+	})
+	part.Metadata.ProviderType = "image"
+	return part, true
+}
+
+func mediaTypeFromDataURL(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "data:") {
+		return ""
+	}
+
+	payload := trimmed[len("data:"):]
+	if before, _, ok := strings.Cut(payload, ";"); ok {
+		return strings.ToLower(strings.TrimSpace(before))
+	}
+	if before, _, ok := strings.Cut(payload, ","); ok {
+		return strings.ToLower(strings.TrimSpace(before))
+	}
+	return ""
+}
+
 func mapResponseBlock(block asdk.BetaContentBlockUnion) (sigil.Part, bool) {
 	switch block.Type {
 	case "text":
@@ -353,13 +413,9 @@ func mapResponseBlock(block asdk.BetaContentBlockUnion) (sigil.Part, bool) {
 		}
 		return sigil.TextPart(text), true
 	case "thinking":
-		part := sigil.ThinkingPart(block.Thinking)
-		part.Metadata.ProviderType = block.Type
-		return part, true
+		return thinkingPart(block.Thinking, block.Type)
 	case "redacted_thinking":
-		part := sigil.ThinkingPart(block.Data)
-		part.Metadata.ProviderType = block.Type
-		return part, true
+		return thinkingPart(block.Data, block.Type)
 	case "tool_use", "server_tool_use", "mcp_tool_use":
 		inputJSON, _ := marshalAny(block.Input)
 		providerType := providerTypeForToolUse(block.Type, block.Name)

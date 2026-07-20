@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	googleadk "github.com/grafana/sigil-sdk/go-frameworks/google-adk"
-	sigil "github.com/grafana/sigil-sdk/go/sigil"
+	googleadk "github.com/grafana/agento11y/go-frameworks/google-adk"
+	sigil "github.com/grafana/agento11y/go/sigil"
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -52,9 +52,9 @@ func TestConformance_RunLifecyclePropagatesFrameworkMetadataAndLinksSpans(t *tes
 	retryAttempt := 2
 	parentCtx, parent := env.Tracer.Start(context.Background(), "google-adk.run",
 		trace.WithAttributes(
-			attribute.String("sigil.framework.name", "google-adk"),
-			attribute.String("sigil.framework.source", "handler"),
-			attribute.String("sigil.framework.language", "go"),
+			attribute.String("agento11y.framework.name", "google-adk"),
+			attribute.String("agento11y.framework.source", "handler"),
+			attribute.String("agento11y.framework.language", "go"),
 		),
 	)
 
@@ -104,9 +104,9 @@ func TestConformance_RunLifecyclePropagatesFrameworkMetadataAndLinksSpans(t *tes
 
 	parentSpan := findSpanByName(t, env.Spans.Ended(), "google-adk.run")
 	parentAttrs := spanAttrs(parentSpan)
-	requireSpanAttr(t, parentAttrs, "sigil.framework.name", "google-adk")
-	requireSpanAttr(t, parentAttrs, "sigil.framework.source", "handler")
-	requireSpanAttr(t, parentAttrs, "sigil.framework.language", "go")
+	requireSpanAttr(t, parentAttrs, "agento11y.framework.name", "google-adk")
+	requireSpanAttr(t, parentAttrs, "agento11y.framework.source", "handler")
+	requireSpanAttr(t, parentAttrs, "agento11y.framework.language", "go")
 
 	generationSpan := findSpanByOperationName(t, env.Spans.Ended(), "generateText")
 	if generationSpan.Parent().SpanID() != parentSpanContext.SpanID() {
@@ -135,20 +135,20 @@ func TestConformance_RunLifecyclePropagatesFrameworkMetadataAndLinksSpans(t *tes
 
 	tags := objectValue(t, generation, "tags")
 	requireStringField(t, tags, "deployment.environment", "test")
-	requireStringField(t, tags, "sigil.framework.name", "google-adk")
-	requireStringField(t, tags, "sigil.framework.source", "handler")
-	requireStringField(t, tags, "sigil.framework.language", "go")
+	requireStringField(t, tags, "agento11y.framework.name", "google-adk")
+	requireStringField(t, tags, "agento11y.framework.source", "handler")
+	requireStringField(t, tags, "agento11y.framework.language", "go")
 
 	metadata := objectValue(t, generation, "metadata")
 	requireStringField(t, metadata, "team", "infra")
-	requireStringField(t, metadata, "sigil.framework.run_id", "run-sync")
-	requireStringField(t, metadata, "sigil.framework.thread_id", "thread-7")
-	requireStringField(t, metadata, "sigil.framework.parent_run_id", "parent-run")
-	requireStringField(t, metadata, "sigil.framework.component_name", "planner")
-	requireStringField(t, metadata, "sigil.framework.run_type", "chat")
-	requireNumberField(t, metadata, "sigil.framework.retry_attempt", 2)
-	requireStringField(t, metadata, "sigil.framework.event_id", "event-42")
-	requireStringSliceField(t, metadata, "sigil.framework.tags", []string{"prod", "framework"})
+	requireStringField(t, metadata, "agento11y.framework.run_id", "run-sync")
+	requireStringField(t, metadata, "agento11y.framework.thread_id", "thread-7")
+	requireStringField(t, metadata, "agento11y.framework.parent_run_id", "parent-run")
+	requireStringField(t, metadata, "agento11y.framework.component_name", "planner")
+	requireStringField(t, metadata, "agento11y.framework.run_type", "chat")
+	requireNumberField(t, metadata, "agento11y.framework.retry_attempt", 2)
+	requireStringField(t, metadata, "agento11y.framework.event_id", "event-42")
+	requireStringSliceField(t, metadata, "agento11y.framework.tags", []string{"prod", "framework"})
 
 	eventPayload := objectValue(t, metadata, "event_payload")
 	requireStringField(t, eventPayload, "step", "validate")
@@ -216,8 +216,8 @@ func TestConformance_StreamingRunTriggersGenerationExport(t *testing.T) {
 	requireStringField(t, part, "text", "step complete")
 
 	metadata := objectValue(t, generation, "metadata")
-	requireStringField(t, metadata, "sigil.framework.run_id", "run-stream")
-	requireStringField(t, metadata, "sigil.framework.run_type", "chat")
+	requireStringField(t, metadata, "agento11y.framework.run_id", "run-stream")
+	requireStringField(t, metadata, "agento11y.framework.run_type", "chat")
 }
 
 func TestConformance_EmbeddingSupportStatus(t *testing.T) {

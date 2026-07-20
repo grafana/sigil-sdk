@@ -20,7 +20,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from sigil_sdk import (
+from agento11y import (
     AuthConfig,
     Client,
     ClientConfig,
@@ -53,7 +53,7 @@ sigil = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint=os.environ["SIGIL_ENDPOINT"],
+            endpoint=os.environ["AGENTO11Y_ENDPOINT"],
             auth=AuthConfig(
                 mode="basic",
                 tenant_id=os.environ["GRAFANA_INSTANCE_ID"],

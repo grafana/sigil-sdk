@@ -14,7 +14,7 @@ Both LLM calls run under the same `conversation_id`, so they land grouped togeth
 ## What the demo teaches
 
 1. **Setting up OpenTelemetry for a FastAPI app.** `[app/telemetry.py](./app/telemetry.py)` wires a `TracerProvider` and `MeterProvider` with OTLP gRPC exporters.
-2. **Creating a Sigil client.** `[app/sigil_client.py](./app/sigil_client.py)` builds a `sigil_sdk.Client` that reuses those OTel providers, so `gen_ai.`* spans and metrics flow through the same pipeline as the rest of the app.
+2. **Creating a Sigil client.** `[app/sigil_client.py](./app/sigil_client.py)` builds an `agento11y.Client` that reuses those OTel providers, so `gen_ai.`* spans and metrics flow through the same pipeline as the rest of the app.
 3. **Instrumenting a LangChain agent.** One line in `[app/agent.py](./app/agent.py)` — `with_sigil_langchain_callbacks(config, client=sigil, ...)` — attaches the Sigil callback handler to the agent's config.
 4. **Instrumenting arbitrary LLM code.** `[app/classifier.py](./app/classifier.py)` shows the raw SDK pattern for any provider call, regardless of framework.
 5. **Grouping related generations.** Passing a common `conversation_id` ties both calls together in the Sigil UI.
@@ -33,7 +33,7 @@ cp .env.example .env
 uv sync
 ```
 
-By default `pyproject.toml` pins `sigil-sdk` and `sigil-sdk-langchain` to the local packages in this monorepo via `[tool.uv.sources]`. Remove that block to consume the published PyPI releases instead.
+By default `pyproject.toml` pins `agento11y` and `agento11y-langchain` to the local packages in this monorepo via `[tool.uv.sources]`. Remove that block to consume the published PyPI releases instead.
 
 ## Run
 
@@ -45,17 +45,17 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ```bash
 # On-topic: agent uses the tool, classifier returns ON_TOPIC
-curl -s localhost:8000/chat \
+curl -s http://<app-host>:8000/chat \
   -H 'content-type: application/json' \
   -d '{"message": "Whats the weather in Paris on 2026-04-18?"}' | jq
 
 # Off-topic: agent declines, classifier returns OFF_TOPIC
-curl -s localhost:8000/chat \
+curl -s http://<app-host>:8000/chat \
   -H 'content-type: application/json' \
   -d '{"message": "Write me a limerick about kubernetes."}' | jq
 ```
 
-FastAPI also serves interactive docs at [http://localhost:8000/docs](http://localhost:8000/docs).
+FastAPI also serves interactive docs at `http://<app-host>:8000/docs`.
 
 ## What to look for in Sigil
 
@@ -87,13 +87,11 @@ See `[.env.example](./.env.example)`.
 | Variable                           | Purpose                                                                                                                               |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`                | Required. Used by both the agent and the classifier.                                                                                  |
-| `SIGIL_ENDPOINT`                   | API URL from AI Observability → Configuration. Default `http://localhost:8080`.                                                       |
-| `SIGIL_API_ENDPOINT`               | Sigil REST API base used by helper endpoints such as ratings. Default `http://localhost:8080`.                                        |
-| `SIGIL_AUTH_TENANT_ID`             | Numeric instance ID. Sent as `X-Scope-OrgID` and used as basic-auth user.                                                             |
-| `SIGIL_AUTH_TOKEN`                 | Cloud Access Policy Token (`glc_…`) with `sigil:write` scope. Required for Cloud.                                                     |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`      | OTLP gRPC target for traces + metrics. Default `http://localhost:4317`.                                                               |
-| `OTEL_EXPORTER_OTLP_INSECURE`      | `true` for plaintext gRPC (local dev).                                                                                                |
+| `AGENTO11Y_ENDPOINT`                   | API URL from AI Observability → Configuration. Required for Grafana Cloud.                                                            |
+| `AGENTO11Y_AUTH_TENANT_ID`             | Numeric instance ID. Sent as `X-Scope-OrgID` and used as basic-auth user.                                                             |
+| `AGENTO11Y_AUTH_TOKEN`                 | Cloud Access Policy Token (`glc_…`) with `sigil:write` scope. Required for Cloud.                                                     |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`      | OTLP target for traces + metrics. Use the Grafana Cloud OTLP gateway URL or your collector endpoint.                                  |
+| `OTEL_EXPORTER_OTLP_INSECURE`      | Set only when your collector endpoint explicitly requires plaintext gRPC.                                                             |
 | `OTEL_SERVICE_NAME`                | Service name tag on spans / metrics.                                                                                                  |
 | `AGENT_MODEL` / `CLASSIFIER_MODEL` | Anthropic model IDs.                                                                                                                  |
-
 

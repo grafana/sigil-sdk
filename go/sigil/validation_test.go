@@ -93,6 +93,46 @@ func TestValidateGenerationRolePartCompatibility(t *testing.T) {
 		}
 	})
 
+	t.Run("media requires url when content is captured", func(t *testing.T) {
+		g := cloneGeneration(base)
+		g.Input = append(g.Input, Message{
+			Role: RoleUser,
+			Parts: []Part{
+				MediaPart(Media{Kind: "image", MIMEType: "image/png"}),
+			},
+		})
+
+		err := ValidateGeneration(g)
+		if err == nil {
+			t.Fatalf("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "media.url is required") {
+			t.Fatalf("expected media URL validation error, got %q", err.Error())
+		}
+	})
+
+	t.Run("media is valid for user and assistant messages", func(t *testing.T) {
+		g := cloneGeneration(base)
+		g.Input = append(g.Input, Message{
+			Role: RoleUser,
+			Parts: []Part{
+				MediaPart(Media{Kind: "image", URL: "data:image/png;base64,abc123", MIMEType: "image/png"}),
+			},
+		})
+		g.Output = []Message{
+			{
+				Role: RoleAssistant,
+				Parts: []Part{
+					MediaPart(Media{Kind: "image", URL: "data:image/png;base64,def456", MIMEType: "image/png"}),
+				},
+			},
+		}
+
+		if err := ValidateGeneration(g); err != nil {
+			t.Fatalf("expected valid generation, got %v", err)
+		}
+	})
+
 	t.Run("output path is reported", func(t *testing.T) {
 		g := cloneGeneration(base)
 		g.Output = []Message{
@@ -176,6 +216,14 @@ func TestValidateStrippedGeneration(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "must set exactly one payload field") {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("stripped media parts are valid without url", func(t *testing.T) {
+		g := base
+		g.Input = []Message{{Role: RoleUser, Parts: []Part{MediaPart(Media{Kind: "image", MIMEType: "image/png"})}}}
+		if err := ValidateGeneration(g); err != nil {
+			t.Fatalf("expected valid, got %v", err)
 		}
 	})
 }

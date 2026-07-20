@@ -79,7 +79,7 @@ test('metadata_only strips sensitive content from generation', async () => {
     // Sensitive content stripped
     assert.equal(gen.systemPrompt, '');
     assert.equal(gen.conversationTitle, '');
-    assert.equal(gen.metadata['sigil.conversation.title'], undefined);
+    assert.equal(gen.metadata['agento11y.conversation.title'], undefined);
     assert.equal(gen.artifacts, null);
     assert.equal(gen.input[0].parts[0].text, '');
     assert.equal(gen.output[0].parts[0].thinking, '');
@@ -107,7 +107,7 @@ test('metadata_only strips sensitive content from generation', async () => {
     assert.equal(gen.usage.outputTokens, 42);
     assert.equal(gen.stopReason, 'end_turn');
     assert.equal(gen.model.name, 'claude-sonnet-4-5');
-    assert.equal(gen.metadata['sigil.sdk.name'], 'sdk-js');
+    assert.equal(gen.metadata['agento11y.sdk.name'], 'sdk-js');
   } finally {
     await shutdownHarness(harness);
   }
@@ -206,13 +206,13 @@ test('metadata_only does not leak conversationTitle into OTel span', async () =>
 
     const gen = singleGeneration(harness.client);
     assert.equal(gen.conversationTitle, '', 'conversationTitle should be stripped from generation');
-    assert.equal(gen.metadata['sigil.conversation.title'], undefined, 'metadata key should be deleted');
+    assert.equal(gen.metadata['agento11y.conversation.title'], undefined, 'metadata key should be deleted');
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(
-      'sigil.conversation.title' in span.attributes,
+      'agento11y.conversation.title' in span.attributes,
       false,
-      'span must not carry sigil.conversation.title under metadata_only',
+      'span must not carry agento11y.conversation.title under metadata_only',
     );
   } finally {
     await shutdownHarness(harness);
@@ -282,7 +282,7 @@ test('content capture mode is stamped in generation metadata', async () => {
 
       const gen = singleGeneration(harness.client);
       assert.equal(
-        gen.metadata['sigil.sdk.content_capture_mode'],
+        gen.metadata['agento11y.sdk.content_capture_mode'],
         tc.wantMarker,
         `case ${tc.clientMode}/${tc.genMode}: marker`,
       );
@@ -322,7 +322,7 @@ test('contentCaptureResolver overrides client mode', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const gen = singleGeneration(harness.client);
-    assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'metadata_only');
+    assert.equal(gen.metadata['agento11y.sdk.content_capture_mode'], 'metadata_only');
     assert.equal(gen.input[0].parts[0].text, '');
   } finally {
     await shutdownHarness(harness);
@@ -348,7 +348,7 @@ test('per-generation contentCapture overrides resolver', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const gen = singleGeneration(harness.client);
-    assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'full');
+    assert.equal(gen.metadata['agento11y.sdk.content_capture_mode'], 'full');
     assert.equal(gen.input[0].parts[0].text, 'hello');
   } finally {
     await shutdownHarness(harness);
@@ -373,7 +373,7 @@ test('resolver returning default defers to client mode', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const gen = singleGeneration(harness.client);
-    assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'metadata_only');
+    assert.equal(gen.metadata['agento11y.sdk.content_capture_mode'], 'metadata_only');
     assert.equal(gen.input[0].parts[0].text, '');
   } finally {
     await shutdownHarness(harness);
@@ -400,7 +400,7 @@ test('throwing resolver fails closed to metadata_only', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const gen = singleGeneration(harness.client);
-    assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'metadata_only');
+    assert.equal(gen.metadata['agento11y.sdk.content_capture_mode'], 'metadata_only');
     assert.equal(gen.input[0].parts[0].text, '');
   } finally {
     await shutdownHarness(harness);
@@ -577,7 +577,7 @@ test('full mode preserves all generation content', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const gen = singleGeneration(harness.client);
-    assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'full');
+    assert.equal(gen.metadata['agento11y.sdk.content_capture_mode'], 'full');
     assert.equal(gen.systemPrompt, 'You are helpful.');
     assert.equal(gen.conversationTitle, 'Math question');
     assert.equal(gen.input[0].parts[0].text, 'What is 2+2?');
@@ -608,7 +608,7 @@ test('no_tool_content preserves generation content', async () => {
     assert.equal(recorder.getError(), undefined);
 
     const gen = singleGeneration(harness.client);
-    assert.equal(gen.metadata['sigil.sdk.content_capture_mode'], 'no_tool_content');
+    assert.equal(gen.metadata['agento11y.sdk.content_capture_mode'], 'no_tool_content');
     assert.equal(gen.systemPrompt, 'Be concise.');
     assert.equal(gen.input[0].parts[0].text, 'Hello');
     assert.equal(gen.output[0].parts[0].text, 'Hi!');
@@ -637,7 +637,7 @@ test('exported generation includes content capture mode metadata', async () => {
     await harness.client.flush();
     assert.equal(harness.generationExporter.requests.length, 1);
     const exported = harness.generationExporter.requests[0].generations[0];
-    assert.equal(exported.metadata['sigil.sdk.content_capture_mode'], 'full');
+    assert.equal(exported.metadata['agento11y.sdk.content_capture_mode'], 'full');
   } finally {
     await shutdownHarness(harness);
   }
@@ -734,7 +734,7 @@ for (const expect of MODE_MATRIX) {
       assert.equal(recorder.getError(), undefined);
 
       const gen = await env.singleGeneration();
-      assert.equal(gen.metadata?.fields?.['sigil.sdk.content_capture_mode']?.stringValue, expect.marker);
+      assert.equal(gen.metadata?.fields?.['agento11y.sdk.content_capture_mode']?.stringValue, expect.marker);
 
       // Content fields: stripped only under METADATA_ONLY.
       assertProtoContent('system_prompt', gen.systemPrompt, 'You are helpful.', expect.protoContentStripped);
@@ -783,7 +783,7 @@ for (const expect of MODE_MATRIX) {
       assert.equal(Number(gen.usage.inputTokens), 120);
 
       // Conversation title metadata mirror: present iff the proto keeps it.
-      const titleMirror = gen.metadata?.fields?.['sigil.conversation.title']?.stringValue;
+      const titleMirror = gen.metadata?.fields?.['agento11y.conversation.title']?.stringValue;
       if (expect.protoContentStripped) {
         assert.ok(!titleMirror, `expected title mirror to be absent, got ${titleMirror}`);
       } else {
@@ -793,9 +793,9 @@ for (const expect of MODE_MATRIX) {
       // Span path: title presence is what the mode advertises.
       const span = env.generationSpan();
       if (expect.spanTitlePresent) {
-        assert.equal(span.attributes['sigil.conversation.title'], title);
+        assert.equal(span.attributes['agento11y.conversation.title'], title);
       } else {
-        assert.equal('sigil.conversation.title' in span.attributes, false);
+        assert.equal('agento11y.conversation.title' in span.attributes, false);
       }
     } finally {
       await env.close();
@@ -867,11 +867,11 @@ test('streaming full_with_metadata_spans — proto full, span title absent', asy
     const gen = await env.singleGeneration();
     assert.equal(gen.systemPrompt, 'Be helpful.');
     assert.equal(gen.input[0].parts[0].text, 'hello');
-    assert.equal(gen.metadata?.fields?.['sigil.conversation.title']?.stringValue, title);
-    assert.equal(gen.metadata?.fields?.['sigil.sdk.content_capture_mode']?.stringValue, 'full_with_metadata_spans');
+    assert.equal(gen.metadata?.fields?.['agento11y.conversation.title']?.stringValue, title);
+    assert.equal(gen.metadata?.fields?.['agento11y.sdk.content_capture_mode']?.stringValue, 'full_with_metadata_spans');
 
     const streamSpan = env.streamingGenerationSpan();
-    assert.equal('sigil.conversation.title' in streamSpan.attributes, false);
+    assert.equal('agento11y.conversation.title' in streamSpan.attributes, false);
   } finally {
     await env.close();
   }
@@ -902,7 +902,7 @@ for (const mode of STRIPPED_MODES) {
       const span = env.toolSpan();
       assert.equal('gen_ai.tool.call.arguments' in span.attributes, false, 'tool args must be absent');
       assert.equal('gen_ai.tool.call.result' in span.attributes, false, 'tool result must be absent');
-      assert.equal('sigil.conversation.title' in span.attributes, false, 'conversation title must be absent');
+      assert.equal('agento11y.conversation.title' in span.attributes, false, 'conversation title must be absent');
       assert.equal('gen_ai.tool.description' in span.attributes, false, 'tool description must be absent');
       // Identity attributes still emitted.
       assert.equal(span.attributes['gen_ai.tool.name'], 'weather');
@@ -1017,7 +1017,7 @@ function newHarness(overrides = {}) {
   const traceProvider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(spanExporter)],
   });
-  const tracer = traceProvider.getTracer('sigil-sdk-js-test');
+  const tracer = traceProvider.getTracer('agento11y-sdk-js-test');
   const generationExporter = new CapturingExporter();
   const defaults = defaultConfig();
 

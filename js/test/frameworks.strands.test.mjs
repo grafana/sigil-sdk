@@ -89,10 +89,10 @@ test('strands hook provider records model, tool, and conversation metadata', asy
   assert.equal(generation.model.provider, 'openai');
   assert.equal(generation.model.name, 'gpt-4o-mini');
   assert.equal(generation.systemPrompt, 'You are concise and show the final answer.');
-  assert.equal(generation.tags['sigil.framework.name'], 'strands');
-  assert.equal(generation.tags['sigil.framework.source'], 'hooks');
-  assert.equal(generation.tags['sigil.framework.language'], 'typescript');
-  assert.equal(generation.metadata['sigil.framework.run_type'], 'chat');
+  assert.equal(generation.tags['agento11y.framework.name'], 'strands');
+  assert.equal(generation.tags['agento11y.framework.source'], 'hooks');
+  assert.equal(generation.tags['agento11y.framework.language'], 'typescript');
+  assert.equal(generation.metadata['agento11y.framework.run_type'], 'chat');
   assert.equal(generation.input[0].parts[0].text, 'Use the add_numbers tool to add 19 and 23.');
   assert.equal(generation.output[0].parts[0].text, 'The sum of 19 and 23 is 42.');
   assert.equal(generation.usage.inputTokens, 98);

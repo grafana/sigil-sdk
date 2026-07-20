@@ -6,9 +6,9 @@ import io.opentelemetry.context.Scope;
 
 /** Context helpers for conversation and agent defaults. */
 public final class SigilContext {
-    private static final ContextKey<String> CONVERSATION_ID = ContextKey.named("sigil.conversation.id");
-    private static final ContextKey<String> CONVERSATION_TITLE = ContextKey.named("sigil.conversation.title");
-    private static final ContextKey<String> USER_ID = ContextKey.named("sigil.user.id");
+    private static final ContextKey<String> CONVERSATION_ID = ContextKey.named("agento11y.conversation.id");
+    private static final ContextKey<String> CONVERSATION_TITLE = ContextKey.named("agento11y.conversation.title");
+    private static final ContextKey<String> USER_ID = ContextKey.named("agento11y.user.id");
     private static final ContextKey<String> AGENT_NAME = ContextKey.named("sigil.agent.name");
     private static final ContextKey<String> AGENT_VERSION = ContextKey.named("sigil.agent.version");
     private static final ContextKey<ContentCaptureMode> CONTENT_CAPTURE_MODE = ContextKey.named("sigil.content_capture_mode");

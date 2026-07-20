@@ -3,7 +3,7 @@ package sigil
 import (
 	"encoding/json"
 
-	"github.com/grafana/sigil-sdk/go/sigil/sigilmodel"
+	"github.com/grafana/agento11y/go/sigil/sigilmodel"
 )
 
 type Role = sigilmodel.Role
@@ -21,6 +21,7 @@ const (
 	PartKindThinking   = sigilmodel.PartKindThinking
 	PartKindToolCall   = sigilmodel.PartKindToolCall
 	PartKindToolResult = sigilmodel.PartKindToolResult
+	PartKindMedia      = sigilmodel.PartKindMedia
 )
 
 type Message = sigilmodel.Message
@@ -33,6 +34,8 @@ type PartMetadata = sigilmodel.PartMetadata
 type ToolCall = sigilmodel.ToolCall
 
 type ToolResult = sigilmodel.ToolResult
+
+type Media = sigilmodel.Media
 
 func TextPart(text string) Part {
 	return Part{
@@ -59,6 +62,13 @@ func ToolResultPart(result ToolResult) Part {
 	return Part{
 		Kind:       PartKindToolResult,
 		ToolResult: &result,
+	}
+}
+
+func MediaPart(media Media) Part {
+	return Part{
+		Kind:  PartKindMedia,
+		Media: &media,
 	}
 }
 

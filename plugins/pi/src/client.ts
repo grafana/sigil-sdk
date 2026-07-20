@@ -1,12 +1,13 @@
-import type { SigilLogger } from "@grafana/sigil-sdk-js";
+import type { SigilLogger } from "@grafana/agento11y";
 import {
   createSecretRedactionSanitizer,
   SigilClient,
-} from "@grafana/sigil-sdk-js";
+} from "@grafana/agento11y";
 import type { Meter, Tracer } from "@opentelemetry/api";
 import type { SigilPiConfig } from "./config.js";
 import { EXPORT_PATH } from "./config.js";
 import { logger } from "./logger.js";
+import { pluginUserAgent } from "./version.js";
 
 export interface SigilClientOptions {
   tracer?: Tracer;
@@ -50,10 +51,17 @@ export function createSigilClient(
         protocol: "http",
         endpoint: appendExportPath(config.endpoint),
         auth: config.auth,
+        headers: { "User-Agent": pluginUserAgent() },
       },
       api: { endpoint: config.endpoint },
       hooks: {
         enabled: config.guards.enabled,
+        // The pi plugin's default hook evaluations are postflight (tool-arg
+        // redaction and deny). The preflight `context` path passes its own
+        // `phases: ["preflight"]` override to `evaluateHook`, which fully
+        // replaces this list for that call (see `SigilClient.evaluateHook`
+        // — `{ ...this.config.hooks, ...override }`), so preflight does not
+        // need to be listed here.
         phases: ["postflight"],
         timeoutMs: config.guards.timeoutMs,
         failOpen: config.guards.failOpen,

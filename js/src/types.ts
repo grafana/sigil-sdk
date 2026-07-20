@@ -25,7 +25,7 @@ export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
  *   sensitive content.
  * - `'full_with_metadata_spans'` — splits the proto and span paths for
  *   generation content. The proto export keeps full content; the OTel span
- *   omits `sigil.conversation.title`, `gen_ai.tool.call.arguments`,
+ *   omits `agento11y.conversation.title`, `gen_ai.tool.call.arguments`,
  *   `gen_ai.tool.call.result`, and `gen_ai.embeddings.input_texts`. Use this
  *   mode when the gRPC ingest destination is private but the OTel trace and
  *   metric destinations are shared and must not receive any content.
@@ -85,7 +85,7 @@ export interface GenerationExportConfig {
 
 /** Sigil HTTP API settings used by non-ingest helper endpoints. */
 export interface ApiConfig {
-  /** Sigil API base endpoint, for example `http://localhost:8080`. */
+  /** Sigil API base endpoint, for example the Grafana Cloud AI Observability API URL. */
   endpoint: string;
 }
 
@@ -121,6 +121,23 @@ export interface ExportGenerationsRequest {
 /** Generation export response payload. */
 export interface ExportGenerationsResponse {
   results: ExportGenerationResult[];
+}
+
+/** Per-workflow-step ingest result. */
+export interface ExportWorkflowStepResult {
+  stepId: string;
+  accepted: boolean;
+  error?: string;
+}
+
+/** Workflow-step export request payload. */
+export interface ExportWorkflowStepsRequest {
+  workflowSteps: WorkflowStep[];
+}
+
+/** Workflow-step export response payload. */
+export interface ExportWorkflowStepsResponse {
+  results: ExportWorkflowStepResult[];
 }
 
 /** Allowed conversation rating values. */
@@ -170,6 +187,7 @@ export interface SubmitConversationRatingResponse {
 /** Pluggable generation exporter interface. */
 export interface GenerationExporter {
   exportGenerations(request: ExportGenerationsRequest): Promise<ExportGenerationsResponse>;
+  exportWorkflowSteps(request: ExportWorkflowStepsRequest): Promise<ExportWorkflowStepsResponse>;
   shutdown?(): Promise<void> | void;
 }
 
@@ -215,18 +233,24 @@ export interface SigilSdkConfig {
   /**
    * Default agent name applied to GenerationStart / EmbeddingStart /
    * ToolExecutionStart when the per-call value is empty. Read from
-   * `SIGIL_AGENT_NAME` automatically by `new SigilClient()`.
+   * `AGENTO11Y_AGENT_NAME` (`SIGIL_AGENT_NAME` fallback) automatically by
+   * `new SigilClient()`.
    */
   agentName?: string;
-  /** Default agent version. Read from `SIGIL_AGENT_VERSION`. */
+  /** Default agent version. Read from `AGENTO11Y_AGENT_VERSION` (`SIGIL_AGENT_VERSION` fallback). */
   agentVersion?: string;
-  /** Default user identifier. Read from `SIGIL_USER_ID`. */
+  /** Default user identifier. Read from `AGENTO11Y_USER_ID` (`SIGIL_USER_ID` fallback). */
   userId?: string;
-  /** Default tags merged into every generation; per-call tags win. Read from `SIGIL_TAGS` (CSV). */
+  /**
+   * Default tags merged into every generation (per-call tags win) and emitted on
+   * OTel spans/metrics as `agento11y.tag.<key>`. Read from `AGENTO11Y_TAGS`
+   * (`SIGIL_TAGS` fallback) as CSV.
+   */
   tags?: Record<string, string>;
   /**
    * When true, signals to downstream consumers (plugins, telemetry) that the
-   * SDK is running in verbose mode. Read from `SIGIL_DEBUG`. The SDK does not
+   * SDK is running in verbose mode. Read from `AGENTO11Y_DEBUG`
+   * (`SIGIL_DEBUG` fallback). The SDK does not
    * currently change its own logger based on this flag — plugins layer their
    * own log-file plumbing on top of it.
    */
@@ -375,6 +399,12 @@ export interface GenerationResult {
   parentGenerationIds?: string[];
   /** See {@link GenerationStart.effectiveVersion}. */
   effectiveVersion?: string;
+  /**
+   * Overrides the request model captured at start. Set when a framework only surfaces
+   * the model on the response (e.g. Bedrock inference profiles), so the token-usage
+   * metric carries a resolvable model instead of "unknown".
+   */
+  model?: ModelRef;
   input?: Message[];
   output?: Message[];
   tools?: ToolDefinition[];
@@ -442,6 +472,27 @@ export interface Generation {
   metadata?: Record<string, unknown>;
   artifacts?: Artifact[] | null;
   callError?: string;
+}
+
+/** Workflow execution node exported beside generations. */
+export interface WorkflowStep {
+  id: string;
+  conversationId: string;
+  stepName: string;
+  framework?: string;
+  startedAt?: Date;
+  completedAt?: Date;
+  inputState?: Record<string, unknown>;
+  outputState?: Record<string, unknown>;
+  error?: string;
+  tags?: Record<string, string>;
+  linkedGenerationIds?: string[];
+  parentStepIds?: string[];
+  agentName?: string;
+  agentVersion?: string;
+  traceId?: string;
+  spanId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 /** Tool execution start seed fields. */
@@ -539,8 +590,10 @@ export interface ToolExecutionRecorder {
 /** In-memory snapshot for tests/debugging. */
 export interface SigilDebugSnapshot {
   generations: Generation[];
+  workflowSteps: WorkflowStep[];
   toolExecutions: ToolExecution[];
   queueSize: number;
+  workflowStepQueueSize: number;
 }
 
 /** Callback form used by recorder helper APIs. */

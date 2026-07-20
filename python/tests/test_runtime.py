@@ -5,11 +5,7 @@ from __future__ import annotations
 import time
 from datetime import timedelta
 
-from conftest import CapturingGenerationExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from sigil_sdk import (
+from agento11y import (
     Client,
     ClientConfig,
     EmbeddingCaptureConfig,
@@ -30,6 +26,10 @@ from sigil_sdk import (
     with_agent_version,
     with_conversation_id,
 )
+from conftest import CapturingGenerationExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
 def _new_client(exporter: CapturingGenerationExporter, tracer=None, **overrides) -> Client:
@@ -197,7 +197,7 @@ def test_default_operation_name_is_mode_aware_and_mode_not_emitted_as_span_attri
         assert "streamText gpt-5" in names
 
         for span in spans:
-            assert "sigil.generation.mode" not in span.attributes
+            assert "agento11y.generation.mode" not in span.attributes
     finally:
         client.shutdown()
         provider.shutdown()
@@ -219,12 +219,12 @@ def test_call_error_sets_span_error_and_does_not_set_local_error() -> None:
         assert rec.err() is None
         assert rec.last_generation is not None
         assert rec.last_generation.call_error == "provider unavailable"
-        assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
+        assert rec.last_generation.metadata["agento11y.sdk.name"] == "sdk-python"
 
         span = span_exporter.get_finished_spans()[-1]
         assert span.status.status_code.name == "ERROR"
         assert span.attributes.get("error.type") == "provider_call_error"
-        assert span.attributes.get("sigil.sdk.name") == "sdk-python"
+        assert span.attributes.get("agento11y.sdk.name") == "sdk-python"
     finally:
         client.shutdown()
         provider.shutdown()
@@ -422,15 +422,15 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
             tool_choice="required",
             thinking_enabled=False,
             metadata={
-                "sigil.gen_ai.request.thinking.budget_tokens": 4096,
-                "sigil.framework.run_id": "framework-run-1",
-                "sigil.framework.thread_id": "framework-thread-1",
-                "sigil.framework.parent_run_id": "framework-parent-1",
-                "sigil.framework.component_name": "ChatOpenAI",
-                "sigil.framework.run_type": "chat",
-                "sigil.framework.retry_attempt": 3,
-                "sigil.framework.langgraph.node": "answer_node",
-                "sigil.sdk.name": "user-value",
+                "agento11y.gen_ai.request.thinking.budget_tokens": 4096,
+                "agento11y.framework.run_id": "framework-run-1",
+                "agento11y.framework.thread_id": "framework-thread-1",
+                "agento11y.framework.parent_run_id": "framework-parent-1",
+                "agento11y.framework.component_name": "ChatOpenAI",
+                "agento11y.framework.run_type": "chat",
+                "agento11y.framework.retry_attempt": 3,
+                "agento11y.framework.langgraph.node": "answer_node",
+                "agento11y.sdk.name": "user-value",
             },
             stop_reason="end_turn",
             output=_assistant_output("ok"),
@@ -444,31 +444,31 @@ def test_request_controls_result_overrides_seed_and_sets_span_attrs() -> None:
         assert rec.last_generation.top_p == 0.8
         assert rec.last_generation.tool_choice == "required"
         assert rec.last_generation.thinking_enabled is False
-        assert rec.last_generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 4096
-        assert rec.last_generation.metadata["sigil.framework.run_id"] == "framework-run-1"
-        assert rec.last_generation.metadata["sigil.framework.thread_id"] == "framework-thread-1"
-        assert rec.last_generation.metadata["sigil.framework.parent_run_id"] == "framework-parent-1"
-        assert rec.last_generation.metadata["sigil.framework.component_name"] == "ChatOpenAI"
-        assert rec.last_generation.metadata["sigil.framework.run_type"] == "chat"
-        assert rec.last_generation.metadata["sigil.framework.retry_attempt"] == 3
-        assert rec.last_generation.metadata["sigil.framework.langgraph.node"] == "answer_node"
-        assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
+        assert rec.last_generation.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 4096
+        assert rec.last_generation.metadata["agento11y.framework.run_id"] == "framework-run-1"
+        assert rec.last_generation.metadata["agento11y.framework.thread_id"] == "framework-thread-1"
+        assert rec.last_generation.metadata["agento11y.framework.parent_run_id"] == "framework-parent-1"
+        assert rec.last_generation.metadata["agento11y.framework.component_name"] == "ChatOpenAI"
+        assert rec.last_generation.metadata["agento11y.framework.run_type"] == "chat"
+        assert rec.last_generation.metadata["agento11y.framework.retry_attempt"] == 3
+        assert rec.last_generation.metadata["agento11y.framework.langgraph.node"] == "answer_node"
+        assert rec.last_generation.metadata["agento11y.sdk.name"] == "sdk-python"
 
         span = span_exporter.get_finished_spans()[-1]
         assert span.attributes.get("gen_ai.request.max_tokens") == 256
         assert span.attributes.get("gen_ai.request.temperature") == 0.2
         assert span.attributes.get("gen_ai.request.top_p") == 0.8
-        assert span.attributes.get("sigil.gen_ai.request.tool_choice") == "required"
-        assert span.attributes.get("sigil.gen_ai.request.thinking.enabled") is False
-        assert span.attributes.get("sigil.gen_ai.request.thinking.budget_tokens") == 4096
-        assert span.attributes.get("sigil.framework.run_id") == "framework-run-1"
-        assert span.attributes.get("sigil.framework.thread_id") == "framework-thread-1"
-        assert span.attributes.get("sigil.framework.parent_run_id") == "framework-parent-1"
-        assert span.attributes.get("sigil.framework.component_name") == "ChatOpenAI"
-        assert span.attributes.get("sigil.framework.run_type") == "chat"
-        assert span.attributes.get("sigil.framework.retry_attempt") == 3
-        assert span.attributes.get("sigil.framework.langgraph.node") == "answer_node"
-        assert span.attributes.get("sigil.sdk.name") == "sdk-python"
+        assert span.attributes.get("agento11y.gen_ai.request.tool_choice") == "required"
+        assert span.attributes.get("agento11y.gen_ai.request.thinking.enabled") is False
+        assert span.attributes.get("agento11y.gen_ai.request.thinking.budget_tokens") == 4096
+        assert span.attributes.get("agento11y.framework.run_id") == "framework-run-1"
+        assert span.attributes.get("agento11y.framework.thread_id") == "framework-thread-1"
+        assert span.attributes.get("agento11y.framework.parent_run_id") == "framework-parent-1"
+        assert span.attributes.get("agento11y.framework.component_name") == "ChatOpenAI"
+        assert span.attributes.get("agento11y.framework.run_type") == "chat"
+        assert span.attributes.get("agento11y.framework.retry_attempt") == 3
+        assert span.attributes.get("agento11y.framework.langgraph.node") == "answer_node"
+        assert span.attributes.get("agento11y.sdk.name") == "sdk-python"
         assert span.attributes.get("gen_ai.response.finish_reasons") == ("end_turn",)
     finally:
         client.shutdown()
@@ -484,13 +484,13 @@ def test_sdk_metadata_overrides_conflicting_seed_and_result_values() -> None:
                 conversation_id="conv-sdk-metadata",
                 model=ModelRef(provider="openai", name="gpt-5"),
                 metadata={
-                    "sigil.sdk.name": "seed-value",
+                    "agento11y.sdk.name": "seed-value",
                 },
             )
         )
         rec.set_result(
             metadata={
-                "sigil.sdk.name": "result-value",
+                "agento11y.sdk.name": "result-value",
             },
             output=_assistant_output("ok"),
         )
@@ -498,7 +498,7 @@ def test_sdk_metadata_overrides_conflicting_seed_and_result_values() -> None:
 
         assert rec.err() is None
         assert rec.last_generation is not None
-        assert rec.last_generation.metadata["sigil.sdk.name"] == "sdk-python"
+        assert rec.last_generation.metadata["agento11y.sdk.name"] == "sdk-python"
     finally:
         client.shutdown()
 
@@ -585,7 +585,7 @@ def test_tool_execution_attributes_and_content_capture() -> None:
         assert span.attributes.get("gen_ai.tool.call.result") is not None
         assert span.attributes.get("gen_ai.provider.name") == "openai"
         assert span.attributes.get("gen_ai.request.model") == "gpt-5"
-        assert span.attributes.get("sigil.sdk.name") == "sdk-python"
+        assert span.attributes.get("agento11y.sdk.name") == "sdk-python"
     finally:
         client.shutdown()
         provider.shutdown()

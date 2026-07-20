@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import sigil.v1.GenerationIngest;
+import agento11y.v1.GenerationIngest;
 
 final class ProtoMapper {
     private ProtoMapper() {

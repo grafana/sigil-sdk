@@ -5,13 +5,13 @@ The Sigil Go SDK records LLM generations and tool calls for [Grafana AI observab
 ## Install
 
 ```sh
-go get github.com/grafana/sigil-sdk/go
+go get github.com/grafana/agento11y/go
 ```
 
 ## Quick start
 
 ```go
-client := sigil.NewClient(sigil.Config{}) // reads SIGIL_* env vars
+client := sigil.NewClient(sigil.Config{}) // reads AGENTO11Y_* env vars
 defer func() { _ = client.Shutdown(context.Background()) }()
 
 ctx, rec := client.StartGeneration(ctx, sigil.GenerationStart{
@@ -80,12 +80,12 @@ Framework helpers:
   - `gen_ai.request.max_tokens`
   - `gen_ai.request.temperature`
   - `gen_ai.request.top_p`
-  - `sigil.gen_ai.request.tool_choice`
-  - `sigil.gen_ai.request.thinking.enabled`
-  - `sigil.gen_ai.request.thinking.budget_tokens` (provider-specific)
+  - `agento11y.gen_ai.request.tool_choice`
+  - `agento11y.gen_ai.request.thinking.enabled`
+  - `agento11y.gen_ai.request.thinking.budget_tokens` (provider-specific)
   - `gen_ai.response.finish_reasons` is emitted as a string array.
 - Generation/tool spans always include SDK identity attributes:
-  - `sigil.sdk.name=sdk-go`
+  - `agento11y.sdk.name=sdk-go`
 - Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Context helpers are available for defaults:
   - `WithConversationID(ctx, id)`
@@ -95,7 +95,7 @@ Framework helpers:
 
 ## Configuration
 
-The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and pass an empty `sigil.Config{}` — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
+The snippet below configures the SDK explicitly. As an alternative, set `AGENTO11Y_*` environment variables and pass an empty `sigil.Config{}` — refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the variable names.
 
 ```go
 client := sigil.NewClient(sigil.Config{})
@@ -112,12 +112,13 @@ cfg := sigil.DefaultConfig()
 // cfg.Tracer = myTracer
 // cfg.Meter = myMeter
 
-// Generation export (custom ingest)
-cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolGRPC // default; or sigil.GenerationExportProtocolHTTP / sigil.GenerationExportProtocolNone
-cfg.GenerationExport.Endpoint = "localhost:4317" // HTTP parity: "http://localhost:8080" (SDK auto-appends /api/v1/generations:export)
+// Generation export to Grafana Cloud.
+cfg.GenerationExport.Protocol = sigil.GenerationExportProtocolHTTP
+cfg.GenerationExport.Endpoint = "https://sigil-prod-<region>.grafana.net"
 cfg.GenerationExport.Auth = sigil.AuthConfig{
-	Mode:     sigil.ExportAuthModeTenant,
-	TenantID: "dev-tenant",
+	Mode:          sigil.ExportAuthModeBasic,
+	TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+	BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 }
 cfg.GenerationExport.BatchSize = 100
 cfg.GenerationExport.FlushInterval = time.Second
@@ -130,7 +131,7 @@ cfg.GenerationExport.GRPCMaxReceiveMessageBytes = 16 << 20
 cfg.GenerationExport.PayloadMaxBytes = 16 << 20
 
 // Sigil API base used by helpers like SubmitConversationRating.
-cfg.API.Endpoint = "http://localhost:8080"
+cfg.API.Endpoint = "https://sigil-prod-<region>.grafana.net"
 
 client := sigil.NewClient(cfg)
 defer func() {
@@ -189,8 +190,8 @@ For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud ins
 ```go
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:          sigil.ExportAuthModeBasic,
-	TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
-	BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
+	TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+	BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 }
 ```
 
@@ -199,9 +200,9 @@ If your deployment requires a distinct username (different from the tenant ID), 
 ```go
 cfg.GenerationExport.Auth = sigil.AuthConfig{
 	Mode:          sigil.ExportAuthModeBasic,
-	TenantID:      os.Getenv("SIGIL_AUTH_TENANT_ID"),
-	BasicUser:     os.Getenv("SIGIL_AUTH_TENANT_ID"),
-	BasicPassword: os.Getenv("SIGIL_AUTH_TOKEN"),
+	TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+	BasicUser:     os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
+	BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 }
 ```
 
@@ -251,7 +252,7 @@ If you use transformed input, pass the transformed messages/system prompt to the
 
 ## Wiring custom env vars
 
-The SDK only auto-loads `SIGIL_*` env vars (`SIGIL_ENDPOINT`, `SIGIL_PROTOCOL`, `SIGIL_AUTH_MODE`, `SIGIL_AUTH_TOKEN`, etc.) when you call `sigil.NewClient(sigil.Config{})`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
+The SDK only auto-loads `AGENTO11Y_*` env vars (`AGENTO11Y_ENDPOINT`, `AGENTO11Y_PROTOCOL`, `AGENTO11Y_AUTH_MODE`, `AGENTO11Y_AUTH_TOKEN`, etc.) when you call `sigil.NewClient(sigil.Config{})`. For any other env var (for example one your secret manager exposes under a different name), read it in your app and pass the value into the config:
 
 ```go
 genToken := strings.TrimSpace(os.Getenv("MY_APP_SIGIL_TOKEN"))
@@ -312,7 +313,7 @@ Dynamic resolution via `ContentCaptureResolver`:
 
 ```go
 cfg.ContentCaptureResolver = func(ctx context.Context, metadata map[string]any) sigil.ContentCaptureMode {
-    if metadata["sigil.tenant"] == "healthcare" {
+    if metadata["tenant"] == "healthcare" {
         return sigil.ContentCaptureModeMetadataOnly
     }
     return sigil.ContentCaptureModeDefault // defer to Config.ContentCapture
@@ -334,7 +335,7 @@ Resolution precedence for tool executions (highest to lowest):
 3. `ContentCaptureResolver` return value
 4. `Config.ContentCapture` (defaults to `ContentCaptureModeNoToolContent`)
 
-User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content.
+User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `user_id` each show up (export vs spans vs metrics).
 
 ## Pre-Ingest Redaction
 
@@ -342,9 +343,10 @@ Use `GenerationSanitizer` when you want to redact substrings from normalized gen
 
 ```go
 redactEmails := true
+redactInputs := false
 cfg := sigil.DefaultConfig()
 cfg.GenerationSanitizer = sigil.NewSecretRedactionSanitizer(sigil.SecretRedactionOptions{
-    RedactInputMessages:  false,         // also redact user messages in Generation.Input
+    RedactInputMessages:  &redactInputs, // nil falls back to AGENTO11Y_REDACT_INPUT_MESSAGES, then false
     RedactEmailAddresses: &redactEmails, // nil defaults to true; point to false to preserve
 })
 
@@ -357,7 +359,7 @@ The built-in sanitizer:
 - redacts secret formats plus env-style secret values in tool call inputs and tool results
 - redacts email addresses by default
 - redacts historic assistant turns and tool messages in `Generation.Input`
-- leaves user messages in `Generation.Input` unchanged unless `RedactInputMessages: true` is set
+- leaves user messages in `Generation.Input` unchanged unless input redaction is enabled
 
 To preserve email addresses, opt out explicitly:
 
@@ -369,6 +371,15 @@ cfg.GenerationSanitizer = sigil.NewSecretRedactionSanitizer(sigil.SecretRedactio
 ```
 
 If a sanitizer panics during `Recorder.End`, the SDK falls back to `ContentCaptureModeMetadataOnly` for that generation and logs a warning via `Config.Logger`, so a partially redacted payload is never shipped.
+
+### Configuring redaction via environment variables
+
+`NewSecretRedactionSanitizer` reads `AGENTO11Y_REDACT_INPUT_MESSAGES` (accepts `1/0`, `true/false`, `yes/no`, `on/off`) when `RedactInputMessages` is left nil. Precedence is explicit option > env var > `false`. An unrecognised env value is logged via the standard logger and ignored, so a typo falls back to the next layer instead of silently flipping redaction.
+
+```go
+// Leave RedactInputMessages nil so AGENTO11Y_REDACT_INPUT_MESSAGES decides.
+cfg.GenerationSanitizer = sigil.NewSecretRedactionSanitizer(sigil.SecretRedactionOptions{})
+```
 
 ## Conversation Ratings
 
@@ -391,7 +402,7 @@ if err != nil {
 fmt.Printf("rating=%s has_bad=%v\n", rating.Rating.Rating, rating.Summary.HasBadRating)
 ```
 
-`SubmitConversationRating` sends requests to `cfg.API.Endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) that your client config already resolves.
+`SubmitConversationRating` sends requests to `cfg.API.Endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers that your client config already resolves.
 
 ## Lifecycle requirement
 

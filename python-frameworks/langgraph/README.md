@@ -1,19 +1,19 @@
 # Sigil Python Framework Module: LangGraph
 
-`sigil-sdk-langgraph` provides callback handlers that map LangGraph lifecycle events into Sigil generation recorder lifecycles.
+`agento11y-langgraph` provides callback handlers that map LangGraph lifecycle events into Sigil generation recorder lifecycles.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-langgraph
+pip install agento11y agento11y-langgraph
 pip install langgraph langchain-openai
 ```
 
 ## Usage
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_langgraph import with_sigil_langgraph_callbacks
+from agento11y import Client
+from agento11y_langgraph import with_sigil_langgraph_callbacks
 
 client = Client()
 config = with_sigil_langgraph_callbacks(None, client=client, provider_resolver="auto")
@@ -27,8 +27,8 @@ from typing import TypedDict
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from sigil_sdk import Client
-from sigil_sdk_langgraph import with_sigil_langgraph_callbacks
+from agento11y import Client
+from agento11y_langgraph import with_sigil_langgraph_callbacks
 
 
 class GraphState(TypedDict):
@@ -82,15 +82,16 @@ client.shutdown()
 ## Workflow step capture
 
 Enable `capture_workflow_steps=True` to record each graph node as a Sigil workflow step.
-This builds a visual DAG in the Sigil UI showing node execution order, duration, input/output state,
-and which LLM generations ran inside each node.
+This enables the **Workflow** tab in the conversation detail view, showing node execution order,
+duration, input/output state, and which LLM generations ran inside each node. The **Dependencies**
+tab remains available for the generation-level DAG built from `parent_generation_ids`.
 
 Always set `conversation_title` to a short human-readable label — it appears as the conversation
 name in the Sigil UI. Without it, the title falls back to an opaque auto-generated ID.
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_langgraph import SigilLangGraphHandler
+from agento11y import Client
+from agento11y_langgraph import SigilLangGraphHandler
 
 client = Client()
 handler = SigilLangGraphHandler(
@@ -141,9 +142,9 @@ _ = graph.invoke(
 When `thread_id` is present, the handler records:
 
 - `conversation_id=<thread_id>`
-- `metadata["sigil.framework.run_id"]=<run id>`
-- `metadata["sigil.framework.thread_id"]=<thread id>`
-- generation span attributes `sigil.framework.run_id` and `sigil.framework.thread_id`
+- `metadata["agento11y.framework.run_id"]=<run id>`
+- `metadata["agento11y.framework.thread_id"]=<thread id>`
+- generation span attributes `agento11y.framework.run_id` and `agento11y.framework.thread_id`
 
 ## Behavior
 
@@ -159,17 +160,17 @@ When `thread_id` is present, the handler records:
   - model-name inference (`gpt-`/`o1`/`o3`/`o4` -> `openai`, `claude-` -> `anthropic`, `gemini-` -> `gemini`)
   - fallback -> `custom`
 - Framework tags/metadata are always set:
-  - `sigil.framework.name=langgraph`
-  - `sigil.framework.source=handler`
-  - `sigil.framework.language=python`
-  - `metadata["sigil.framework.run_id"]=<run id>`
-  - `metadata["sigil.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
-  - `metadata["sigil.framework.parent_run_id"]` (when available)
-  - `metadata["sigil.framework.component_name"]` (serialized component identity)
-  - `metadata["sigil.framework.run_type"]` (`llm`, `chat`, `tool`, `chain`, `retriever`)
-  - `metadata["sigil.framework.tags"]` (normalized callback tags)
-  - `metadata["sigil.framework.retry_attempt"]` (when available)
-  - `metadata["sigil.framework.langgraph.node"]` (when callback context exposes node identity)
+  - `agento11y.framework.name=langgraph`
+  - `agento11y.framework.source=handler`
+  - `agento11y.framework.language=python`
+  - `metadata["agento11y.framework.run_id"]=<run id>`
+  - `metadata["agento11y.framework.thread_id"]=<thread id>` (when present in callback metadata/config)
+  - `metadata["agento11y.framework.parent_run_id"]` (when available)
+  - `metadata["agento11y.framework.component_name"]` (serialized component identity)
+  - `metadata["agento11y.framework.run_type"]` (`llm`, `chat`, `tool`, `chain`, `retriever`)
+  - `metadata["agento11y.framework.tags"]` (normalized callback tags)
+  - `metadata["agento11y.framework.retry_attempt"]` (when available)
+  - `metadata["agento11y.framework.langgraph.node"]` (when callback context exposes node identity)
   - generation span attributes mirror low-cardinality framework metadata keys
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

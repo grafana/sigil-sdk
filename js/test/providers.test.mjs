@@ -54,9 +54,9 @@ test('anthropic messages wrapper maps strict request/response and records SYNC m
   assert.equal(generation.temperature, 0.2);
   assert.equal(generation.topP, 0.85);
   assert.equal(generation.maxTokens, 320);
-  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 2048);
-  assert.equal(generation.metadata['sigil.gen_ai.usage.server_tool_use.web_search_requests'], 2);
-  assert.equal(generation.metadata['sigil.gen_ai.usage.server_tool_use.total_requests'], 2);
+  assert.equal(generation.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 2048);
+  assert.equal(generation.metadata['agento11y.gen_ai.usage.server_tool_use.web_search_requests'], 2);
+  assert.equal(generation.metadata['agento11y.gen_ai.usage.server_tool_use.total_requests'], 2);
   assert.equal(generation.artifacts, undefined);
 });
 
@@ -114,9 +114,9 @@ test('gemini models wrapper maps strict request/response and records SYNC mode',
   assert.equal(generation.temperature, 0.2);
   assert.equal(generation.topP, 0.85);
   assert.equal(generation.maxTokens, 320);
-  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 1536);
-  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.level'], 'high');
-  assert.equal(generation.metadata['sigil.gen_ai.usage.tool_use_prompt_tokens'], 5);
+  assert.equal(generation.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 1536);
+  assert.equal(generation.metadata['agento11y.gen_ai.request.thinking.level'], 'high');
+  assert.equal(generation.metadata['agento11y.gen_ai.usage.tool_use_prompt_tokens'], 5);
   assert.equal(generation.artifacts, undefined);
 });
 
@@ -148,8 +148,8 @@ test('anthropic and gemini stream wrappers set STREAM mode and include artifacts
   assert.equal(anthropicGeneration.maxTokens, 400);
   assert.equal(anthropicGeneration.temperature, 0.1);
   assert.equal(anthropicGeneration.topP, 0.9);
-  assert.equal(anthropicGeneration.metadata['sigil.gen_ai.usage.server_tool_use.web_search_requests'], 1);
-  assert.equal(anthropicGeneration.metadata['sigil.gen_ai.usage.server_tool_use.total_requests'], 1);
+  assert.equal(anthropicGeneration.metadata['agento11y.gen_ai.usage.server_tool_use.web_search_requests'], 1);
+  assert.equal(anthropicGeneration.metadata['agento11y.gen_ai.usage.server_tool_use.total_requests'], 1);
   assert.ok(Array.isArray(anthropicGeneration.artifacts));
   assert.deepEqual(
     anthropicGeneration.artifacts.map((artifact) => artifact.type),
@@ -203,8 +203,8 @@ test('anthropic and gemini stream wrappers set STREAM mode and include artifacts
   assert.equal(geminiGeneration.maxTokens, 400);
   assert.equal(geminiGeneration.temperature, 0.1);
   assert.equal(geminiGeneration.topP, 0.9);
-  assert.equal(geminiGeneration.metadata['sigil.gen_ai.request.thinking.level'], 'low');
-  assert.equal(geminiGeneration.metadata['sigil.gen_ai.usage.tool_use_prompt_tokens'], 3);
+  assert.equal(geminiGeneration.metadata['agento11y.gen_ai.request.thinking.level'], 'low');
+  assert.equal(geminiGeneration.metadata['agento11y.gen_ai.usage.tool_use_prompt_tokens'], 3);
   assert.ok(Array.isArray(geminiGeneration.artifacts));
   assert.deepEqual(
     geminiGeneration.artifacts.map((artifact) => artifact.type),
@@ -261,7 +261,7 @@ test('openai chat completions wrapper maps strict request/response and records S
   assert.equal(generation.temperature, 0.2);
   assert.equal(generation.topP, 0.85);
   assert.equal(generation.stopReason, 'stop');
-  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 1024);
+  assert.equal(generation.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 1024);
   assert.equal(generation.artifacts, undefined);
 });
 
@@ -295,7 +295,7 @@ test('openai chat completions stream wrapper records STREAM mode and stream even
   assert.equal(generation.mode, 'STREAM');
   assert.equal(generation.model.provider, 'openai');
   assert.equal(generation.maxTokens, 400);
-  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 768);
+  assert.equal(generation.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 768);
   assert.ok(Array.isArray(generation.artifacts));
   assert.deepEqual(
     generation.artifacts.map((artifact) => artifact.type),
@@ -357,7 +357,7 @@ test('openai responses wrapper maps strict request/response and records SYNC mod
   assert.equal(generation.temperature, 0.25);
   assert.equal(generation.topP, 0.9);
   assert.equal(generation.stopReason, 'stop');
-  assert.equal(generation.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 512);
+  assert.equal(generation.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 512);
 });
 
 test('openai responses stream wrapper records STREAM mode with stream event artifacts', async () => {
@@ -880,7 +880,7 @@ test('openai chat mapper aggregates system/developer, preserves tool role, and a
   assert.equal(mappedDefault.temperature, 0.3);
   assert.equal(mappedDefault.topP, 0.8);
   assert.equal(mappedDefault.thinkingEnabled, true);
-  assert.equal(mappedDefault.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 1024);
+  assert.equal(mappedDefault.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 1024);
   assert.equal(mappedDefault.artifacts, undefined);
   assert.equal(mappedDefault.output[0].role, 'assistant');
 
@@ -972,7 +972,7 @@ test('openai responses mapper maps input/output/usage and stream fallback from e
   assert.equal(mapped.maxTokens, 300);
   assert.equal(mapped.stopReason, 'stop');
   assert.equal(mapped.thinkingEnabled, true);
-  assert.equal(mapped.metadata['sigil.gen_ai.request.thinking.budget_tokens'], 640);
+  assert.equal(mapped.metadata['agento11y.gen_ai.request.thinking.budget_tokens'], 640);
   assert.equal(mapped.usage.totalTokens, 100);
   assert.equal(mapped.output.length, 3);
   assert.equal(mapped.output[2].role, 'tool');
@@ -1118,7 +1118,7 @@ function firstGeneration(exporter) {
 function newClient(generationExporter) {
   const defaults = defaultConfig();
   return new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 100,
@@ -1136,7 +1136,7 @@ function newEmbeddingHarness() {
   const traceProvider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(spanExporter)],
   });
-  const tracer = traceProvider.getTracer('sigil-sdk-js-test');
+  const tracer = traceProvider.getTracer('agento11y-sdk-js-test');
   const generationExporter = new CapturingExporter();
   const defaults = defaultConfig();
 

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,20 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// Version is the released version of the Sigil Go SDK. It is stamped into the
+// default generation-export User-Agent (see UserAgent). Released via the
+// go/vX.Y.Z git tag; bump this on release.
+const Version = "0.8.0"
+
+// UserAgent returns the SDK's default generation-export User-Agent product
+// token, "agento11y-sdk-go/<Version>". Coding-agent plugins prepend their own token
+// (most-specific first), e.g.
+//
+//	"agento11y-plugin-claude-code/" + pluginVersion + " " + sigil.UserAgent()
+func UserAgent() string {
+	return sdkUserAgentProduct + "/" + Version
+}
 
 // Config controls Sigil client behavior.
 type Config struct {
@@ -81,8 +96,11 @@ type Config struct {
 	// empty and no user_id has been threaded through the request context.
 	// Read from SIGIL_USER_ID by ConfigFromEnv.
 	UserID string
-	// Tags are merged into every GenerationStart.Tags. Per-call tags win on
-	// key conflict. Read from SIGIL_TAGS (CSV) by ConfigFromEnv.
+	// Tags are merged into every GenerationStart.Tags (per-call tags win on
+	// key conflict) and emitted on OTel spans/metrics as agento11y.tag.<key>.
+	// Read from SIGIL_TAGS (CSV) by ConfigFromEnv. These are static, process-
+	// level tags; for per-request dimensions that also reach spans and metrics
+	// use WithTag / WithTags on the request context.
 	Tags map[string]string
 	// Debug, when set, signals downstream consumers (plugins, telemetry) that
 	// the SDK is running in verbose mode. Read from SIGIL_DEBUG by ConfigFromEnv.
@@ -153,19 +171,25 @@ type APIConfig struct {
 	Endpoint string
 }
 
+// instrumentationName is the OTel instrumentation scope name. It is a
+// telemetry-visible data contract consumed outside this repository, so it
+// intentionally keeps the pre-rename module path. Do not update it for the
+// sigil-sdk -> agento11y rename without server-side dual-read support.
 const instrumentationName = "github.com/grafana/sigil-sdk/go/sigil"
 const (
 	defaultGRPCMaxSendMessageBytes    = 16 << 20
 	defaultGRPCMaxReceiveMessageBytes = 16 << 20
 	defaultGenerationPayloadMaxBytes  = 16 << 20
+	minRecordedGenerationIDs          = 1024
 
-	sdkMetadataKeyName = "sigil.sdk.name"
-	metadataUserIDKey  = "sigil.user.id"
-	sdkName            = "sdk-go"
+	sdkMetadataKeyName  = "agento11y.sdk.name"
+	metadataUserIDKey   = "agento11y.user.id"
+	sdkName             = "sdk-go"
+	sdkUserAgentProduct = "agento11y-sdk-go"
 
-	spanAttrGenerationID           = "sigil.generation.id"
+	spanAttrGenerationID           = "agento11y.generation.id"
 	spanAttrConversationID         = "gen_ai.conversation.id"
-	spanAttrConversationTitle      = "sigil.conversation.title"
+	spanAttrConversationTitle      = "agento11y.conversation.title"
 	spanAttrUserID                 = "user.id"
 	spanAttrAgentName              = "gen_ai.agent.name"
 	spanAttrAgentVersion           = "gen_ai.agent.version"
@@ -177,9 +201,9 @@ const (
 	spanAttrRequestMaxTokens       = "gen_ai.request.max_tokens"
 	spanAttrRequestTemperature     = "gen_ai.request.temperature"
 	spanAttrRequestTopP            = "gen_ai.request.top_p"
-	spanAttrRequestToolChoice      = "sigil.gen_ai.request.tool_choice"
-	spanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled"
-	spanAttrRequestThinkingBudget  = "sigil.gen_ai.request.thinking.budget_tokens"
+	spanAttrRequestToolChoice      = "agento11y.gen_ai.request.tool_choice"
+	spanAttrRequestThinkingEnabled = "agento11y.gen_ai.request.thinking.enabled"
+	spanAttrRequestThinkingBudget  = "agento11y.gen_ai.request.thinking.budget_tokens"
 	spanAttrResponseID             = "gen_ai.response.id"
 	spanAttrResponseModel          = "gen_ai.response.model"
 	spanAttrFinishReasons          = "gen_ai.response.finish_reasons"
@@ -198,6 +222,7 @@ const (
 	spanAttrToolDescription        = "gen_ai.tool.description"
 	spanAttrToolCallArguments      = "gen_ai.tool.call.arguments"
 	spanAttrToolCallResult         = "gen_ai.tool.call.result"
+	spanAttrTagPrefix              = "agento11y.tag."
 
 	metricOperationDuration     = "gen_ai.client.operation.duration"
 	metricTokenUsage            = "gen_ai.client.token.usage"
@@ -278,14 +303,20 @@ type Client struct {
 	instruments telemetryInstruments
 	exporter    generationExporter
 
-	queue    chan queuedGeneration
-	flushReq chan chan error
+	queue             chan queuedGeneration
+	workflowStepQueue chan queuedWorkflowStep
+	flushReq          chan chan error
 
 	queueMu      sync.RWMutex
 	shutdown     bool
 	workerOnce   sync.Once
 	shutdownOnce sync.Once
 	workerDone   chan struct{}
+
+	generationMu      sync.RWMutex
+	generationIDs     map[string]struct{}
+	generationIO      map[string]string
+	generationIDOrder []string
 }
 
 // GenerationRecorder records and closes one in-flight generation span.
@@ -430,9 +461,11 @@ func NewClient(config Config) *Client {
 	}
 
 	client := &Client{
-		config:     cfg,
-		flushReq:   make(chan chan error),
-		workerDone: make(chan struct{}),
+		config:        cfg,
+		flushReq:      make(chan chan error),
+		workerDone:    make(chan struct{}),
+		generationIDs: make(map[string]struct{}),
+		generationIO:  make(map[string]string),
 	}
 
 	if cfg.Tracer != nil {
@@ -463,6 +496,7 @@ func NewClient(config Config) *Client {
 	}
 	client.exporter = exporter
 	client.queue = make(chan queuedGeneration, cfg.GenerationExport.QueueSize)
+	client.workflowStepQueue = make(chan queuedWorkflowStep, cfg.GenerationExport.QueueSize)
 
 	if !cfg.testDisableWorker {
 		client.startWorker()
@@ -479,7 +513,7 @@ func NewClient(config Config) *Client {
 //
 // Linking is two-way after End:
 //   - Generation.TraceID and Generation.SpanID are set from the created span context.
-//   - The span includes sigil.generation.id as an attribute.
+//   - The span includes agento11y.generation.id as an attribute.
 func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder) {
 	return c.startGeneration(ctx, start, GenerationModeSync)
 }
@@ -490,6 +524,34 @@ func (c *Client) StartGeneration(ctx context.Context, start GenerationStart) (co
 // If the client is nil a no-op recorder is returned (instrumentation never crashes business logic).
 func (c *Client) StartStreamingGeneration(ctx context.Context, start GenerationStart) (context.Context, *GenerationRecorder) {
 	return c.startGeneration(ctx, start, GenerationModeStream)
+}
+
+// EnqueueWorkflowStep enqueues a workflow execution node for export.
+func (c *Client) EnqueueWorkflowStep(step WorkflowStep) error {
+	if c == nil {
+		return ErrNilClient
+	}
+	normalized := cloneWorkflowStep(step)
+	if err := ValidateWorkflowStep(normalized); err != nil {
+		return fmt.Errorf("%w: %v", ErrWorkflowStepValidationFailed, err)
+	}
+	if normalized.StartedAt.IsZero() {
+		normalized.StartedAt = c.now().UTC()
+	} else {
+		normalized.StartedAt = normalized.StartedAt.UTC()
+	}
+	if normalized.CompletedAt.IsZero() {
+		normalized.CompletedAt = normalized.StartedAt
+	} else {
+		normalized.CompletedAt = normalized.CompletedAt.UTC()
+	}
+	if len(c.config.Tags) > 0 {
+		normalized.Tags = mergeTags(c.config.Tags, normalized.Tags)
+	}
+	if err := c.enqueueWorkflowStep(normalized); err != nil {
+		return fmt.Errorf("%w: %w", ErrWorkflowStepEnqueueFailed, err)
+	}
+	return nil
 }
 
 func (c *Client) startGeneration(ctx context.Context, start GenerationStart, defaultMode GenerationMode) (context.Context, *GenerationRecorder) {
@@ -523,27 +585,39 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 			seed.UserID = userID
 		}
 	}
-	if seed.UserID == "" && c.config.UserID != "" {
-		seed.UserID = c.config.UserID
-	}
 	if seed.AgentName == "" {
 		if name, ok := AgentNameFromContext(ctx); ok {
 			seed.AgentName = name
 		}
-	}
-	if seed.AgentName == "" && c.config.AgentName != "" {
-		seed.AgentName = c.config.AgentName
 	}
 	if seed.AgentVersion == "" {
 		if version, ok := AgentVersionFromContext(ctx); ok {
 			seed.AgentVersion = version
 		}
 	}
+	experimentRun, hasExperimentRun := experimentRunFromContext(ctx)
+	if hasExperimentRun {
+		seed = experimentRun.prepareGeneration(seed)
+	} else if experimentRunID, ok := ExperimentRunIDFromContext(ctx); ok {
+		seed = prepareGenerationForExperimentRunID(seed, experimentRunID)
+	}
+	if seed.UserID == "" && c.config.UserID != "" {
+		seed.UserID = c.config.UserID
+	}
+	if seed.AgentName == "" && c.config.AgentName != "" {
+		seed.AgentName = c.config.AgentName
+	}
 	if seed.AgentVersion == "" && c.config.AgentVersion != "" {
 		seed.AgentVersion = c.config.AgentVersion
 	}
-	if len(c.config.Tags) > 0 {
-		merged := cloneTags(c.config.Tags)
+	// dimensionalTags are the static client tags plus any per-request context
+	// tags set via WithTag / WithTags. They are emitted on the generation span
+	// and metrics as agento11y.tag.<key> and merged into the exported generation's
+	// tags. The explicit GenerationStart.Tags field stays export-only and wins
+	// on key conflict.
+	dimensionalTags := mergeTags(c.config.Tags, TagsFromContext(ctx))
+	if len(dimensionalTags) > 0 {
+		merged := cloneTags(dimensionalTags)
 		maps.Copy(merged, seed.Tags)
 		seed.Tags = merged
 	}
@@ -584,10 +658,11 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 
 	callCtx, span := c.startSpan(ctx, spanGeneration, trace.SpanKindClient, startedAt)
 	span.SetAttributes(generationSpanAttributes(spanGeneration)...)
+	setSpanTagAttributes(span, dimensionalTags)
 
 	callCtx = withContentCaptureMode(callCtx, ccMode)
 
-	return callCtx, &GenerationRecorder{
+	recorder := &GenerationRecorder{
 		client:             c,
 		ctx:                callCtx,
 		span:               span,
@@ -595,6 +670,10 @@ func (c *Client) startGeneration(ctx context.Context, start GenerationStart, def
 		startedAt:          startedAt,
 		contentCaptureMode: ccMode,
 	}
+	if hasExperimentRun {
+		experimentRun.captureRecorder(recorder)
+	}
+	return callCtx, recorder
 }
 
 // StartEmbedding starts an embeddings GenAI span and returns a context for the provider call.
@@ -648,6 +727,7 @@ func (c *Client) StartEmbedding(ctx context.Context, start EmbeddingStart) (cont
 		trace.WithTimestamp(startedAt),
 	)
 	span.SetAttributes(embeddingSpanStartAttributes(seed)...)
+	setSpanTagAttributes(span, c.config.Tags)
 
 	return callCtx, &EmbeddingRecorder{
 		client:             c,
@@ -744,6 +824,7 @@ func (c *Client) StartToolExecution(ctx context.Context, start ToolExecutionStar
 		trace.WithTimestamp(startedAt),
 	)
 	span.SetAttributes(toolSpanAttributes(seed)...)
+	setSpanTagAttributes(span, c.config.Tags)
 
 	return callCtx, &ToolExecutionRecorder{
 		client:             c,
@@ -886,7 +967,7 @@ func (r *GenerationRecorder) End() {
 	// FullWithMetadataSpans: proto export keeps full content (normalized stays
 	// untouched), but the span path must drop content-bearing attributes. The
 	// only content-bearing attribute generationSpanAttributes emits is
-	// sigil.conversation.title, so a shallow copy with the title zeroed is
+	// agento11y.conversation.title, so a shallow copy with the title zeroed is
 	// enough; no deep clone needed.
 	spanView := normalized
 	if r.contentCaptureMode == ContentCaptureModeFullWithMetadataSpans {
@@ -1412,7 +1493,63 @@ func (c *Client) persistGeneration(generation Generation) error {
 	if err := c.enqueueGeneration(generation); err != nil {
 		return fmt.Errorf("%w: %w", errGenerationEnqueue, err)
 	}
+	c.recordGeneration(generation)
 	return nil
+}
+
+func (c *Client) recordGeneration(generation Generation) {
+	if c == nil || generation.ID == "" {
+		return
+	}
+	c.generationMu.Lock()
+	defer c.generationMu.Unlock()
+	if c.generationIDs == nil {
+		c.generationIDs = make(map[string]struct{})
+	}
+	if c.generationIO == nil {
+		c.generationIO = make(map[string]string)
+	}
+	c.generationIO[generation.ID] = generationIOFingerprint(generation)
+	if _, ok := c.generationIDs[generation.ID]; ok {
+		return
+	}
+	c.generationIDs[generation.ID] = struct{}{}
+	c.generationIDOrder = append(c.generationIDOrder, generation.ID)
+	for len(c.generationIDOrder) > c.recordedGenerationLimit() {
+		oldest := c.generationIDOrder[0]
+		c.generationIDOrder[0] = ""
+		c.generationIDOrder = c.generationIDOrder[1:]
+		delete(c.generationIDs, oldest)
+		delete(c.generationIO, oldest)
+	}
+}
+
+func (c *Client) hasRecordedGenerationID(generationID string) bool {
+	if c == nil || generationID == "" {
+		return false
+	}
+	c.generationMu.RLock()
+	defer c.generationMu.RUnlock()
+	_, ok := c.generationIDs[generationID]
+	return ok
+}
+
+func (c *Client) hasRecordedGenerationIO(generationID string, fingerprint string) bool {
+	if c == nil || generationID == "" || fingerprint == "" {
+		return false
+	}
+	c.generationMu.RLock()
+	defer c.generationMu.RUnlock()
+	return c.generationIO[generationID] == fingerprint
+}
+
+func (c *Client) recordedGenerationLimit() int {
+	if c == nil {
+		return minRecordedGenerationIDs
+	}
+	queueSize := c.config.GenerationExport.QueueSize
+	batchSize := c.config.GenerationExport.BatchSize
+	return max(minRecordedGenerationIDs, queueSize*2, queueSize+batchSize)
 }
 
 func (c *Client) now() time.Time {
@@ -1869,10 +2006,15 @@ func (c *Client) recordGenerationMetrics(ctx context.Context, generation Generat
 		generation.AgentName,
 		generation.AgentVersion,
 	)
+	// Include per-request context tags (WithTag/WithTags) as metric dimensions
+	// alongside the static client tags. Callers are responsible for keeping
+	// context-tag values low-cardinality since they become metric labels.
+	tagAttrs := tagAttributes(mergeTags(c.config.Tags, TagsFromContext(ctx)))
 	durationAttrs := append(
 		[]attribute.KeyValue{attribute.String(spanAttrOperationName, operationName(generation))},
 		identityAttrs...,
 	)
+	durationAttrs = append(durationAttrs, tagAttrs...)
 	durationAttrs = append(durationAttrs,
 		attribute.String(spanAttrErrorType, errorType),
 		attribute.String(spanAttrErrorCategory, errorCategory),
@@ -1887,6 +2029,7 @@ func (c *Client) recordGenerationMetrics(ctx context.Context, generation Generat
 			[]attribute.KeyValue{attribute.String(spanAttrOperationName, operationName(generation))},
 			identityAttrs...,
 		)
+		tokenAttrs = append(tokenAttrs, tagAttrs...)
 		tokenAttrs = append(tokenAttrs, attribute.String(metricAttrTokenType, tokenType))
 		c.instruments.tokenUsage.Record(ctx, value, metric.WithAttributes(tokenAttrs...))
 	}
@@ -1898,19 +2041,21 @@ func (c *Client) recordGenerationMetrics(ctx context.Context, generation Generat
 	recordToken(metricTokenTypeReasoning, generation.Usage.ReasoningTokens)
 
 	toolCalls := countToolCalls(generation.Output)
+	toolCallAttrs := append(append([]attribute.KeyValue(nil), identityAttrs...), tagAttrs...)
 	c.instruments.toolCallsPerOperation.Record(
 		ctx,
 		int64(toolCalls),
-		metric.WithAttributes(identityAttrs...),
+		metric.WithAttributes(toolCallAttrs...),
 	)
 
 	if operationName(generation) == defaultOperationNameStream && !firstTokenAt.IsZero() {
 		ttft := firstTokenAt.Sub(generation.StartedAt).Seconds()
 		if ttft >= 0 {
+			ttftAttrs := append(append([]attribute.KeyValue(nil), identityAttrs...), tagAttrs...)
 			c.instruments.timeToFirstToken.Record(
 				ctx,
 				ttft,
-				metric.WithAttributes(identityAttrs...),
+				metric.WithAttributes(ttftAttrs...),
 			)
 		}
 	}
@@ -1944,10 +2089,12 @@ func (c *Client) recordEmbeddingMetrics(
 	model := strings.TrimSpace(seed.Model.Name)
 	agentName := strings.TrimSpace(seed.AgentName)
 	identityAttrs := metricIdentityAttributes(provider, model, agentName, seed.AgentVersion)
+	tagAttrs := c.clientTagMetricAttributes()
 	durationAttrs := append(
 		[]attribute.KeyValue{attribute.String(spanAttrOperationName, defaultEmbeddingOperationName)},
 		identityAttrs...,
 	)
+	durationAttrs = append(durationAttrs, tagAttrs...)
 	durationAttrs = append(durationAttrs,
 		attribute.String(spanAttrErrorType, errorType),
 		attribute.String(spanAttrErrorCategory, errorCategory),
@@ -1963,6 +2110,7 @@ func (c *Client) recordEmbeddingMetrics(
 			[]attribute.KeyValue{attribute.String(spanAttrOperationName, defaultEmbeddingOperationName)},
 			identityAttrs...,
 		)
+		tokenAttrs = append(tokenAttrs, tagAttrs...)
 		tokenAttrs = append(tokenAttrs, attribute.String(metricAttrTokenType, metricTokenTypeInput))
 		c.instruments.tokenUsage.Record(
 			ctx,
@@ -1997,6 +2145,7 @@ func (c *Client) recordToolExecutionMetrics(ctx context.Context, seed ToolExecut
 		attribute.String(spanAttrOperationName, "execute_tool"),
 		attribute.String(spanAttrToolName, strings.TrimSpace(seed.ToolName)),
 	}, attrs...)
+	attrs = append(attrs, c.clientTagMetricAttributes()...)
 	attrs = append(attrs,
 		attribute.String(spanAttrErrorType, errorType),
 		attribute.String(spanAttrErrorCategory, errorCategory),
@@ -2006,6 +2155,51 @@ func (c *Client) recordToolExecutionMetrics(ctx context.Context, seed ToolExecut
 		duration,
 		metric.WithAttributes(attrs...),
 	)
+}
+
+func tagAttributes(tags map[string]string) []attribute.KeyValue {
+	if len(tags) == 0 {
+		return nil
+	}
+	type tagPair struct {
+		key   string
+		value string
+	}
+	pairs := make([]tagPair, 0, len(tags))
+	for k, v := range tags {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		pairs = append(pairs, tagPair{key: key, value: strings.TrimSpace(v)})
+	}
+	if len(pairs) == 0 {
+		return nil
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].key < pairs[j].key })
+	attrs := make([]attribute.KeyValue, 0, len(pairs))
+	for _, p := range pairs {
+		attrs = append(attrs, attribute.String(spanAttrTagPrefix+p.key, p.value))
+	}
+	return attrs
+}
+
+func setSpanTagAttributes(span trace.Span, tags map[string]string) {
+	if span == nil {
+		return
+	}
+	attrs := tagAttributes(tags)
+	if len(attrs) == 0 {
+		return
+	}
+	span.SetAttributes(attrs...)
+}
+
+func (c *Client) clientTagMetricAttributes() []attribute.KeyValue {
+	if c == nil {
+		return nil
+	}
+	return tagAttributes(c.config.Tags)
 }
 
 func metricIdentityAttributes(provider, model, agentName, agentVersion string) []attribute.KeyValue {

@@ -17,6 +17,11 @@ You are acting as a coding agent inside this repository. Your goal is to add or 
 4. Add or update tests for changed instrumentation behavior.
 5. Explain what was instrumented and why.
 
+Sigil is a Grafana Cloud-only product for user-facing setup. Do not suggest
+non-Cloud or development-only endpoints in docs, examples, or generated
+instructions. Use the Grafana Cloud API URL from AI Observability configuration
+and Cloud `basic` auth.
+
 ## Output contract (required)
 
 Return:
@@ -32,7 +37,7 @@ Return:
 ## Sigil architecture and ingest model (must follow)
 
 - Sigil uses generation-first ingest:
-  - gRPC: `sigil.v1.GenerationIngestService.ExportGenerations`
+  - gRPC: `agento11y.v1.GenerationIngestService.ExportGenerations`
   - HTTP parity: `POST /api/v1/generations:export`
 - Traces/metrics go through OTEL collector/alloy, not through Sigil ingest.
 - Required generation modes:
@@ -68,11 +73,11 @@ The OTel SDK exporters read these env vars automatically — no extra code neede
 
 ### Option B — Via Alloy / OTel Collector (optional)
 
-Run a local Alloy or OTel Collector that receives unauthenticated OTLP and forwards to Cloud with credentials. Useful for centralized token management, retries, relabeling, and metadata enrichment. Common local ports: 4318 (OTLP/HTTP), 4317 (OTLP/gRPC).
+Run Alloy or an OTel Collector in the user's deployment and forward telemetry to Grafana Cloud with credentials. Useful for centralized token management, retries, relabeling, and metadata enrichment.
 
 Env vars:
 ```
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_EXPORTER_OTLP_ENDPOINT=<your-collector-otlp-endpoint>
 ```
 
 ### Provider setup (required for both options)
@@ -142,12 +147,12 @@ On generation and tool spans, capture or preserve these when available:
 
 - identity and routing:
   - `gen_ai.operation.name`
-  - `sigil.generation.id`
+  - `agento11y.generation.id`
   - `gen_ai.conversation.id`
   - `gen_ai.agent.name`
   - `gen_ai.agent.version`
-  - `sigil.generation.parent_generation_ids`
-  - `sigil.sdk.name`
+  - `agento11y.generation.parent_generation_ids`
+  - `agento11y.sdk.name`
 - model:
   - `gen_ai.provider.name`
   - `gen_ai.request.model`
@@ -156,9 +161,9 @@ On generation and tool spans, capture or preserve these when available:
   - `gen_ai.request.max_tokens`
   - `gen_ai.request.temperature`
   - `gen_ai.request.top_p`
-  - `sigil.gen_ai.request.tool_choice`
-  - `sigil.gen_ai.request.thinking.enabled`
-  - `sigil.gen_ai.request.thinking.budget_tokens`
+  - `agento11y.gen_ai.request.tool_choice`
+  - `agento11y.gen_ai.request.thinking.enabled`
+  - `agento11y.gen_ai.request.thinking.budget_tokens`
 - usage and outcomes:
   - `gen_ai.usage.input_tokens`
   - `gen_ai.usage.output_tokens`

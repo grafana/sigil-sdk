@@ -6,14 +6,18 @@ import type {
   Artifact,
   ExportGenerationsRequest,
   ExportGenerationsResponse,
+  ExportWorkflowStepsRequest,
+  ExportWorkflowStepsResponse,
   Generation,
   GenerationExporter,
   Message,
   MessagePart,
   TokenUsage,
   ToolDefinition,
+  WorkflowStep,
 } from '../types.js';
 import { canonicalEffectiveVersion } from '../utils.js';
+import { userAgent } from '../version.js';
 
 type ExportGenerationsMethod = (
   request: unknown,
@@ -21,21 +25,32 @@ type ExportGenerationsMethod = (
   callback: (error: grpc.ServiceError | null, response: unknown) => void,
 ) => void;
 
-type GRPCServiceClient = grpc.Client & {
+type ExportWorkflowStepsMethod = (
+  request: unknown,
+  metadata: grpc.Metadata,
+  callback: (error: grpc.ServiceError | null, response: unknown) => void,
+) => void;
+
+type GRPCGenerationServiceClient = grpc.Client & {
   ExportGenerations?: ExportGenerationsMethod;
 };
 
+type GRPCWorkflowStepServiceClient = grpc.Client & {
+  ExportWorkflowSteps?: ExportWorkflowStepsMethod;
+};
+
 type LoadedGRPCPackage = {
-  sigil?: {
+  agento11y?: {
     v1?: {
       GenerationIngestService?: grpc.ServiceClientConstructor;
+      WorkflowStepIngestService?: grpc.ServiceClientConstructor;
     };
   };
 };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const defaultProtoPath = join(__dirname, '../../proto/sigil/v1/generation_ingest.proto');
+const defaultProtoPath = join(__dirname, '../../proto/agento11y/v1/generation_ingest.proto');
 
 const protoLoadOptions: protoLoader.Options = {
   keepCase: false,
@@ -49,20 +64,27 @@ export class GRPCGenerationExporter implements GenerationExporter {
   private readonly endpoint: string;
   private readonly headers: Record<string, string>;
   private readonly insecure: boolean;
+  private readonly userAgent: string;
 
   private initPromise: Promise<void> | undefined;
-  private client: GRPCServiceClient | undefined;
+  private generationClient: GRPCGenerationServiceClient | undefined;
+  private workflowStepClient: GRPCWorkflowStepServiceClient | undefined;
 
   constructor(endpoint: string, headers?: Record<string, string>, insecure = false) {
     const parsed = parseGRPCEndpoint(endpoint);
     this.endpoint = parsed.host;
     this.insecure = insecure || parsed.insecure;
-    this.headers = headers ? { ...headers } : {};
+    // gRPC reserves the user-agent metadata key, so the User-Agent must travel
+    // via the channel option rather than per-call metadata. grpc-js appends its
+    // own token after this value.
+    const split = splitUserAgent(headers);
+    this.userAgent = split.userAgent;
+    this.headers = split.rest;
   }
 
   async exportGenerations(request: ExportGenerationsRequest): Promise<ExportGenerationsResponse> {
     await this.ensureClient();
-    const client = this.client;
+    const client = this.generationClient;
     if (client === undefined || typeof client.ExportGenerations !== 'function') {
       throw new Error('grpc exporter client is unavailable');
     }
@@ -89,15 +111,48 @@ export class GRPCGenerationExporter implements GenerationExporter {
     return parseGRPCExportResponse(response, request);
   }
 
+  async exportWorkflowSteps(request: ExportWorkflowStepsRequest): Promise<ExportWorkflowStepsResponse> {
+    await this.ensureClient();
+    const client = this.workflowStepClient;
+    if (client === undefined || typeof client.ExportWorkflowSteps !== 'function') {
+      throw new Error('grpc workflow-step exporter client is unavailable');
+    }
+
+    const metadata = new grpc.Metadata();
+    for (const [key, value] of Object.entries(this.headers)) {
+      metadata.set(key, value);
+    }
+
+    const grpcRequest = {
+      workflowSteps: request.workflowSteps.map(mapWorkflowStepToProto),
+    };
+
+    const response = await new Promise<unknown>((resolve, reject) => {
+      client.ExportWorkflowSteps?.(grpcRequest, metadata, (error, result) => {
+        if (error !== null) {
+          reject(error);
+          return;
+        }
+        resolve(result);
+      });
+    });
+
+    return parseGRPCWorkflowStepExportResponse(response, request);
+  }
+
   async shutdown(): Promise<void> {
-    if (this.client !== undefined) {
-      this.client.close();
-      this.client = undefined;
+    if (this.generationClient !== undefined) {
+      this.generationClient.close();
+      this.generationClient = undefined;
+    }
+    if (this.workflowStepClient !== undefined) {
+      this.workflowStepClient.close();
+      this.workflowStepClient = undefined;
     }
   }
 
   private async ensureClient(): Promise<void> {
-    if (this.client !== undefined) {
+    if (this.generationClient !== undefined && this.workflowStepClient !== undefined) {
       return;
     }
     if (this.initPromise !== undefined) {
@@ -113,14 +168,44 @@ export class GRPCGenerationExporter implements GenerationExporter {
   private async initializeClient(): Promise<void> {
     const packageDefinition = await protoLoader.load(defaultProtoPath, protoLoadOptions);
     const loaded = grpc.loadPackageDefinition(packageDefinition) as unknown as LoadedGRPCPackage;
-    const clientCtor = loaded.sigil?.v1?.GenerationIngestService;
-    if (clientCtor === undefined) {
-      throw new Error('failed to load sigil.v1.GenerationIngestService from proto');
+    const generationClientCtor = loaded.agento11y?.v1?.GenerationIngestService;
+    if (generationClientCtor === undefined) {
+      throw new Error('failed to load agento11y.v1.GenerationIngestService from proto');
+    }
+    const workflowStepClientCtor = loaded.agento11y?.v1?.WorkflowStepIngestService;
+    if (workflowStepClientCtor === undefined) {
+      throw new Error('failed to load agento11y.v1.WorkflowStepIngestService from proto');
     }
 
     const credentials = this.insecure ? grpc.credentials.createInsecure() : grpc.credentials.createSsl();
-    this.client = new clientCtor(this.endpoint, credentials) as GRPCServiceClient;
+    this.generationClient = new generationClientCtor(this.endpoint, credentials, {
+      'grpc.primary_user_agent': this.userAgent,
+    }) as GRPCGenerationServiceClient;
+    this.workflowStepClient = new workflowStepClientCtor(this.endpoint, credentials, {
+      'grpc.primary_user_agent': this.userAgent,
+    }) as GRPCWorkflowStepServiceClient;
   }
+}
+
+// splitUserAgent returns the User-Agent to set as the gRPC channel option and
+// the remaining headers with any user-agent entry removed. When the caller did
+// not supply one, the SDK default (userAgent) is used.
+function splitUserAgent(headers?: Record<string, string>): {
+  userAgent: string;
+  rest: Record<string, string>;
+} {
+  const rest: Record<string, string> = {};
+  let resolved = userAgent();
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (key.toLowerCase() === 'user-agent') {
+      if (value.trim().length > 0) {
+        resolved = value;
+      }
+      continue;
+    }
+    rest[key] = value;
+  }
+  return { userAgent: resolved, rest };
 }
 
 function parseGRPCEndpoint(endpoint: string): { host: string; insecure: boolean } {
@@ -171,6 +256,29 @@ function parseGRPCExportResponse(response: unknown, request: ExportGenerationsRe
   };
 }
 
+function parseGRPCWorkflowStepExportResponse(
+  response: unknown,
+  request: ExportWorkflowStepsRequest,
+): ExportWorkflowStepsResponse {
+  if (!isObject(response) || !Array.isArray(response.results)) {
+    throw new Error('invalid grpc workflow step export response payload');
+  }
+
+  return {
+    results: response.results.map((result, index) => {
+      if (!isObject(result)) {
+        throw new Error('invalid grpc workflow step export result payload');
+      }
+
+      return {
+        stepId: asString(result.stepId) ?? asString(result.step_id) ?? request.workflowSteps[index]?.id ?? '',
+        accepted: Boolean(result.accepted),
+        error: asString(result.error),
+      };
+    }),
+  };
+}
+
 function mapGenerationToProto(generation: Generation): Record<string, unknown> {
   const proto: Record<string, unknown> = {
     id: generation.id,
@@ -212,6 +320,28 @@ function mapGenerationToProto(generation: Generation): Record<string, unknown> {
   }
 
   return proto;
+}
+
+function mapWorkflowStepToProto(step: WorkflowStep): Record<string, unknown> {
+  return {
+    id: step.id,
+    conversationId: step.conversationId,
+    stepName: step.stepName,
+    framework: step.framework ?? '',
+    startedAt: step.startedAt === undefined ? undefined : mapTimestamp(step.startedAt),
+    completedAt: step.completedAt === undefined ? undefined : mapTimestamp(step.completedAt),
+    inputState: mapStructToProto(step.inputState),
+    outputState: mapStructToProto(step.outputState),
+    error: step.error ?? '',
+    tags: step.tags ?? {},
+    linkedGenerationIds: step.linkedGenerationIds ?? [],
+    parentStepIds: step.parentStepIds ?? [],
+    agentName: step.agentName ?? '',
+    agentVersion: step.agentVersion ?? '',
+    traceId: step.traceId ?? '',
+    spanId: step.spanId ?? '',
+    metadata: mapStructToProto(step.metadata),
+  };
 }
 
 function mapMessageToProto(message: Message): Record<string, unknown> {
@@ -408,6 +538,11 @@ function mapStructValue(value: unknown): Record<string, unknown> | undefined {
   }
 }
 
+// Resolution is milliseconds by design: JS `Date` only holds millisecond
+// precision, so `nanos` is always a multiple of 1e6. Go (`time.Time`, ns) and
+// Python (`datetime`, µs) preserve finer precision when the caller supplies it,
+// but a JS caller cannot express it in the first place. Shared by generation
+// and workflow-step mappers.
 function mapTimestamp(date: Date): Record<string, number | string> {
   const milliseconds = date.getTime();
   const seconds = Math.floor(milliseconds / 1_000);

@@ -1,0 +1,185 @@
+name: Publish Homebrew Formula
+
+# Fourth stage of the agento11y release pipeline (release-agento11y.yml opens
+# the release PR, tag-agento11y-on-merge.yml pushes the tag,
+# release-agento11y-binaries.yml builds binaries). Renders the tap formula
+# from a template and opens a bump PR against grafana/homebrew-grafana.
+
+on:
+  push:
+    tags:
+      - "plugins/agento11y/v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing plugins/agento11y/v* tag to publish (e.g. plugins/agento11y/v0.20.0)."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-homebrew-formula-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'grafana/sigil-sdk'
+    name: Publish formula PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # to checkout the template
+      id-token: write # required by the create-github-app-token broker OIDC exchange
+
+    steps:
+      - name: Resolve tag and version
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Manual runs must pass an explicit tag; only tag-triggered
+          # pushes can derive it from GITHUB_REF.
+          if [[ -n "$INPUT_TAG" ]]; then
+            TAG="$INPUT_TAG"
+          elif [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            echo "::error::Input 'tag' is required when dispatching this workflow manually."
+            exit 1
+          fi
+          case "$TAG" in
+            plugins/agento11y/v*) ;;
+            *)
+              echo "::error::Refusing to publish '$TAG'; expected a plugins/agento11y/v* tag."
+              exit 1
+              ;;
+          esac
+          VERSION="${TAG#plugins/agento11y/v}"
+          # Homebrew users should only ever see stable releases in the tap;
+          # skip SemVer pre-releases (version containing a hyphen, e.g.
+          # 0.12.0-rc.1).
+          if [[ "$VERSION" == *-* ]]; then
+            echo "Tag '$TAG' is a pre-release; skipping tap publication."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          {
+            echo "tag=${TAG}"
+            echo "version=${VERSION}"
+            echo "branch=agento11y-${VERSION}"
+            echo "skip=false"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout (for template)
+        if: steps.tag.outputs.skip != 'true'
+        # On tag pushes github.ref is the tag, so checkout gets the template
+        # at that ref. On workflow_dispatch github.ref is the dispatch branch
+        # (typically main), which also has the template. Deliberately not
+        # checking out the tag itself so that old tags predating the template
+        # can still be backfilled via dispatch.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Compute source tarball sha256
+        if: steps.tag.outputs.skip != 'true'
+        id: sha
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The slashes in the tag are fine here; GitHub serves source
+          # tarballs for slashed tags at the same refs/tags path.
+          TARBALL_URL="https://github.com/${GH_REPO}/archive/refs/tags/${TAG}.tar.gz"
+          echo "Fetching: ${TARBALL_URL}"
+          curl -fsSL --retry 3 --retry-delay 5 -o source.tar.gz "${TARBALL_URL}"
+          SHA256="$(sha256sum source.tar.gz | awk '{print $1}')"
+          if [[ ! "${SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::computed sha256 is not 64 hex chars: '${SHA256}'"
+            exit 1
+          fi
+          echo "Computed sha256=${SHA256}"
+          echo "sha256=${SHA256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Render formula from template
+        if: steps.tag.outputs.skip != 'true'
+        id: render
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          SHA256: ${{ steps.sha.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          TMPL=".github/homebrew/agento11y.rb.tmpl"
+          if [[ ! -f "${TMPL}" ]]; then
+            echo "::error::template missing at ${TMPL}"
+            exit 1
+          fi
+          # Restricting envsubst to these two variables keeps the Ruby
+          # #{...} interpolations in the template intact. The single quotes
+          # are deliberate: envsubst takes the variable list literally.
+          # shellcheck disable=SC2016
+          envsubst '$VERSION $SHA256' < "${TMPL}" > agento11y.rb
+          # Sanity-check the rendered formula:
+          grep -q "^class Agento11y < Formula" agento11y.rb \
+            || { echo "::error::bad formula render (missing class header)"; exit 1; }
+          grep -q "sha256 \"${SHA256}\"" agento11y.rb \
+            || { echo "::error::sha256 not substituted"; exit 1; }
+          grep -q "version \"${VERSION}\"" agento11y.rb \
+            || { echo "::error::version not substituted"; exit 1; }
+          grep -q "/archive/refs/tags/plugins/agento11y/v${VERSION}.tar.gz" agento11y.rb \
+            || { echo "::error::version not substituted into URL"; exit 1; }
+          grep -q "bin.install_symlink \"agento11y\" => \"sigil\"" agento11y.rb \
+            || { echo "::error::sigil compatibility symlink missing"; exit 1; }
+          echo "Rendered agento11y.rb:"
+          echo "---"
+          cat agento11y.rb
+          echo "---"
+          echo "rb_path=${GITHUB_WORKSPACE}/agento11y.rb" >> "${GITHUB_OUTPUT}"
+
+      - name: Mint App installation token
+        if: steps.tag.outputs.skip != 'true'
+        id: app-token
+        uses: grafana/shared-workflows/actions/create-github-app-token@259ba21cb3ff07724f331e26d926d655d24b317b # create-github-app-token/v0.2.3
+        with:
+          github_app: grafana-assistant-cli-publisher
+
+      - name: Checkout tap repository
+        if: steps.tag.outputs.skip != 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: grafana/homebrew-grafana
+          path: tap
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Stage formula in tap
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          RB_PATH: ${{ steps.render.outputs.rb_path }}
+        run: |
+          set -euo pipefail
+          # Flat-layout tap: agento11y.rb goes at the root, next to alloy.rb
+          # and grafana.rb, NOT under Casks/.
+          cp "${RB_PATH}" tap/agento11y.rb
+
+      - name: Open tap pull request
+        if: steps.tag.outputs.skip != 'true'
+        # Create the commit server-side via the GitHub API (sign-commits: true)
+        # so it is signed/Verified; a plain `git push` produces an unsigned
+        # commit, which the required-signatures ruleset rejects. The action is
+        # idempotent: byte-identical input creates no commit, and a re-run on
+        # the same tag updates the existing branch/PR in place.
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          path: tap
+          branch: ${{ steps.tag.outputs.branch }}
+          sign-commits: true
+          add-paths: agento11y.rb
+          commit-message: "agento11y ${{ steps.tag.outputs.version }}"
+          title: "agento11y ${{ steps.tag.outputs.version }}"
+          body: "Automated formula bump for [agento11y ${{ steps.tag.outputs.version }}](https://github.com/grafana/sigil-sdk/releases/tag/plugins/agento11y/v${{ steps.tag.outputs.version }}). Generated by the agento11y release pipeline."

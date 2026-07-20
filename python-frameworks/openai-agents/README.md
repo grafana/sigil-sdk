@@ -1,19 +1,19 @@
 # Sigil Python Framework Module: OpenAI Agents
 
-`sigil-sdk-openai-agents` provides callback handlers that map OpenAI Agents lifecycle events into Sigil generation recorder lifecycles.
+`agento11y-openai-agents` provides callback handlers that map OpenAI Agents lifecycle events into Sigil generation recorder lifecycles.
 
 ## Installation
 
 ```bash
-pip install sigil-sdk sigil-sdk-openai-agents
+pip install agento11y agento11y-openai-agents
 pip install openai-agents
 ```
 
 ## Quickstart
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_openai_agents import with_sigil_openai_agents_hooks
+from agento11y import Client
+from agento11y_openai_agents import with_sigil_openai_agents_hooks
 
 client = Client()
 run_options = with_sigil_openai_agents_hooks(None, client=client, provider_resolver="auto")
@@ -23,8 +23,8 @@ run_options = with_sigil_openai_agents_hooks(None, client=client, provider_resol
 ## Native hooks wiring
 
 ```python
-from sigil_sdk import Client
-from sigil_sdk_openai_agents import with_sigil_openai_agents_hooks
+from agento11y import Client
+from agento11y_openai_agents import with_sigil_openai_agents_hooks
 
 client = Client()
 run_options = with_sigil_openai_agents_hooks(None, client=client, provider_resolver="auto")
@@ -43,14 +43,14 @@ Conversation ID precedence:
 
 Required framework tags:
 
-- `sigil.framework.name=openai-agents`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=python`
+- `agento11y.framework.name=openai-agents`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=python`
 
 Metadata includes:
 
-- required: `sigil.framework.run_type`
-- optional: `sigil.framework.run_id`, `sigil.framework.thread_id`, `sigil.framework.parent_run_id`, `sigil.framework.component_name`, `sigil.framework.retry_attempt`, `sigil.framework.event_id`
+- required: `agento11y.framework.run_type`
+- optional: `agento11y.framework.run_id`, `agento11y.framework.thread_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.component_name`, `agento11y.framework.retry_attempt`, `agento11y.framework.event_id`
 
 ## Provider resolver
 

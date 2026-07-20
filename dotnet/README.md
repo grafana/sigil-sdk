@@ -4,17 +4,17 @@ Sigil extends OpenTelemetry-style instrumentation with normalized AI generation 
 
 ## Packages
 
-- `Grafana.Sigil`: core runtime (`SigilClient`, generation/tool recorders, generation export)
-- `Grafana.Sigil.OpenAI`: OpenAI Responses + Chat Completions + Embeddings wrappers and mappers
-- `Grafana.Sigil.Anthropic`: Anthropic Messages wrappers and mappers
-- `Grafana.Sigil.Gemini`: Gemini GenerateContent + EmbedContent wrappers and mappers
+- `Grafana.Agento11y`: core runtime (`SigilClient`, generation/tool recorders, generation export)
+- `Grafana.Agento11y.OpenAI`: OpenAI Responses + Chat Completions + Embeddings wrappers and mappers
+- `Grafana.Agento11y.Anthropic`: Anthropic Messages wrappers and mappers
+- `Grafana.Agento11y.Gemini`: Gemini GenerateContent + EmbedContent wrappers and mappers
 
 Package docs:
 
-- Core: [`src/Grafana.Sigil/README.md`](src/Grafana.Sigil/README.md)
-- OpenAI: [`src/Grafana.Sigil.OpenAI/README.md`](src/Grafana.Sigil.OpenAI/README.md)
-- Anthropic: [`src/Grafana.Sigil.Anthropic/README.md`](src/Grafana.Sigil.Anthropic/README.md)
-- Gemini: [`src/Grafana.Sigil.Gemini/README.md`](src/Grafana.Sigil.Gemini/README.md)
+- Core: [`src/Grafana.Agento11y/README.md`](src/Grafana.Agento11y/README.md)
+- OpenAI: [`src/Grafana.Agento11y.OpenAI/README.md`](src/Grafana.Agento11y.OpenAI/README.md)
+- Anthropic: [`src/Grafana.Agento11y.Anthropic/README.md`](src/Grafana.Agento11y.Anthropic/README.md)
+- Gemini: [`src/Grafana.Agento11y.Gemini/README.md`](src/Grafana.Agento11y.Gemini/README.md)
 
 ## Target frameworks
 
@@ -24,16 +24,16 @@ Package docs:
 ## Install
 
 ```bash
-dotnet add package Grafana.Sigil
-dotnet add package Grafana.Sigil.OpenAI
-# or: Grafana.Sigil.Anthropic / Grafana.Sigil.Gemini
+dotnet add package Grafana.Agento11y
+dotnet add package Grafana.Agento11y.OpenAI
+# or: Grafana.Agento11y.Anthropic / Grafana.Agento11y.Gemini
 ```
 
 For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance ID, and API token), refer to the [Grafana Cloud setup guide](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/).
 
 ## Quickstart (OpenAI Responses wrapper)
 
-The snippet below configures the SDK explicitly. As an alternative, set `SIGIL_*` environment variables and call `new SigilClient()` with no arguments — refer to the [environment variables](#environment-variables) section.
+The snippet below configures the SDK explicitly. As an alternative, set `AGENTO11Y_*` environment variables and call `new SigilClient()` with no arguments — refer to the [environment variables](#environment-variables) section.
 
 ```csharp
 using Grafana.Sigil;
@@ -45,11 +45,12 @@ var sigil = new SigilClient(new SigilClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "http://localhost:8080",
+        Endpoint = "https://sigil-prod-<region>.grafana.net",
         Auth = new AuthConfig
         {
-            Mode = ExportAuthMode.Tenant,
-            TenantId = "dev-tenant",
+            Mode = ExportAuthMode.Basic,
+            TenantId = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TENANT_ID"),
+            BasicPassword = Environment.GetEnvironmentVariable("AGENTO11Y_AUTH_TOKEN"),
         },
         BatchSize = 100,
         FlushInterval = TimeSpan.FromSeconds(1),
@@ -57,7 +58,7 @@ var sigil = new SigilClient(new SigilClientConfig
     },
     Api = new ApiConfig
     {
-        Endpoint = "http://localhost:8080",
+        Endpoint = "https://sigil-prod-<region>.grafana.net",
     },
 });
 
@@ -126,6 +127,40 @@ Generation export transport protocols:
 - `GenerationExportProtocol.Grpc`
 - `GenerationExportProtocol.Http`
 - `GenerationExportProtocol.None` (instrumentation-only; no generation transport)
+
+## Secrets redaction
+
+Use the built-in secrets sanitizer to redact high-confidence secret formats
+before generation data is exported. It uses the same gitleaks-derived pattern
+set as the other Sigil SDKs and replaces matches with
+`[REDACTED:<category>]` placeholders.
+
+```csharp
+using Grafana.Sigil;
+
+var sigil = new SigilClient(new SigilClientConfig
+{
+    GenerationSanitizer = SecretRedactionSanitizer.Create(),
+});
+```
+
+By default, the sanitizer redacts assistant output, thinking blocks, tool call
+arguments, tool results, system prompts, conversation titles, provider call
+errors, and email addresses. User input messages are left unchanged unless you
+opt in:
+
+```csharp
+var sigil = new SigilClient(new SigilClientConfig
+{
+    GenerationSanitizer = SecretRedactionSanitizer.Create(new SecretRedactionOptions
+    {
+        RedactInputMessages = true,
+    }),
+});
+```
+
+You can also set `AGENTO11Y_REDACT_INPUT_MESSAGES=true`. An explicit
+`RedactInputMessages` value takes precedence over the environment variable.
 
 ## Embedding observability
 
@@ -235,7 +270,7 @@ var sigil = new SigilClient(new SigilClientConfig
 {
     ContentCaptureResolver = metadata =>
     {
-        if (metadata != null && metadata.TryGetValue("sigil.tenant", out var tenant) && (string?)tenant == "healthcare")
+        if (metadata != null && metadata.TryGetValue("tenant", out var tenant) && (string?)tenant == "healthcare")
         {
             return ContentCaptureMode.MetadataOnly;
         }
@@ -259,7 +294,7 @@ Resolution precedence for tool executions (highest to lowest):
 3. `SigilClientConfig.ContentCaptureResolver` return value
 4. `SigilClientConfig.ContentCapture` (defaults to `ContentCaptureMode.NoToolContent`)
 
-User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content.
+User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `UserId` each show up (export vs spans vs metrics).
 
 ## Context defaults
 
@@ -295,7 +330,7 @@ var result = await client.SubmitConversationRatingAsync(
 Console.WriteLine($"{result.Rating.Rating} hasBad={result.Summary.HasBadRating}");
 ```
 
-`SubmitConversationRatingAsync(...)` sends requests to `SigilClientConfig.Api.Endpoint` (default `http://localhost:8080`) and uses the same generation-export auth headers (`tenant` or `bearer`) already configured on the SDK client.
+`SubmitConversationRatingAsync(...)` sends requests to `SigilClientConfig.Api.Endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
 
 ## .NET best practices
 
@@ -327,25 +362,25 @@ The SDK emits these OTel histograms through your configured OTel meter provider:
 
 ## Environment variables
 
-The SDK reads `SIGIL_*` environment variables at client construction. Caller-supplied
+The SDK reads `AGENTO11Y_*` environment variables at client construction. Caller-supplied
 fields on `SigilClientConfig` win; environment variables fill anything left at the default;
 SDK schema defaults fill the rest.
 
 | Env var | Field |
 | --- | --- |
-| `SIGIL_ENDPOINT` | `GenerationExportConfig.Endpoint` |
-| `SIGIL_PROTOCOL` | `GenerationExportConfig.Protocol` (`http`/`grpc`/`none`) |
-| `SIGIL_INSECURE` | `GenerationExportConfig.Insecure` (tri-state `bool?`) |
-| `SIGIL_HEADERS` | `GenerationExportConfig.Headers` (CSV: `K=V,...`) |
-| `SIGIL_AUTH_MODE` | `AuthConfig.Mode` (`none`/`tenant`/`bearer`/`basic`) |
-| `SIGIL_AUTH_TENANT_ID` | `AuthConfig.TenantId` |
-| `SIGIL_AUTH_TOKEN` | `AuthConfig.BearerToken` and/or `BasicPassword` (filled when empty) |
-| `SIGIL_AGENT_NAME` | `SigilClientConfig.AgentName` |
-| `SIGIL_AGENT_VERSION` | `SigilClientConfig.AgentVersion` |
-| `SIGIL_USER_ID` | `SigilClientConfig.UserId` |
-| `SIGIL_TAGS` | `SigilClientConfig.Tags` (CSV merged under per-call tags) |
-| `SIGIL_CONTENT_CAPTURE_MODE` | `SigilClientConfig.ContentCapture` |
-| `SIGIL_DEBUG` | `SigilClientConfig.Debug` (tri-state `bool?`) |
+| `AGENTO11Y_ENDPOINT` | `GenerationExportConfig.Endpoint` |
+| `AGENTO11Y_PROTOCOL` | `GenerationExportConfig.Protocol` (`http`/`grpc`/`none`) |
+| `AGENTO11Y_INSECURE` | `GenerationExportConfig.Insecure` (tri-state `bool?`) |
+| `AGENTO11Y_HEADERS` | `GenerationExportConfig.Headers` (CSV: `K=V,...`) |
+| `AGENTO11Y_AUTH_MODE` | `AuthConfig.Mode` (`none`/`tenant`/`bearer`/`basic`) |
+| `AGENTO11Y_AUTH_TENANT_ID` | `AuthConfig.TenantId` |
+| `AGENTO11Y_AUTH_TOKEN` | `AuthConfig.BearerToken` and/or `BasicPassword` (filled when empty) |
+| `AGENTO11Y_AGENT_NAME` | `SigilClientConfig.AgentName` |
+| `AGENTO11Y_AGENT_VERSION` | `SigilClientConfig.AgentVersion` |
+| `AGENTO11Y_USER_ID` | `SigilClientConfig.UserId` |
+| `AGENTO11Y_TAGS` | `SigilClientConfig.Tags` (CSV; applied to generations, spans, and metrics; see [Tags and Metadata](../docs/concepts/tags-and-metadata.md)) |
+| `AGENTO11Y_CONTENT_CAPTURE_MODE` | `SigilClientConfig.ContentCapture` |
+| `AGENTO11Y_DEBUG` | `SigilClientConfig.Debug` (tri-state `bool?`) |
 
 Use `EnvConfig.FromEnv()` to inspect the resolved config without constructing a
 client. Invalid values (bad auth mode, etc.) are skipped with a warning so a
@@ -355,7 +390,7 @@ single typo does not discard the rest of the env layer.
 
 - `GenerationExportConfig.Insecure` is now `bool?` instead of `bool`. The
   default flips from `true` to `false` (TLS on) when neither caller nor
-  `SIGIL_INSECURE` provides a value. Code that reads the property as a plain
+  `AGENTO11Y_INSECURE` provides a value. Code that reads the property as a plain
   `bool` needs to coalesce (e.g. `cfg.Insecure ?? false`).
 - `ConfigResolver.ResolveHeadersWithAuth` no longer rejects mode-irrelevant
   fields (e.g. `TenantId` set under `Mode = Bearer`). This matches Go/JS/Python

@@ -6,7 +6,7 @@ import (
 
 	asdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
-	"github.com/grafana/sigil-sdk/go/sigil"
+	"github.com/grafana/agento11y/go/sigil"
 )
 
 func TestFromRequestResponse(t *testing.T) {
@@ -96,17 +96,17 @@ func TestFromRequestResponse(t *testing.T) {
 	if generation.Metadata == nil {
 		t.Fatalf("expected metadata map")
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
-		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
+		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"] != int64(2) {
-		t.Fatalf("expected server tool web_search_requests=2, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"] != int64(2) {
+		t.Fatalf("expected server tool web_search_requests=2, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(1) {
-		t.Fatalf("expected server tool web_fetch_requests=1, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(1) {
+		t.Fatalf("expected server tool web_fetch_requests=1, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
-		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
+		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"])
 	}
 	if generation.Tags["tenant"] != "t-123" {
 		t.Fatalf("expected tenant tag")
@@ -135,6 +135,89 @@ func TestFromRequestResponse(t *testing.T) {
 	}
 	if !hasToolRole {
 		t.Fatalf("expected mapped tool_result message with tool role")
+	}
+}
+
+func TestFromRequestResponseMapsImageInput(t *testing.T) {
+	req := testRequest()
+	req.Messages[0].Content = append(req.Messages[0].Content, asdk.NewBetaImageBlock(asdk.BetaBase64ImageSourceParam{
+		Data:      "abc123",
+		MediaType: asdk.BetaBase64ImageSourceMediaTypeImagePNG,
+	}))
+	resp := &asdk.BetaMessage{
+		ID:         "msg_image",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			{Type: "text", Text: "I can see it."},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if len(generation.Input) == 0 || len(generation.Input[0].Parts) != 2 {
+		t.Fatalf("expected text and media input parts, got %#v", generation.Input)
+	}
+	media := generation.Input[0].Parts[1]
+	if media.Kind != sigil.PartKindMedia {
+		t.Fatalf("expected media part, got %q", media.Kind)
+	}
+	if media.Media == nil {
+		t.Fatal("expected media payload")
+	}
+	if media.Media.Kind != "image" {
+		t.Fatalf("expected image media kind, got %q", media.Media.Kind)
+	}
+	if media.Media.URL != "data:image/png;base64,abc123" {
+		t.Fatalf("unexpected media URL %q", media.Media.URL)
+	}
+	if media.Media.MIMEType != "image/png" {
+		t.Fatalf("unexpected media MIME type %q", media.Media.MIMEType)
+	}
+	if media.Metadata.ProviderType != "image" {
+		t.Fatalf("unexpected provider type %q", media.Metadata.ProviderType)
+	}
+}
+
+func TestFromRequestResponseInfersDataURLImageMIMEType(t *testing.T) {
+	const dataURL = "data:image/gif;base64,R0lGODlh"
+
+	req := testRequest()
+	req.Messages[0].Content = append(req.Messages[0].Content, asdk.NewBetaImageBlock(asdk.BetaURLImageSourceParam{
+		URL: dataURL,
+	}))
+	resp := &asdk.BetaMessage{
+		ID:         "msg_image_url",
+		Model:      asdk.Model("claude-sonnet-4-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			{Type: "text", Text: "I can see it."},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	if len(generation.Input) == 0 || len(generation.Input[0].Parts) != 2 {
+		t.Fatalf("expected text and media input parts, got %#v", generation.Input)
+	}
+	media := generation.Input[0].Parts[1]
+	if media.Kind != sigil.PartKindMedia {
+		t.Fatalf("expected media part, got %q", media.Kind)
+	}
+	if media.Media == nil {
+		t.Fatal("expected media payload")
+	}
+	if media.Media.URL != dataURL {
+		t.Fatalf("unexpected media URL %q", media.Media.URL)
+	}
+	if media.Media.MIMEType != "image/gif" {
+		t.Fatalf("unexpected media MIME type %q", media.Media.MIMEType)
 	}
 }
 
@@ -242,17 +325,17 @@ func TestFromStream(t *testing.T) {
 	if generation.Metadata == nil {
 		t.Fatalf("expected metadata map")
 	}
-	if generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
-		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"])
+	if generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"] != int64(1024) {
+		t.Fatalf("expected thinking budget metadata 1024, got %v", generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"] != int64(1) {
-		t.Fatalf("expected server tool web_search_requests=1, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_search_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"] != int64(1) {
+		t.Fatalf("expected server tool web_search_requests=1, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_search_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(2) {
-		t.Fatalf("expected server tool web_fetch_requests=2, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.web_fetch_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"] != int64(2) {
+		t.Fatalf("expected server tool web_fetch_requests=2, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.web_fetch_requests"])
 	}
-	if generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
-		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["sigil.gen_ai.usage.server_tool_use.total_requests"])
+	if generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"] != int64(3) {
+		t.Fatalf("expected server tool total_requests=3, got %v", generation.Metadata["agento11y.gen_ai.usage.server_tool_use.total_requests"])
 	}
 	if len(generation.Artifacts) != 0 {
 		t.Fatalf("expected 0 artifacts by default, got %d", len(generation.Artifacts))
@@ -1024,5 +1107,61 @@ func testRequest() asdk.BetaMessageNewParams {
 			},
 		},
 		Tools: []asdk.BetaToolUnionParam{weatherTool},
+	}
+}
+
+func TestFromRequestResponseSkipsEmptyThinkingBlocks(t *testing.T) {
+	// Adaptive thinking (e.g. Claude Sonnet 5) can emit signature-only
+	// thinking blocks with empty text. They must be skipped: a thinking Part
+	// without a payload fails generation validation and would previously
+	// zero out the whole generation.
+	req := testRequest()
+	req.Messages = append(req.Messages, asdk.BetaMessageParam{
+		Role: asdk.BetaMessageParamRoleAssistant,
+		Content: []asdk.BetaContentBlockParamUnion{
+			{OfThinking: &asdk.BetaThinkingBlockParam{Thinking: "", Signature: "sig-1"}},
+			{OfRedactedThinking: &asdk.BetaRedactedThinkingBlockParam{Data: ""}},
+			{OfText: &asdk.BetaTextBlockParam{Text: "prior turn", Type: "text"}},
+		},
+	})
+
+	resp := &asdk.BetaMessage{
+		ID:         "msg_1",
+		Model:      asdk.Model("claude-sonnet-5"),
+		StopReason: asdk.BetaStopReasonEndTurn,
+		Content: []asdk.BetaContentBlockUnion{
+			{Type: "thinking", Thinking: "", Signature: "sig-2"},
+			{Type: "redacted_thinking", Data: ""},
+			{Type: "thinking", Thinking: "kept", Signature: "sig-3"},
+			{Type: "text", Text: "done"},
+		},
+	}
+
+	generation, err := FromRequestResponse(req, resp)
+	if err != nil {
+		t.Fatalf("from request/response: %v", err)
+	}
+
+	for _, message := range append(generation.Input, generation.Output...) {
+		for _, part := range message.Parts {
+			if part.Kind == sigil.PartKindThinking && part.Thinking == "" {
+				t.Fatalf("empty thinking part leaked into generation: %+v", part)
+			}
+		}
+	}
+
+	if len(generation.Output) == 0 {
+		t.Fatal("expected output messages")
+	}
+	parts := generation.Output[0].Parts
+	if len(parts) != 2 {
+		t.Fatalf("expected 2 output parts (non-empty thinking + text), got %d: %+v", len(parts), parts)
+	}
+	if parts[0].Thinking != "kept" || parts[1].Text != "done" {
+		t.Fatalf("unexpected output parts: %+v", parts)
+	}
+
+	if verr := sigil.ValidateGeneration(generation); verr != nil {
+		t.Fatalf("generation failed validation: %v", verr)
 	}
 }

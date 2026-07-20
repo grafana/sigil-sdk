@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/grafana/sigil-sdk/go/sigil/sigilmodel"
+	"github.com/grafana/agento11y/go/sigil/sigilmodel"
 )
 
 // ValidateGeneration enforces the Sigil generation invariants required by the
@@ -12,6 +12,12 @@ import (
 // with sigilmodel.Generation directly see the same checks.
 func ValidateGeneration(g Generation) error {
 	return sigilmodel.ValidateGeneration(g)
+}
+
+// ValidateWorkflowStep enforces the Sigil workflow-step invariants required by
+// the ingest pipeline.
+func ValidateWorkflowStep(step WorkflowStep) error {
+	return sigilmodel.ValidateWorkflowStep(step)
 }
 
 func ValidateEmbeddingStart(start EmbeddingStart) error {

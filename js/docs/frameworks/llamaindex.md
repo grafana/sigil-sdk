@@ -1,18 +1,18 @@
-# LlamaIndex Handler (`@grafana/sigil-sdk-js/llamaindex`)
+# LlamaIndex Handler (`@grafana/agento11y/llamaindex`)
 
 Use `SigilLlamaIndexHandler` to map LlamaIndex workflow/agent callback lifecycles to Sigil generations.
 
 ## Install
 
 ```bash
-pnpm add @grafana/sigil-sdk-js llamaindex
+pnpm add @grafana/agento11y llamaindex
 ```
 
 ## Quickstart
 
 ```ts
-import { SigilClient } from '@grafana/sigil-sdk-js';
-import { withSigilLlamaIndexCallbacks } from '@grafana/sigil-sdk-js/llamaindex';
+import { SigilClient } from '@grafana/agento11y';
+import { withSigilLlamaIndexCallbacks } from '@grafana/agento11y/llamaindex';
 import { CallbackManager, Settings } from 'llamaindex';
 
 const client = new SigilClient();
@@ -31,8 +31,8 @@ If you already own a manager instance, use `attachSigilLlamaIndexCallbacks(exist
 ## Streaming snippet
 
 ```ts
-import { SigilClient } from '@grafana/sigil-sdk-js';
-import { SigilLlamaIndexHandler } from '@grafana/sigil-sdk-js/llamaindex';
+import { SigilClient } from '@grafana/agento11y';
+import { SigilLlamaIndexHandler } from '@grafana/agento11y/llamaindex';
 
 const client = new SigilClient();
 const handler = new SigilLlamaIndexHandler(client, { providerResolver: 'auto' });
@@ -59,14 +59,14 @@ Conversation ID precedence:
 
 ## Metadata and lineage
 
-- `sigil.framework.run_type` is always set.
+- `agento11y.framework.run_type` is always set.
 - Lineage keys are set when present: `run_id`, `thread_id`, `parent_run_id`, `component_name`, `retry_attempt`, `event_id`.
 
 Required tags:
 
-- `sigil.framework.name=llamaindex`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
+- `agento11y.framework.name=llamaindex`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
 
 ## Provider resolver
 

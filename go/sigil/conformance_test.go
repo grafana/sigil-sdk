@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
-	sigil "github.com/grafana/sigil-sdk/go/sigil"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
+	sigil "github.com/grafana/agento11y/go/sigil"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -271,8 +271,8 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	if got := generation.GetOperationName(); got != conformanceOperationName {
 		t.Fatalf("unexpected proto operation name: got %q want %q", got, conformanceOperationName)
 	}
-	if got := generation.GetMode(); got != sigilv1.GenerationMode_GENERATION_MODE_SYNC {
-		t.Fatalf("unexpected proto mode: got %s want %s", got, sigilv1.GenerationMode_GENERATION_MODE_SYNC)
+	if got := generation.GetMode(); got != agento11yv1.GenerationMode_GENERATION_MODE_SYNC {
+		t.Fatalf("unexpected proto mode: got %s want %s", got, agento11yv1.GenerationMode_GENERATION_MODE_SYNC)
 	}
 	if got := generation.GetTraceId(); got != span.SpanContext().TraceID().String() {
 		t.Fatalf("unexpected proto trace_id: got %q want %q", got, span.SpanContext().TraceID().String())
@@ -333,7 +333,7 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	if len(generation.GetInput()) != 1 {
 		t.Fatalf("expected 1 proto input message, got %d", len(generation.GetInput()))
 	}
-	if input := generation.GetInput()[0]; input.GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_USER || input.GetName() != "customer" || len(input.GetParts()) != 1 || input.GetParts()[0].GetText() != "Summarize yesterday's Paris weather and explain the spikes." {
+	if input := generation.GetInput()[0]; input.GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_USER || input.GetName() != "customer" || len(input.GetParts()) != 1 || input.GetParts()[0].GetText() != "Summarize yesterday's Paris weather and explain the spikes." {
 		t.Fatalf("unexpected proto input message: %#v", input)
 	}
 
@@ -341,7 +341,7 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 		t.Fatalf("expected 3 proto output messages, got %d", len(generation.GetOutput()))
 	}
 	firstOutput := generation.GetOutput()[0]
-	if firstOutput.GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT || firstOutput.GetName() != "assistant" || len(firstOutput.GetParts()) != 2 {
+	if firstOutput.GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_ASSISTANT || firstOutput.GetName() != "assistant" || len(firstOutput.GetParts()) != 2 {
 		t.Fatalf("unexpected first proto output message: %#v", firstOutput)
 	}
 	if got := firstOutput.GetParts()[0].GetThinking(); got != "Need the weather tool output before the final answer." {
@@ -364,7 +364,7 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	}
 
 	secondOutput := generation.GetOutput()[1]
-	if secondOutput.GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_TOOL || secondOutput.GetName() != "weather.lookup" || len(secondOutput.GetParts()) != 1 {
+	if secondOutput.GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_TOOL || secondOutput.GetName() != "weather.lookup" || len(secondOutput.GetParts()) != 1 {
 		t.Fatalf("unexpected second proto output message: %#v", secondOutput)
 	}
 	if got := secondOutput.GetParts()[0].GetToolResult().GetToolCallId(); got != "call-weather-1" {
@@ -384,7 +384,7 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	}
 
 	thirdOutput := generation.GetOutput()[2]
-	if thirdOutput.GetRole() != sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT || thirdOutput.GetName() != "assistant" || len(thirdOutput.GetParts()) != 1 {
+	if thirdOutput.GetRole() != agento11yv1.MessageRole_MESSAGE_ROLE_ASSISTANT || thirdOutput.GetName() != "assistant" || len(thirdOutput.GetParts()) != 1 {
 		t.Fatalf("unexpected third proto output message: %#v", thirdOutput)
 	}
 	if got := thirdOutput.GetParts()[0].GetText(); got != "Paris peaked at 22C before a late drop as cloud cover moved in." {
@@ -459,11 +459,81 @@ func TestConformance_FullGenerationRoundtrip(t *testing.T) {
 	if len(generation.GetRawArtifacts()) != 2 {
 		t.Fatalf("expected 2 proto artifacts, got %d", len(generation.GetRawArtifacts()))
 	}
-	if artifact := generation.GetRawArtifacts()[0]; artifact.GetKind() != sigilv1.ArtifactKind_ARTIFACT_KIND_REQUEST || artifact.GetName() != "request" || artifact.GetContentType() != "application/json" || artifact.GetRecordId() != "rec-request-1" || artifact.GetUri() != "sigil://artifact/request-1" || !bytes.Equal(artifact.GetPayload(), requestArtifact.Payload) {
+	if artifact := generation.GetRawArtifacts()[0]; artifact.GetKind() != agento11yv1.ArtifactKind_ARTIFACT_KIND_REQUEST || artifact.GetName() != "request" || artifact.GetContentType() != "application/json" || artifact.GetRecordId() != "rec-request-1" || artifact.GetUri() != "sigil://artifact/request-1" || !bytes.Equal(artifact.GetPayload(), requestArtifact.Payload) {
 		t.Fatalf("unexpected request artifact: %#v", artifact)
 	}
-	if artifact := generation.GetRawArtifacts()[1]; artifact.GetKind() != sigilv1.ArtifactKind_ARTIFACT_KIND_RESPONSE || artifact.GetName() != "response" || artifact.GetContentType() != "application/json" || artifact.GetRecordId() != "rec-response-1" || artifact.GetUri() != "sigil://artifact/response-1" || !bytes.Equal(artifact.GetPayload(), responseArtifact.Payload) {
+	if artifact := generation.GetRawArtifacts()[1]; artifact.GetKind() != agento11yv1.ArtifactKind_ARTIFACT_KIND_RESPONSE || artifact.GetName() != "response" || artifact.GetContentType() != "application/json" || artifact.GetRecordId() != "rec-response-1" || artifact.GetUri() != "sigil://artifact/response-1" || !bytes.Equal(artifact.GetPayload(), responseArtifact.Payload) {
 		t.Fatalf("unexpected response artifact: %#v", artifact)
+	}
+}
+
+func TestConformance_WorkflowStepRoundtrip(t *testing.T) {
+	now := time.Date(2026, time.March, 12, 12, 0, 0, 0, time.UTC)
+	env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+		cfg.Now = func() time.Time { return now }
+		cfg.Tags = map[string]string{
+			"client": "tag",
+			"shared": "client",
+		}
+	}))
+
+	if err := env.Client.EnqueueWorkflowStep(sigil.WorkflowStep{
+		ID:                  "wfs-roundtrip",
+		ConversationID:      "conv-workflow",
+		StepName:            "route",
+		Framework:           "custom",
+		InputState:          map[string]any{"prompt": "hello", "count": 1},
+		OutputState:         map[string]any{"route": "answer"},
+		Tags:                map[string]string{"shared": "step"},
+		LinkedGenerationIDs: []string{"gen-roundtrip"},
+		ParentStepIDs:       []string{"wfs-root"},
+		AgentName:           "agent-workflow",
+		AgentVersion:        "v1",
+		TraceID:             "0123456789abcdef0123456789abcdef",
+		SpanID:              "0123456789abcdef",
+		Metadata:            map[string]any{"run_id": "run-1"},
+	}); err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+
+	env.Shutdown(t)
+
+	step := env.Ingest.SingleWorkflowStep(t)
+	if got := step.GetId(); got != "wfs-roundtrip" {
+		t.Fatalf("workflow step id = %q, want wfs-roundtrip", got)
+	}
+	if got := step.GetConversationId(); got != "conv-workflow" {
+		t.Fatalf("conversation id = %q, want conv-workflow", got)
+	}
+	if got := step.GetStepName(); got != "route" {
+		t.Fatalf("step name = %q, want route", got)
+	}
+	if got := step.GetStartedAt().AsTime(); !got.Equal(now) {
+		t.Fatalf("started_at = %s, want %s", got, now)
+	}
+	if got := step.GetCompletedAt().AsTime(); !got.Equal(now) {
+		t.Fatalf("completed_at = %s, want %s", got, now)
+	}
+	if got := step.GetTags()["client"]; got != "tag" {
+		t.Fatalf("client tag = %q, want tag", got)
+	}
+	if got := step.GetTags()["shared"]; got != "step" {
+		t.Fatalf("shared tag = %q, want step", got)
+	}
+	if got := step.GetInputState().GetFields()["prompt"].GetStringValue(); got != "hello" {
+		t.Fatalf("input_state.prompt = %q, want hello", got)
+	}
+	if got := step.GetOutputState().GetFields()["route"].GetStringValue(); got != "answer" {
+		t.Fatalf("output_state.route = %q, want answer", got)
+	}
+	if got := step.GetMetadata().GetFields()["run_id"].GetStringValue(); got != "run-1" {
+		t.Fatalf("metadata.run_id = %q, want run-1", got)
+	}
+	if got := step.GetLinkedGenerationIds(); !slices.Equal(got, []string{"gen-roundtrip"}) {
+		t.Fatalf("linked_generation_ids = %#v, want gen-roundtrip", got)
+	}
+	if got := step.GetParentStepIds(); !slices.Equal(got, []string{"wfs-root"}) {
+		t.Fatalf("parent_step_ids = %#v, want wfs-root", got)
 	}
 }
 
@@ -903,8 +973,8 @@ func TestConformance_StreamingMode(t *testing.T) {
 	env.Shutdown(t)
 
 	streamGeneration := findGenerationByConversationID(t, env.Ingest.Requests(), "conv-stream")
-	if got := streamGeneration.GetMode(); got != sigilv1.GenerationMode_GENERATION_MODE_STREAM {
-		t.Fatalf("unexpected proto mode: got %v want %v", got, sigilv1.GenerationMode_GENERATION_MODE_STREAM)
+	if got := streamGeneration.GetMode(); got != agento11yv1.GenerationMode_GENERATION_MODE_STREAM {
+		t.Fatalf("unexpected proto mode: got %v want %v", got, agento11yv1.GenerationMode_GENERATION_MODE_STREAM)
 	}
 	if got := streamGeneration.GetOperationName(); got != conformanceStreamOperation {
 		t.Fatalf("unexpected proto operation: got %q want %q", got, conformanceStreamOperation)
@@ -1576,6 +1646,37 @@ func TestConformance_RatingHelper(t *testing.T) {
 	}
 }
 
+func TestConformance_ClientTagAttributes(t *testing.T) {
+	env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
+		cfg.Tags = map[string]string{"team": "payments"}
+	}))
+
+	_, recorder := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
+		Model: conformanceModel,
+		Tags:  map[string]string{"call_only": "yes"},
+	})
+	recorder.SetResult(sigil.Generation{
+		Usage: sigil.TokenUsage{InputTokens: 4, OutputTokens: 2},
+	}, nil)
+	recorder.End()
+	if err := recorder.Err(); err != nil {
+		t.Fatalf("record generation: %v", err)
+	}
+
+	span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+	attrs := spanAttrs(span)
+	requireSpanAttr(t, attrs, "agento11y.tag.team", "payments")
+	requireSpanAttrAbsent(t, attrs, "agento11y.tag.call_only")
+
+	metrics := env.CollectMetrics(t)
+	duration := findHistogram[float64](t, metrics, metricOperationDuration)
+	requireHistogramPointWithAttrs(t, duration, map[string]string{
+		"agento11y.tag.team": "payments",
+	})
+
+	env.Shutdown(t)
+}
+
 func TestConformance_ShutdownFlushesPendingGeneration(t *testing.T) {
 	env := newConformanceEnv(t, withConformanceConfig(func(cfg *sigil.Config) {
 		cfg.GenerationExport.BatchSize = 10
@@ -1628,7 +1729,7 @@ func requireSyncGenerationMetrics(t *testing.T, env *conformanceEnv) {
 	requireNoHistogram(t, metrics, metricTimeToFirstToken)
 }
 
-func findGenerationByConversationID(t *testing.T, requests []*sigilv1.ExportGenerationsRequest, conversationID string) *sigilv1.Generation {
+func findGenerationByConversationID(t *testing.T, requests []*agento11yv1.ExportGenerationsRequest, conversationID string) *agento11yv1.Generation {
 	t.Helper()
 
 	for _, req := range requests {
@@ -1667,7 +1768,7 @@ type modeExpect struct {
 	mode                 sigil.ContentCaptureMode
 	marker               string
 	protoContentStripped bool // system_prompt, message text/thinking, tool args/results, tools.description/schema all stripped
-	spanTitlePresent     bool // generation span carries sigil.conversation.title
+	spanTitlePresent     bool // generation span carries agento11y.conversation.title
 	protoCallErrorRaw    bool // proto.call_error is the raw provider message vs the error category
 	spanRawError         bool // span echoes the raw provider message via exception events / status
 }
@@ -1954,5 +2055,67 @@ func assertProtoContentField(t *testing.T, name, got, want string, expectStrippe
 	}
 	if got != want {
 		t.Errorf("%s: got %q want %q", name, got, want)
+	}
+}
+
+// TestConformance_NoSDKOwnedLegacySigilNamespace guards the agento11y rename:
+// the SDK must emit only agento11y.* names for SDK-owned span attributes,
+// metadata keys, and tag projections, while caller-supplied metadata and tags
+// pass through untouched even when they use the legacy sigil.* namespace.
+func TestConformance_NoSDKOwnedLegacySigilNamespace(t *testing.T) {
+	env := newConformanceEnv(t)
+
+	_, recorder := env.Client.StartGeneration(context.Background(), sigil.GenerationStart{
+		ID:                "gen-legacy-namespace",
+		ConversationID:    "conv-legacy-namespace",
+		ConversationTitle: "Legacy namespace check",
+		UserID:            "user-legacy",
+		AgentName:         "agent-legacy",
+		AgentVersion:      "1.0.0",
+		Model:             sigil.ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
+		ToolChoice:        stringPtr("auto"),
+		ThinkingEnabled:   boolPtr(true),
+		Tags:              map[string]string{"sigil.caller_tag": "caller-tag"},
+		Metadata: map[string]any{
+			"sigil.caller_key":            "caller-value",
+			spanAttrRequestThinkingBudget: int64(512),
+		},
+	})
+	recorder.SetResult(sigil.Generation{
+		Output: []sigil.Message{
+			{Role: sigil.RoleAssistant, Parts: []sigil.Part{sigil.TextPart("ok")}},
+		},
+		Usage: sigil.TokenUsage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2},
+	}, nil)
+	recorder.End()
+	if err := recorder.Err(); err != nil {
+		t.Fatalf("record generation: %v", err)
+	}
+	env.Shutdown(t)
+
+	span := findSpan(t, env.Spans.Ended(), conformanceOperationName)
+	attrs := spanAttrs(span)
+	for key := range attrs {
+		if strings.HasPrefix(key, "sigil.") {
+			t.Errorf("span attribute %q uses the legacy sigil namespace", key)
+		}
+	}
+	requireSpanAttr(t, attrs, spanAttrGenerationID, "gen-legacy-namespace")
+	requireSpanAttr(t, attrs, sdkMetadataKeyName, "sdk-go")
+
+	generation := env.Ingest.SingleGeneration(t)
+	metadata := generation.GetMetadata().AsMap()
+	for key := range metadata {
+		if strings.HasPrefix(key, "sigil.") && key != "sigil.caller_key" {
+			t.Errorf("exported metadata key %q uses the legacy sigil namespace", key)
+		}
+	}
+	if got := metadata["sigil.caller_key"]; got != "caller-value" {
+		t.Errorf("caller metadata key not preserved: got %v want %q", got, "caller-value")
+	}
+	requireProtoMetadata(t, generation, sdkMetadataKeyName, "sdk-go")
+	requireProtoMetadata(t, generation, metadataKeyCanonicalUserID, "user-legacy")
+	if got := generation.GetTags()["sigil.caller_tag"]; got != "caller-tag" {
+		t.Errorf("caller tag not preserved: got %q want %q", got, "caller-tag")
 	}
 }

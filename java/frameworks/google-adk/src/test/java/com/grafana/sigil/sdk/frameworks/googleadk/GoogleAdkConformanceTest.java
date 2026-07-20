@@ -66,19 +66,19 @@ class GoogleAdkConformanceTest {
             List<String> metricNames = env.metricNames();
 
             assertThat(generation.getTags())
-                    .containsEntry("sigil.framework.name", "google-adk")
-                    .containsEntry("sigil.framework.source", "handler")
-                    .containsEntry("sigil.framework.language", "java");
+                    .containsEntry("agento11y.framework.name", "google-adk")
+                    .containsEntry("agento11y.framework.source", "handler")
+                    .containsEntry("agento11y.framework.language", "java");
             assertThat(generation.getConversationId()).isEqualTo("conversation-42");
             assertThat(generation.getMetadata())
-                    .containsEntry("sigil.framework.run_id", "run-sync")
-                    .containsEntry("sigil.framework.run_type", "chat")
-                    .containsEntry("sigil.framework.thread_id", "thread-42")
-                    .containsEntry("sigil.framework.parent_run_id", "parent-run-42")
-                    .containsEntry("sigil.framework.component_name", "planner")
-                    .containsEntry("sigil.framework.retry_attempt", 2)
-                    .containsEntry("sigil.framework.event_id", "event-42");
-            assertThat(generation.getMetadata().get("sigil.framework.tags")).isEqualTo(List.of("prod", "framework"));
+                    .containsEntry("agento11y.framework.run_id", "run-sync")
+                    .containsEntry("agento11y.framework.run_type", "chat")
+                    .containsEntry("agento11y.framework.thread_id", "thread-42")
+                    .containsEntry("agento11y.framework.parent_run_id", "parent-run-42")
+                    .containsEntry("agento11y.framework.component_name", "planner")
+                    .containsEntry("agento11y.framework.retry_attempt", 2)
+                    .containsEntry("agento11y.framework.event_id", "event-42");
+            assertThat(generation.getMetadata().get("agento11y.framework.tags")).isEqualTo(List.of("prod", "framework"));
             assertThat(generation.getMetadata()).containsEntry("team", "infra");
             assertThat(span.getParentSpanContext().getSpanId()).isEqualTo(parent.getSpanContext().getSpanId());
             assertThat(metricNames).contains("gen_ai.client.operation.duration");

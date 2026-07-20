@@ -17,10 +17,10 @@ def test_tags_and_metadata_include_required_contract_fields() -> None:
     persona, tags, metadata = emitter.build_tags_metadata("openai", "SYNC", 2, 1)
 
     assert persona in {"planner", "retriever", "executor"}
-    assert tags["sigil.devex.language"] == "python"
-    assert tags["sigil.devex.provider"] == "openai"
-    assert tags["sigil.devex.source"] == "provider_wrapper"
-    assert tags["sigil.devex.mode"] == "SYNC"
+    assert tags["agento11y.devex.language"] == "python"
+    assert tags["agento11y.devex.provider"] == "openai"
+    assert tags["agento11y.devex.source"] == "provider_wrapper"
+    assert tags["agento11y.devex.mode"] == "SYNC"
 
     assert metadata["turn_index"] == 2
     assert metadata["conversation_slot"] == 1
@@ -77,7 +77,7 @@ def test_anthropic_emit_uses_messages_namespace_wrapper(monkeypatch) -> None:
         slot=0,
         agent_name="devex-python-anthropic-planner",
         agent_version="devex-1",
-        tags={"sigil.devex.provider": "anthropic"},
+        tags={"agento11y.devex.provider": "anthropic"},
         metadata={"provider_shape": "messages"},
     )
 
@@ -128,7 +128,7 @@ def test_gemini_stream_uses_models_namespace_and_responses_summary(monkeypatch) 
         slot=1,
         agent_name="devex-python-gemini-retriever",
         agent_version="devex-1",
-        tags={"sigil.devex.provider": "gemini"},
+        tags={"agento11y.devex.provider": "gemini"},
         metadata={"provider_shape": "generate_content"},
     )
 
@@ -171,7 +171,7 @@ def test_emit_frameworks_invokes_all_framework_handlers_for_provider_sources(mon
         slot=0,
         agent_name="devex-python-openai-planner",
         agent_version="devex-1",
-        tags={"sigil.devex.provider": "openai"},
+        tags={"agento11y.devex.provider": "openai"},
         metadata={"provider_shape": "framework"},
     )
 
@@ -202,7 +202,7 @@ def test_emit_frameworks_skips_non_provider_sources(monkeypatch) -> None:
         slot=0,
         agent_name="devex-python-mistral-planner",
         agent_version="devex-1",
-        tags={"sigil.devex.provider": "mistral"},
+        tags={"agento11y.devex.provider": "mistral"},
         metadata={"provider_shape": "framework"},
     )
 

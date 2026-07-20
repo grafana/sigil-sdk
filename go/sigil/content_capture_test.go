@@ -22,7 +22,10 @@ func TestStripContent(t *testing.T) {
 			Model:             ModelRef{Provider: "anthropic", Name: "claude-sonnet-4-5"},
 			SystemPrompt:      "You are helpful.",
 			Input: []Message{
-				{Role: RoleUser, Parts: []Part{{Kind: PartKindText, Text: "What is the weather?"}}},
+				{Role: RoleUser, Parts: []Part{
+					{Kind: PartKindText, Text: "What is the weather?"},
+					{Kind: PartKindMedia, Media: &Media{Kind: "image", URL: "data:image/png;base64,abc123", MIMEType: "image/png", Name: "weather-map.png"}},
+				}},
 				{Role: RoleTool, Parts: []Part{{Kind: PartKindToolResult, ToolResult: &ToolResult{
 					ToolCallID:  "call_1",
 					Name:        "weather",
@@ -44,7 +47,7 @@ func TestStripContent(t *testing.T) {
 			StopReason: "end_turn",
 			CallError:  "rate limit exceeded: prompt too long for model",
 			Artifacts:  []Artifact{{Kind: "request", Payload: []byte("raw")}},
-			Metadata:   map[string]any{"sigil.sdk.name": "sdk-go", "call_error": "rate limit exceeded: prompt too long for model", "sigil.conversation.title": "Weather chat"},
+			Metadata:   map[string]any{"agento11y.sdk.name": "sdk-go", "call_error": "rate limit exceeded: prompt too long for model", "agento11y.conversation.title": "Weather chat"},
 		}
 	}
 
@@ -67,6 +70,9 @@ func TestStripContent(t *testing.T) {
 		if gen.Output[0].Parts[2].Text != "" {
 			t.Fatal("Output text not stripped")
 		}
+		if gen.Input[0].Parts[1].Media.URL != "" {
+			t.Fatal("Media URL not stripped")
+		}
 		if gen.Input[1].Parts[0].ToolResult.Content != "" {
 			t.Fatal("ToolResult.Content not stripped")
 		}
@@ -85,8 +91,8 @@ func TestStripContent(t *testing.T) {
 		if gen.ConversationTitle != "" {
 			t.Fatal("ConversationTitle not stripped")
 		}
-		if _, ok := gen.Metadata["sigil.conversation.title"]; ok {
-			t.Fatal("Metadata[sigil.conversation.title] should be deleted")
+		if _, ok := gen.Metadata["agento11y.conversation.title"]; ok {
+			t.Fatal("Metadata[agento11y.conversation.title] should be deleted")
 		}
 	})
 
@@ -105,6 +111,12 @@ func TestStripContent(t *testing.T) {
 		}
 		if gen.Input[0].Role != RoleUser {
 			t.Fatal("Input role changed")
+		}
+		if gen.Input[0].Parts[1].Kind != PartKindMedia {
+			t.Fatal("Media part kind changed")
+		}
+		if gen.Input[0].Parts[1].Media.Kind != "image" || gen.Input[0].Parts[1].Media.MIMEType != "image/png" {
+			t.Fatal("Media metadata lost")
 		}
 		if gen.Output[0].Parts[0].Kind != PartKindThinking {
 			t.Fatal("Part kind changed")
@@ -139,7 +151,7 @@ func TestStripContent(t *testing.T) {
 		if gen.Model.Name != "claude-sonnet-4-5" {
 			t.Fatal("Model lost")
 		}
-		if gen.Metadata["sigil.sdk.name"] != "sdk-go" {
+		if gen.Metadata["agento11y.sdk.name"] != "sdk-go" {
 			t.Fatal("Metadata lost")
 		}
 	})

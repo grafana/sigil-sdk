@@ -1,6 +1,6 @@
 {
-  "name": "@grafana/sigil-sdk-js",
-  "version": "0.6.0",
+  "name": "@grafana/agento11y",
+  "version": "0.8.2",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -55,21 +55,21 @@
   "scripts": {
     "clean": "find dist -type f -delete 2>/dev/null || true && find dist -type d -empty -delete 2>/dev/null || true",
     "sync-proto": "node scripts/sync-proto.mjs",
-    "build": "pnpm --filter @grafana/sigil-sdk-js-core run build && pnpm run sync-proto && pnpm run clean && tsc --project tsconfig.build.json",
-    "typecheck": "pnpm --filter @grafana/sigil-sdk-js-core run typecheck && tsc --project tsconfig.json --noEmit",
-    "test:build": "pnpm --filter @grafana/sigil-sdk-js-core run build && pnpm run sync-proto && rm -rf .test-dist && tsc --project tsconfig.test.json",
+    "build": "pnpm --filter @grafana/agento11y-core run build && pnpm run sync-proto && pnpm run clean && tsc --project tsconfig.build.json",
+    "typecheck": "pnpm --filter @grafana/agento11y-core run typecheck && tsc --project tsconfig.json --noEmit",
+    "test:build": "pnpm --filter @grafana/agento11y-core run build && pnpm run sync-proto && rm -rf .test-dist && tsc --project tsconfig.test.json",
     "test": "pnpm run test:build && node --import ./test/_setup.mjs --test test/**/*.test.mjs",
     "test:ci": "pnpm run test",
-    "lint": "pnpm --filter @grafana/sigil-sdk-js-core run lint && biome check .",
+    "lint": "pnpm --filter @grafana/agento11y-core run lint && biome check .",
     "lint:fix": "biome check --fix ."
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.81.0",
+    "@anthropic-ai/sdk": "^0.91.0",
     "@google/adk": "^0.5.0",
     "@google/genai": "^1.41.0",
-    "@grpc/grpc-js": "^1.14.1",
+    "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.0",
-    "@langchain/core": "^1.0.0",
+    "@langchain/core": "^1.2.1",
     "@langchain/langgraph": "^1.2.0",
     "@openai/agents": "^0.8.0",
     "@opentelemetry/api": "^1.9.0",

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import agento11y_anthropic
 import pytest
-import sigil_sdk_anthropic
-from sigil_sdk import Client, ClientConfig, GenerationExportConfig
-from sigil_sdk.models import ExportGenerationResult, ExportGenerationsResponse
-from sigil_sdk_anthropic import AnthropicOptions, AnthropicStreamSummary, messages
+from agento11y import Client, ClientConfig, GenerationExportConfig
+from agento11y.models import ExportGenerationResult, ExportGenerationsResponse
+from agento11y_anthropic import AnthropicOptions, AnthropicStreamSummary, messages
 
 
 class _CapturingExporter:
@@ -199,7 +199,7 @@ def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> No
     assert mapped_default.top_p == 0.75
     assert mapped_default.tool_choice == '{"name":"weather","type":"tool"}'
     assert mapped_default.thinking_enabled is True
-    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
+    assert mapped_default.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 2048
     assert mapped_default.usage.cache_write_input_tokens == 4
     assert mapped_default.usage.cache_read_input_tokens == 12
     assert mapped_default.artifacts == []
@@ -220,7 +220,7 @@ def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> No
     assert stream_mapped.max_tokens == 512
     assert stream_mapped.tool_choice == '{"name":"weather","type":"tool"}'
     assert stream_mapped.thinking_enabled is True
-    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
+    assert stream_mapped.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 2048
     assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "tools", "provider_event"]
 
 
@@ -243,6 +243,6 @@ def test_anthropic_mapper_maps_thinking_disabled() -> None:
 
 
 def test_anthropic_provider_explicitly_has_no_embeddings_surface() -> None:
-    assert "messages" in sigil_sdk_anthropic.__all__
-    assert "embeddings" not in sigil_sdk_anthropic.__all__
-    assert not hasattr(sigil_sdk_anthropic, "embeddings")
+    assert "messages" in agento11y_anthropic.__all__
+    assert "embeddings" not in agento11y_anthropic.__all__
+    assert not hasattr(agento11y_anthropic, "embeddings")

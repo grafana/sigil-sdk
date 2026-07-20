@@ -36,7 +36,7 @@ vi.mock("./git.js", () => ({
   resolveGitBranch: resolveGitBranchMock,
 }));
 
-import type { SigilClient } from "@grafana/sigil-sdk-js";
+import type { SigilClient } from "@grafana/agento11y";
 import registerExtension, { emitToolSpans } from "./index.js";
 import type {
   PiAssistantMessage,
@@ -1358,57 +1358,400 @@ describe("extension lifecycle", () => {
         name: "unknown",
       });
     });
+
+    it("applies transformedInput tool args to event.input via in-place mutation", async () => {
+      const evaluateHook = vi.fn().mockResolvedValue({
+        action: "allow",
+        evaluations: [],
+        transformedInput: {
+          output: [
+            {
+              role: "assistant",
+              parts: [
+                {
+                  type: "tool_call",
+                  toolCall: {
+                    id: "c1",
+                    name: "bash",
+                    inputJSON: '{"command":"echo [REDACTED]"}',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const sigil = makeSigilLike(evaluateHook);
+
+      loadConfigMock.mockResolvedValue({
+        endpoint: "http://localhost:8080/api/v1/generations:export",
+        auth: { mode: "none" },
+        agentName: "pi",
+        contentCapture: "metadata_only",
+        guards: { enabled: true, timeoutMs: 1500, failOpen: true },
+      });
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      await fakePi.emit("turn_start");
+      const handler = fakePi.handlers.get("tool_call")!;
+      const event = {
+        toolCallId: "c1",
+        toolName: "bash",
+        input: { command: "echo sk-real-secret" },
+      };
+      const result = await handler(event, defaultCtx);
+
+      // Allow the call (no block) but mutate input in place.
+      expect(result).toBeUndefined();
+      expect(event.input).toEqual({ command: "echo [REDACTED]" });
+    });
   });
 
-  it("emits git.branch tag when contentCapture=full", async () => {
-    resolveGitBranchMock.mockReturnValue("feature-x");
-
-    let capturedSeed: { tags?: Record<string, string> } | undefined;
-    const recorder = {
-      setResult: vi.fn(),
-      setCallError: vi.fn(),
-      setFirstTokenAt: vi.fn(),
-    };
-    const sigil: SigilLike = {
-      startStreamingGeneration: vi.fn(async (seed, run) => {
-        capturedSeed = seed as { tags?: Record<string, string> };
-        await run(recorder);
-      }),
-      startToolExecution: vi.fn(() => ({
+  describe("guards (context wiring — preflight transform)", () => {
+    function makeRecorder() {
+      return {
         setResult: vi.fn(),
         setCallError: vi.fn(),
-        end: vi.fn(),
-        getError: vi.fn(),
-      })),
-      shutdown: vi.fn(async () => {}),
-    };
+        setFirstTokenAt: vi.fn(),
+      };
+    }
 
-    loadConfigMock.mockResolvedValue({
-      endpoint: "http://localhost:8080/api/v1/generations:export",
-      auth: { mode: "none" },
-      agentName: "pi",
-      contentCapture: "full",
+    function makeSigilLike(
+      evaluateHook?: ReturnType<typeof vi.fn>,
+    ): SigilLike & { evaluateHook?: ReturnType<typeof vi.fn> } {
+      const recorder = makeRecorder();
+      return {
+        startStreamingGeneration: vi.fn(async (_seed, run) => {
+          await run(recorder);
+        }),
+        startToolExecution: vi.fn(() => ({
+          setResult: vi.fn(),
+          setCallError: vi.fn(),
+          end: vi.fn(),
+          getError: vi.fn(),
+        })),
+        shutdown: vi.fn(async () => {}),
+        ...(evaluateHook ? { evaluateHook } : {}),
+      } as SigilLike & { evaluateHook?: ReturnType<typeof vi.fn> };
+    }
+
+    function preflightConfig() {
+      return {
+        endpoint: "http://localhost:8080/api/v1/generations:export",
+        auth: { mode: "none" as const },
+        agentName: "pi",
+        contentCapture: "metadata_only" as const,
+        guards: { enabled: true, timeoutMs: 1500, failOpen: true },
+      };
+    }
+
+    it("does not call evaluateHook when guards are disabled", async () => {
+      const evaluateHook = vi.fn();
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue({
+        ...preflightConfig(),
+        guards: { enabled: false, timeoutMs: 1500, failOpen: true },
+      });
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const result = await handler(
+        {
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        },
+        defaultCtx,
+      );
+
+      expect(evaluateHook).not.toHaveBeenCalled();
+      expect(result).toBeUndefined();
     });
-    createSigilClientMock.mockReturnValue(sigil);
 
-    const pi = new FakePi();
-    registerExtension(pi as any);
+    it("replaces outgoing messages with redacted text from transformedInput", async () => {
+      const evaluateHook = vi.fn().mockResolvedValue({
+        action: "allow",
+        evaluations: [],
+        transformedInput: {
+          messages: [
+            {
+              role: "user",
+              parts: [
+                {
+                  type: "text",
+                  text: "my email is [REDACTED_EMAIL]",
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
 
-    await pi.emit("session_start");
-    await pi.emit("turn_start");
-    await pi.emit("turn_end", {
-      message: assistantMessage(),
-      toolResults: [],
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const piMessages = [
+        {
+          role: "user",
+          content: "my email is leak@example.com",
+          timestamp: 1,
+        },
+      ];
+      const result = await handler({ messages: piMessages }, defaultCtx);
+
+      expect(evaluateHook).toHaveBeenCalledTimes(1);
+      const [_req, override] = evaluateHook.mock.calls[0]!;
+      expect(override).toEqual({
+        enabled: true,
+        phases: ["preflight"],
+      });
+      expect(result).toEqual({ messages: piMessages });
+      expect(piMessages[0]!.content).toBe("my email is [REDACTED_EMAIL]");
     });
 
-    expect(resolveGitBranchMock).toHaveBeenCalledTimes(1);
-    expect(capturedSeed!.tags).toEqual({ "git.branch": "feature-x" });
+    it("returns undefined when the server emits no transformedInput", async () => {
+      const evaluateHook = vi
+        .fn()
+        .mockResolvedValue({ action: "allow", evaluations: [] });
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const piMessages = [{ role: "user", content: "hello", timestamp: 1 }];
+      const result = await handler({ messages: piMessages }, defaultCtx);
+      expect(result).toBeUndefined();
+      expect(piMessages[0]!.content).toBe("hello");
+    });
+
+    it("fails open (no transform) when evaluateHook throws", async () => {
+      const evaluateHook = vi.fn().mockRejectedValue(new Error("timeout"));
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const piMessages = [
+        { role: "user", content: "hello secret@example.com", timestamp: 1 },
+      ];
+      const result = await handler({ messages: piMessages }, defaultCtx);
+      expect(result).toBeUndefined();
+      expect(piMessages[0]!.content).toBe("hello secret@example.com");
+    });
+
+    it("passes through unchanged when redacted message count diverges", async () => {
+      // Only one outgoing message but the server returned two. Pi keeps
+      // the originals: we refuse to apply a misaligned redaction.
+      loggerMock.debug.mockReset();
+      const evaluateHook = vi.fn().mockResolvedValue({
+        action: "allow",
+        evaluations: [],
+        transformedInput: {
+          messages: [
+            { role: "user", parts: [{ type: "text", text: "a" }] },
+            { role: "user", parts: [{ type: "text", text: "b" }] },
+          ],
+        },
+      });
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const piMessages = [{ role: "user", content: "original", timestamp: 1 }];
+      const result = await handler({ messages: piMessages }, defaultCtx);
+      expect(result).toBeUndefined();
+      expect(piMessages[0]!.content).toBe("original");
+      expect(loggerMock.debug).toHaveBeenCalledWith(
+        expect.stringContaining("preflight transform dropped"),
+      );
+    });
+
+    it("keeps thinking parts on assistant messages untouched during redaction", async () => {
+      const evaluateHook = vi.fn().mockResolvedValue({
+        action: "allow",
+        evaluations: [],
+        transformedInput: {
+          messages: [
+            { role: "user", parts: [{ type: "text", text: "hi [REDACTED]" }] },
+            {
+              role: "assistant",
+              parts: [{ type: "text", text: "answer" }],
+            },
+          ],
+        },
+      });
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const piMessages = [
+        { role: "user", content: "hi secret@example.com", timestamp: 1 },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "opaque-sig" },
+            { type: "text", text: "original" },
+          ],
+          provider: "anthropic",
+          model: "claude-sonnet-4",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+          },
+          stopReason: "stop",
+          timestamp: 2,
+        },
+      ];
+      await handler({ messages: piMessages }, defaultCtx);
+
+      // User text overwritten.
+      expect(piMessages[0]!.content).toBe("hi [REDACTED]");
+      // Thinking part preserved unchanged on the assistant message.
+      const asst = piMessages[1] as unknown as {
+        content: Array<{ type: string; text?: string; thinking?: string }>;
+      };
+      expect(asst.content[0]).toEqual({
+        type: "thinking",
+        thinking: "opaque-sig",
+      });
+      expect(asst.content[1]).toMatchObject({
+        type: "text",
+        text: "answer",
+      });
+    });
+
+    it("sends provider/name = unknown on the first preflight (no assistant turn yet)", async () => {
+      const evaluateHook = vi
+        .fn()
+        .mockResolvedValue({ action: "allow", evaluations: [] });
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      await handler(
+        {
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        },
+        defaultCtx,
+      );
+      const req = evaluateHook.mock.calls[0]![0] as {
+        context: { model: { provider: string; name: string } };
+      };
+      expect(req.context.model).toEqual({
+        provider: "unknown",
+        name: "unknown",
+      });
+    });
+
+    it("applies redacted tool-result content from the server's tool_result part", async () => {
+      // Regression for the bug where the plugin only walked text parts and
+      // silently dropped the server's redacted `tool_result.content`. The
+      // server transforms ToolResult.Content in place and returns it on the
+      // same tool_result part, not as a synthetic text part.
+      const evaluateHook = vi.fn().mockResolvedValue({
+        action: "allow",
+        evaluations: [],
+        transformedInput: {
+          messages: [
+            { role: "user", parts: [{ type: "text", text: "run it" }] },
+            {
+              role: "tool",
+              parts: [
+                {
+                  type: "tool_result",
+                  toolResult: {
+                    toolCallId: "c1",
+                    name: "bash",
+                    content: "token=[REDACTED_API_KEY]",
+                    isError: false,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      const sigil = makeSigilLike(evaluateHook);
+      loadConfigMock.mockResolvedValue(preflightConfig());
+      createSigilClientMock.mockReturnValue(sigil);
+
+      const fakePi = new FakePi();
+      registerExtension(fakePi as any);
+
+      await fakePi.emit("session_start");
+      const handler = fakePi.handlers.get("context")!;
+      const piMessages = [
+        { role: "user", content: "run it", timestamp: 1 },
+        {
+          role: "toolResult",
+          toolCallId: "c1",
+          toolName: "bash",
+          content: [{ type: "text", text: "token=sk-LEAKED" }],
+          isError: false,
+          timestamp: 2,
+        },
+      ];
+      const result = await handler({ messages: piMessages }, defaultCtx);
+      expect(result).toEqual({ messages: piMessages });
+      const tr = piMessages[1] as unknown as {
+        content: Array<{ type: string; text?: string }>;
+      };
+      expect(tr.content[0]).toMatchObject({
+        type: "text",
+        text: "token=[REDACTED_API_KEY]",
+      });
+    });
   });
 
-  it("omits git.branch tag (and skips the subprocess) when contentCapture is not full", async () => {
+  it("emits git.branch and cwd tags regardless of content capture mode", async () => {
+    // git.branch + cwd are low-cardinality session metadata, not message
+    // content; they ship in every content-capture mode (matches
+    // claude-code/cursor).
     resolveGitBranchMock.mockReturnValue("feature-x");
 
-    for (const mode of ["metadata_only", "no_tool_content"] as const) {
+    for (const mode of [
+      "full",
+      "metadata_only",
+      "no_tool_content",
+      "full_with_metadata_spans",
+    ] as const) {
       resolveGitBranchMock.mockClear();
 
       let capturedSeed: { tags?: Record<string, string> } | undefined;
@@ -1449,12 +1792,15 @@ describe("extension lifecycle", () => {
         toolResults: [],
       });
 
-      expect(resolveGitBranchMock, `mode=${mode}`).not.toHaveBeenCalled();
-      expect(capturedSeed!.tags, `mode=${mode}`).toBeUndefined();
+      expect(resolveGitBranchMock, `mode=${mode}`).toHaveBeenCalledTimes(1);
+      expect(capturedSeed!.tags, `mode=${mode}`).toEqual({
+        "git.branch": "feature-x",
+        cwd: process.cwd(),
+      });
     }
   });
 
-  it("omits git.branch tag when not in a git repo even with contentCapture=full", async () => {
+  it("emits cwd tag without git.branch when not in a git repo", async () => {
     resolveGitBranchMock.mockReturnValue(undefined);
 
     let capturedSeed: { tags?: Record<string, string> } | undefined;
@@ -1496,7 +1842,7 @@ describe("extension lifecycle", () => {
     });
 
     expect(resolveGitBranchMock).toHaveBeenCalledTimes(1);
-    expect(capturedSeed!.tags).toBeUndefined();
+    expect(capturedSeed!.tags).toEqual({ cwd: process.cwd() });
   });
 
   describe("systemPrompt capture", () => {
@@ -1983,7 +2329,7 @@ describe("extension lifecycle", () => {
       expect(seed.topP).toBe(0.9);
       expect(seed.toolChoice).toBe("auto");
       expect(seed.metadata).toEqual({
-        "sigil.gen_ai.request.thinking.budget_tokens": 2048,
+        "agento11y.gen_ai.request.thinking.budget_tokens": 2048,
       });
     });
 
@@ -2164,7 +2510,7 @@ describe("extension lifecycle", () => {
       expect(seeds[0]!.topP).toBe(0.95);
       expect(seeds[0]!.toolChoice).toBe("ANY");
       expect(seeds[0]!.metadata).toEqual({
-        "sigil.gen_ai.request.thinking.budget_tokens": 2048,
+        "agento11y.gen_ai.request.thinking.budget_tokens": 2048,
       });
     });
 

@@ -1,8 +1,11 @@
+// FROZEN legacy schema. sigil.v1 is retained only so final legacy SDK
+// releases keep ingesting during the migration window. Do not change it;
+// the canonical schema is proto/agento11y/v1/generation_ingest.proto.
 syntax = "proto3";
 
 package sigil.v1;
 
-option go_package = "github.com/grafana/sigil-sdk/go/proto/sigil/v1;sigilv1";
+option go_package = "github.com/grafana/agento11y/go/proto/sigil/v1;sigilv1";
 
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
@@ -58,6 +61,13 @@ message ToolResult {
   bool is_error = 5;
 }
 
+message Media {
+  string kind = 1;
+  string url = 2;
+  string mime_type = 3;
+  string name = 4;
+}
+
 message Part {
   PartMetadata metadata = 1;
 
@@ -66,6 +76,7 @@ message Part {
     string thinking = 3;
     ToolCall tool_call = 4;
     ToolResult tool_result = 5;
+    Media media = 6;
   }
 }
 

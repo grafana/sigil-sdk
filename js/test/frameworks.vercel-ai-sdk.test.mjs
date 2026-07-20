@@ -70,9 +70,74 @@ test('vercel ai sdk generateText hooks record single-step success', async () => 
   assert.equal(generation.usage.cacheReadInputTokens, 2);
   assert.equal(generation.usage.cacheWriteInputTokens, 1);
   assert.equal(generation.usage.reasoningTokens, 3);
-  assert.equal(generation.tags['sigil.framework.name'], 'vercel-ai-sdk');
-  assert.equal(generation.metadata['sigil.framework.step_type'], 'initial');
-  assert.equal(generation.metadata['sigil.framework.reasoning_text'], 'reasoning detail');
+  assert.equal(generation.tags['agento11y.framework.name'], 'vercel-ai-sdk');
+  assert.equal(generation.metadata['agento11y.framework.step_type'], 'initial');
+  assert.equal(generation.metadata['agento11y.framework.reasoning_text'], 'reasoning detail');
+});
+
+test('vercel ai sdk prepareStep records input messages for ai sdk v6', async () => {
+  const { generations } = await captureSession(async (client) => {
+    const sigil = createSigilVercelAiSdk(client);
+    const hooks = sigil.generateTextHooks({ conversationId: 'conv-v6-prepare-step' });
+
+    const prepareResult = hooks.prepareStep?.({
+      stepNumber: 0,
+      model: { provider: 'openai', modelId: 'gpt-5' },
+      messages: [{ role: 'user', content: 'hello from v6' }],
+      steps: [],
+      experimental_context: undefined,
+    });
+    assert.equal(prepareResult, undefined);
+
+    hooks.onStepFinish?.({
+      stepNumber: 0,
+      stepType: 'initial',
+      text: 'hello back',
+      finishReason: 'stop',
+      response: { id: 'resp-v6-prepare-step', modelId: 'gpt-5' },
+    });
+  });
+
+  assert.equal(generations.length, 1);
+  assert.equal(generations[0].conversationId, 'conv-v6-prepare-step');
+  assert.equal(generations[0].input[0].content, 'hello from v6');
+  assert.equal(generations[0].output[0].content, 'hello back');
+});
+
+test('vercel ai sdk streamText prepareStep records input messages for ai sdk v6', async () => {
+  const { generations } = await captureSession(async (client) => {
+    const sigil = createSigilVercelAiSdk(client);
+    const hooks = sigil.streamTextHooks({ conversationId: 'conv-v6-stream-prepare-step' });
+
+    const prepareResult = hooks.prepareStep?.({
+      stepNumber: 0,
+      model: { provider: 'anthropic', modelId: 'claude-sonnet-4-5' },
+      messages: [{ role: 'user', content: 'stream from v6' }],
+      steps: [],
+      experimental_context: undefined,
+    });
+    assert.equal(prepareResult, undefined);
+
+    hooks.onChunk?.({
+      stepNumber: 0,
+      chunk: {
+        type: 'text-delta',
+        text: 'hel',
+      },
+    });
+    hooks.onStepFinish?.({
+      stepNumber: 0,
+      stepType: 'initial',
+      text: 'hello stream',
+      finishReason: 'stop',
+      response: { id: 'resp-v6-stream-prepare-step', modelId: 'claude-sonnet-4-5' },
+    });
+  });
+
+  assert.equal(generations.length, 1);
+  assert.equal(generations[0].mode, 'STREAM');
+  assert.equal(generations[0].input[0].content, 'stream from v6');
+  assert.equal(generations[0].output[0].content, 'hello stream');
 });
 
 test('vercel ai sdk generateText hooks record single-step error', async () => {
@@ -374,8 +439,8 @@ test('vercel ai sdk generateText hooks support multi-step loop and tool lifecycl
   });
 
   assert.equal(generations.length, 2);
-  assert.equal(generations[0].metadata['sigil.framework.step_type'], 'initial');
-  assert.equal(generations[1].metadata['sigil.framework.step_type'], 'tool-result');
+  assert.equal(generations[0].metadata['agento11y.framework.step_type'], 'initial');
+  assert.equal(generations[1].metadata['agento11y.framework.step_type'], 'tool-result');
   assert.equal(generations[0].conversationId, 'conv-loop');
   assert.equal(generations[1].conversationId, 'conv-loop');
   assert.equal(generations[1].input[1].role, 'tool');

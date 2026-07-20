@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/sigil-sdk/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -45,6 +46,24 @@ func TestSDKExportsGenerationOverGRPC_AllPropertiesRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSDKExportsWorkflowStepOverHTTP_AllPropertiesRoundTrip(t *testing.T) {
+	step := workflowStepPayloadFromSeed(42)
+	expected, received := runSDKWorkflowStepRoundTrip(t, exportTransportHTTP, step)
+
+	if !proto.Equal(expected, received) {
+		t.Fatalf("http workflow step roundtrip mismatch\nexpected=%s\nreceived=%s", protojson.Format(expected), protojson.Format(received))
+	}
+}
+
+func TestSDKExportsWorkflowStepOverGRPC_AllPropertiesRoundTrip(t *testing.T) {
+	step := workflowStepPayloadFromSeed(99)
+	expected, received := runSDKWorkflowStepRoundTrip(t, exportTransportGRPC, step)
+
+	if !proto.Equal(expected, received) {
+		t.Fatalf("grpc workflow step roundtrip mismatch\nexpected=%s\nreceived=%s", protojson.Format(expected), protojson.Format(received))
+	}
+}
+
 func TestSDKExportsGenerationOverGRPCAboveDefaultMessageLimit(t *testing.T) {
 	ingest := &capturingIngestServer{}
 
@@ -52,7 +71,7 @@ func TestSDKExportsGenerationOverGRPCAboveDefaultMessageLimit(t *testing.T) {
 		grpc.MaxRecvMsgSize(defaultGRPCMaxReceiveMessageBytes),
 		grpc.MaxSendMsgSize(defaultGRPCMaxSendMessageBytes),
 	)
-	sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+	agento11yv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -198,7 +217,7 @@ func TestSDKExportsGenerationOverNone_NoSend(t *testing.T) {
 	}
 }
 
-func runSDKRoundTrip(t *testing.T, transport exportTransport, start GenerationStart, result Generation) (*sigilv1.Generation, *sigilv1.Generation) {
+func runSDKRoundTrip(t *testing.T, transport exportTransport, start GenerationStart, result Generation) (*agento11yv1.Generation, *agento11yv1.Generation) {
 	t.Helper()
 
 	ingest := &capturingIngestServer{}
@@ -230,6 +249,35 @@ func runSDKRoundTrip(t *testing.T, transport exportTransport, start GenerationSt
 	return expected, request.Generations[0]
 }
 
+func runSDKWorkflowStepRoundTrip(t *testing.T, transport exportTransport, step WorkflowStep) (*agento11yv1.WorkflowStep, *agento11yv1.WorkflowStep) {
+	t.Helper()
+
+	ingest := &capturingIngestServer{}
+	client := newTransportTestClient(t, transport, ingest)
+
+	if err := client.EnqueueWorkflowStep(step); err != nil {
+		t.Fatalf("enqueue workflow step: %v", err)
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("shutdown client: %v", err)
+	}
+
+	request := ingest.singleWorkflowStepRequest(t)
+	if len(request.WorkflowSteps) != 1 {
+		t.Fatalf("expected 1 workflow step, got %d", len(request.WorkflowSteps))
+	}
+
+	expected, err := workflowStepToProto(step)
+	if err != nil {
+		t.Fatalf("convert expected workflow step to proto: %v", err)
+	}
+
+	return expected, request.WorkflowSteps[0]
+}
+
 func newTransportTestClient(t *testing.T, transport exportTransport, ingest *capturingIngestServer) *Client {
 	t.Helper()
 
@@ -259,7 +307,28 @@ func newTransportTestClient(t *testing.T, transport exportTransport, ingest *cap
 				return
 			}
 
-			request := &sigilv1.ExportGenerationsRequest{}
+			if r.URL.Path == "/api/v1/workflow-steps:export" {
+				request := &agento11yv1.ExportWorkflowStepsRequest{}
+				if err := protojson.Unmarshal(payload, request); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				ingest.captureWorkflowSteps(request)
+
+				response := workflowStepAcceptanceResponse(request)
+				encoded, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(response)
+				if err != nil {
+					http.Error(w, "marshal response", http.StatusInternalServerError)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write(encoded)
+				return
+			}
+
+			request := &agento11yv1.ExportGenerationsRequest{}
 			if err := protojson.Unmarshal(payload, request); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -283,7 +352,8 @@ func newTransportTestClient(t *testing.T, transport exportTransport, ingest *cap
 		cfg.GenerationExport.Endpoint = httpServer.URL + "/api/v1/generations:export"
 	case exportTransportGRPC:
 		grpcServer := grpc.NewServer()
-		sigilv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+		agento11yv1.RegisterGenerationIngestServiceServer(grpcServer, ingest)
+		agento11yv1.RegisterWorkflowStepIngestServiceServer(grpcServer, ingest)
 
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -405,6 +475,44 @@ func payloadFromSeed(seed uint64) (GenerationStart, Generation) {
 	return start, result
 }
 
+func workflowStepPayloadFromSeed(seed uint64) WorkflowStep {
+	rnd := rand.New(rand.NewSource(int64(seed)))
+	startedAt := time.Unix(int64(seed%1_000_000), int64(seed%1000)*int64(time.Millisecond)).UTC()
+	completedAt := startedAt.Add(250 * time.Millisecond)
+
+	return WorkflowStep{
+		ID:             "wfs-" + randomASCII(rnd, 10),
+		ConversationID: "conv-" + randomASCII(rnd, 8),
+		StepName:       "step-" + randomASCII(rnd, 6),
+		Framework:      "framework-" + randomASCII(rnd, 5),
+		StartedAt:      startedAt,
+		CompletedAt:    completedAt,
+		InputState: map[string]any{
+			"seed":    seed % 10000,
+			"enabled": seed%2 == 0,
+			"nested":  map[string]any{"n": rnd.Intn(100)},
+		},
+		OutputState: map[string]any{
+			"route": "answer-" + randomASCII(rnd, 5),
+		},
+		Error: "error-" + randomASCII(rnd, 4),
+		Tags: map[string]string{
+			"seed": fmt.Sprintf("%d", seed),
+			"env":  "test",
+		},
+		LinkedGenerationIDs: []string{"gen-" + randomASCII(rnd, 8), "gen-" + randomASCII(rnd, 8)},
+		ParentStepIDs:       []string{"wfs-parent-" + randomASCII(rnd, 5)},
+		AgentName:           "agent-" + randomASCII(rnd, 8),
+		AgentVersion:        "v-" + randomASCII(rnd, 6),
+		TraceID:             randomHex(rnd, 32),
+		SpanID:              randomHex(rnd, 16),
+		Metadata: map[string]any{
+			"run_id": "run-" + randomASCII(rnd, 8),
+			"seed":   seed % 10000,
+		},
+	}
+}
+
 func randomASCII(rnd *rand.Rand, n int) string {
 	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 	bytes := make([]byte, n)
@@ -440,24 +548,57 @@ func boolPtr(value bool) *bool {
 }
 
 type capturingIngestServer struct {
-	sigilv1.UnimplementedGenerationIngestServiceServer
+	agento11yv1.UnimplementedGenerationIngestServiceServer
+	agento11yv1.UnimplementedWorkflowStepIngestServiceServer
 
-	mu       sync.Mutex
-	requests []*sigilv1.ExportGenerationsRequest
+	mu                   sync.Mutex
+	requests             []*agento11yv1.ExportGenerationsRequest
+	workflowStepRequests []*agento11yv1.ExportWorkflowStepsRequest
+	userAgents           []string
 }
 
-func (s *capturingIngestServer) ExportGenerations(_ context.Context, req *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (s *capturingIngestServer) ExportGenerations(ctx context.Context, req *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get("user-agent"); len(vals) > 0 {
+			s.mu.Lock()
+			s.userAgents = append(s.userAgents, vals[0])
+			s.mu.Unlock()
+		}
+	}
 	s.capture(req)
 	return acceptanceResponse(req), nil
 }
 
-func (s *capturingIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
+func (s *capturingIngestServer) ExportWorkflowSteps(ctx context.Context, req *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if vals := md.Get("user-agent"); len(vals) > 0 {
+			s.mu.Lock()
+			s.userAgents = append(s.userAgents, vals[0])
+			s.mu.Unlock()
+		}
+	}
+	s.captureWorkflowSteps(req)
+	return workflowStepAcceptanceResponse(req), nil
+}
+
+func (s *capturingIngestServer) singleUserAgent(t *testing.T) string {
+	t.Helper()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.userAgents) != 1 {
+		t.Fatalf("expected exactly one captured user-agent, got %d", len(s.userAgents))
+	}
+	return s.userAgents[0]
+}
+
+func (s *capturingIngestServer) capture(req *agento11yv1.ExportGenerationsRequest) {
 	if req == nil {
 		return
 	}
 
 	clone := proto.Clone(req)
-	typed, ok := clone.(*sigilv1.ExportGenerationsRequest)
+	typed, ok := clone.(*agento11yv1.ExportGenerationsRequest)
 	if !ok {
 		return
 	}
@@ -467,7 +608,7 @@ func (s *capturingIngestServer) capture(req *sigilv1.ExportGenerationsRequest) {
 	s.mu.Unlock()
 }
 
-func (s *capturingIngestServer) singleRequest(t *testing.T) *sigilv1.ExportGenerationsRequest {
+func (s *capturingIngestServer) singleRequest(t *testing.T) *agento11yv1.ExportGenerationsRequest {
 	t.Helper()
 
 	s.mu.Lock()
@@ -478,10 +619,45 @@ func (s *capturingIngestServer) singleRequest(t *testing.T) *sigilv1.ExportGener
 	return s.requests[0]
 }
 
-func acceptanceResponse(req *sigilv1.ExportGenerationsRequest) *sigilv1.ExportGenerationsResponse {
-	response := &sigilv1.ExportGenerationsResponse{Results: make([]*sigilv1.ExportGenerationResult, len(req.GetGenerations()))}
+func (s *capturingIngestServer) captureWorkflowSteps(req *agento11yv1.ExportWorkflowStepsRequest) {
+	if req == nil {
+		return
+	}
+
+	clone := proto.Clone(req)
+	typed, ok := clone.(*agento11yv1.ExportWorkflowStepsRequest)
+	if !ok {
+		return
+	}
+
+	s.mu.Lock()
+	s.workflowStepRequests = append(s.workflowStepRequests, typed)
+	s.mu.Unlock()
+}
+
+func (s *capturingIngestServer) singleWorkflowStepRequest(t *testing.T) *agento11yv1.ExportWorkflowStepsRequest {
+	t.Helper()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.workflowStepRequests) != 1 {
+		t.Fatalf("expected exactly one workflow step export request, got %d", len(s.workflowStepRequests))
+	}
+	return s.workflowStepRequests[0]
+}
+
+func acceptanceResponse(req *agento11yv1.ExportGenerationsRequest) *agento11yv1.ExportGenerationsResponse {
+	response := &agento11yv1.ExportGenerationsResponse{Results: make([]*agento11yv1.ExportGenerationResult, len(req.GetGenerations()))}
 	for i := range req.GetGenerations() {
-		response.Results[i] = &sigilv1.ExportGenerationResult{GenerationId: req.Generations[i].Id, Accepted: true}
+		response.Results[i] = &agento11yv1.ExportGenerationResult{GenerationId: req.Generations[i].Id, Accepted: true}
+	}
+	return response
+}
+
+func workflowStepAcceptanceResponse(req *agento11yv1.ExportWorkflowStepsRequest) *agento11yv1.ExportWorkflowStepsResponse {
+	response := &agento11yv1.ExportWorkflowStepsResponse{Results: make([]*agento11yv1.ExportWorkflowStepResult, len(req.GetWorkflowSteps()))}
+	for i := range req.GetWorkflowSteps() {
+		response.Results[i] = &agento11yv1.ExportWorkflowStepResult{StepId: req.WorkflowSteps[i].Id, Accepted: true}
 	}
 	return response
 }

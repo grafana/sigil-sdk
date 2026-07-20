@@ -5,8 +5,9 @@ const { SigilClientMock } = vi.hoisted(() => ({
   SigilClientMock: vi.fn(),
 }));
 
-vi.mock("@grafana/sigil-sdk-js", () => ({
+vi.mock("@grafana/agento11y", () => ({
   SigilClient: SigilClientMock,
+  userAgent: () => "agento11y-sdk-js/0.0.0-test",
 }));
 
 import { createSigilClient } from "./client.js";
@@ -51,6 +52,11 @@ describe("createSigilClient", () => {
         protocol: "http",
         endpoint: "http://localhost:8080/api/v1/generations:export",
         auth: { mode: "none" },
+        headers: {
+          "User-Agent": expect.stringMatching(
+            /^agento11y-plugin-opencode\/.+ agento11y-sdk-js\/0\.0\.0-test$/,
+          ),
+        },
       },
       api: { endpoint: "http://localhost:8080" },
       hooks: {
@@ -61,6 +67,15 @@ describe("createSigilClient", () => {
       },
       contentCapture: "metadata_only",
     });
+  });
+
+  it("sets the plugin User-Agent on the generation export", () => {
+    createSigilClient(makeConfig());
+
+    const [arg] = SigilClientMock.mock.calls[0];
+    const ua = arg.generationExport.headers["User-Agent"];
+    expect(ua.startsWith("agento11y-plugin-opencode/")).toBe(true);
+    expect(ua.endsWith("agento11y-sdk-js/0.0.0-test")).toBe(true);
   });
 
   it("passes guard config to the SDK client", () => {
