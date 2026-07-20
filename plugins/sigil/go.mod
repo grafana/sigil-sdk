@@ -1,6 +1,6 @@
 module github.com/grafana/sigil-sdk/plugins/sigil
 
-go 1.25.6
+go 1.25.7
 
 require (
 	github.com/charmbracelet/huh v1.0.0

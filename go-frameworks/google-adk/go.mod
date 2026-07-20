@@ -1,6 +1,6 @@
 module github.com/grafana/sigil-sdk/go-frameworks/google-adk
 
-go 1.25.6
+go 1.25.7
 
 require (
 	github.com/grafana/sigil-sdk/go v0.2.0

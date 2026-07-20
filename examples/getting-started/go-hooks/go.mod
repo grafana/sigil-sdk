@@ -1,6 +1,6 @@
 module github.com/grafana/sigil-sdk/examples/getting-started/go-hooks
 
-go 1.25.6
+go 1.25.7
 
 require (
 	github.com/grafana/sigil-sdk/go v0.2.0
