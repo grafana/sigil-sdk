@@ -155,10 +155,10 @@ async def test_sigil_query_records_claude_agent_stream() -> None:
         assert generation.agent_name == "claude-agent"
         assert generation.model.provider == "anthropic"
         assert generation.model.name == "claude-sonnet-4-5"
-        assert generation.tags["sigil.framework.name"] == "claude-agent-sdk"
-        assert generation.tags["sigil.framework.source"] == "hooks"
-        assert generation.metadata["sigil.framework.session_id"] == "session-42"
-        assert generation.metadata["sigil.claude_agent.total_cost_usd"] == 0.01
+        assert generation.tags["agento11y.framework.name"] == "claude-agent-sdk"
+        assert generation.tags["agento11y.framework.source"] == "hooks"
+        assert generation.metadata["agento11y.framework.session_id"] == "session-42"
+        assert generation.metadata["agento11y.claude_agent.total_cost_usd"] == 0.01
         assert generation.input[0].parts[0].text == "Inspect the README."
         assert generation.output[0].parts[0].text == "I'll use a tool."
         assert generation.output[0].parts[1].kind == PartKind.TOOL_CALL
@@ -379,7 +379,7 @@ async def test_sigil_query_reuses_finished_handler_for_new_generation() -> None:
         generations = exporter.requests[0].generations
         assert [generation.input[0].parts[0].text for generation in generations] == ["First prompt.", "Second prompt."]
         assert [generation.output[0].parts[0].text for generation in generations] == ["First.", "Second."]
-        assert [generation.metadata["sigil.framework.session_id"] for generation in generations] == [
+        assert [generation.metadata["agento11y.framework.session_id"] for generation in generations] == [
             "session-1",
             "session-2",
         ]
@@ -540,7 +540,7 @@ async def test_sigil_claude_sdk_client_records_receive_response_stream() -> None
         assert generation.input[0].parts[0].text == "Inspect the README."
         assert len(generation.input) == 1
         assert generation.output[0].parts[0].text == "Done."
-        assert generation.metadata["sigil.framework.session_id"] == "session-42"
+        assert generation.metadata["agento11y.framework.session_id"] == "session-42"
     finally:
         client.shutdown()
 
@@ -573,7 +573,7 @@ async def test_sigil_claude_sdk_client_records_multiple_queries() -> None:
         client.flush()
         generations = exporter.requests[0].generations
         assert [generation.output[0].parts[0].text for generation in generations] == ["First.", "Second."]
-        assert [generation.metadata["sigil.framework.session_id"] for generation in generations] == ["s1", "s2"]
+        assert [generation.metadata["agento11y.framework.session_id"] for generation in generations] == ["s1", "s2"]
     finally:
         client.shutdown()
 

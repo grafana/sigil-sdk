@@ -7,7 +7,7 @@ namespace Grafana.Sigil.Tests;
 
 public sealed class ClientTagsTests
 {
-    private const string ClientTagProjectKey = "sigil.tag.project";
+    private const string ClientTagProjectKey = "agento11y.tag.project";
 
     private sealed class TagsHarness : IAsyncDisposable
     {
@@ -164,9 +164,9 @@ public sealed class ClientTagsTests
         });
 
         Assert.Equal(2, attributes.Length);
-        Assert.Equal("sigil.tag.a", attributes[0].Key);
+        Assert.Equal("agento11y.tag.a", attributes[0].Key);
         Assert.Equal("", attributes[0].Value);
-        Assert.Equal("sigil.tag.z", attributes[1].Key);
+        Assert.Equal("agento11y.tag.z", attributes[1].Key);
         Assert.Equal("last", attributes[1].Value);
 
         await using var harness = new TagsHarness(new Dictionary<string, string>(StringComparer.Ordinal)
@@ -181,8 +181,8 @@ public sealed class ClientTagsTests
         recorder.End();
 
         var span = SingleSpan(harness);
-        Assert.Equal("", span.GetTagItem("sigil.tag.a")?.ToString());
-        Assert.Equal("last", span.GetTagItem("sigil.tag.z")?.ToString());
+        Assert.Equal("", span.GetTagItem("agento11y.tag.a")?.ToString());
+        Assert.Equal("last", span.GetTagItem("agento11y.tag.z")?.ToString());
         foreach (var tag in span.TagObjects)
         {
             Assert.Equal(tag.Key, tag.Key.Trim());
@@ -251,12 +251,12 @@ public sealed class ClientTagsTests
         await harness.Client.FlushAsync(TestContext.Current.CancellationToken);
 
         var span = SingleSpan(harness);
-        Assert.Null(span.GetTagItem("sigil.tag.call_only"));
+        Assert.Null(span.GetTagItem("agento11y.tag.call_only"));
 
         foreach (var measurement in harness.Measurements)
         {
             Assert.False(
-                measurement.Tags.ContainsKey("sigil.tag.call_only"),
+                measurement.Tags.ContainsKey("agento11y.tag.call_only"),
                 $"per-call tag must not appear on metric {measurement.Name}"
             );
         }

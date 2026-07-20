@@ -118,7 +118,7 @@ const result = await generateText({
 
 Each model step emits one generation with:
 
-- `metadata["sigil.framework.step_type"]` (`initial`, `continue`, `tool-result`)
+- `metadata["agento11y.framework.step_type"]` (`initial`, `continue`, `tool-result`)
 - per-step input captured from `prepareStep` or `experimental_onStepStart` (including prior tool result messages)
 
 ## Streaming (`streamText`) and TTFT

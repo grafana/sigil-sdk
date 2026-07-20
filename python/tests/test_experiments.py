@@ -187,11 +187,11 @@ def test_trial_span_emits_otel_eval_telemetry() -> None:
     assert attrs[otel.TEST_CASE_RUN_ID]  # the trial id
     # Verdict maps onto the merged pass|fail enum (this trial failed).
     assert attrs[otel.TEST_CASE_RESULT_STATUS] == "fail"
-    # The schema-version marker is the one sigil.* attribute we keep.
+    # The schema-version marker is the one agento11y.* attribute we keep.
     assert attrs[otel.ATTR_SCHEMA_VERSION] == otel.SCHEMA_VERSION
-    # No sigil.* mirrors are emitted.
-    assert not any(str(k).startswith("sigil.eval.experiment") for k in attrs)
-    assert not any(str(k).startswith("sigil.test_case_trial") for k in attrs)
+    # No mirrors are emitted, in neither the agento11y.* nor the legacy sigil.* namespace.
+    assert not any(str(k).startswith("agento11y.eval.experiment") for k in attrs)
+    assert not any(str(k).startswith("sigil.") for k in attrs)
 
     # The eval result event uses OTel names; the verdict is the score label.
     events = [e for e in span.events if e.name == otel.EVENT_EVAL_RESULT]
@@ -202,7 +202,7 @@ def test_trial_span_emits_otel_eval_telemetry() -> None:
     assert eattrs[otel.EVAL_SCORE_LABEL] == "fail"
     assert eattrs[otel.EVAL_EVALUATOR_ID] == "exact"
     assert eattrs[otel.EVAL_EVALUATOR_TYPE] == "deterministic"
-    assert "sigil.eval.score.passed" not in eattrs  # verdict is the label, no mirror
+    assert "agento11y.eval.score.passed" not in eattrs  # verdict is the label, no mirror
     assert eattrs[otel.EVAL_EXPLANATION] == "off by one"
 
 

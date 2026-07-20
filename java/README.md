@@ -44,7 +44,7 @@ For a Grafana Cloud setup walkthrough (where to find the endpoint URL, instance 
 `GenerationRecorder#error()` reports local SDK failures only (validation/enqueue/shutdown), not provider call exceptions.
 
 - Generation/tool spans always include:
-  - `sigil.sdk.name=sdk-java`
+  - `agento11y.sdk.name=sdk-java`
 - Normalized generation metadata always includes the same key.
 - If caller metadata provides a conflicting value for this key, the SDK overwrites it.
 
@@ -177,7 +177,7 @@ Dynamic resolution via `ContentCaptureResolver`:
 ```java
 SigilClient client = new SigilClient(new SigilClientConfig()
     .setContentCaptureResolver(metadata -> {
-        if (metadata != null && "healthcare".equals(metadata.get("sigil.tenant"))) {
+        if (metadata != null && "healthcare".equals(metadata.get("tenant"))) {
             return ContentCaptureMode.METADATA_ONLY;
         }
         return ContentCaptureMode.DEFAULT;
@@ -199,7 +199,7 @@ Resolution precedence for tool executions (highest to lowest):
 3. `ContentCaptureResolver` return value
 4. `SigilClientConfig.contentCapture` (defaults to `NO_TOOL_CONTENT`)
 
-User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `userId` each show up (export vs spans vs metrics).
+User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `userId` each show up (export vs spans vs metrics).
 
 ## Embedding Observability
 

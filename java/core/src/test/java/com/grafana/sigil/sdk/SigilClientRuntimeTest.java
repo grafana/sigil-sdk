@@ -179,7 +179,7 @@ class SigilClientRuntimeTest {
 
             assertThat(recorder.error()).isEmpty();
             assertThat(recorder.lastGeneration().orElseThrow().getCallError()).contains("provider blew up");
-            assertThat(recorder.lastGeneration().orElseThrow().getMetadata().get("sigil.sdk.name")).isEqualTo("sdk-java");
+            assertThat(recorder.lastGeneration().orElseThrow().getMetadata().get("agento11y.sdk.name")).isEqualTo("sdk-java");
         }
     }
 
@@ -188,10 +188,10 @@ class SigilClientRuntimeTest {
         TestFixtures.CapturingExporter exporter = new TestFixtures.CapturingExporter();
         try (SigilClient client = TestFixtures.newClient(exporter)) {
             GenerationStart start = TestFixtures.startFixture();
-            start.getMetadata().put("sigil.sdk.name", "seed-value");
+            start.getMetadata().put("agento11y.sdk.name", "seed-value");
 
             GenerationResult result = TestFixtures.resultFixture();
-            result.getMetadata().put("sigil.sdk.name", "result-value");
+            result.getMetadata().put("agento11y.sdk.name", "result-value");
 
             GenerationRecorder recorder = client.startGeneration(start);
             recorder.setResult(result);
@@ -199,7 +199,7 @@ class SigilClientRuntimeTest {
 
             assertThat(recorder.error()).isEmpty();
             Generation generation = recorder.lastGeneration().orElseThrow();
-            assertThat(generation.getMetadata().get("sigil.sdk.name")).isEqualTo("sdk-java");
+            assertThat(generation.getMetadata().get("agento11y.sdk.name")).isEqualTo("sdk-java");
         }
     }
 

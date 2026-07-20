@@ -2,7 +2,7 @@ import type OpenAI from 'openai';
 import type { SigilClient } from '../client.js';
 import type { EmbeddingResult, GenerationResult, Message, TokenUsage, ToolDefinition } from '../types.js';
 
-const thinkingBudgetMetadataKey = 'sigil.gen_ai.request.thinking.budget_tokens';
+const thinkingBudgetMetadataKey = 'agento11y.gen_ai.request.thinking.budget_tokens';
 type AnyRecord = Record<string, unknown>;
 
 type ChatCreateRequest = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming & AnyRecord;

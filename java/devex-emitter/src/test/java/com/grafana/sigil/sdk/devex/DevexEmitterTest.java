@@ -10,10 +10,10 @@ class DevexEmitterTest {
     void buildTagEnvelopeIncludesRequiredContractFields() {
         DevexEmitter.TagEnvelope envelope = DevexEmitter.buildTagEnvelope("openai", GenerationMode.SYNC, 2, 1);
 
-        assertThat(envelope.tags()).containsEntry("sigil.devex.language", "java");
-        assertThat(envelope.tags()).containsEntry("sigil.devex.provider", "openai");
-        assertThat(envelope.tags()).containsEntry("sigil.devex.source", "provider_wrapper");
-        assertThat(envelope.tags()).containsEntry("sigil.devex.mode", "SYNC");
+        assertThat(envelope.tags()).containsEntry("agento11y.devex.language", "java");
+        assertThat(envelope.tags()).containsEntry("agento11y.devex.provider", "openai");
+        assertThat(envelope.tags()).containsEntry("agento11y.devex.source", "provider_wrapper");
+        assertThat(envelope.tags()).containsEntry("agento11y.devex.mode", "SYNC");
 
         assertThat(envelope.metadata()).containsEntry("turn_index", 2);
         assertThat(envelope.metadata()).containsEntry("conversation_slot", 1);

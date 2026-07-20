@@ -518,7 +518,7 @@ test('empty phases array falls back to default preflight phase', async () => {
 function newClient(options) {
   const defaults = defaultConfig();
   return new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-hooks-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-hooks-test'),
     generationExport: {
       ...defaults.generationExport,
       protocol: 'http',

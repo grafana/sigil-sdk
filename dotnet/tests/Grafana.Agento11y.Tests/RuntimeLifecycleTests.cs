@@ -223,17 +223,17 @@ public sealed class RuntimeLifecycleTests
         await using var client = new SigilClient(TestHelpers.TestConfig(exporter));
 
         var start = TestHelpers.CreateSeedStart("gen-sdk-metadata");
-        start.Metadata["sigil.sdk.name"] = "seed-value";
+        start.Metadata["agento11y.sdk.name"] = "seed-value";
 
         var result = TestHelpers.CreateSeedResult("gen-sdk-metadata");
-        result.Metadata["sigil.sdk.name"] = "result-value";
+        result.Metadata["agento11y.sdk.name"] = "result-value";
 
         var recorder = client.StartGeneration(start);
         recorder.SetResult(result);
         recorder.End();
 
         Assert.NotNull(recorder.LastGeneration);
-        Assert.Equal("sdk-dotnet", recorder.LastGeneration!.Metadata["sigil.sdk.name"]?.ToString());
+        Assert.Equal("sdk-dotnet", recorder.LastGeneration!.Metadata["agento11y.sdk.name"]?.ToString());
     }
 
     [Fact]
@@ -266,7 +266,7 @@ public sealed class RuntimeLifecycleTests
 
         Assert.Single(spans);
         var span = spans[0];
-        Assert.Equal("sdk-dotnet", span.GetTagItem("sigil.sdk.name"));
+        Assert.Equal("sdk-dotnet", span.GetTagItem("agento11y.sdk.name"));
     }
 
     [Fact]
@@ -309,7 +309,7 @@ public sealed class RuntimeLifecycleTests
 
         Assert.Single(spans);
         var span = spans[0];
-        Assert.Equal("sdk-dotnet", span.GetTagItem("sigil.sdk.name"));
+        Assert.Equal("sdk-dotnet", span.GetTagItem("agento11y.sdk.name"));
     }
 
     private static void EndSuccessfulGeneration(SigilClient client, string id)

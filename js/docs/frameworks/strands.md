@@ -58,17 +58,17 @@ For per-request routing, set `agent.appState.set('conversation_id', id)` before 
 
 Tags:
 
-- `sigil.framework.name=strands`
-- `sigil.framework.source=hooks`
-- `sigil.framework.language=typescript`
+- `agento11y.framework.name=strands`
+- `agento11y.framework.source=hooks`
+- `agento11y.framework.language=typescript`
 
 Metadata includes:
 
-- `sigil.framework.run_id`
-- `sigil.framework.parent_run_id`
-- `sigil.framework.component_name`
-- `sigil.framework.run_type`
-- `sigil.framework.event_id` when a Strands tool call ID is available
+- `agento11y.framework.run_id`
+- `agento11y.framework.parent_run_id`
+- `agento11y.framework.component_name`
+- `agento11y.framework.run_type`
+- `agento11y.framework.event_id` when a Strands tool call ID is available
 
 ## Privacy Controls
 

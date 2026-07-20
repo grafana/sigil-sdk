@@ -8,7 +8,7 @@ namespace Grafana.Sigil.OpenAI;
 
 public static class OpenAIGenerationMapper
 {
-    private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
+    private const string ThinkingBudgetMetadataKey = "agento11y.gen_ai.request.thinking.budget_tokens";
 
     public static Generation ChatCompletionsFromRequestResponse(
         string modelName,

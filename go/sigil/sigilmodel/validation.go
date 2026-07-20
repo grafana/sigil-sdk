@@ -9,7 +9,7 @@ import (
 // MetadataKeyContentCaptureMode is the generation metadata key the SDK uses
 // to record which content-capture mode produced the generation. Stripped
 // validation reads this to allow blank text/thinking parts.
-const MetadataKeyContentCaptureMode = "sigil.sdk.content_capture_mode"
+const MetadataKeyContentCaptureMode = "agento11y.sdk.content_capture_mode"
 
 // ContentCaptureModeMetadataOnly is the metadata marker value indicating
 // the generation has been stripped down to metadata.

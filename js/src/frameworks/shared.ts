@@ -18,18 +18,18 @@ type FrameworkName = 'langchain' | 'langgraph' | 'openai-agents' | 'llamaindex' 
 const frameworkInstrumentationName = 'github.com/grafana/sigil/sdks/js/frameworks';
 const spanAttrOperationName = 'gen_ai.operation.name';
 const spanAttrConversationID = 'gen_ai.conversation.id';
-const spanAttrFrameworkName = 'sigil.framework.name';
-const spanAttrFrameworkSource = 'sigil.framework.source';
-const spanAttrFrameworkLanguage = 'sigil.framework.language';
-const spanAttrFrameworkRunID = 'sigil.framework.run_id';
-const spanAttrFrameworkThreadID = 'sigil.framework.thread_id';
-const spanAttrFrameworkParentRunID = 'sigil.framework.parent_run_id';
-const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
-const spanAttrFrameworkRunType = 'sigil.framework.run_type';
-const spanAttrFrameworkTags = 'sigil.framework.tags';
-const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
-const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
-const spanAttrFrameworkEventID = 'sigil.framework.event_id';
+const spanAttrFrameworkName = 'agento11y.framework.name';
+const spanAttrFrameworkSource = 'agento11y.framework.source';
+const spanAttrFrameworkLanguage = 'agento11y.framework.language';
+const spanAttrFrameworkRunID = 'agento11y.framework.run_id';
+const spanAttrFrameworkThreadID = 'agento11y.framework.thread_id';
+const spanAttrFrameworkParentRunID = 'agento11y.framework.parent_run_id';
+const spanAttrFrameworkComponentName = 'agento11y.framework.component_name';
+const spanAttrFrameworkRunType = 'agento11y.framework.run_type';
+const spanAttrFrameworkTags = 'agento11y.framework.tags';
+const spanAttrFrameworkRetryAttempt = 'agento11y.framework.retry_attempt';
+const spanAttrFrameworkLangGraphNode = 'agento11y.framework.langgraph.node';
+const spanAttrFrameworkEventID = 'agento11y.framework.event_id';
 const spanAttrErrorType = 'error.type';
 const spanAttrErrorCategory = 'error.category';
 const frameworkSource = 'handler';
@@ -638,9 +638,9 @@ export class SigilFrameworkHandler {
 
     const tags: Record<string, string> = {
       ...this.extraTags,
-      'sigil.framework.name': this.frameworkName,
-      'sigil.framework.source': frameworkSource,
-      'sigil.framework.language': this.frameworkLanguage,
+      'agento11y.framework.name': this.frameworkName,
+      'agento11y.framework.source': frameworkSource,
+      'agento11y.framework.language': this.frameworkLanguage,
     };
 
     return {

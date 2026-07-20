@@ -52,8 +52,8 @@ func exportConfig(endpoint, tenantID, authToken string) sigil.GenerationExportCo
 // otelInstrumentationName is the OTel instrumentation scope name attached
 // to every span and metric this agent emits. Renamed from "sigil-cc" when
 // the three agent plugins consolidated into one binary; dashboards that
-// previously filtered on "sigil-cc" need to update to "sigil.claude-code".
-const otelInstrumentationName = "sigil.claude-code"
+// previously filtered on "sigil-cc" need to update to "agento11y.claude-code".
+const otelInstrumentationName = "agento11y.claude-code"
 
 // transcriptSettleInterval is the poll spacing used while waiting for Claude
 // Code to finish flushing a turn to the transcript (see readTranscriptSettled).

@@ -7,10 +7,10 @@ namespace Grafana.Sigil.Anthropic;
 
 public static class AnthropicGenerationMapper
 {
-    private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
-    private const string ServerToolUseWebSearchRequestsMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_search_requests";
-    private const string ServerToolUseWebFetchRequestsMetadataKey = "sigil.gen_ai.usage.server_tool_use.web_fetch_requests";
-    private const string ServerToolUseTotalRequestsMetadataKey = "sigil.gen_ai.usage.server_tool_use.total_requests";
+    private const string ThinkingBudgetMetadataKey = "agento11y.gen_ai.request.thinking.budget_tokens";
+    private const string ServerToolUseWebSearchRequestsMetadataKey = "agento11y.gen_ai.usage.server_tool_use.web_search_requests";
+    private const string ServerToolUseWebFetchRequestsMetadataKey = "agento11y.gen_ai.usage.server_tool_use.web_fetch_requests";
+    private const string ServerToolUseTotalRequestsMetadataKey = "agento11y.gen_ai.usage.server_tool_use.total_requests";
 
     public static Generation FromRequestResponse(
         MessageCreateParams request,

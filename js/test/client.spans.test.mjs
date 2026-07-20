@@ -44,15 +44,15 @@ test('generation result fields override seed and update span operation name', as
       toolChoice: 'required',
       thinkingEnabled: false,
       metadata: {
-        'sigil.gen_ai.request.thinking.budget_tokens': 4096,
-        'sigil.framework.run_id': 'framework-run-1',
-        'sigil.framework.thread_id': 'framework-thread-1',
-        'sigil.framework.parent_run_id': 'framework-parent-1',
-        'sigil.framework.component_name': 'ChatOpenAI',
-        'sigil.framework.run_type': 'chat',
-        'sigil.framework.retry_attempt': 3,
-        'sigil.framework.langgraph.node': 'answer_node',
-        'sigil.sdk.name': 'user-value',
+        'agento11y.gen_ai.request.thinking.budget_tokens': 4096,
+        'agento11y.framework.run_id': 'framework-run-1',
+        'agento11y.framework.thread_id': 'framework-thread-1',
+        'agento11y.framework.parent_run_id': 'framework-parent-1',
+        'agento11y.framework.component_name': 'ChatOpenAI',
+        'agento11y.framework.run_type': 'chat',
+        'agento11y.framework.retry_attempt': 3,
+        'agento11y.framework.langgraph.node': 'answer_node',
+        'agento11y.sdk.name': 'user-value',
       },
       stopReason: 'end_turn',
       output: [{ role: 'assistant', content: 'ok' }],
@@ -70,14 +70,14 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(generation.topP, 0.85);
     assert.equal(generation.toolChoice, 'required');
     assert.equal(generation.thinkingEnabled, false);
-    assert.equal(generation.metadata?.['sigil.framework.run_id'], 'framework-run-1');
-    assert.equal(generation.metadata?.['sigil.framework.thread_id'], 'framework-thread-1');
-    assert.equal(generation.metadata?.['sigil.framework.parent_run_id'], 'framework-parent-1');
-    assert.equal(generation.metadata?.['sigil.framework.component_name'], 'ChatOpenAI');
-    assert.equal(generation.metadata?.['sigil.framework.run_type'], 'chat');
-    assert.equal(generation.metadata?.['sigil.framework.retry_attempt'], 3);
-    assert.equal(generation.metadata?.['sigil.framework.langgraph.node'], 'answer_node');
-    assert.equal(generation.metadata?.['sigil.sdk.name'], 'sdk-js');
+    assert.equal(generation.metadata?.['agento11y.framework.run_id'], 'framework-run-1');
+    assert.equal(generation.metadata?.['agento11y.framework.thread_id'], 'framework-thread-1');
+    assert.equal(generation.metadata?.['agento11y.framework.parent_run_id'], 'framework-parent-1');
+    assert.equal(generation.metadata?.['agento11y.framework.component_name'], 'ChatOpenAI');
+    assert.equal(generation.metadata?.['agento11y.framework.run_type'], 'chat');
+    assert.equal(generation.metadata?.['agento11y.framework.retry_attempt'], 3);
+    assert.equal(generation.metadata?.['agento11y.framework.langgraph.node'], 'answer_node');
+    assert.equal(generation.metadata?.['agento11y.sdk.name'], 'sdk-js');
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(span.name, 'text_completion gpt-5');
@@ -88,17 +88,17 @@ test('generation result fields override seed and update span operation name', as
     assert.equal(span.attributes['gen_ai.request.max_tokens'], 256);
     assert.equal(span.attributes['gen_ai.request.temperature'], 0.2);
     assert.equal(span.attributes['gen_ai.request.top_p'], 0.85);
-    assert.equal(span.attributes['sigil.gen_ai.request.tool_choice'], 'required');
-    assert.equal(span.attributes['sigil.gen_ai.request.thinking.enabled'], false);
-    assert.equal(span.attributes['sigil.gen_ai.request.thinking.budget_tokens'], 4096);
-    assert.equal(span.attributes['sigil.framework.run_id'], 'framework-run-1');
-    assert.equal(span.attributes['sigil.framework.thread_id'], 'framework-thread-1');
-    assert.equal(span.attributes['sigil.framework.parent_run_id'], 'framework-parent-1');
-    assert.equal(span.attributes['sigil.framework.component_name'], 'ChatOpenAI');
-    assert.equal(span.attributes['sigil.framework.run_type'], 'chat');
-    assert.equal(span.attributes['sigil.framework.retry_attempt'], 3);
-    assert.equal(span.attributes['sigil.framework.langgraph.node'], 'answer_node');
-    assert.equal(span.attributes['sigil.sdk.name'], 'sdk-js');
+    assert.equal(span.attributes['agento11y.gen_ai.request.tool_choice'], 'required');
+    assert.equal(span.attributes['agento11y.gen_ai.request.thinking.enabled'], false);
+    assert.equal(span.attributes['agento11y.gen_ai.request.thinking.budget_tokens'], 4096);
+    assert.equal(span.attributes['agento11y.framework.run_id'], 'framework-run-1');
+    assert.equal(span.attributes['agento11y.framework.thread_id'], 'framework-thread-1');
+    assert.equal(span.attributes['agento11y.framework.parent_run_id'], 'framework-parent-1');
+    assert.equal(span.attributes['agento11y.framework.component_name'], 'ChatOpenAI');
+    assert.equal(span.attributes['agento11y.framework.run_type'], 'chat');
+    assert.equal(span.attributes['agento11y.framework.retry_attempt'], 3);
+    assert.equal(span.attributes['agento11y.framework.langgraph.node'], 'answer_node');
+    assert.equal(span.attributes['agento11y.sdk.name'], 'sdk-js');
     assert.deepEqual(span.attributes['gen_ai.response.finish_reasons'], ['end_turn']);
   } finally {
     await shutdownHarness(harness);
@@ -133,12 +133,12 @@ test('generation normalization trims only title and user fields', async () => {
     assert.equal(generation.userId, 'user-result');
     assert.equal(generation.agentName, '  agent-result  ');
     assert.equal(generation.agentVersion, '  v-result  ');
-    assert.equal(generation.metadata?.['sigil.conversation.title'], 'title-result');
-    assert.equal(generation.metadata?.['sigil.user.id'], 'user-result');
+    assert.equal(generation.metadata?.['agento11y.conversation.title'], 'title-result');
+    assert.equal(generation.metadata?.['agento11y.user.id'], 'user-result');
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(span.attributes['gen_ai.conversation.id'], '  conv-result  ');
-    assert.equal(span.attributes['sigil.conversation.title'], 'title-result');
+    assert.equal(span.attributes['agento11y.conversation.title'], 'title-result');
     assert.equal(span.attributes['user.id'], 'user-result');
     assert.equal(span.attributes['gen_ai.agent.name'], '  agent-result  ');
     assert.equal(span.attributes['gen_ai.agent.version'], '  v-result  ');
@@ -154,7 +154,7 @@ test('generation span reflects metadata fallback title and user id after normali
     const recorder = harness.client.startGeneration({
       model: { provider: 'openai', name: 'gpt-5' },
       metadata: {
-        'sigil.conversation.title': '  Meta title  ',
+        'agento11y.conversation.title': '  Meta title  ',
         'user.id': '  legacy-user  ',
       },
     });
@@ -165,11 +165,11 @@ test('generation span reflects metadata fallback title and user id after normali
     const generation = singleGeneration(harness.client);
     assert.equal(generation.conversationTitle, 'Meta title');
     assert.equal(generation.userId, 'legacy-user');
-    assert.equal(generation.metadata?.['sigil.conversation.title'], 'Meta title');
-    assert.equal(generation.metadata?.['sigil.user.id'], 'legacy-user');
+    assert.equal(generation.metadata?.['agento11y.conversation.title'], 'Meta title');
+    assert.equal(generation.metadata?.['agento11y.user.id'], 'legacy-user');
 
     const span = singleGenerationSpan(harness.spanExporter);
-    assert.equal(span.attributes['sigil.conversation.title'], 'Meta title');
+    assert.equal(span.attributes['agento11y.conversation.title'], 'Meta title');
     assert.equal(span.attributes['user.id'], 'legacy-user');
   } finally {
     await shutdownHarness(harness);
@@ -190,12 +190,12 @@ test('generation callError sets metadata and provider_call_error span status', a
     const generation = singleGeneration(harness.client);
     assert.equal(generation.callError, 'provider unavailable');
     assert.equal(generation.metadata?.call_error, 'provider unavailable');
-    assert.equal(generation.metadata?.['sigil.sdk.name'], 'sdk-js');
+    assert.equal(generation.metadata?.['agento11y.sdk.name'], 'sdk-js');
 
     const span = singleGenerationSpan(harness.spanExporter);
     assert.equal(span.status.code, SpanStatusCode.ERROR);
     assert.equal(span.attributes['error.type'], 'provider_call_error');
-    assert.equal(span.attributes['sigil.sdk.name'], 'sdk-js');
+    assert.equal(span.attributes['agento11y.sdk.name'], 'sdk-js');
   } finally {
     await shutdownHarness(harness);
   }
@@ -355,10 +355,10 @@ test('tool execution includeContent controls argument/result attributes', async 
     assert.equal(contentSpan.attributes['gen_ai.agent.version'], 'v-tool');
     assert.equal(contentSpan.attributes['gen_ai.provider.name'], 'openai');
     assert.equal(contentSpan.attributes['gen_ai.request.model'], 'gpt-5');
-    assert.equal(contentSpan.attributes['sigil.sdk.name'], 'sdk-js');
+    assert.equal(contentSpan.attributes['agento11y.sdk.name'], 'sdk-js');
     assert.equal(noContentSpan.attributes['gen_ai.tool.call.arguments'], undefined);
     assert.equal(noContentSpan.attributes['gen_ai.tool.call.result'], undefined);
-    assert.equal(noContentSpan.attributes['sigil.sdk.name'], 'sdk-js');
+    assert.equal(noContentSpan.attributes['agento11y.sdk.name'], 'sdk-js');
   } finally {
     await shutdownHarness(harness);
   }
@@ -442,7 +442,7 @@ function newHarness(overrides = {}) {
   const traceProvider = new BasicTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(spanExporter)],
   });
-  const tracer = traceProvider.getTracer('sigil-sdk-js-test');
+  const tracer = traceProvider.getTracer('agento11y-sdk-js-test');
   const generationExporter = new CapturingExporter();
   const defaults = defaultConfig();
 

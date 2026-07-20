@@ -12,11 +12,11 @@ public static class SdkVersion
     /// <summary>Released version of the Sigil .NET SDK.</summary>
     public const string Version = "0.1.0";
 
-    private const string UserAgentProduct = "sigil-sdk-dotnet";
+    private const string UserAgentProduct = "agento11y-sdk-dotnet";
 
     /// <summary>
     /// Returns the SDK's default generation-export User-Agent product token,
-    /// <c>sigil-sdk-dotnet/&lt;Version&gt;</c>.
+    /// <c>agento11y-sdk-dotnet/&lt;Version&gt;</c>.
     /// </summary>
     public static string UserAgent() => UserAgentProduct + "/" + Version;
 }

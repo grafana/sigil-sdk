@@ -16,10 +16,10 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal const string DefaultOperationNameStream = "streamText";
     internal const string DefaultOperationNameEmbedding = "embeddings";
 
-    internal const string SpanAttrGenerationId = "sigil.generation.id";
-    internal const string SpanAttrSdkName = "sigil.sdk.name";
+    internal const string SpanAttrGenerationId = "agento11y.generation.id";
+    internal const string SpanAttrSdkName = "agento11y.sdk.name";
     internal const string SpanAttrConversationId = "gen_ai.conversation.id";
-    internal const string SpanAttrConversationTitle = "sigil.conversation.title";
+    internal const string SpanAttrConversationTitle = "agento11y.conversation.title";
     internal const string SpanAttrUserId = "user.id";
     internal const string SpanAttrAgentName = "gen_ai.agent.name";
     internal const string SpanAttrAgentVersion = "gen_ai.agent.version";
@@ -31,9 +31,9 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal const string SpanAttrRequestMaxTokens = "gen_ai.request.max_tokens";
     internal const string SpanAttrRequestTemperature = "gen_ai.request.temperature";
     internal const string SpanAttrRequestTopP = "gen_ai.request.top_p";
-    internal const string SpanAttrRequestToolChoice = "sigil.gen_ai.request.tool_choice";
-    internal const string SpanAttrRequestThinkingEnabled = "sigil.gen_ai.request.thinking.enabled";
-    internal const string SpanAttrRequestThinkingBudget = "sigil.gen_ai.request.thinking.budget_tokens";
+    internal const string SpanAttrRequestToolChoice = "agento11y.gen_ai.request.tool_choice";
+    internal const string SpanAttrRequestThinkingEnabled = "agento11y.gen_ai.request.thinking.enabled";
+    internal const string SpanAttrRequestThinkingBudget = "agento11y.gen_ai.request.thinking.budget_tokens";
     internal const string SpanAttrResponseId = "gen_ai.response.id";
     internal const string SpanAttrResponseModel = "gen_ai.response.model";
     internal const string SpanAttrFinishReasons = "gen_ai.response.finish_reasons";
@@ -52,7 +52,7 @@ public sealed partial class SigilClient : IAsyncDisposable
     internal const string SpanAttrToolDescription = "gen_ai.tool.description";
     internal const string SpanAttrToolCallArguments = "gen_ai.tool.call.arguments";
     internal const string SpanAttrToolCallResult = "gen_ai.tool.call.result";
-    internal const string SpanAttrTagPrefix = "sigil.tag.";
+    internal const string SpanAttrTagPrefix = "agento11y.tag.";
     private const int MaxRatingConversationIdLen = 255;
     private const int MaxRatingIdLen = 128;
     private const int MaxRatingGenerationIdLen = 255;
@@ -92,9 +92,9 @@ public sealed partial class SigilClient : IAsyncDisposable
 #endif
 
     internal const string SdkName = "sdk-dotnet";
-    internal const string MetadataUserIdKey = "sigil.user.id";
+    internal const string MetadataUserIdKey = "agento11y.user.id";
     internal const string MetadataLegacyUserIdKey = "user.id";
-    internal const string MetadataKeyContentCaptureMode = "sigil.sdk.content_capture_mode";
+    internal const string MetadataKeyContentCaptureMode = "agento11y.sdk.content_capture_mode";
 
     internal readonly SigilClientConfig _config;
     private readonly IGenerationExporter _generationExporter;
@@ -2432,7 +2432,7 @@ public sealed class GenerationRecorder
 
             _activity.DisplayName = SigilClient.GenerationSpanName(generation.OperationName, generation.Model.Name);
             // FullWithMetadataSpans keeps proto export full but the span path
-            // must drop sigil.conversation.title. `generation` is a local
+            // must drop agento11y.conversation.title. `generation` is a local
             // snapshot here, so save the title, zero it for the span call,
             // and restore — no deep clone needed.
             if (effectiveContentCaptureMode == ContentCaptureMode.FullWithMetadataSpans)

@@ -1,3 +1,6 @@
+// FROZEN legacy schema. sigil.v1 is retained only so final legacy SDK
+// releases keep ingesting during the migration window. Do not change it;
+// the canonical schema is proto/agento11y/v1/generation_ingest.proto.
 syntax = "proto3";
 
 package sigil.v1;

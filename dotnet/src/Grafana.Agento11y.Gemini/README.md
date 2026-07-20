@@ -179,6 +179,6 @@ var response = await GeminiRecorder.GenerateContentAsync(
 Gemini-specific fields are mapped as follows:
 
 - `usage.ThoughtsTokenCount` -> normalized `usage.reasoning_tokens`
-- `usage.ToolUsePromptTokenCount` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
-- `config.ThinkingConfig.ThinkingBudget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
-- `config.ThinkingConfig.ThinkingLevel` -> metadata `sigil.gen_ai.request.thinking.level`
+- `usage.ToolUsePromptTokenCount` -> metadata `agento11y.gen_ai.usage.tool_use_prompt_tokens`
+- `config.ThinkingConfig.ThinkingBudget` -> metadata `agento11y.gen_ai.request.thinking.budget_tokens`
+- `config.ThinkingConfig.ThinkingLevel` -> metadata `agento11y.gen_ai.request.thinking.level`

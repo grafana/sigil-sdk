@@ -23,13 +23,13 @@ Each SDK README links here for language-specific examples.
 | `full` | Full content. | Content attributes included. | Arguments and results included. | Input texts included when `EmbeddingCapture.CaptureInput` is on. |
 | `no_tool_content` | Full content. | Content attributes included. | Arguments and results omitted. | Input texts included when `EmbeddingCapture.CaptureInput` is on. |
 | `metadata_only` | Structure only. Messages, tool args/results, media URLs/data URLs, thinking, system prompts, conversation titles, artifacts, error text removed. | Content attributes omitted. | Arguments and results omitted. | Input texts omitted. |
-| `full_with_metadata_spans` | Full content. | Content attributes omitted (`sigil.conversation.title` and related fields). | Arguments and results omitted. Equivalent to `metadata_only` for tool spans because there is no separate gRPC export for tool executions. | Input texts omitted. Equivalent to `metadata_only` for embedding spans for the same reason. |
+| `full_with_metadata_spans` | Full content. | Content attributes omitted (`agento11y.conversation.title` and related fields). | Arguments and results omitted. Equivalent to `metadata_only` for tool spans because there is no separate gRPC export for tool executions. | Input texts omitted. Equivalent to `metadata_only` for embedding spans for the same reason. |
 
 Embedding input text capture is gated by both the effective capture mode and `EmbeddingCapture.CaptureInput` / `embeddingCapture.captureInput`. Setting the flag does not bypass `metadata_only` or `full_with_metadata_spans`.
 
 ## Caveats
 
-No capture mode strips user-provided `metadata` or `tags` on a generation or tool execution. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. Keep sensitive content out of `metadata` and `tags` when using `metadata_only` or `full_with_metadata_spans`.
+No capture mode strips user-provided `metadata` or `tags` on a generation or tool execution. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. Keep sensitive content out of `metadata` and `tags` when using `metadata_only` or `full_with_metadata_spans`.
 
 Capture modes decide *which fields ship*, not what's inside them. To sanitize the fields that do ship (e.g. strip secrets out of assistant text under `full`), use the pre-ingest redactor: `GenerationSanitizer` in Go, `generationSanitizer` in JS/TS, the equivalent in Python.
 

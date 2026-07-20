@@ -50,8 +50,8 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
         input_state={"text": "hello", "n": 1},
         output_state={"category": "incident"},
         error="boom",
-        tags={"sigil.framework.name": "langgraph"},
-        metadata={"sigil.framework.run_id": "run-1"},
+        tags={"agento11y.framework.name": "langgraph"},
+        metadata={"agento11y.framework.run_id": "run-1"},
         linked_generation_ids=["gen_1", "gen_2"],
         parent_step_ids=["wfs_parent"],
         trace_id="trace-1",
@@ -67,7 +67,7 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
     assert proto.agent_name == "incident-pipeline"
     assert proto.agent_version == "v1"
     assert proto.error == "boom"
-    assert dict(proto.tags) == {"sigil.framework.name": "langgraph"}
+    assert dict(proto.tags) == {"agento11y.framework.name": "langgraph"}
     assert list(proto.linked_generation_ids) == ["gen_1", "gen_2"]
     assert list(proto.parent_step_ids) == ["wfs_parent"]
     assert proto.trace_id == "trace-1"
@@ -77,7 +77,7 @@ def test_workflow_step_to_proto_round_trips_all_fields() -> None:
     assert proto.input_state["text"] == "hello"
     assert proto.input_state["n"] == 1
     assert proto.output_state["category"] == "incident"
-    assert proto.metadata["sigil.framework.run_id"] == "run-1"
+    assert proto.metadata["agento11y.framework.run_id"] == "run-1"
 
 
 def test_workflow_step_to_proto_json_uses_snake_case_keys() -> None:

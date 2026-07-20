@@ -18,7 +18,7 @@ import (
 	"maps"
 	"strings"
 
-	sigilv1 "github.com/grafana/agento11y/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	"github.com/grafana/agento11y/go/sigil/sigilmodel"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -28,13 +28,13 @@ import (
 // ToProto converts a sigilmodel.Generation into the wire-level proto used by
 // the generation ingest service. The effective_version field is hashed with
 // the canonical sha256:<hex> rule.
-func ToProto(g sigilmodel.Generation) (*sigilv1.Generation, error) {
+func ToProto(g sigilmodel.Generation) (*agento11yv1.Generation, error) {
 	metadata, err := metadataToStruct(g.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("map metadata: %w", err)
 	}
 
-	out := &sigilv1.Generation{
+	out := &agento11yv1.Generation{
 		Id:             g.ID,
 		ConversationId: g.ConversationID,
 		AgentName:      g.AgentName,
@@ -43,7 +43,7 @@ func ToProto(g sigilmodel.Generation) (*sigilv1.Generation, error) {
 		Mode:           generationModeToProto(g.Mode),
 		TraceId:        g.TraceID,
 		SpanId:         g.SpanID,
-		Model: &sigilv1.ModelRef{
+		Model: &agento11yv1.ModelRef{
 			Provider: g.Model.Provider,
 			Name:     g.Model.Name,
 		},
@@ -84,7 +84,7 @@ func ToProto(g sigilmodel.Generation) (*sigilv1.Generation, error) {
 
 // WorkflowStepToProto converts a sigilmodel.WorkflowStep into the wire-level
 // proto used by the workflow-step ingest service.
-func WorkflowStepToProto(step sigilmodel.WorkflowStep) (*sigilv1.WorkflowStep, error) {
+func WorkflowStepToProto(step sigilmodel.WorkflowStep) (*agento11yv1.WorkflowStep, error) {
 	inputState, err := metadataToStruct(step.InputState)
 	if err != nil {
 		return nil, fmt.Errorf("map input_state: %w", err)
@@ -98,7 +98,7 @@ func WorkflowStepToProto(step sigilmodel.WorkflowStep) (*sigilv1.WorkflowStep, e
 		return nil, fmt.Errorf("map metadata: %w", err)
 	}
 
-	out := &sigilv1.WorkflowStep{
+	out := &agento11yv1.WorkflowStep{
 		Id:                  step.ID,
 		ConversationId:      step.ConversationID,
 		StepName:            step.StepName,
@@ -142,25 +142,25 @@ func metadataToStruct(metadata map[string]any) (*structpb.Struct, error) {
 	return structpb.NewStruct(normalized)
 }
 
-func generationModeToProto(mode sigilmodel.GenerationMode) sigilv1.GenerationMode {
+func generationModeToProto(mode sigilmodel.GenerationMode) agento11yv1.GenerationMode {
 	switch mode {
 	case sigilmodel.GenerationModeStream:
-		return sigilv1.GenerationMode_GENERATION_MODE_STREAM
+		return agento11yv1.GenerationMode_GENERATION_MODE_STREAM
 	case sigilmodel.GenerationModeSync:
-		return sigilv1.GenerationMode_GENERATION_MODE_SYNC
+		return agento11yv1.GenerationMode_GENERATION_MODE_SYNC
 	default:
-		return sigilv1.GenerationMode_GENERATION_MODE_UNSPECIFIED
+		return agento11yv1.GenerationMode_GENERATION_MODE_UNSPECIFIED
 	}
 }
 
-func messagesToProto(messages []sigilmodel.Message) []*sigilv1.Message {
+func messagesToProto(messages []sigilmodel.Message) []*agento11yv1.Message {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	out := make([]*sigilv1.Message, 0, len(messages))
+	out := make([]*agento11yv1.Message, 0, len(messages))
 	for i := range messages {
-		out = append(out, &sigilv1.Message{
+		out = append(out, &agento11yv1.Message{
 			Role:  roleToProto(messages[i].Role),
 			Name:  messages[i].Name,
 			Parts: partsToProto(messages[i].Parts),
@@ -170,41 +170,41 @@ func messagesToProto(messages []sigilmodel.Message) []*sigilv1.Message {
 	return out
 }
 
-func roleToProto(role sigilmodel.Role) sigilv1.MessageRole {
+func roleToProto(role sigilmodel.Role) agento11yv1.MessageRole {
 	switch role {
 	case sigilmodel.RoleUser:
-		return sigilv1.MessageRole_MESSAGE_ROLE_USER
+		return agento11yv1.MessageRole_MESSAGE_ROLE_USER
 	case sigilmodel.RoleAssistant:
-		return sigilv1.MessageRole_MESSAGE_ROLE_ASSISTANT
+		return agento11yv1.MessageRole_MESSAGE_ROLE_ASSISTANT
 	case sigilmodel.RoleTool:
-		return sigilv1.MessageRole_MESSAGE_ROLE_TOOL
+		return agento11yv1.MessageRole_MESSAGE_ROLE_TOOL
 	default:
-		return sigilv1.MessageRole_MESSAGE_ROLE_UNSPECIFIED
+		return agento11yv1.MessageRole_MESSAGE_ROLE_UNSPECIFIED
 	}
 }
 
-func partsToProto(parts []sigilmodel.Part) []*sigilv1.Part {
+func partsToProto(parts []sigilmodel.Part) []*agento11yv1.Part {
 	if len(parts) == 0 {
 		return nil
 	}
 
-	out := make([]*sigilv1.Part, 0, len(parts))
+	out := make([]*agento11yv1.Part, 0, len(parts))
 	for i := range parts {
-		part := &sigilv1.Part{}
+		part := &agento11yv1.Part{}
 		if providerType := parts[i].Metadata.ProviderType; providerType != "" {
-			part.Metadata = &sigilv1.PartMetadata{ProviderType: providerType}
+			part.Metadata = &agento11yv1.PartMetadata{ProviderType: providerType}
 		}
 
 		switch parts[i].Kind {
 		case sigilmodel.PartKindText:
-			part.Payload = &sigilv1.Part_Text{Text: parts[i].Text}
+			part.Payload = &agento11yv1.Part_Text{Text: parts[i].Text}
 		case sigilmodel.PartKindThinking:
-			part.Payload = &sigilv1.Part_Thinking{Thinking: parts[i].Thinking}
+			part.Payload = &agento11yv1.Part_Thinking{Thinking: parts[i].Thinking}
 		case sigilmodel.PartKindToolCall:
 			if parts[i].ToolCall == nil {
 				continue
 			}
-			part.Payload = &sigilv1.Part_ToolCall{ToolCall: &sigilv1.ToolCall{
+			part.Payload = &agento11yv1.Part_ToolCall{ToolCall: &agento11yv1.ToolCall{
 				Id:        parts[i].ToolCall.ID,
 				Name:      parts[i].ToolCall.Name,
 				InputJson: append([]byte(nil), parts[i].ToolCall.InputJSON...),
@@ -213,7 +213,7 @@ func partsToProto(parts []sigilmodel.Part) []*sigilv1.Part {
 			if parts[i].ToolResult == nil {
 				continue
 			}
-			part.Payload = &sigilv1.Part_ToolResult{ToolResult: &sigilv1.ToolResult{
+			part.Payload = &agento11yv1.Part_ToolResult{ToolResult: &agento11yv1.ToolResult{
 				ToolCallId:  parts[i].ToolResult.ToolCallID,
 				Name:        parts[i].ToolResult.Name,
 				Content:     parts[i].ToolResult.Content,
@@ -224,7 +224,7 @@ func partsToProto(parts []sigilmodel.Part) []*sigilv1.Part {
 			if parts[i].Media == nil {
 				continue
 			}
-			part.Payload = &sigilv1.Part_Media{Media: &sigilv1.Media{
+			part.Payload = &agento11yv1.Part_Media{Media: &agento11yv1.Media{
 				Kind:     parts[i].Media.Kind,
 				Url:      parts[i].Media.URL,
 				MimeType: parts[i].Media.MIMEType,
@@ -237,14 +237,14 @@ func partsToProto(parts []sigilmodel.Part) []*sigilv1.Part {
 	return out
 }
 
-func toolsToProto(tools []sigilmodel.ToolDefinition) []*sigilv1.ToolDefinition {
+func toolsToProto(tools []sigilmodel.ToolDefinition) []*agento11yv1.ToolDefinition {
 	if len(tools) == 0 {
 		return nil
 	}
 
-	out := make([]*sigilv1.ToolDefinition, 0, len(tools))
+	out := make([]*agento11yv1.ToolDefinition, 0, len(tools))
 	for i := range tools {
-		out = append(out, &sigilv1.ToolDefinition{
+		out = append(out, &agento11yv1.ToolDefinition{
 			Name:            tools[i].Name,
 			Description:     tools[i].Description,
 			Type:            tools[i].Type,
@@ -255,8 +255,8 @@ func toolsToProto(tools []sigilmodel.ToolDefinition) []*sigilv1.ToolDefinition {
 	return out
 }
 
-func usageToProto(usage sigilmodel.TokenUsage) *sigilv1.TokenUsage {
-	return &sigilv1.TokenUsage{
+func usageToProto(usage sigilmodel.TokenUsage) *agento11yv1.TokenUsage {
+	return &agento11yv1.TokenUsage{
 		InputTokens:           usage.InputTokens,
 		OutputTokens:          usage.OutputTokens,
 		TotalTokens:           usage.TotalTokens,
@@ -266,14 +266,14 @@ func usageToProto(usage sigilmodel.TokenUsage) *sigilv1.TokenUsage {
 	}
 }
 
-func artifactsToProto(artifacts []sigilmodel.Artifact) []*sigilv1.Artifact {
+func artifactsToProto(artifacts []sigilmodel.Artifact) []*agento11yv1.Artifact {
 	if len(artifacts) == 0 {
 		return nil
 	}
 
-	out := make([]*sigilv1.Artifact, 0, len(artifacts))
+	out := make([]*agento11yv1.Artifact, 0, len(artifacts))
 	for i := range artifacts {
-		out = append(out, &sigilv1.Artifact{
+		out = append(out, &agento11yv1.Artifact{
 			Kind:        artifactKindToProto(artifacts[i].Kind),
 			Name:        artifacts[i].Name,
 			ContentType: artifacts[i].ContentType,
@@ -285,18 +285,18 @@ func artifactsToProto(artifacts []sigilmodel.Artifact) []*sigilv1.Artifact {
 	return out
 }
 
-func artifactKindToProto(kind sigilmodel.ArtifactKind) sigilv1.ArtifactKind {
+func artifactKindToProto(kind sigilmodel.ArtifactKind) agento11yv1.ArtifactKind {
 	switch kind {
 	case sigilmodel.ArtifactKindRequest:
-		return sigilv1.ArtifactKind_ARTIFACT_KIND_REQUEST
+		return agento11yv1.ArtifactKind_ARTIFACT_KIND_REQUEST
 	case sigilmodel.ArtifactKindResponse:
-		return sigilv1.ArtifactKind_ARTIFACT_KIND_RESPONSE
+		return agento11yv1.ArtifactKind_ARTIFACT_KIND_RESPONSE
 	case sigilmodel.ArtifactKindTools:
-		return sigilv1.ArtifactKind_ARTIFACT_KIND_TOOLS
+		return agento11yv1.ArtifactKind_ARTIFACT_KIND_TOOLS
 	case sigilmodel.ArtifactKindProviderEvent:
-		return sigilv1.ArtifactKind_ARTIFACT_KIND_PROVIDER_EVENT
+		return agento11yv1.ArtifactKind_ARTIFACT_KIND_PROVIDER_EVENT
 	default:
-		return sigilv1.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED
+		return agento11yv1.ArtifactKind_ARTIFACT_KIND_UNSPECIFIED
 	}
 }
 

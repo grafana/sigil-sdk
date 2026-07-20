@@ -32,8 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import sigil.v1.GenerationIngest;
-import sigil.v1.GenerationIngestServiceGrpc;
+import agento11y.v1.GenerationIngest;
+import agento11y.v1.GenerationIngestServiceGrpc;
 
 class ConformanceTest {
     @Test
@@ -119,9 +119,9 @@ class ConformanceTest {
             assertThat(generation.getAgentVersion()).isEqualTo("v-roundtrip");
             assertThat(generation.getTraceId()).isEqualTo(span.getTraceId());
             assertThat(generation.getSpanId()).isEqualTo(span.getSpanId());
-            assertThat(generation.getMetadata().getFieldsMap().get("sigil.conversation.title").getStringValue())
+            assertThat(generation.getMetadata().getFieldsMap().get("agento11y.conversation.title").getStringValue())
                     .isEqualTo("Roundtrip conversation");
-            assertThat(generation.getMetadata().getFieldsMap().get("sigil.user.id").getStringValue())
+            assertThat(generation.getMetadata().getFieldsMap().get("agento11y.user.id").getStringValue())
                     .isEqualTo("user-roundtrip");
             assertThat(generation.getInput(0).getParts(0).getText()).isEqualTo("hello");
             assertThat(generation.getOutput(0).getParts(0).getThinking()).isEqualTo("reasoning");
@@ -542,14 +542,14 @@ class ConformanceTest {
             env.client.shutdown();
 
             SpanData span = env.latestGenerationSpan();
-            assertThat(span.getAttributes().get(AttributeKey.stringKey("sigil.tag.team"))).isEqualTo("payments");
-            assertThat(span.getAttributes().get(AttributeKey.stringKey("sigil.tag.call_only"))).isNull();
+            assertThat(span.getAttributes().get(AttributeKey.stringKey("agento11y.tag.team"))).isEqualTo("payments");
+            assertThat(span.getAttributes().get(AttributeKey.stringKey("agento11y.tag.call_only"))).isNull();
 
             MetricData duration = env.metricData(SigilClient.METRIC_OPERATION_DURATION);
             boolean tagged = duration.getHistogramData().getPoints().stream()
                     .anyMatch(point -> "payments".equals(
-                            point.getAttributes().get(AttributeKey.stringKey("sigil.tag.team"))));
-            assertThat(tagged).as("expected sigil.tag.team on operation.duration data point").isTrue();
+                            point.getAttributes().get(AttributeKey.stringKey("agento11y.tag.team"))));
+            assertThat(tagged).as("expected agento11y.tag.team on operation.duration data point").isTrue();
         }
     }
 
@@ -571,6 +571,60 @@ class ConformanceTest {
             assertThat(generation.getConversationId()).isEqualTo("conv-shutdown");
             assertThat(generation.getAgentName()).isEqualTo("agent-shutdown");
             assertThat(generation.getAgentVersion()).isEqualTo("v-shutdown");
+        }
+    }
+
+    // Guards the agento11y rename: the SDK emits only agento11y.* names for
+    // SDK-owned span attributes, metadata keys, and tag projections, while
+    // caller-supplied metadata and tags pass through untouched even when they
+    // use the legacy sigil.* namespace.
+    @Test
+    void noSdkOwnedLegacySigilNamespace() throws Exception {
+        try (ConformanceEnv env = new ConformanceEnv(1)) {
+            GenerationStart start = new GenerationStart()
+                    .setId("gen-legacy-namespace")
+                    .setConversationId("conv-legacy-namespace")
+                    .setConversationTitle("Legacy namespace check")
+                    .setUserId("user-legacy")
+                    .setAgentName("agent-legacy")
+                    .setAgentVersion("1.0.0")
+                    .setModel(new ModelRef().setProvider("anthropic").setName("claude-sonnet-4-5"))
+                    .setToolChoice("auto")
+                    .setThinkingEnabled(true);
+            start.getTags().put("sigil.caller_tag", "caller-tag");
+            start.getMetadata().put("sigil.caller_key", "caller-value");
+
+            GenerationRecorder recorder = env.client.startGeneration(start);
+            GenerationResult result = new GenerationResult()
+                    .setUsage(new TokenUsage().setInputTokens(1).setOutputTokens(1).setTotalTokens(2));
+            result.getOutput().add(new Message()
+                    .setRole(MessageRole.ASSISTANT)
+                    .setParts(List.of(MessagePart.text("ok"))));
+            recorder.setResult(result);
+            recorder.end();
+            env.client.shutdown();
+
+            SpanData span = env.latestGenerationSpan();
+            List<String> legacySpanAttrs = span.getAttributes().asMap().keySet().stream()
+                    .map(AttributeKey::getKey)
+                    .filter(key -> key.startsWith("sigil."))
+                    .toList();
+            assertThat(legacySpanAttrs).isEmpty();
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_GENERATION_ID)))
+                    .isEqualTo("gen-legacy-namespace");
+            assertThat(span.getAttributes().get(AttributeKey.stringKey(SigilClient.SPAN_ATTR_SDK_NAME)))
+                    .isEqualTo("sdk-java");
+
+            GenerationIngest.Generation generation = env.singleGeneration();
+            Map<String, com.google.protobuf.Value> metadata = generation.getMetadata().getFieldsMap();
+            List<String> legacyMetadataKeys = metadata.keySet().stream()
+                    .filter(key -> key.startsWith("sigil.") && !key.equals("sigil.caller_key"))
+                    .toList();
+            assertThat(legacyMetadataKeys).isEmpty();
+            assertThat(metadata.get("sigil.caller_key").getStringValue()).isEqualTo("caller-value");
+            assertThat(metadata.get(SigilClient.SPAN_ATTR_SDK_NAME).getStringValue()).isEqualTo("sdk-java");
+            assertThat(metadata.get("agento11y.user.id").getStringValue()).isEqualTo("user-legacy");
+            assertThat(generation.getTagsMap()).containsEntry("sigil.caller_tag", "caller-tag");
         }
     }
 

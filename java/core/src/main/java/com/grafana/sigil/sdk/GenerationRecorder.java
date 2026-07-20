@@ -130,7 +130,7 @@ public class GenerationRecorder implements AutoCloseable {
 
             span.updateName(SigilClient.generationSpanName(generation.getOperationName(), generation.getModel().getName()));
             // FULL_WITH_METADATA_SPANS keeps the proto export full but the
-            // span path must drop sigil.conversation.title. `generation` is
+            // span path must drop agento11y.conversation.title. `generation` is
             // a local snapshot here, so save the title, zero it for the span
             // attribute call, and restore — no deep copy needed.
             if (contentCaptureMode == ContentCaptureMode.FULL_WITH_METADATA_SPANS) {

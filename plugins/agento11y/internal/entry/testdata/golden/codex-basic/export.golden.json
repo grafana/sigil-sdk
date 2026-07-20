@@ -30,16 +30,16 @@
           }
         ],
         "metadata": {
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user",
           "codex.token_usage.context_window": 258400,
           "codex.token_usage.source": "turn_context_delta",
           "codex.token_usage.total.cached_input_tokens": 30,
           "codex.token_usage.total.input_tokens": 120,
           "codex.token_usage.total.output_tokens": 40,
           "codex.token_usage.total.reasoning_output_tokens": 5,
-          "codex.token_usage.total.total_tokens": 160,
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "codex.token_usage.total.total_tokens": 160
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {

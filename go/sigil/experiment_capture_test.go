@@ -9,22 +9,22 @@ import (
 	"testing"
 	"time"
 
-	sigilv1 "github.com/grafana/agento11y/go/proto/sigil/v1"
+	agento11yv1 "github.com/grafana/agento11y/go/proto/agento11y/v1"
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
 type capturingExperimentExporter struct {
 	mu       sync.Mutex
-	requests []*sigilv1.ExportGenerationsRequest
+	requests []*agento11yv1.ExportGenerationsRequest
 }
 
-func (e *capturingExperimentExporter) Export(_ context.Context, request *sigilv1.ExportGenerationsRequest) (*sigilv1.ExportGenerationsResponse, error) {
+func (e *capturingExperimentExporter) Export(_ context.Context, request *agento11yv1.ExportGenerationsRequest) (*agento11yv1.ExportGenerationsResponse, error) {
 	e.mu.Lock()
 	e.requests = append(e.requests, request)
 	e.mu.Unlock()
-	response := &sigilv1.ExportGenerationsResponse{}
+	response := &agento11yv1.ExportGenerationsResponse{}
 	for _, generation := range request.GetGenerations() {
-		response.Results = append(response.Results, &sigilv1.ExportGenerationResult{
+		response.Results = append(response.Results, &agento11yv1.ExportGenerationResult{
 			GenerationId: generation.GetId(),
 			Accepted:     true,
 		})
@@ -32,12 +32,12 @@ func (e *capturingExperimentExporter) Export(_ context.Context, request *sigilv1
 	return response, nil
 }
 
-func (e *capturingExperimentExporter) ExportWorkflowSteps(_ context.Context, request *sigilv1.ExportWorkflowStepsRequest) (*sigilv1.ExportWorkflowStepsResponse, error) {
-	response := &sigilv1.ExportWorkflowStepsResponse{
-		Results: make([]*sigilv1.ExportWorkflowStepResult, 0, len(request.GetWorkflowSteps())),
+func (e *capturingExperimentExporter) ExportWorkflowSteps(_ context.Context, request *agento11yv1.ExportWorkflowStepsRequest) (*agento11yv1.ExportWorkflowStepsResponse, error) {
+	response := &agento11yv1.ExportWorkflowStepsResponse{
+		Results: make([]*agento11yv1.ExportWorkflowStepResult, 0, len(request.GetWorkflowSteps())),
 	}
 	for _, step := range request.GetWorkflowSteps() {
-		response.Results = append(response.Results, &sigilv1.ExportWorkflowStepResult{
+		response.Results = append(response.Results, &agento11yv1.ExportWorkflowStepResult{
 			StepId:   step.GetId(),
 			Accepted: true,
 		})
@@ -47,7 +47,7 @@ func (e *capturingExperimentExporter) ExportWorkflowSteps(_ context.Context, req
 
 func (e *capturingExperimentExporter) Shutdown(context.Context) error { return nil }
 
-func (e *capturingExperimentExporter) firstGeneration() *sigilv1.Generation {
+func (e *capturingExperimentExporter) firstGeneration() *agento11yv1.Generation {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(e.requests) == 0 || len(e.requests[0].GetGenerations()) == 0 {
@@ -83,10 +83,10 @@ func (e *capturingExperimentExporter) generationCount(generationID string) int {
 	return count
 }
 
-func (e *capturingExperimentExporter) generations(generationID string) []*sigilv1.Generation {
+func (e *capturingExperimentExporter) generations(generationID string) []*agento11yv1.Generation {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	var generations []*sigilv1.Generation
+	var generations []*agento11yv1.Generation
 	for _, request := range e.requests {
 		for _, generation := range request.GetGenerations() {
 			if generation.GetId() == generationID {

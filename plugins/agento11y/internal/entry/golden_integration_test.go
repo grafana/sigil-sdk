@@ -636,26 +636,26 @@ func generationSortKey(g json.RawMessage) string {
 // leave the hash visible while the input is scrubbed, hiding agent_version
 // drift behind an opaque value.
 var normalizeFields = map[string]string{
-	"started_at":          "<NORMALIZED>",
-	"completed_at":        "<NORMALIZED>",
-	"timestamp":           "<NORMALIZED>",
-	"trace_id":            "<NORMALIZED>",
-	"span_id":             "<NORMALIZED>",
-	"parent_span_id":      "<NORMALIZED>",
-	"sigil.sdk.version":   "<NORMALIZED>",
-	"sigil.sdk.commit":    "<NORMALIZED>",
-	"agent_version":       "<NORMALIZED>",
-	"effective_version":   "<NORMALIZED>",
-	"sigil.user_id":       "<NORMALIZED>",
-	"user_id":             "<NORMALIZED>",
-	"sigil.host.hostname": "<NORMALIZED>",
-	"host.name":           "<NORMALIZED>",
+	"started_at":              "<NORMALIZED>",
+	"completed_at":            "<NORMALIZED>",
+	"timestamp":               "<NORMALIZED>",
+	"trace_id":                "<NORMALIZED>",
+	"span_id":                 "<NORMALIZED>",
+	"parent_span_id":          "<NORMALIZED>",
+	"agento11y.sdk.version":   "<NORMALIZED>",
+	"agento11y.sdk.commit":    "<NORMALIZED>",
+	"agent_version":           "<NORMALIZED>",
+	"effective_version":       "<NORMALIZED>",
+	"sigil.user_id":           "<NORMALIZED>",
+	"user_id":                 "<NORMALIZED>",
+	"agento11y.host.hostname": "<NORMALIZED>",
+	"host.name":               "<NORMALIZED>",
 }
 
 // normalizeKeySuffixes are suffix matches applied to map keys. Any tag/
 // metadata key that ends with one of these suffixes has its value
 // replaced. This covers vendor-prefixed timestamp keys like
-// `sigil.generation.started_at` without an exact entry.
+// `agento11y.generation.started_at` without an exact entry.
 var normalizeKeySuffixes = []string{".started_at", ".completed_at", ".timestamp"}
 
 func normalizeAny(v any) any {

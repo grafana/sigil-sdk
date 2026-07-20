@@ -6,9 +6,9 @@ namespace Grafana.Sigil.Gemini;
 
 public static class GeminiGenerationMapper
 {
-    private const string ThinkingBudgetMetadataKey = "sigil.gen_ai.request.thinking.budget_tokens";
-    private const string ThinkingLevelMetadataKey = "sigil.gen_ai.request.thinking.level";
-    private const string ToolUsePromptTokensMetadataKey = "sigil.gen_ai.usage.tool_use_prompt_tokens";
+    private const string ThinkingBudgetMetadataKey = "agento11y.gen_ai.request.thinking.budget_tokens";
+    private const string ThinkingLevelMetadataKey = "agento11y.gen_ai.request.thinking.level";
+    private const string ToolUsePromptTokensMetadataKey = "agento11y.gen_ai.usage.tool_use_prompt_tokens";
 
     public static Generation FromRequestResponse(
         string model,

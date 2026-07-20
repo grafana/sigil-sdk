@@ -42,7 +42,7 @@ public sealed class GeminiConformanceTests
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(1536L, ReadThinkingBudget(generation));
         Assert.Equal("medium", ReadThinkingLevel(generation));
-        Assert.Equal(7L, ReadMetadataLong(generation, "sigil.gen_ai.usage.tool_use_prompt_tokens"));
+        Assert.Equal(7L, ReadMetadataLong(generation, "agento11y.gen_ai.usage.tool_use_prompt_tokens"));
         Assert.Equal(170, generation.Usage.TotalTokens);
         Assert.Equal(12, generation.Usage.CacheReadInputTokens);
         Assert.Equal(10, generation.Usage.ReasoningTokens);
@@ -129,7 +129,7 @@ public sealed class GeminiConformanceTests
         Assert.True(generation.ThinkingEnabled);
         Assert.Equal(1536L, ReadThinkingBudget(generation));
         Assert.Equal("medium", ReadThinkingLevel(generation));
-        Assert.Equal(4L, ReadMetadataLong(generation, "sigil.gen_ai.usage.tool_use_prompt_tokens"));
+        Assert.Equal(4L, ReadMetadataLong(generation, "agento11y.gen_ai.usage.tool_use_prompt_tokens"));
         Assert.Equal(26, generation.Usage.TotalTokens);
         Assert.Contains(generation.Artifacts, artifact => artifact.Kind == ArtifactKind.ProviderEvent);
     }
@@ -539,7 +539,7 @@ public sealed class GeminiConformanceTests
 
     private static long ReadThinkingBudget(Generation generation)
     {
-        var raw = generation.Metadata["sigil.gen_ai.request.thinking.budget_tokens"];
+        var raw = generation.Metadata["agento11y.gen_ai.request.thinking.budget_tokens"];
         return raw switch
         {
             System.Text.Json.JsonElement json
@@ -551,7 +551,7 @@ public sealed class GeminiConformanceTests
 
     private static string ReadThinkingLevel(Generation generation)
     {
-        var raw = generation.Metadata["sigil.gen_ai.request.thinking.level"];
+        var raw = generation.Metadata["agento11y.gen_ai.request.thinking.level"];
         return raw switch
         {
             System.Text.Json.JsonElement json when json.ValueKind == System.Text.Json.JsonValueKind.String => json.GetString() ?? string.Empty,

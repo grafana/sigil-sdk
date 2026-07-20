@@ -86,16 +86,16 @@ def test_agento11y_google_adk_sync_lifecycle_sets_framework_metadata() -> None:
 
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "google-adk"
-        assert generation.tags["sigil.framework.source"] == "handler"
-        assert generation.tags["sigil.framework.language"] == "python"
+        assert generation.tags["agento11y.framework.name"] == "google-adk"
+        assert generation.tags["agento11y.framework.source"] == "handler"
+        assert generation.tags["agento11y.framework.language"] == "python"
         assert generation.conversation_id == "framework-conversation-42"
-        assert generation.metadata["sigil.framework.run_id"] == str(run_id)
-        assert generation.metadata["sigil.framework.parent_run_id"] == str(parent_run_id)
-        assert generation.metadata["sigil.framework.thread_id"] == "framework-thread-42"
-        assert generation.metadata["sigil.framework.event_id"] == "framework-event-42"
-        assert generation.metadata["sigil.framework.run_type"] == "chat"
-        assert generation.metadata["sigil.framework.retry_attempt"] == 2
+        assert generation.metadata["agento11y.framework.run_id"] == str(run_id)
+        assert generation.metadata["agento11y.framework.parent_run_id"] == str(parent_run_id)
+        assert generation.metadata["agento11y.framework.thread_id"] == "framework-thread-42"
+        assert generation.metadata["agento11y.framework.event_id"] == "framework-event-42"
+        assert generation.metadata["agento11y.framework.run_type"] == "chat"
+        assert generation.metadata["agento11y.framework.retry_attempt"] == 2
         assert generation.output[0].parts[0].text == "world"
     finally:
         client.shutdown()
@@ -131,8 +131,8 @@ def test_agento11y_google_adk_keeps_thread_metadata_when_ids_are_split_across_pa
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.conversation_id == "framework-conversation-split-42"
-        assert generation.metadata["sigil.framework.thread_id"] == "framework-thread-split-42"
-        assert generation.metadata["sigil.framework.event_id"] == "framework-event-split-42"
+        assert generation.metadata["agento11y.framework.thread_id"] == "framework-thread-split-42"
+        assert generation.metadata["agento11y.framework.event_id"] == "framework-event-split-42"
     finally:
         client.shutdown()
 
@@ -277,7 +277,7 @@ def test_agento11y_google_adk_async_handler_records_generation() -> None:
         asyncio.run(_run())
         client.flush()
         generation = exporter.requests[0].generations[0]
-        assert generation.tags["sigil.framework.name"] == "google-adk"
+        assert generation.tags["agento11y.framework.name"] == "google-adk"
         assert generation.model.provider == "openai"
     finally:
         client.shutdown()
@@ -369,7 +369,7 @@ def test_agento11y_google_adk_callback_helpers_attach_callback_fields() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.conversation_id == "adk-session-42"
-        assert generation.metadata["sigil.framework.event_id"] == "adk-invocation-42"
+        assert generation.metadata["agento11y.framework.event_id"] == "adk-invocation-42"
 
         agent = _Agent()
         returned_agent = with_sigil_google_adk_callbacks(agent, client=client)
@@ -492,7 +492,7 @@ def test_agento11y_google_adk_plugin_helpers_attach_plugin_list() -> None:
         client.flush()
         generation = exporter.requests[0].generations[0]
         assert generation.conversation_id == "adk-plugin-session-42"
-        assert generation.tags["sigil.framework.name"] == "google-adk"
+        assert generation.tags["agento11y.framework.name"] == "google-adk"
     finally:
         client.shutdown()
 
@@ -619,7 +619,7 @@ def test_agento11y_google_adk_plugin_maps_current_request_config_tools_and_usage
         assert generation.top_p == 0.95
         assert generation.tool_choice == "get_weather"
         assert generation.thinking_enabled is True
-        assert generation.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 1536
+        assert generation.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 1536
         assert len(generation.tools) == 1
         assert generation.tools[0].name == "get_weather"
         assert generation.tools[0].description == "Gets the weather for a city."

@@ -57,7 +57,7 @@ func main() {
 		TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
 		BasicPassword: os.Getenv("AGENTO11Y_AUTH_TOKEN"),
 	}
-	// Client tags attach to every generation and become sigil.tag.<key>
+	// Client tags attach to every generation and become agento11y.tag.<key>
 	// attributes on OTel spans and metrics, so keep them low-cardinality
 	// (team, env). See docs/concepts/tags-and-metadata.md.
 	cfg.Tags = map[string]string{"team": "checkout", "env": "dev"}

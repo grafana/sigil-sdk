@@ -16,8 +16,8 @@ func TestFor(t *testing.T) {
 	for _, agent := range []string{"claude-code", "cursor", "codex", "copilot"} {
 		t.Run(agent, func(t *testing.T) {
 			got := For(agent)
-			assert.True(t, strings.HasPrefix(got, "sigil-plugin-"+agent+"/1.2.3 "),
-				"want prefix sigil-plugin-%s/1.2.3, got %q", agent, got)
+			assert.True(t, strings.HasPrefix(got, "agento11y-plugin-"+agent+"/1.2.3 "),
+				"want prefix agento11y-plugin-%s/1.2.3, got %q", agent, got)
 			assert.True(t, strings.HasSuffix(got, sigil.UserAgent()),
 				"want suffix %q, got %q", sigil.UserAgent(), got)
 		})

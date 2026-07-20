@@ -104,24 +104,24 @@ Conversation ID precedence:
 set, it creates one client-level fallback conversation ID and reuses it for every query in that client session so
 multi-query sessions stay grouped.
 
-When Claude returns a session ID in the stream, the handler also records it in generation metadata as `sigil.framework.session_id`.
+When Claude returns a session ID in the stream, the handler also records it in generation metadata as `agento11y.framework.session_id`.
 
 ## Metadata
 
 Required framework tags:
 
-- `sigil.framework.name=claude-agent-sdk`
-- `sigil.framework.source=hooks`
-- `sigil.framework.language=python`
+- `agento11y.framework.name=claude-agent-sdk`
+- `agento11y.framework.source=hooks`
+- `agento11y.framework.language=python`
 
 Metadata includes:
 
-- `sigil.framework.run_id`
-- `sigil.framework.run_type=agent`
-- `sigil.framework.session_id` when Claude returns one
-- `sigil.claude_agent.permission_mode` when configured
-- `sigil.claude_agent.cwd` when configured
-- `sigil.claude_agent.total_cost_usd` when Claude returns cost data
+- `agento11y.framework.run_id`
+- `agento11y.framework.run_type=agent`
+- `agento11y.framework.session_id` when Claude returns one
+- `agento11y.claude_agent.permission_mode` when configured
+- `agento11y.claude_agent.cwd` when configured
+- `agento11y.claude_agent.total_cost_usd` when Claude returns cost data
 
 ## Claude Native OpenTelemetry
 

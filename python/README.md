@@ -93,18 +93,18 @@ through LangChain, LangGraph, OpenAI Agents, LlamaIndex, Google ADK, Strands, Cl
 
 Framework handlers inject framework tags/metadata on recorded generations:
 
-- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `strands`, `claude-agent-sdk`, `litellm`, or `pydantic-ai`)
-- `sigil.framework.source=handler` (or `hooks` for Strands Agents and Claude Agent SDK)
-- `sigil.framework.language=python`
-- `metadata["sigil.framework.run_id"]`
-- `metadata["sigil.framework.thread_id"]` (when present)
-- `metadata["sigil.framework.parent_run_id"]` (when available)
-- `metadata["sigil.framework.component_name"]`
-- `metadata["sigil.framework.run_type"]`
-- `metadata["sigil.framework.tags"]`
-- `metadata["sigil.framework.retry_attempt"]` (when available)
-- `metadata["sigil.framework.event_id"]` (when available)
-- `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
+- `agento11y.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `strands`, `claude-agent-sdk`, `litellm`, or `pydantic-ai`)
+- `agento11y.framework.source=handler` (or `hooks` for Strands Agents and Claude Agent SDK)
+- `agento11y.framework.language=python`
+- `metadata["agento11y.framework.run_id"]`
+- `metadata["agento11y.framework.thread_id"]` (when present)
+- `metadata["agento11y.framework.parent_run_id"]` (when available)
+- `metadata["agento11y.framework.component_name"]`
+- `metadata["agento11y.framework.run_type"]`
+- `metadata["agento11y.framework.tags"]`
+- `metadata["agento11y.framework.retry_attempt"]` (when available)
+- `metadata["agento11y.framework.event_id"]` (when available)
+- `metadata["agento11y.framework.langgraph.node"]` (LangGraph when available)
 
 Conversation mapping is conversation-first:
 
@@ -409,7 +409,7 @@ with client.start_tool_execution(
 ## SDK identity attributes
 
 - Generation and tool spans always include:
-  - `sigil.sdk.name=sdk-python`
+  - `agento11y.sdk.name=sdk-python`
 - Normalized generation metadata always includes the same key.
 - If caller metadata provides a conflicting value for this key, the SDK overwrites it.
 
@@ -442,7 +442,7 @@ with with_conversation_id("conv-ctx"), with_agent_name("planner"), with_agent_ve
 
 `FULL_WITH_METADATA_SPANS` is the right mode when the gRPC ingest destination is private but the OTel trace/metric destination is shared and must not receive any content. Tool execution and embedding spans behave like `METADATA_ONLY` under this mode because they have no separate gRPC export.
 
-User-provided `metadata` and `tags` are **not** stripped by any capture mode; callers must avoid putting sensitive content in those dicts when using `METADATA_ONLY` or `FULL_WITH_METADATA_SPANS`. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `user_id` each show up (export vs spans vs metrics).
+User-provided `metadata` and `tags` are **not** stripped by any capture mode; callers must avoid putting sensitive content in those dicts when using `METADATA_ONLY` or `FULL_WITH_METADATA_SPANS`. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `user_id` each show up (export vs spans vs metrics).
 
 ### Client-level default
 
@@ -493,7 +493,7 @@ A callback on `ClientConfig` that resolves the capture mode per-recording at run
 from agento11y import Client, ClientConfig, ContentCaptureMode
 
 def resolve_capture(metadata: dict) -> ContentCaptureMode:
-    if metadata.get("sigil.tenant") == "healthcare":
+    if metadata.get("tenant") == "healthcare":
         return ContentCaptureMode.METADATA_ONLY
     return ContentCaptureMode.DEFAULT  # fall through to client default
 

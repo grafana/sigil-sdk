@@ -7,7 +7,7 @@ using Microsoft.Extensions.Hosting;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
-using IngestProto = global::Sigil.V1;
+using IngestProto = global::Agento11y.V1;
 
 namespace Grafana.Sigil.Tests;
 
@@ -66,7 +66,7 @@ internal static class TestHelpers
             Metadata =
             {
                 ["seed"] = 42,
-                ["sigil.gen_ai.request.thinking.budget_tokens"] = 4096L,
+                ["agento11y.gen_ai.request.thinking.budget_tokens"] = 4096L,
             },
             StartedAt = new DateTimeOffset(2026, 02, 13, 10, 00, 00, TimeSpan.Zero),
         };
@@ -167,7 +167,7 @@ internal static class TestHelpers
             Metadata =
             {
                 ["seed"] = 42,
-                ["sigil.gen_ai.request.thinking.budget_tokens"] = 2048L,
+                ["agento11y.gen_ai.request.thinking.budget_tokens"] = 2048L,
             },
             Artifacts =
             {
@@ -507,10 +507,10 @@ internal static class GenerationAssertions
         Xunit.Assert.Equal(expected.Output.Count, actual.Output.Count);
         Xunit.Assert.Equal(expected.Tools.Count, actual.Tools.Count);
         Xunit.Assert.Equal(expected.Artifacts.Count, actual.RawArtifacts.Count);
-        Xunit.Assert.True(actual.Metadata.Fields.ContainsKey("sigil.sdk.name"));
+        Xunit.Assert.True(actual.Metadata.Fields.ContainsKey("agento11y.sdk.name"));
         Xunit.Assert.Equal(
-            expected.Metadata["sigil.sdk.name"]?.ToString(),
-            actual.Metadata.Fields["sigil.sdk.name"].StringValue
+            expected.Metadata["agento11y.sdk.name"]?.ToString(),
+            actual.Metadata.Fields["agento11y.sdk.name"].StringValue
         );
 
         Xunit.Assert.Contains(actual.Input.SelectMany(m => m.Parts), p => p.PayloadCase == IngestProto.Part.PayloadOneofCase.Text);

@@ -114,7 +114,7 @@ Dynamic resolution via `contentCaptureResolver`:
 ```ts
 const client = new SigilClient({
   contentCaptureResolver: (metadata) => {
-    if (metadata?.["sigil.tenant"] === "healthcare") {
+    if (metadata?.["tenant"] === "healthcare") {
       return "metadata_only";
     }
     return "default"; // defer to `contentCapture`
@@ -132,7 +132,7 @@ Resolution precedence (highest to lowest):
 
 Unlike the Go, Python, Java, and .NET SDKs, the JS SDK does not propagate the resolved capture mode through async context, so tool executions started inside a generation block do not automatically inherit the generation's mode. Set `contentCapture` on each `ToolExecutionStart` when you need a tool to follow a non-default policy.
 
-User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `userId` each show up (export vs spans vs metrics).
+User-provided `metadata` and `tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `userId` each show up (export vs spans vs metrics).
 
 ## Pre-Ingest Redaction
 
@@ -382,18 +382,18 @@ The same redaction policy also applies to Strands Agents generations.
 
 Each framework handler injects:
 
-- `sigil.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `vercel-ai-sdk`, or `strands`)
-- `sigil.framework.source` (`handler` for existing callback handlers, `framework` for Vercel AI SDK hooks, `hooks` for Strands)
-- `sigil.framework.language` (`javascript` for existing callback handlers, `typescript` for Vercel AI SDK and Strands hooks)
-- `metadata["sigil.framework.run_id"]`
-- `metadata["sigil.framework.thread_id"]` (when present)
-- `metadata["sigil.framework.parent_run_id"]` (when available)
-- `metadata["sigil.framework.component_name"]`
-- `metadata["sigil.framework.run_type"]`
-- `metadata["sigil.framework.tags"]`
-- `metadata["sigil.framework.retry_attempt"]` (when available)
-- `metadata["sigil.framework.event_id"]` (when available)
-- `metadata["sigil.framework.langgraph.node"]` (LangGraph when available)
+- `agento11y.framework.name` (`langchain`, `langgraph`, `openai-agents`, `llamaindex`, `google-adk`, `vercel-ai-sdk`, or `strands`)
+- `agento11y.framework.source` (`handler` for existing callback handlers, `framework` for Vercel AI SDK hooks, `hooks` for Strands)
+- `agento11y.framework.language` (`javascript` for existing callback handlers, `typescript` for Vercel AI SDK and Strands hooks)
+- `metadata["agento11y.framework.run_id"]`
+- `metadata["agento11y.framework.thread_id"]` (when present)
+- `metadata["agento11y.framework.parent_run_id"]` (when available)
+- `metadata["agento11y.framework.component_name"]`
+- `metadata["agento11y.framework.run_type"]`
+- `metadata["agento11y.framework.tags"]`
+- `metadata["agento11y.framework.retry_attempt"]` (when available)
+- `metadata["agento11y.framework.event_id"]` (when available)
+- `metadata["agento11y.framework.langgraph.node"]` (LangGraph when available)
 
 Conversation mapping is conversation-first:
 
@@ -423,7 +423,7 @@ await graph.invoke({ prompt: 'What timezone did I give you?', answer: '' }, thre
 - `flush()` drains queued generations; `shutdown()` flushes and closes generation exporters.
 - Empty tool names produce a no-op tool recorder.
 - Generation/tool spans always include SDK identity attributes:
-  - `sigil.sdk.name=sdk-js`
+  - `agento11y.sdk.name=sdk-js`
 - Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Raw provider artifacts are opt-in (`rawArtifacts: true`).
 

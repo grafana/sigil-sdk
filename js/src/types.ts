@@ -25,7 +25,7 @@ export type ExportAuthMode = 'none' | 'tenant' | 'bearer' | 'basic';
  *   sensitive content.
  * - `'full_with_metadata_spans'` — splits the proto and span paths for
  *   generation content. The proto export keeps full content; the OTel span
- *   omits `sigil.conversation.title`, `gen_ai.tool.call.arguments`,
+ *   omits `agento11y.conversation.title`, `gen_ai.tool.call.arguments`,
  *   `gen_ai.tool.call.result`, and `gen_ai.embeddings.input_texts`. Use this
  *   mode when the gRPC ingest destination is private but the OTel trace and
  *   metric destinations are shared and must not receive any content.
@@ -243,7 +243,7 @@ export interface SigilSdkConfig {
   userId?: string;
   /**
    * Default tags merged into every generation (per-call tags win) and emitted on
-   * OTel spans/metrics as `sigil.tag.<key>`. Read from `AGENTO11Y_TAGS`
+   * OTel spans/metrics as `agento11y.tag.<key>`. Read from `AGENTO11Y_TAGS`
    * (`SIGIL_TAGS` fallback) as CSV.
    */
   tags?: Record<string, string>;

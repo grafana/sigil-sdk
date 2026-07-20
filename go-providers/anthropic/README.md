@@ -104,9 +104,9 @@ SIGIL_RUN_LIVE_EXAMPLES=1 ANTHROPIC_API_KEY=... go test -run Example_withSigil -
 
 In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
 
-- `sigil.gen_ai.usage.server_tool_use.web_search_requests`
-- `sigil.gen_ai.usage.server_tool_use.web_fetch_requests`
-- `sigil.gen_ai.usage.server_tool_use.total_requests`
+- `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
+- `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`
+- `agento11y.gen_ai.usage.server_tool_use.total_requests`
 
 Anthropic tool `defer_loading` is mapped to Sigil `Generation.Tools[].Deferred`.
 

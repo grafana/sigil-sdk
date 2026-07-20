@@ -22,7 +22,7 @@ const { SigilClientMock, createSecretRedactionSanitizerMock, SANITIZER } =
 vi.mock("@grafana/agento11y", () => ({
   SigilClient: SigilClientMock,
   createSecretRedactionSanitizer: createSecretRedactionSanitizerMock,
-  userAgent: () => "sigil-sdk-js/0.0.0-test",
+  userAgent: () => "agento11y-sdk-js/0.0.0-test",
 }));
 
 import { createSigilClient } from "./client.js";
@@ -68,7 +68,7 @@ describe("createSigilClient", () => {
         auth: { mode: "none" },
         headers: {
           "User-Agent": expect.stringMatching(
-            /^sigil-plugin-pi\/.+ sigil-sdk-js\/0\.0\.0-test$/,
+            /^agento11y-plugin-pi\/.+ agento11y-sdk-js\/0\.0\.0-test$/,
           ),
         },
       },
@@ -90,8 +90,8 @@ describe("createSigilClient", () => {
 
     const [arg] = SigilClientMock.mock.calls[0]!;
     const ua = arg.generationExport.headers["User-Agent"];
-    expect(ua.startsWith("sigil-plugin-pi/")).toBe(true);
-    expect(ua.endsWith("sigil-sdk-js/0.0.0-test")).toBe(true);
+    expect(ua.startsWith("agento11y-plugin-pi/")).toBe(true);
+    expect(ua.endsWith("agento11y-sdk-js/0.0.0-test")).toBe(true);
   });
 
   it("appends the export path for a prefix-mounted endpoint", () => {
@@ -132,7 +132,7 @@ describe("createSigilClient", () => {
         },
         headers: {
           "User-Agent": expect.stringMatching(
-            /^sigil-plugin-pi\/.+ sigil-sdk-js\/0\.0\.0-test$/,
+            /^agento11y-plugin-pi\/.+ agento11y-sdk-js\/0\.0\.0-test$/,
           ),
         },
       },

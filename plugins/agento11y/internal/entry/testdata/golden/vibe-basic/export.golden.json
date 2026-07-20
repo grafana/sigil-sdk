@@ -30,10 +30,10 @@
           }
         ],
         "metadata": {
-          "sigil.conversation.title": "cats on the keyboard",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user",
+          "agento11y.conversation.title": "cats on the keyboard",
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user",
           "vibe.cost_usd": 0.0625
         },
         "mode": "GENERATION_MODE_SYNC",

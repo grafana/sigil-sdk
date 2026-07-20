@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text;
 using Xunit;
-using SigilProto = Sigil.V1;
+using SigilProto = Agento11y.V1;
 
 namespace Grafana.Sigil.Tests;
 
@@ -44,7 +44,7 @@ public sealed class ConformanceTests
             Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["trace"] = "roundtrip",
-                ["sigil.gen_ai.request.thinking.budget_tokens"] = 2048L,
+                ["agento11y.gen_ai.request.thinking.budget_tokens"] = 2048L,
             },
         });
         recorder.SetResult(new Generation
@@ -121,9 +121,9 @@ public sealed class ConformanceTests
         Assert.Equal(span.TraceId.ToHexString(), generation.TraceId);
         Assert.Equal(span.SpanId.ToHexString(), generation.SpanId);
         Assert.Equal("be concise", generation.SystemPrompt);
-        Assert.Equal("Roundtrip conversation", generation.Metadata.Fields["sigil.conversation.title"].StringValue);
-        Assert.Equal("user-roundtrip", generation.Metadata.Fields["sigil.user.id"].StringValue);
-        Assert.Equal("sdk-dotnet", generation.Metadata.Fields["sigil.sdk.name"].StringValue);
+        Assert.Equal("Roundtrip conversation", generation.Metadata.Fields["agento11y.conversation.title"].StringValue);
+        Assert.Equal("user-roundtrip", generation.Metadata.Fields["agento11y.user.id"].StringValue);
+        Assert.Equal("sdk-dotnet", generation.Metadata.Fields["agento11y.sdk.name"].StringValue);
         Assert.Equal("hello", generation.Input[0].Parts[0].Text);
         Assert.Equal("reasoning", generation.Output[0].Parts[0].Thinking);
         Assert.Equal("weather", generation.Output[0].Parts[1].ToolCall.Name);
@@ -145,7 +145,7 @@ public sealed class ConformanceTests
         Assert.Equal("eu", generation.Tags["region"]);
         Assert.Equal(2, generation.RawArtifacts.Count);
         Assert.Equal("generateText", span.GetTagItem("gen_ai.operation.name")?.ToString());
-        Assert.Equal("Roundtrip conversation", span.GetTagItem("sigil.conversation.title")?.ToString());
+        Assert.Equal("Roundtrip conversation", span.GetTagItem("agento11y.conversation.title")?.ToString());
         Assert.Equal("user-roundtrip", span.GetTagItem("user.id")?.ToString());
         Assert.Contains("gen_ai.client.operation.duration", env.MetricNames);
         Assert.Contains("gen_ai.client.token.usage", env.MetricNames);
@@ -174,7 +174,7 @@ public sealed class ConformanceTests
         };
         if (metadataTitle.Length > 0)
         {
-            start.Metadata["sigil.conversation.title"] = metadataTitle;
+            start.Metadata["agento11y.conversation.title"] = metadataTitle;
         }
 
         var recorder = env.Client.StartGeneration(start);
@@ -187,13 +187,13 @@ public sealed class ConformanceTests
         var span = env.GenerationSpan();
         if (expected.Length == 0)
         {
-            Assert.False(generation.Metadata.Fields.ContainsKey("sigil.conversation.title"));
-            Assert.Null(span.GetTagItem("sigil.conversation.title"));
+            Assert.False(generation.Metadata.Fields.ContainsKey("agento11y.conversation.title"));
+            Assert.Null(span.GetTagItem("agento11y.conversation.title"));
             return;
         }
 
-        Assert.Equal(expected, generation.Metadata.Fields["sigil.conversation.title"].StringValue);
-        Assert.Equal(expected, span.GetTagItem("sigil.conversation.title")?.ToString());
+        Assert.Equal(expected, generation.Metadata.Fields["agento11y.conversation.title"].StringValue);
+        Assert.Equal(expected, span.GetTagItem("agento11y.conversation.title")?.ToString());
     }
 
     [Theory]
@@ -215,7 +215,7 @@ public sealed class ConformanceTests
         };
         if (canonicalUserId.Length > 0)
         {
-            start.Metadata["sigil.user.id"] = canonicalUserId;
+            start.Metadata["agento11y.user.id"] = canonicalUserId;
         }
         if (legacyUserId.Length > 0)
         {
@@ -230,7 +230,7 @@ public sealed class ConformanceTests
 
         var generation = env.SingleGeneration();
         var span = env.GenerationSpan();
-        Assert.Equal(expected, generation.Metadata.Fields["sigil.user.id"].StringValue);
+        Assert.Equal(expected, generation.Metadata.Fields["agento11y.user.id"].StringValue);
         Assert.Equal(expected, span.GetTagItem("user.id")?.ToString());
     }
 
@@ -483,7 +483,7 @@ public sealed class ConformanceTests
         Assert.Contains("sunny", span.GetTagItem("gen_ai.tool.call.result")?.ToString());
         Assert.Equal("openai", span.GetTagItem("gen_ai.provider.name")?.ToString());
         Assert.Equal("gpt-5", span.GetTagItem("gen_ai.request.model")?.ToString());
-        Assert.Equal("Context title", span.GetTagItem("sigil.conversation.title")?.ToString());
+        Assert.Equal("Context title", span.GetTagItem("agento11y.conversation.title")?.ToString());
         Assert.Equal("agent-context", span.GetTagItem("gen_ai.agent.name")?.ToString());
         Assert.Equal("v-context", span.GetTagItem("gen_ai.agent.version")?.ToString());
         Assert.Contains("gen_ai.client.operation.duration", env.MetricNames);
@@ -627,11 +627,11 @@ public sealed class ConformanceTests
         await env.ShutdownAsync();
 
         var span = env.GenerationSpan();
-        Assert.Equal("payments", span.GetTagItem("sigil.tag.team")?.ToString());
-        Assert.Null(span.GetTagItem("sigil.tag.call_only"));
+        Assert.Equal("payments", span.GetTagItem("agento11y.tag.team")?.ToString());
+        Assert.Null(span.GetTagItem("agento11y.tag.call_only"));
 
         Assert.True(
-            env.HasMetricTag("gen_ai.client.operation.duration", "sigil.tag.team", "payments"),
+            env.HasMetricTag("gen_ai.client.operation.duration", "agento11y.tag.team", "payments"),
             "operation duration metrics should include the client tag"
         );
     }
@@ -657,6 +657,57 @@ public sealed class ConformanceTests
         Assert.Equal("conv-shutdown", generation.ConversationId);
         Assert.Equal("agent-shutdown", generation.AgentName);
         Assert.Equal("v-shutdown", generation.AgentVersion);
+    }
+
+    // Guards the agento11y rename: the SDK emits only agento11y.* names for
+    // SDK-owned span attributes, metadata keys, and tag projections, while
+    // caller-supplied metadata and tags pass through untouched even when they
+    // use the legacy sigil.* namespace.
+    [Fact]
+    public async Task NoSdkOwnedLegacySigilNamespace()
+    {
+        await using var env = new ConformanceEnv();
+        var recorder = env.Client.StartGeneration(new GenerationStart
+        {
+            Id = "gen-legacy-namespace",
+            ConversationId = "conv-legacy-namespace",
+            ConversationTitle = "Legacy namespace check",
+            UserId = "user-legacy",
+            AgentName = "agent-legacy",
+            AgentVersion = "1.0.0",
+            Model = new ModelRef { Provider = "anthropic", Name = "claude-sonnet-4-5" },
+            ToolChoice = "auto",
+            ThinkingEnabled = true,
+            Tags = new Dictionary<string, string>(StringComparer.Ordinal) { ["sigil.caller_tag"] = "caller-tag" },
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal) { ["sigil.caller_key"] = "caller-value" },
+        });
+        recorder.SetResult(new Generation
+        {
+            Output = { Message.AssistantTextMessage("ok") },
+            Usage = new TokenUsage { InputTokens = 1, OutputTokens = 1, TotalTokens = 2 },
+        });
+        recorder.End();
+
+        await env.ShutdownAsync();
+
+        var span = env.GenerationSpan();
+        var legacySpanAttrs = span.TagObjects
+            .Select(tag => tag.Key)
+            .Where(key => key.StartsWith("sigil.", StringComparison.Ordinal))
+            .ToList();
+        Assert.Empty(legacySpanAttrs);
+        Assert.Equal("gen-legacy-namespace", span.GetTagItem("agento11y.generation.id")?.ToString());
+        Assert.Equal("sdk-dotnet", span.GetTagItem("agento11y.sdk.name")?.ToString());
+
+        var generation = env.SingleGeneration();
+        var legacyMetadataKeys = generation.Metadata.Fields.Keys
+            .Where(key => key.StartsWith("sigil.", StringComparison.Ordinal) && key != "sigil.caller_key")
+            .ToList();
+        Assert.Empty(legacyMetadataKeys);
+        Assert.Equal("caller-value", generation.Metadata.Fields["sigil.caller_key"].StringValue);
+        Assert.Equal("sdk-dotnet", generation.Metadata.Fields["agento11y.sdk.name"].StringValue);
+        Assert.Equal("user-legacy", generation.Metadata.Fields["agento11y.user.id"].StringValue);
+        Assert.Equal("caller-tag", generation.Tags["sigil.caller_tag"]);
     }
 
     private sealed class ConformanceEnv : IAsyncDisposable

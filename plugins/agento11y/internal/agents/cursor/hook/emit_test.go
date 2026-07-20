@@ -68,8 +68,8 @@ func TestEmitGenerationSendsCursorUserAgent(t *testing.T) {
 	}
 	_ = client.Shutdown(ctx)
 
-	if !strings.HasPrefix(gotUA, "sigil-plugin-cursor/") {
-		t.Fatalf("User-Agent = %q, want sigil-plugin-cursor/ prefix", gotUA)
+	if !strings.HasPrefix(gotUA, "agento11y-plugin-cursor/") {
+		t.Fatalf("User-Agent = %q, want agento11y-plugin-cursor/ prefix", gotUA)
 	}
 }
 

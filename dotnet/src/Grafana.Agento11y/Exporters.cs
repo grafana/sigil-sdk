@@ -1,7 +1,7 @@
 using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
-using Proto = Sigil.V1;
+using Proto = Agento11y.V1;
 
 namespace Grafana.Sigil;
 
@@ -220,7 +220,7 @@ internal sealed class GrpcGenerationExporter : IGenerationExporter, IDisposable
 
     // UserAgentHandler prepends our token in front of grpc-dotnet's own
     // user-agent on every request, so the wire User-Agent is
-    // "sigil-sdk-dotnet/<ver> grpc-dotnet/<ver>".
+    // "agento11y-sdk-dotnet/<ver> grpc-dotnet/<ver>".
     private sealed class UserAgentHandler : DelegatingHandler
     {
         private readonly string _userAgent;

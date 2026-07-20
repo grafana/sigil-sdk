@@ -45,7 +45,7 @@ public enum ContentCaptureMode
     MetadataOnly = 3,
     /// <summary>
     /// Splits the proto and span paths for generation content. Proto export
-    /// keeps full content; the OTel span omits <c>sigil.conversation.title</c>,
+    /// keeps full content; the OTel span omits <c>agento11y.conversation.title</c>,
     /// <c>gen_ai.tool.call.arguments</c>, <c>gen_ai.tool.call.result</c>, and
     /// <c>gen_ai.embeddings.input_texts</c>.
     /// </summary>

@@ -18,8 +18,8 @@ import (
 // to every span and metric this agent emits. Renamed from "sigil-cursor"
 // when the three agent plugins consolidated into one binary; dashboards
 // that previously filtered on "sigil-cursor" need to update to
-// "sigil.cursor".
-const otelInstrumentationName = "sigil.cursor"
+// "agento11y.cursor".
+const otelInstrumentationName = "agento11y.cursor"
 
 // setupOTelIfConfigured builds OTel providers when an OTLP endpoint is set
 // (SIGIL_OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT). The OTel

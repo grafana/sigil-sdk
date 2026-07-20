@@ -30,7 +30,7 @@ test('setCacheDiagnostics stamps metadata on generation', async () => {
   const exporter = new MockGenerationExporter();
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,
@@ -66,7 +66,7 @@ test('setCacheDiagnostics ignores empty reason', async () => {
   const exporter = new MockGenerationExporter();
   const defaults = defaultConfig();
   const client = new SigilClient({
-    tracer: trace.getTracer('sigil-sdk-js-test'),
+    tracer: trace.getTracer('agento11y-sdk-js-test'),
     generationExport: {
       ...defaults.generationExport,
       batchSize: 1,

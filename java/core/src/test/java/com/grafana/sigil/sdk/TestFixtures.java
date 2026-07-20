@@ -27,7 +27,7 @@ final class TestFixtures {
                 .setThinkingEnabled(true)
                 .setSystemPrompt("be concise")
                 .setStartedAt(Instant.parse("2026-02-11T12:00:00Z"));
-        start.getMetadata().put("sigil.gen_ai.request.thinking.budget_tokens", 4096L);
+        start.getMetadata().put("agento11y.gen_ai.request.thinking.budget_tokens", 4096L);
         return start;
     }
 
@@ -51,7 +51,7 @@ final class TestFixtures {
                 .setUsage(new TokenUsage().setInputTokens(120).setOutputTokens(80))
                 .setStopReason("stop")
                 .setCompletedAt(Instant.parse("2026-02-11T12:00:01Z"));
-        result.getMetadata().put("sigil.gen_ai.request.thinking.budget_tokens", 2048L);
+        result.getMetadata().put("agento11y.gen_ai.request.thinking.budget_tokens", 2048L);
 
         result.getInput().add(new Message()
                 .setRole(MessageRole.USER)

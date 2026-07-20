@@ -330,17 +330,17 @@ export class SigilStrandsHookProvider {
     const metadata: Record<string, unknown> = normalizeMetadata({
       ...this.extraMetadata,
       conversation_id: conversationId,
-      'sigil.framework.run_id': runId,
-      'sigil.framework.run_type': runType,
-      'sigil.framework.component_name': agentName(agent),
+      'agento11y.framework.run_id': runId,
+      'agento11y.framework.run_type': runType,
+      'agento11y.framework.component_name': agentName(agent),
       ...metadataFromAgentState(agent),
     });
     if (parentRunId !== undefined) {
-      metadata['sigil.framework.parent_run_id'] = parentRunId;
+      metadata['agento11y.framework.parent_run_id'] = parentRunId;
     }
     const eventId = firstNonEmpty(asString(read(read(event, 'toolUse'), 'toolUseId')), asString(read(event, 'id')));
     if (eventId.length > 0) {
-      metadata['sigil.framework.event_id'] = eventId;
+      metadata['agento11y.framework.event_id'] = eventId;
     }
     return { conversationId, metadata };
   }
@@ -376,9 +376,9 @@ export class SigilStrandsHookProvider {
   private frameworkTags(): Record<string, string> {
     return {
       ...this.extraTags,
-      'sigil.framework.name': frameworkName,
-      'sigil.framework.source': frameworkSource,
-      'sigil.framework.language': frameworkLanguage,
+      'agento11y.framework.name': frameworkName,
+      'agento11y.framework.source': frameworkSource,
+      'agento11y.framework.language': frameworkLanguage,
     };
   }
 

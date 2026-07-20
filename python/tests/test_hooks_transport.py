@@ -409,6 +409,6 @@ def _new_client(
             ),
             api=ApiConfig(endpoint=api_endpoint),
             hooks=hooks,
-            tracer=trace.get_tracer("sigil-sdk-python-hooks-test"),
+            tracer=trace.get_tracer("agento11y-sdk-python-hooks-test"),
         )
     )

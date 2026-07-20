@@ -33,7 +33,7 @@ var (
 	envAgentVersion = brandedPair("AGENT_VERSION")
 	envUserID       = brandedPair("USER_ID")
 	// envTags: comma-separated key=value pairs merged into generation export tags
-	// and emitted on OTel spans/metrics as sigil.tag.<key>. The two spellings are
+	// and emitted on OTel spans/metrics as agento11y.tag.<key>. The two spellings are
 	// never merged; the selected value is used whole.
 	envTags                = brandedPair("TAGS")
 	envContentCaptureMode  = brandedPair("CONTENT_CAPTURE_MODE")

@@ -8,7 +8,7 @@ Each SDK README links here for the language-specific config fields.
 
 | Mechanism | Set where | Cardinality | Generation export (Sigil UI) | OTel spans (traces) | OTel metrics |
 | --- | --- | --- | --- | --- | --- |
-| **Client tags** (`AGENTO11Y_TAGS` / config `tags`) | Once, on the client | Keep low | Yes, merged into every generation | Yes, as `sigil.tag.<key>` | Yes, as `sigil.tag.<key>` |
+| **Client tags** (`AGENTO11Y_TAGS` / config `tags`) | Once, on the client | Keep low | Yes, merged into every generation | Yes, as `agento11y.tag.<key>` | Yes, as `agento11y.tag.<key>` |
 | **Per-generation `tags`** | Per `startGeneration` call | Any | Yes | No | No |
 | **`metadata`** (struct/dict) | Per `startGeneration` call | Any | Yes | No | No |
 
@@ -18,7 +18,7 @@ There is also a dedicated **`user_id`** field (`AGENTO11Y_USER_ID` / config / pe
 
 `user.id` is emitted on the generation span by all five SDKs (Go, Python, JS, Java, .NET).
 
-All five SDKs merge client tags into the generation export and emit them as `sigil.tag.<key>` attributes on OTel spans and metrics.
+All five SDKs merge client tags into the generation export and emit them as `agento11y.tag.<key>` attributes on OTel spans and metrics.
 
 Client tags become OTel metric attributes, which become Prometheus label values: one time series per distinct value.
 

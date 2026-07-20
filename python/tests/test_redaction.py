@@ -283,7 +283,7 @@ def test_generation_sanitizer_failure_falls_back_to_metadata_only(caplog) -> Non
         assert rec.err() is None
         generation = rec.last_generation
         assert generation is not None
-        assert generation.metadata["sigil.sdk.content_capture_mode"] == "metadata_only"
+        assert generation.metadata["agento11y.sdk.content_capture_mode"] == "metadata_only"
         assert generation.conversation_title == ""
         assert generation.system_prompt == ""
         assert generation.input[0].parts[0].text == ""

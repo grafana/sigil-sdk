@@ -64,14 +64,14 @@ Primary mapping is ADK conversation/session identity:
 
 ## Metadata and lineage
 
-- Required: `sigil.framework.run_type`
-- Optional lineage: `sigil.framework.run_id`, `sigil.framework.parent_run_id`, `sigil.framework.thread_id`, `sigil.framework.event_id`, `sigil.framework.component_name`
+- Required: `agento11y.framework.run_type`
+- Optional lineage: `agento11y.framework.run_id`, `agento11y.framework.parent_run_id`, `agento11y.framework.thread_id`, `agento11y.framework.event_id`, `agento11y.framework.component_name`
 
 Tags:
 
-- `sigil.framework.name=google-adk`
-- `sigil.framework.source=handler`
-- `sigil.framework.language=javascript`
+- `agento11y.framework.name=google-adk`
+- `agento11y.framework.source=handler`
+- `agento11y.framework.language=javascript`
 
 ## Provider resolver
 

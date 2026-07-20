@@ -99,8 +99,8 @@ SIGIL_RUN_LIVE_EXAMPLES=1 GOOGLE_API_KEY=... go test -run Example_withSigil -v
 Gemini-specific fields are mapped as follows:
 
 - `usage.thoughtsTokenCount` -> normalized `usage.reasoning_tokens`
-- `usage.toolUsePromptTokenCount` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
-- `config.thinkingConfig.thinkingBudget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
-- `config.thinkingConfig.thinkingLevel` -> metadata `sigil.gen_ai.request.thinking.level`
+- `usage.toolUsePromptTokenCount` -> metadata `agento11y.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinkingConfig.thinkingBudget` -> metadata `agento11y.gen_ai.request.thinking.budget_tokens`
+- `config.thinkingConfig.thinkingLevel` -> metadata `agento11y.gen_ai.request.thinking.level`
 - `function_response.id` -> normalized `tool_result.tool_call_id` when present
 - Gemini helper constructors can surface `function_response` parts without an ID; in that case the mapper preserves `tool_result.name` as the fallback correlation key

@@ -244,7 +244,7 @@ describe("mapGenerationStart", () => {
     expect(start.topP).toBe(0.9);
     expect(start.toolChoice).toBe("auto");
     expect(start.metadata).toEqual({
-      "sigil.gen_ai.request.thinking.budget_tokens": 4096,
+      "agento11y.gen_ai.request.thinking.budget_tokens": 4096,
     });
   });
 

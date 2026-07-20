@@ -928,11 +928,11 @@ internal static class Program
 
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["sigil.devex.language"] = Language,
-            ["sigil.devex.provider"] = source,
-            ["sigil.devex.source"] = SourceTagFor(source),
-            ["sigil.devex.scenario"] = ScenarioFor(source, turn),
-            ["sigil.devex.mode"] = mode == GenerationMode.Stream ? "STREAM" : "SYNC",
+            ["agento11y.devex.language"] = Language,
+            ["agento11y.devex.provider"] = source,
+            ["agento11y.devex.source"] = SourceTagFor(source),
+            ["agento11y.devex.scenario"] = ScenarioFor(source, turn),
+            ["agento11y.devex.mode"] = mode == GenerationMode.Stream ? "STREAM" : "SYNC",
         };
 
         var metadata = new Dictionary<string, object?>(StringComparer.Ordinal)

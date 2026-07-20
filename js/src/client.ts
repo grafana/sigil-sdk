@@ -92,18 +92,18 @@ import {
   validateWorkflowStep,
 } from './utils.js';
 
-const spanAttrGenerationID = 'sigil.generation.id';
-const spanAttrSDKName = 'sigil.sdk.name';
-const spanAttrFrameworkRunID = 'sigil.framework.run_id';
-const spanAttrFrameworkThreadID = 'sigil.framework.thread_id';
-const spanAttrFrameworkParentRunID = 'sigil.framework.parent_run_id';
-const spanAttrFrameworkComponentName = 'sigil.framework.component_name';
-const spanAttrFrameworkRunType = 'sigil.framework.run_type';
-const spanAttrFrameworkRetryAttempt = 'sigil.framework.retry_attempt';
-const spanAttrFrameworkLangGraphNode = 'sigil.framework.langgraph.node';
-const spanAttrFrameworkEventID = 'sigil.framework.event_id';
+const spanAttrGenerationID = 'agento11y.generation.id';
+const spanAttrSDKName = 'agento11y.sdk.name';
+const spanAttrFrameworkRunID = 'agento11y.framework.run_id';
+const spanAttrFrameworkThreadID = 'agento11y.framework.thread_id';
+const spanAttrFrameworkParentRunID = 'agento11y.framework.parent_run_id';
+const spanAttrFrameworkComponentName = 'agento11y.framework.component_name';
+const spanAttrFrameworkRunType = 'agento11y.framework.run_type';
+const spanAttrFrameworkRetryAttempt = 'agento11y.framework.retry_attempt';
+const spanAttrFrameworkLangGraphNode = 'agento11y.framework.langgraph.node';
+const spanAttrFrameworkEventID = 'agento11y.framework.event_id';
 const spanAttrConversationID = 'gen_ai.conversation.id';
-const spanAttrConversationTitle = 'sigil.conversation.title';
+const spanAttrConversationTitle = 'agento11y.conversation.title';
 const spanAttrUserID = 'user.id';
 const spanAttrAgentName = 'gen_ai.agent.name';
 const spanAttrAgentVersion = 'gen_ai.agent.version';
@@ -115,9 +115,9 @@ const spanAttrRequestModel = 'gen_ai.request.model';
 const spanAttrRequestMaxTokens = 'gen_ai.request.max_tokens';
 const spanAttrRequestTemperature = 'gen_ai.request.temperature';
 const spanAttrRequestTopP = 'gen_ai.request.top_p';
-const spanAttrRequestToolChoice = 'sigil.gen_ai.request.tool_choice';
-const spanAttrRequestThinkingEnabled = 'sigil.gen_ai.request.thinking.enabled';
-const spanAttrRequestThinkingBudget = 'sigil.gen_ai.request.thinking.budget_tokens';
+const spanAttrRequestToolChoice = 'agento11y.gen_ai.request.tool_choice';
+const spanAttrRequestThinkingEnabled = 'agento11y.gen_ai.request.thinking.enabled';
+const spanAttrRequestThinkingBudget = 'agento11y.gen_ai.request.thinking.budget_tokens';
 const spanAttrResponseID = 'gen_ai.response.id';
 const spanAttrResponseModel = 'gen_ai.response.model';
 const spanAttrFinishReasons = 'gen_ai.response.finish_reasons';
@@ -136,7 +136,7 @@ const spanAttrToolType = 'gen_ai.tool.type';
 const spanAttrToolDescription = 'gen_ai.tool.description';
 const spanAttrToolCallArguments = 'gen_ai.tool.call.arguments';
 const spanAttrToolCallResult = 'gen_ai.tool.call.result';
-const spanAttrTagPrefix = 'sigil.tag.';
+const spanAttrTagPrefix = 'agento11y.tag.';
 const maxRatingConversationIdLen = 255;
 const maxRatingIdLen = 128;
 const maxRatingGenerationIdLen = 255;
@@ -165,7 +165,7 @@ const tokenUsageBuckets: number[] = [
 const instrumentationName = 'github.com/grafana/sigil/sdks/js';
 const sdkName = 'sdk-js';
 const defaultEmbeddingOperationName = 'embeddings';
-const metadataUserIDKey = 'sigil.user.id';
+const metadataUserIDKey = 'agento11y.user.id';
 const metadataLegacyUserIDKey = 'user.id';
 
 function serializeToolResultPayload(value: unknown): { content: string; contentJSON?: string } {

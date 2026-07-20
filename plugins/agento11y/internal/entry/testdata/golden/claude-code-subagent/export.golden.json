@@ -23,10 +23,10 @@
           }
         ],
         "metadata": {
-          "sigil.conversation.title": "inspect the repository entrypoints",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "agento11y.conversation.title": "inspect the repository entrypoints",
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user"
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {
@@ -68,10 +68,10 @@
         "effective_version": "\u003cNORMALIZED\u003e",
         "id": "eb85615f-6608-582f-9e24-ab0e555801cb",
         "metadata": {
-          "sigil.conversation.title": "inspect the repository entrypoints",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "agento11y.conversation.title": "inspect the repository entrypoints",
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user"
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {
@@ -120,10 +120,10 @@
           }
         ],
         "metadata": {
-          "sigil.conversation.title": "inspect the repository entrypoints",
-          "sigil.sdk.content_capture_mode": "full",
-          "sigil.sdk.name": "sdk-go",
-          "sigil.user.id": "test-user"
+          "agento11y.conversation.title": "inspect the repository entrypoints",
+          "agento11y.sdk.content_capture_mode": "full",
+          "agento11y.sdk.name": "sdk-go",
+          "agento11y.user.id": "test-user"
         },
         "mode": "GENERATION_MODE_SYNC",
         "model": {

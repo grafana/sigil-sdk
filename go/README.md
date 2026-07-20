@@ -80,12 +80,12 @@ Framework helpers:
   - `gen_ai.request.max_tokens`
   - `gen_ai.request.temperature`
   - `gen_ai.request.top_p`
-  - `sigil.gen_ai.request.tool_choice`
-  - `sigil.gen_ai.request.thinking.enabled`
-  - `sigil.gen_ai.request.thinking.budget_tokens` (provider-specific)
+  - `agento11y.gen_ai.request.tool_choice`
+  - `agento11y.gen_ai.request.thinking.enabled`
+  - `agento11y.gen_ai.request.thinking.budget_tokens` (provider-specific)
   - `gen_ai.response.finish_reasons` is emitted as a string array.
 - Generation/tool spans always include SDK identity attributes:
-  - `sigil.sdk.name=sdk-go`
+  - `agento11y.sdk.name=sdk-go`
 - Normalized generation metadata always includes the same SDK identity key; conflicting caller values are overwritten.
 - Context helpers are available for defaults:
   - `WithConversationID(ctx, id)`
@@ -313,7 +313,7 @@ Dynamic resolution via `ContentCaptureResolver`:
 
 ```go
 cfg.ContentCaptureResolver = func(ctx context.Context, metadata map[string]any) sigil.ContentCaptureMode {
-    if metadata["sigil.tenant"] == "healthcare" {
+    if metadata["tenant"] == "healthcare" {
         return sigil.ContentCaptureModeMetadataOnly
     }
     return sigil.ContentCaptureModeDefault // defer to Config.ContentCapture
@@ -335,7 +335,7 @@ Resolution precedence for tool executions (highest to lowest):
 3. `ContentCaptureResolver` return value
 4. `Config.ContentCapture` (defaults to `ContentCaptureModeNoToolContent`)
 
-User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `sigil.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `user_id` each show up (export vs spans vs metrics).
+User-provided `Metadata` and `Tags` are not stripped by any capture mode. SDK-internal metadata keys that carry content (e.g. `call_error`, `agento11y.conversation.title`) are stripped along with the matching content. See [Tags and Metadata](../docs/concepts/tags-and-metadata.md) for where client tags, per-generation tags, metadata, and `user_id` each show up (export vs spans vs metrics).
 
 ## Pre-Ingest Redaction
 

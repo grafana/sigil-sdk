@@ -61,22 +61,22 @@ _default_framework_language = "python"
 _default_framework_instrumentation_name = "github.com/grafana/sigil/sdks/python/frameworks"
 _span_attr_operation_name = "gen_ai.operation.name"
 _span_attr_conversation_id = "gen_ai.conversation.id"
-_span_attr_framework_name = "sigil.framework.name"
-_span_attr_framework_source = "sigil.framework.source"
-_span_attr_framework_language = "sigil.framework.language"
-_span_attr_framework_run_id = "sigil.framework.run_id"
-_span_attr_framework_thread_id = "sigil.framework.thread_id"
-_span_attr_framework_parent_run_id = "sigil.framework.parent_run_id"
-_span_attr_framework_component_name = "sigil.framework.component_name"
-_span_attr_framework_run_type = "sigil.framework.run_type"
-_span_attr_framework_tags = "sigil.framework.tags"
-_span_attr_framework_retry_attempt = "sigil.framework.retry_attempt"
-_span_attr_framework_langgraph_node = "sigil.framework.langgraph.node"
-_span_attr_framework_event_id = "sigil.framework.event_id"
+_span_attr_framework_name = "agento11y.framework.name"
+_span_attr_framework_source = "agento11y.framework.source"
+_span_attr_framework_language = "agento11y.framework.language"
+_span_attr_framework_run_id = "agento11y.framework.run_id"
+_span_attr_framework_thread_id = "agento11y.framework.thread_id"
+_span_attr_framework_parent_run_id = "agento11y.framework.parent_run_id"
+_span_attr_framework_component_name = "agento11y.framework.component_name"
+_span_attr_framework_run_type = "agento11y.framework.run_type"
+_span_attr_framework_tags = "agento11y.framework.tags"
+_span_attr_framework_retry_attempt = "agento11y.framework.retry_attempt"
+_span_attr_framework_langgraph_node = "agento11y.framework.langgraph.node"
+_span_attr_framework_event_id = "agento11y.framework.event_id"
 _span_attr_error_type = "error.type"
 _span_attr_error_category = "error.category"
-_metadata_thinking_budget_tokens = "sigil.gen_ai.request.thinking.budget_tokens"
-_metadata_thinking_level = "sigil.gen_ai.request.thinking.level"
+_metadata_thinking_budget_tokens = "agento11y.gen_ai.request.thinking.budget_tokens"
+_metadata_thinking_level = "agento11y.gen_ai.request.thinking.level"
 _max_framework_metadata_depth = 5
 _metadata_drop = object()
 
@@ -313,9 +313,9 @@ class SigilFrameworkHandlerBase:
         )
 
         tags = dict(self._extra_tags)
-        tags["sigil.framework.name"] = self._framework_name
-        tags["sigil.framework.source"] = self._framework_source
-        tags["sigil.framework.language"] = self._framework_language
+        tags["agento11y.framework.name"] = self._framework_name
+        tags["agento11y.framework.source"] = self._framework_source
+        tags["agento11y.framework.language"] = self._framework_language
 
         conversation_id, thread_id = _resolve_framework_conversation_id(
             framework_name=self._framework_name,
@@ -419,9 +419,9 @@ class SigilFrameworkHandlerBase:
         input_messages = _map_chat_inputs(messages) if self._capture_inputs else []
 
         tags = dict(self._extra_tags)
-        tags["sigil.framework.name"] = self._framework_name
-        tags["sigil.framework.source"] = self._framework_source
-        tags["sigil.framework.language"] = self._framework_language
+        tags["agento11y.framework.name"] = self._framework_name
+        tags["agento11y.framework.source"] = self._framework_source
+        tags["agento11y.framework.language"] = self._framework_language
 
         conversation_id, thread_id = _resolve_framework_conversation_id(
             framework_name=self._framework_name,
@@ -798,10 +798,10 @@ class SigilFrameworkHandlerBase:
         step_name = langgraph_node or component_name or run_type
 
         tags = dict(self._extra_tags)
-        tags["sigil.framework.name"] = self._framework_name
-        tags["sigil.framework.source"] = self._framework_source
-        tags["sigil.framework.language"] = self._framework_language
-        tags["sigil.workflow_step.type"] = run_type
+        tags["agento11y.framework.name"] = self._framework_name
+        tags["agento11y.framework.source"] = self._framework_source
+        tags["agento11y.framework.language"] = self._framework_language
+        tags["agento11y.workflow_step.type"] = run_type
 
         metadata: dict[str, Any] = dict(self._extra_metadata)
         metadata[_span_attr_framework_run_id] = run_key

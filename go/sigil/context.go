@@ -84,7 +84,7 @@ func AgentVersionFromContext(ctx context.Context) (string, bool) {
 // GenerationStart.Tags field (which is export-only), context tags are treated
 // as dimensions: StartGeneration and StartStreamingGeneration merge them into
 // the generation's tags for export AND emit them on the generation span and
-// metrics as sigil.tag.<key>, alongside the static Config.Tags.
+// metrics as agento11y.tag.<key>, alongside the static Config.Tags.
 //
 // Successive WithTag / WithTags calls accumulate; a later call overrides an
 // earlier value for the same key. An empty key is ignored.

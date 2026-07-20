@@ -199,7 +199,7 @@ def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> No
     assert mapped_default.top_p == 0.75
     assert mapped_default.tool_choice == '{"name":"weather","type":"tool"}'
     assert mapped_default.thinking_enabled is True
-    assert mapped_default.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
+    assert mapped_default.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 2048
     assert mapped_default.usage.cache_write_input_tokens == 4
     assert mapped_default.usage.cache_read_input_tokens == 12
     assert mapped_default.artifacts == []
@@ -220,7 +220,7 @@ def test_anthropic_mappers_use_strict_payloads_and_support_raw_artifacts() -> No
     assert stream_mapped.max_tokens == 512
     assert stream_mapped.tool_choice == '{"name":"weather","type":"tool"}'
     assert stream_mapped.thinking_enabled is True
-    assert stream_mapped.metadata["sigil.gen_ai.request.thinking.budget_tokens"] == 2048
+    assert stream_mapped.metadata["agento11y.gen_ai.request.thinking.budget_tokens"] == 2048
     assert [artifact.kind.value for artifact in stream_mapped.artifacts] == ["request", "tools", "provider_event"]
 
 

@@ -105,6 +105,6 @@ Raw artifacts are default OFF and should only be enabled for diagnostics.
 Gemini-specific fields are mapped as follows:
 
 - `usage.thoughts_token_count` -> normalized `usage.reasoning_tokens`
-- `usage.tool_use_prompt_token_count` -> metadata `sigil.gen_ai.usage.tool_use_prompt_tokens`
-- `config.thinking_config.thinking_budget` -> metadata `sigil.gen_ai.request.thinking.budget_tokens`
-- `config.thinking_config.thinking_level` -> metadata `sigil.gen_ai.request.thinking.level`
+- `usage.tool_use_prompt_token_count` -> metadata `agento11y.gen_ai.usage.tool_use_prompt_tokens`
+- `config.thinking_config.thinking_budget` -> metadata `agento11y.gen_ai.request.thinking.budget_tokens`
+- `config.thinking_config.thinking_level` -> metadata `agento11y.gen_ai.request.thinking.level`

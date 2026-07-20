@@ -285,7 +285,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 	claudecode.Version = version
 
 	// Propagate the build version to the generation-export User-Agent so each
-	// agent plugin identifies itself, e.g. "sigil-plugin-cursor/<ver> ...".
+	// agent plugin identifies itself, e.g. "agento11y-plugin-cursor/<ver> ...".
 	useragent.SigilVersion = version
 
 	// Apply the dotenv file before initialising the logger so SIGIL_DEBUG=true

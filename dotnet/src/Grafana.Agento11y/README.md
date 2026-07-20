@@ -277,7 +277,7 @@ If `ConversationId`, `AgentName`, or `AgentVersion` are omitted in `GenerationSt
 - `SetResult(..., mappingError)` lets you keep generation data while marking mapper failures.
 - `GenerationRecorder.Error` and `ToolExecutionRecorder.Error` represent local SDK failures only (validation/enqueue/shutdown path), not provider-call failures.
 - Generation/tool spans always include:
-  - `sigil.sdk.name=sdk-dotnet`
+  - `agento11y.sdk.name=sdk-dotnet`
 - Normalized generation metadata always includes the same key.
 - If caller metadata provides a conflicting value for this key, the SDK overwrites it.
 

@@ -3,14 +3,11 @@
 // package.json on release.
 export const SDK_VERSION = '0.6.0';
 
-// The User-Agent product token is allowlisted by the ingest server, so it
-// intentionally keeps the pre-rename name. Do not update it for the
-// sigil-sdk -> agento11y rename without server-side dual-read support.
-const SDK_USER_AGENT_PRODUCT = 'sigil-sdk-js';
+const SDK_USER_AGENT_PRODUCT = 'agento11y-sdk-js';
 
 /**
  * Returns the SDK's default generation-export User-Agent product token,
- * `sigil-sdk-js/<SDK_VERSION>`. Coding-agent plugins prepend their own token
+ * `agento11y-sdk-js/<SDK_VERSION>`. Coding-agent plugins prepend their own token
  * (most-specific first).
  */
 export function userAgent(): string {

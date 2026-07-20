@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/agento11y/go/proto/sigil/wire"
+	"github.com/grafana/agento11y/go/proto/agento11y/wire"
 	"github.com/grafana/agento11y/plugins/agento11y/internal/otel"
 )
 

@@ -16,8 +16,8 @@ export const PLUGIN_VERSION = readPluginVersion();
 
 /**
  * Generation-export User-Agent for this plugin, most-specific token first:
- * `sigil-plugin-opencode/<ver> sigil-sdk-js/<ver>`.
+ * `agento11y-plugin-opencode/<ver> agento11y-sdk-js/<ver>`.
  */
 export function pluginUserAgent(): string {
-  return `sigil-plugin-opencode/${PLUGIN_VERSION} ${userAgent()}`;
+  return `agento11y-plugin-opencode/${PLUGIN_VERSION} ${userAgent()}`;
 }

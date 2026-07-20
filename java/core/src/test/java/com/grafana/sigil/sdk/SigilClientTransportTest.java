@@ -30,8 +30,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import sigil.v1.GenerationIngest;
-import sigil.v1.GenerationIngestServiceGrpc;
+import agento11y.v1.GenerationIngest;
+import agento11y.v1.GenerationIngestServiceGrpc;
 
 class SigilClientTransportTest {
     @Test
@@ -94,7 +94,7 @@ class SigilClientTransportTest {
 
     static Stream<Arguments> httpUserAgentCases() {
         String defaultUserAgent = SdkVersion.userAgent();
-        String override = "sigil-plugin-langchain4j/1.2.3 " + defaultUserAgent;
+        String override = "agento11y-plugin-langchain4j/1.2.3 " + defaultUserAgent;
         // A non-blank caller User-Agent wins; a blank or whitespace-only one must
         // not blank out the default. A null header value exercises the no-header
         // path.
