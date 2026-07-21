@@ -160,7 +160,7 @@ func TestLaunch_InstallFailureContinuesToExec(t *testing.T) {
 	if !strings.Contains(got, "codex plugin marketplace add grafana/agento11y") {
 		t.Fatalf("stderr missing marketplace add hint: %q", got)
 	}
-	if !strings.Contains(got, "codex plugin add sigil-codex@grafana-sigil") {
+	if !strings.Contains(got, "codex plugin add "+PluginName+"@"+marketplaceAlias) {
 		t.Fatalf("stderr missing plugin add hint: %q", got)
 	}
 	// The /hooks trust hint should NOT appear when install failed.
@@ -294,9 +294,24 @@ func TestPluginInstalled_ParsesPluginListOutput(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "installed enabled",
+			name: "current name installed enabled",
+			out:  "  agento11y-codex@agento11y (installed, enabled)\n",
+			want: true,
+		},
+		{
+			name: "legacy name installed enabled",
 			out:  "  sigil-codex@grafana-sigil (installed, enabled)\n",
 			want: true,
+		},
+		{
+			name: "current name at legacy alias does not count",
+			out:  "  agento11y-codex@grafana-sigil (installed, enabled)\n",
+			want: false,
+		},
+		{
+			name: "legacy name at current alias does not count",
+			out:  "  sigil-codex@agento11y (installed, enabled)\n",
+			want: false,
 		},
 		{
 			name: "installed disabled",
@@ -378,6 +393,27 @@ func withPluginList(t *testing.T, fn func(context.Context, string) ([]byte, erro
 	pluginList = fn
 }
 
+func withRunSteps(t *testing.T, fn func(context.Context, string, io.Writer, [][]string) error) {
+	t.Helper()
+	prev := runSteps
+	t.Cleanup(func() { runSteps = prev })
+	runSteps = fn
+}
+
+func withRunFirst(t *testing.T, fn func(context.Context, string, io.Writer, [][]string) (int, error)) {
+	t.Helper()
+	prev := runFirst
+	t.Cleanup(func() { runFirst = prev })
+	runFirst = fn
+}
+
+func withRunOutput(t *testing.T, fn func(context.Context, string, ...string) ([]byte, error)) {
+	t.Helper()
+	prev := runOutput
+	t.Cleanup(func() { runOutput = prev })
+	runOutput = fn
+}
+
 func envMap(env []string) map[string]string {
 	out := map[string]string{}
 	for _, kv := range env {
@@ -450,6 +486,96 @@ func TestLaunch_RefreshesInstalledPlugin(t *testing.T) {
 	if _, err := os.Stat(stamp); err != nil {
 		t.Fatalf("expected update stamp: %v", err)
 	}
+}
+
+// recordCommands stubs the runSteps/runFirst/runOutput seams so the
+// install/update tests can assert the exact codex commands. firstIdx is the
+// candidate index runFirst pretends succeeded.
+func recordCommands(t *testing.T, firstIdx int) (steps, candidates, outputs *[][]string) {
+	t.Helper()
+	steps, candidates, outputs = &[][]string{}, &[][]string{}, &[][]string{}
+	withRunSteps(t, func(_ context.Context, _ string, _ io.Writer, s [][]string) error {
+		*steps = append(*steps, s...)
+		return nil
+	})
+	withRunFirst(t, func(_ context.Context, _ string, _ io.Writer, c [][]string) (int, error) {
+		*candidates = append(*candidates, c...)
+		return firstIdx, nil
+	})
+	withRunOutput(t, func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		*outputs = append(*outputs, args)
+		return nil, nil
+	})
+	return steps, candidates, outputs
+}
+
+func TestDefaultRunInstall_RegistersCurrentNameAndRemovesLegacy(t *testing.T) {
+	steps, candidates, outputs := recordCommands(t, 0)
+
+	var out bytes.Buffer
+	require.NoError(t, defaultRunInstall(context.Background(), "/usr/local/bin/codex", &out))
+	require.Equal(t, [][]string{{"plugin", "marketplace", "add", "grafana/agento11y"}}, *steps)
+	require.Equal(t, [][]string{
+		{"plugin", "add", "agento11y-codex@agento11y"},
+		{"plugin", "add", "sigil-codex@grafana-sigil"},
+	}, *candidates)
+	require.Equal(t, [][]string{{"plugin", "remove", "sigil-codex@grafana-sigil"}}, *outputs)
+	// Fresh install, not a migration: no re-trust line beyond PostInstallHint.
+	require.NotContains(t, out.String(), "migrated")
+}
+
+func TestDefaultRunInstall_PreRenameSnapshotFallsBackToLegacyName(t *testing.T) {
+	_, _, outputs := recordCommands(t, 1)
+
+	var out bytes.Buffer
+	require.NoError(t, defaultRunInstall(context.Background(), "/usr/local/bin/codex", &out))
+	// The legacy install is live; it must not be removed.
+	require.Empty(t, *outputs)
+	require.NotContains(t, out.String(), "migrated")
+}
+
+func TestDefaultRunUpdate_MigratesLegacyInstall(t *testing.T) {
+	withPluginList(t, func(context.Context, string) ([]byte, error) {
+		return []byte("  sigil-codex@grafana-sigil (installed, enabled)\n"), nil
+	})
+	steps, candidates, outputs := recordCommands(t, 0)
+
+	var out bytes.Buffer
+	require.NoError(t, defaultRunUpdate(context.Background(), "/usr/local/bin/codex", &out))
+	require.Equal(t, [][]string{{"plugin", "marketplace", "upgrade"}}, *steps)
+	require.Equal(t, [][]string{
+		{"plugin", "add", "agento11y-codex@agento11y"},
+		{"plugin", "add", "sigil-codex@grafana-sigil"},
+	}, *candidates)
+	require.Equal(t, [][]string{{"plugin", "remove", "sigil-codex@grafana-sigil"}}, *outputs)
+	got := out.String()
+	require.Contains(t, got, "migrated sigil-codex@grafana-sigil to agento11y-codex@agento11y")
+	require.Contains(t, got, "/hooks")
+}
+
+func TestDefaultRunUpdate_PreRenameSnapshotStaysOnLegacyName(t *testing.T) {
+	withPluginList(t, func(context.Context, string) ([]byte, error) {
+		return []byte("  sigil-codex@grafana-sigil (installed, enabled)\n"), nil
+	})
+	_, _, outputs := recordCommands(t, 1)
+
+	var out bytes.Buffer
+	require.NoError(t, defaultRunUpdate(context.Background(), "/usr/local/bin/codex", &out))
+	require.Empty(t, *outputs)
+	require.NotContains(t, out.String(), "migrated")
+}
+
+func TestDefaultRunUpdate_CurrentInstallRefreshesWithoutMigrationHint(t *testing.T) {
+	withPluginList(t, func(context.Context, string) ([]byte, error) {
+		return []byte("  agento11y-codex@agento11y (installed, enabled)\n"), nil
+	})
+	_, _, outputs := recordCommands(t, 0)
+
+	var out bytes.Buffer
+	require.NoError(t, defaultRunUpdate(context.Background(), "/usr/local/bin/codex", &out))
+	// Legacy removal stays a harmless no-op after migration.
+	require.Equal(t, [][]string{{"plugin", "remove", "sigil-codex@grafana-sigil"}}, *outputs)
+	require.NotContains(t, out.String(), "migrated")
 }
 
 func TestStatus(t *testing.T) {
