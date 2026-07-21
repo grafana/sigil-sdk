@@ -9,7 +9,7 @@ overrides:
   lodash-es: 4.18.1
   '@mikro-orm/knex': 6.6.14
   fast-uri: 3.1.2
-  hono: 4.12.25
+  hono: 4.12.27
   tar: 7.5.16
   ws: 8.21.0
   '@tootallnate/once': 2.0.1
@@ -37,3 +37,5 @@ allowBuilds:
 minimumReleaseAgeExclude:
   # Renovate security update: pnpm@11.8.0
   - pnpm@11.8.0
+  # Renovate security update: hono@4.12.27
+  - hono@4.12.27
