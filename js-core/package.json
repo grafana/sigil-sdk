@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/grafana/sigil-sdk.git",
+    "url": "https://github.com/grafana/agento11y.git",
     "directory": "js-core"
   },
   "type": "module",

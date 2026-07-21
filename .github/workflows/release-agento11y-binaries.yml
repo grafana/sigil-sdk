@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository == 'grafana/sigil-sdk'
+    if: github.repository == 'grafana/agento11y'
     runs-on: ubuntu-latest
     permissions:
       contents: write # to create the GitHub Release and upload assets

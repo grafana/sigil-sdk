@@ -20,7 +20,7 @@ came from (`hook.surface` = `copilot-cli` or `vscode`).
 **Quick install (Linux/macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 agento11y copilot -- <copilot args>
 ```
 

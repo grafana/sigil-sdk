@@ -1,6 +1,6 @@
 # Grafana AI observability: LLM agent instructions
 
-You are a coding agent. The user wants help with [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/), powered by the open-source Sigil SDKs and plugins in [grafana/sigil-sdk](https://github.com/grafana/sigil-sdk).
+You are a coding agent. The user wants help with [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/), powered by the open-source Sigil SDKs and plugins in [grafana/agento11y](https://github.com/grafana/agento11y).
 
 There are two distinct things this file covers. Pick the path that matches the request before doing anything else.
 
@@ -12,7 +12,7 @@ If you cannot tell, ask one clarifying question and stop.
 ## Resources
 
 - Product docs: https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/
-- SDK + plugin source: https://github.com/grafana/sigil-sdk
+- SDK + plugin source: https://github.com/grafana/agento11y
 - Grafana Cloud OTLP setup: https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp
 
 ## Credentials (both paths)
@@ -45,18 +45,18 @@ The user wants Grafana AI observability to capture sessions from their coding ag
 
 | Agent | Plugin | Mechanism |
 |-------|--------|-----------|
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | [`plugins/claude-code/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/claude-code) | Shared `agento11y` Go binary, plugin name `sigil-cc` |
-| [Codex](https://developers.openai.com/codex) | [`plugins/codex/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/codex) | Shared `agento11y` Go binary via hooks |
-| [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | [`plugins/copilot/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/copilot) | Shared `agento11y` Go binary via hooks |
-| [Cursor](https://cursor.com) | [`plugins/cursor/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/cursor) | Shared `agento11y` Go binary via hooks |
-| [OpenCode](https://opencode.ai) | [`plugins/opencode/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/opencode) | Shared `agento11y` Go binary, installs `@grafana/agento11y-opencode` |
-| [Pi](https://github.com/badlogic/pi) | [`plugins/pi/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/pi) | Independent npm package `@grafana/agento11y-pi` |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | [`plugins/claude-code/`](https://github.com/grafana/agento11y/tree/main/plugins/claude-code) | Shared `agento11y` Go binary, plugin name `sigil-cc` |
+| [Codex](https://developers.openai.com/codex) | [`plugins/codex/`](https://github.com/grafana/agento11y/tree/main/plugins/codex) | Shared `agento11y` Go binary via hooks |
+| [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | [`plugins/copilot/`](https://github.com/grafana/agento11y/tree/main/plugins/copilot) | Shared `agento11y` Go binary via hooks |
+| [Cursor](https://cursor.com) | [`plugins/cursor/`](https://github.com/grafana/agento11y/tree/main/plugins/cursor) | Shared `agento11y` Go binary via hooks |
+| [OpenCode](https://opencode.ai) | [`plugins/opencode/`](https://github.com/grafana/agento11y/tree/main/plugins/opencode) | Shared `agento11y` Go binary, installs `@grafana/agento11y-opencode` |
+| [Pi](https://github.com/badlogic/pi) | [`plugins/pi/`](https://github.com/grafana/agento11y/tree/main/plugins/pi) | Independent npm package `@grafana/agento11y-pi` |
 
 ## Fast path
 
 Install the `agento11y` binary (renamed from `sigil`; the old name still works but will be removed in a future release):
 
-- **Quick install (Linux/macOS):** `curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh` (downloads the latest release, verifies the checksum, installs to `~/.local/bin`)
+- **Quick install (Linux/macOS):** `curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh` (downloads the latest release, verifies the checksum, installs to `~/.local/bin`)
 - **Homebrew (macOS):** `brew install grafana/grafana/agento11y`
 - **Go install (Windows, or any platform with Go 1.25+):** `go install github.com/grafana/agento11y/plugins/agento11y/cmd/agento11y@latest`
 
@@ -64,7 +64,7 @@ The script installs to `~/.local/bin`; `go install` puts the binary in `go env G
 
 Then launch your agent with `agento11y <agent>`, where `<agent>` is `claude`, `codex`, `copilot`, `opencode`, or `pi`. On first run it installs the plugin, prompts for credentials, writes `~/.config/agento11y/config.env`, and launches the agent.
 
-Cursor has no launcher (it is a GUI app). After installing the binary, wire its hooks once with `agento11y cursor install` (it merges into `~/.cursor/hooks.json` and prompts for credentials on first run); `agento11y cursor uninstall` removes them. See [`plugins/cursor/`](https://github.com/grafana/sigil-sdk/tree/main/plugins/cursor) for details.
+Cursor has no launcher (it is a GUI app). After installing the binary, wire its hooks once with `agento11y cursor install` (it merges into `~/.cursor/hooks.json` and prompts for credentials on first run); `agento11y cursor uninstall` removes them. See [`plugins/cursor/`](https://github.com/grafana/agento11y/tree/main/plugins/cursor) for details.
 
 To skip the prompt, write the config file by hand:
 
@@ -123,13 +123,13 @@ Construct the client with no config when the env vars are present; the SDK reads
 
 The core SDK clients default to `no_tool_content`: generation content (prompts, responses, thinking, system prompts) is exported, but tool-execution arguments and results stay out of spans. Setting `contentCapture: 'default'` (or the language equivalent) resolves to `no_tool_content` at the client level.
 
-Use the cross-language reference at [`docs/concepts/content-capture-modes.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/content-capture-modes.md) and the per-language READMEs for examples. Modes supported by the SDKs: `full`, `no_tool_content`, `metadata_only`, `full_with_metadata_spans`. User-provided `metadata` and `tags` are not stripped by capture modes; do not put sensitive content there.
+Use the cross-language reference at [`docs/concepts/content-capture-modes.md`](https://github.com/grafana/agento11y/blob/main/docs/concepts/content-capture-modes.md) and the per-language READMEs for examples. Modes supported by the SDKs: `full`, `no_tool_content`, `metadata_only`, `full_with_metadata_spans`. User-provided `metadata` and `tags` are not stripped by capture modes; do not put sensitive content there.
 
 This default differs from coding-agent plugin defaults (Path A), which ship `metadata_only`. Do not mix the two.
 
 ### Tags, metadata, and user id
 
-To attach custom key/values, pick the mechanism by where it must show up. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md) for the full table.
+To attach custom key/values, pick the mechanism by where it must show up. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/agento11y/blob/main/docs/concepts/tags-and-metadata.md) for the full table.
 
 - **Client tags** (`AGENTO11Y_TAGS` / config `tags`): merged into every generation export; also emitted as `agento11y.tag.<key>` on OTel spans and metrics in all SDKs. Use for low-cardinality values you want to slice metrics/traces by (team, project, env). Do not put high-cardinality values (user, request id) here, they blow up metric label cardinality.
 - **Per-generation `tags` / `metadata`**: export-only, never on spans/metrics. Use for searchable per-request data.
@@ -258,7 +258,7 @@ Provider wrappers (use these before hand-instrumenting an SDK call):
 
 - Go: `go-providers/openai`, `go-providers/anthropic`, `go-providers/gemini`
 - Python: `python-providers/openai`, `python-providers/anthropic`, `python-providers/gemini`
-- JS/TS: subpath exports like `@grafana/agento11y/openai` (see [`js/README.md`](https://github.com/grafana/sigil-sdk/blob/main/js/README.md))
+- JS/TS: subpath exports like `@grafana/agento11y/openai` (see [`js/README.md`](https://github.com/grafana/agento11y/blob/main/js/README.md))
 - Java: `java/providers/openai`, `java/providers/anthropic`, `java/providers/gemini`
 - .NET: `Grafana.Agento11y.OpenAI`, `Grafana.Agento11y.Anthropic`, `Grafana.Agento11y.Gemini`
 
@@ -424,14 +424,14 @@ Example: an orchestrator spawns agents A, B, C where C depends on A and B:
 
 ## Useful examples to copy patterns from
 
-In the grafana/sigil-sdk repo:
+In the grafana/agento11y repo:
 
-- Getting-started: [`examples/getting-started/`](https://github.com/grafana/sigil-sdk/tree/main/examples/getting-started) (Python, TypeScript, Go, plus multi-agent and framework variants)
-- Go explicit generation flow: [`go/agento11y/example_test.go`](https://github.com/grafana/sigil-sdk/blob/main/go/agento11y/example_test.go)
-- Go provider wrapper examples: [`go-providers/openai/sdk_example_test.go`](https://github.com/grafana/sigil-sdk/blob/main/go-providers/openai/sdk_example_test.go), `…/anthropic/sdk_example_test.go`, `…/gemini/sdk_example_test.go`
-- .NET end-to-end emitter: [`dotnet/examples/Grafana.Agento11y.DevExEmitter/Program.cs`](https://github.com/grafana/sigil-sdk/blob/main/dotnet/examples/Grafana.Agento11y.DevExEmitter/Program.cs)
-- JS transport and framework behavior: [`js/test/client.transport.test.mjs`](https://github.com/grafana/sigil-sdk/blob/main/js/test/client.transport.test.mjs), [`js/test/frameworks.vercel-ai-sdk.test.mjs`](https://github.com/grafana/sigil-sdk/blob/main/js/test/frameworks.vercel-ai-sdk.test.mjs)
-- Python framework integration tests: [`python-frameworks/*/tests/*.py`](https://github.com/grafana/sigil-sdk/tree/main/python-frameworks)
+- Getting-started: [`examples/getting-started/`](https://github.com/grafana/agento11y/tree/main/examples/getting-started) (Python, TypeScript, Go, plus multi-agent and framework variants)
+- Go explicit generation flow: [`go/agento11y/example_test.go`](https://github.com/grafana/agento11y/blob/main/go/agento11y/example_test.go)
+- Go provider wrapper examples: [`go-providers/openai/sdk_example_test.go`](https://github.com/grafana/agento11y/blob/main/go-providers/openai/sdk_example_test.go), `…/anthropic/sdk_example_test.go`, `…/gemini/sdk_example_test.go`
+- .NET end-to-end emitter: [`dotnet/examples/Grafana.Agento11y.DevExEmitter/Program.cs`](https://github.com/grafana/agento11y/blob/main/dotnet/examples/Grafana.Agento11y.DevExEmitter/Program.cs)
+- JS transport and framework behavior: [`js/test/client.transport.test.mjs`](https://github.com/grafana/agento11y/blob/main/js/test/client.transport.test.mjs), [`js/test/frameworks.vercel-ai-sdk.test.mjs`](https://github.com/grafana/agento11y/blob/main/js/test/frameworks.vercel-ai-sdk.test.mjs)
+- Python framework integration tests: [`python-frameworks/*/tests/*.py`](https://github.com/grafana/agento11y/tree/main/python-frameworks)
 
 ## Implementation rules
 
@@ -447,7 +447,7 @@ In the grafana/sigil-sdk repo:
   - `stop_reason` / `finish_reason`
   - Full token usage including `cache_read_input_tokens`, `cache_write_input_tokens`, and `reasoning_tokens` when the provider returns them
 - Always check `rec.err()` / `Err()` after the generation recorder closes; SDK validation or enqueue errors are otherwise silent.
-- Use `AGENTO11Y_TAGS` (client-level) or `tags` on `GenerationStart` for filtering: both export tags on generations. Client-level tags also appear as `agento11y.tag.<key>` on OTel spans and metrics in all SDKs; per-generation tags and `metadata` are export-only everywhere. For end-user identity use `user_id` (sets `user.id` span attribute), not a tag. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/sigil-sdk/blob/main/docs/concepts/tags-and-metadata.md).
+- Use `AGENTO11Y_TAGS` (client-level) or `tags` on `GenerationStart` for filtering: both export tags on generations. Client-level tags also appear as `agento11y.tag.<key>` on OTel spans and metrics in all SDKs; per-generation tags and `metadata` are export-only everywhere. For end-user identity use `user_id` (sets `user.id` span attribute), not a tag. See [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/agento11y/blob/main/docs/concepts/tags-and-metadata.md).
 
 ## Validation checklist
 

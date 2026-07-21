@@ -157,7 +157,7 @@ func TestLaunch_InstallFailureContinuesToExec(t *testing.T) {
 	if !strings.Contains(got, "network down") {
 		t.Fatalf("stderr missing underlying error: %q", got)
 	}
-	if !strings.Contains(got, "codex plugin marketplace add grafana/sigil-sdk") {
+	if !strings.Contains(got, "codex plugin marketplace add grafana/agento11y") {
 		t.Fatalf("stderr missing marketplace add hint: %q", got)
 	}
 	if !strings.Contains(got, "codex plugin add sigil-codex@grafana-sigil") {

@@ -2,7 +2,7 @@
 # install.sh - Download and install the latest agento11y binary.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 #
 # Environment variables:
 #   INSTALL_DIR    Directory to install into (default: $HOME/.local/bin)
@@ -11,7 +11,7 @@
 
 set -eu
 
-GITHUB_REPO="grafana/sigil-sdk"
+GITHUB_REPO="grafana/agento11y"
 BINARY_NAME="agento11y"
 # Old command name, installed as a symlink to agento11y so existing
 # setups keep working.

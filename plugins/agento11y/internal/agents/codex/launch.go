@@ -17,7 +17,7 @@ import (
 const (
 	// marketplaceRepo is the source argument passed to
 	// `codex plugin marketplace add`.
-	marketplaceRepo = "grafana/sigil-sdk"
+	marketplaceRepo = "grafana/agento11y"
 	// marketplaceAlias is the marketplace name declared in
 	// .claude-plugin/marketplace.json (shared between Claude Code and Codex
 	// host plugins).

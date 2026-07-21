@@ -7,7 +7,7 @@ Sends every Claude Code turn to [Grafana AI Observability](https://grafana.com/d
 **Quick install (Linux/macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 agento11y claude
 ```
 
@@ -33,7 +33,7 @@ The script installs `agento11y` to `~/.local/bin`; `go install` uses `go env GOP
 <summary>Manual plugin registration</summary>
 
 ```
-/plugin marketplace add grafana/sigil-sdk
+/plugin marketplace add grafana/agento11y
 /plugin install sigil-cc@grafana-sigil
 ```
 

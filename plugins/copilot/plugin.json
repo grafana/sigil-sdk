@@ -5,8 +5,8 @@
   "author": {
     "name": "Grafana Labs"
   },
-  "repository": "https://github.com/grafana/sigil-sdk",
-  "homepage": "https://github.com/grafana/sigil-sdk/tree/main/plugins/copilot",
+  "repository": "https://github.com/grafana/agento11y",
+  "homepage": "https://github.com/grafana/agento11y/tree/main/plugins/copilot",
   "license": "Apache-2.0",
   "keywords": ["telemetry", "observability", "sigil", "grafana", "copilot"],
   "hooks": "./hooks.json",

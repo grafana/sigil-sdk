@@ -7,7 +7,7 @@ Sends Cursor agent generations to [Grafana AI Observability](https://grafana.com
 **Quick install (Linux/macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 ```
 
 **Homebrew (macOS):**
@@ -44,7 +44,7 @@ To undo the wiring later, run `agento11y cursor uninstall` — it removes only S
 Instead of `agento11y cursor install`, you can register the plugin from Cursor's command palette:
 
 ```
-/add-plugin grafana/sigil-sdk
+/add-plugin grafana/agento11y
 ```
 
 Do not use both. `/add-plugin` and `agento11y cursor install` write to the same `~/.cursor/hooks.json`, so running both captures every turn twice. Pick one.

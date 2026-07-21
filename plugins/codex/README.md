@@ -9,7 +9,7 @@ Sends Codex turns to [Grafana AI Observability](https://grafana.com/docs/grafana
 **Quick install (Linux/macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 agento11y codex
 ```
 
@@ -37,7 +37,7 @@ On first launch only, open `/hooks` inside Codex and trust each `sigil-codex@gra
 <summary>Manual plugin registration</summary>
 
 ```sh
-codex plugin marketplace add grafana/sigil-sdk
+codex plugin marketplace add grafana/agento11y
 codex plugin add sigil-codex@grafana-sigil
 ```
 
