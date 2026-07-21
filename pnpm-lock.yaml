@@ -16,7 +16,7 @@ overrides:
   '@tootallnate/once': 2.0.1
   undici: 7.28.0
   fast-xml-builder: 1.1.7
-  '@hono/node-server': 1.19.13
+  '@hono/node-server': 2.0.5
   ip-address: 10.1.1
   qs: 6.15.2
   form-data@<2.5.6: 2.5.6
@@ -724,9 +724,9 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  '@hono/node-server@1.19.13':
-    resolution: {integrity: sha512-TsQLe4i2gvoTtrHje625ngThGBySOgSK3Xo2XRYOdqGN1teR8+I7vchQC46uLJi8OF62YTYA3AhSpumtkhsaKQ==}
-    engines: {node: '>=18.14.1'}
+  '@hono/node-server@2.0.5':
+    resolution: {integrity: sha512-yQFvDmyDo3y6rEOJZDUYPJ49DIKTPpIk4kGvm40xx4Ejne0Pu9a1+exxPN+C1UppWK/WGZX9F++/Xs231tE86g==}
+    engines: {node: '>=20'}
     peerDependencies:
       hono: 4.12.25
 
@@ -4863,7 +4863,7 @@ snapshots:
       protobufjs: 7.6.3
       yargs: 17.7.2
 
-  '@hono/node-server@1.19.13(hono@4.12.25)':
+  '@hono/node-server@2.0.5(hono@4.12.25)':
     dependencies:
       hono: 4.12.25
 
@@ -5282,7 +5282,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.3.6)':
     dependencies:
-      '@hono/node-server': 1.19.13(hono@4.12.25)
+      '@hono/node-server': 2.0.5(hono@4.12.25)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       content-type: 1.0.5
@@ -5428,7 +5428,7 @@ snapshots:
   '@opentelemetry/core@2.6.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/semantic-conventions': 1.40.0
+      '@opentelemetry/semantic-conventions': 1.41.1
 
   '@opentelemetry/core@2.7.1(@opentelemetry/api@1.9.1)':
     dependencies:
@@ -5588,7 +5588,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/semantic-conventions': 1.40.0
+      '@opentelemetry/semantic-conventions': 1.41.1
 
   '@opentelemetry/sdk-logs@0.205.0(@opentelemetry/api@1.9.1)':
     dependencies:
@@ -5611,7 +5611,7 @@ snapshots:
       '@opentelemetry/api-logs': 0.214.0
       '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.6.1(@opentelemetry/api@1.9.1)
-      '@opentelemetry/semantic-conventions': 1.40.0
+      '@opentelemetry/semantic-conventions': 1.41.1
 
   '@opentelemetry/sdk-metrics@2.1.0(@opentelemetry/api@1.9.1)':
     dependencies:
