@@ -607,8 +607,19 @@ func TestRun_LoginSubcommand_NotInteractiveExits1(t *testing.T) {
 	if gotExit == nil || *gotExit != 1 {
 		t.Fatalf("exit = %v, want 1", gotExit)
 	}
-	if !strings.Contains(stderr.String(), "stdin is not a terminal") {
-		t.Errorf("stderr missing non-interactive hint: %q", stderr.String())
+	got := stderr.String()
+	if !strings.Contains(got, "stdin is not a terminal") {
+		t.Errorf("stderr missing non-interactive hint: %q", got)
+	}
+	// The hint must name the canonical AGENTO11Y_* variables so non-interactive
+	// callers set the right spellings, and note the legacy SIGIL_* names still work.
+	for _, want := range []string{"AGENTO11Y_ENDPOINT", "AGENTO11Y_AUTH_TENANT_ID", "AGENTO11Y_AUTH_TOKEN"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr missing canonical var %q: %q", want, got)
+		}
+	}
+	if !strings.Contains(got, "SIGIL_*") {
+		t.Errorf("stderr missing legacy SIGIL_* fallback note: %q", got)
 	}
 }
 

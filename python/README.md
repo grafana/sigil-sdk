@@ -1,6 +1,6 @@
-# Grafana Sigil Python SDK
+# Grafana Agent Observability Python SDK
 
-`agento11y` records normalized LLM generation and tool-execution telemetry. It exports normalized generations to Sigil ingest and uses your OpenTelemetry tracer/meter setup for traces and metrics.
+`agento11y` records normalized LLM generation and tool-execution telemetry. It exports normalized generations to Agent Observability ingest and uses your OpenTelemetry tracer/meter setup for traces and metrics.
 
 Use this package when you want:
 
@@ -183,7 +183,7 @@ client = Client(
     ClientConfig(
         generation_export=GenerationExportConfig(
             protocol="http",
-            endpoint="https://sigil-prod-<region>.grafana.net",
+            endpoint="https://agento11y-prod-<region>.grafana.net",
             auth=AuthConfig(
                 mode="basic",
                 tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
@@ -259,7 +259,7 @@ client = Client(
 
 ## Hooks and Guards
 
-Use hooks when you want Sigil guard rules to run before an LLM call. The SDK evaluates the hook on your request path; guard rules configured in Grafana Cloud decide whether to allow, deny, or transform the input.
+Use hooks when you want Agent Observability guard rules to run before an LLM call. The SDK evaluates the hook on your request path; guard rules configured in Grafana Cloud decide whether to allow, deny, or transform the input.
 
 Hooks are disabled by default. Enable them on the client and call `evaluate_hook(...)` before the provider request:
 
@@ -314,7 +314,7 @@ If you use transformed input, pass the transformed messages/system prompt to the
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` via `ClientConfig`.
 
-Quick OTEL setup pattern before creating the Sigil client:
+Quick OTEL setup pattern before creating the agento11y client:
 
 ```python
 from opentelemetry import metrics, trace
@@ -531,14 +531,14 @@ from agento11y import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfi
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
-        endpoint="https://sigil-prod-<region>.grafana.net",
+        endpoint="https://agento11y-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
             tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
             basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
         ),
     ),
-    api=ApiConfig(endpoint="https://sigil-prod-<region>.grafana.net"),
+    api=ApiConfig(endpoint="https://agento11y-prod-<region>.grafana.net"),
 )
 ```
 
@@ -562,20 +562,20 @@ from agento11y import ApiConfig, AuthConfig, ClientConfig, GenerationExportConfi
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
-        endpoint="https://sigil-prod-<region>.grafana.net",
+        endpoint="https://agento11y-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
             tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
             basic_password=os.environ["AGENTO11Y_AUTH_TOKEN"],
         ),
     ),
-    api=ApiConfig(endpoint="https://sigil-prod-<region>.grafana.net"),
+    api=ApiConfig(endpoint="https://agento11y-prod-<region>.grafana.net"),
 )
 ```
 
 ### Grafana Cloud auth (basic)
 
-For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for full setup steps; for this SDK endpoint, copy the **API URL** from **Observability → AI Observability → Configuration**. It looks like `https://sigil-prod-<region>.grafana.net`.
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for full setup steps; for this SDK endpoint, copy the **API URL** from **Observability → AI Observability → Configuration**. It looks like `https://agento11y-prod-<region>.grafana.net`.
 
 ```python
 import os
@@ -584,7 +584,7 @@ from agento11y import AuthConfig, ClientConfig, GenerationExportConfig
 cfg = ClientConfig(
     generation_export=GenerationExportConfig(
         protocol="http",
-        endpoint="https://sigil-prod-<region>.grafana.net",
+        endpoint="https://agento11y-prod-<region>.grafana.net",
         auth=AuthConfig(
             mode="basic",
             tenant_id=os.environ["AGENTO11Y_AUTH_TENANT_ID"],
@@ -623,7 +623,7 @@ if gen_token:
 Common topology:
 
 - Grafana Cloud: generation `basic` mode with instance ID and API key.
-- Self-hosted direct to Sigil: generation `tenant` mode.
+- Self-hosted direct to the ingest API: generation `tenant` mode.
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
@@ -648,7 +648,7 @@ result = client.submit_conversation_rating(
 print(result.rating.rating, result.summary.has_bad_rating)
 ```
 
-`submit_conversation_rating(...)` sends requests to `ClientConfig.api.endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
+`submit_conversation_rating(...)` sends requests to `ClientConfig.api.endpoint`, which should be the Grafana Cloud Agent Observability API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
 
 ## Instrumentation-only mode (no generation send)
 
@@ -685,8 +685,8 @@ The SDK emits these OTel histograms through your configured OTEL meter provider:
 
 ## Experiments
 
-Run any agent over a dataset as a Sigil **experiment** (offline evaluation),
-grade its outputs, and publish scores you can compare in the Sigil UI. This is
+Run any agent over a dataset as an Agent Observability **experiment** (offline evaluation),
+grade its outputs, and publish scores you can compare in the Agent Observability UI. This is
 the framework-free path for Cloud users: one ingestion API key writes the run,
 trials, generations, scores, and final status.
 
@@ -702,7 +702,7 @@ suite = experiments.TestSuite(
 )
 verifier = experiments.Evaluator(evaluator_id="exact_match", version="2026-06-29")
 
-with agento11y.experiment("PR 123", experiment_id="pr-123", suite=suite, tags=["ci"]) as exp:
+with experiments.experiment("PR 123", experiment_id="pr-123", suite=suite, tags=["ci"]) as exp:
     for case in suite.test_cases:
         with exp.trial(case) as trial:
             answer = my_agent(case.input)
@@ -715,7 +715,7 @@ with agento11y.experiment("PR 123", experiment_id="pr-123", suite=suite, tags=["
             passed = str(case.expected).lower() in answer.lower()
             trial.final_score(1.0 if passed else 0.0, passed=passed, evaluator=verifier)
 
-    print(exp.url)  # deep link to the experiment in Sigil
+    print(exp.url)  # deep link to the experiment in Agent Observability
 ```
 
 `experiment(...)` creates the run (`source="external"`), each `exp.trial(...)`
@@ -727,7 +727,7 @@ suite and evaluators.
 Experiment writes use the same Grafana Cloud ingestion API key as generation
 ingest. They do not require a control-plane URL or a separate eval API key.
 Experimental OTel eval spans/events are disabled by default; opt in with
-`use_experimental_otel=True` on `agento11y.experiment(...)` or
+`use_experimental_otel=True` on `experiments.experiment(...)` or
 `AGENTO11Y_USE_EXPERIMENTAL_OTEL=true`.
 
 If you use a supported framework, prefer its adapter (e.g. `agento11y-langgraph`)

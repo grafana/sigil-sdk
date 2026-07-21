@@ -1,4 +1,4 @@
-# Grafana Sigil Java Provider Helpers: Anthropic
+# Grafana Agent Observability Java Provider Helpers: Anthropic
 
 This module provides strict wrappers around official Anthropic Java SDK request/response types for Messages.
 
@@ -63,7 +63,7 @@ AnthropicStreamSummary summary = AnthropicAdapter.completionStream(
 
 ## Provider metadata mapping
 
-In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into agento11y metadata when present:
 
 - `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
 - `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`

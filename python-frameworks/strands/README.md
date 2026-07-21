@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: Strands Agents
+# Agent Observability Python Framework Module: Strands Agents
 
-`agento11y-strands` provides a Strands `HookProvider` bridge that maps agent, model, and tool lifecycle events into Sigil generation and tool recording.
+`agento11y-strands` provides a Strands `HookProvider` bridge that maps agent, model, and tool lifecycle events into agento11y generation and tool recording.
 
 ## Installation
 

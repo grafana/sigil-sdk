@@ -1,4 +1,4 @@
-# Grafana Sigil Java Provider Helpers: Gemini
+# Grafana Agent Observability Java Provider Helpers: Gemini
 
 This module provides strict wrappers around official Google GenAI Java SDK types for `models.generateContent`.
 

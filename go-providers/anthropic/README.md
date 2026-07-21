@@ -1,7 +1,7 @@
-# Grafana Sigil Go Provider Helper: Anthropic
+# Grafana Agent Observability Go Provider Helper: Anthropic
 
 This module maps Anthropic Messages SDK request/response payloads into the
-typed Sigil `Generation` model.
+typed agento11y `Generation` model.
 
 ## Embeddings support
 
@@ -97,18 +97,18 @@ Real end-to-end examples using the actual Anthropic SDK (no fake provider calls)
 
 Run them with:
 ```bash
-SIGIL_RUN_LIVE_EXAMPLES=1 ANTHROPIC_API_KEY=... go test -run Example_withSigil -v
+SIGIL_RUN_LIVE_EXAMPLES=1 ANTHROPIC_API_KEY=... go test -run Example_withAgento11y -v
 ```
 
 ## Provider metadata mapping
 
-In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into agento11y metadata when present:
 
 - `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
 - `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`
 - `agento11y.gen_ai.usage.server_tool_use.total_requests`
 
-Anthropic tool `defer_loading` is mapped to Sigil `Generation.Tools[].Deferred`.
+Anthropic tool `defer_loading` is mapped to agento11y `Generation.Tools[].Deferred`.
 
 ## Tool result correlation
 

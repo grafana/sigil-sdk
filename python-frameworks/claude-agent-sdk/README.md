@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: Claude Agent SDK
+# Agent Observability Python Framework Module: Claude Agent SDK
 
-`agento11y-claude-agent-sdk` records Claude Agent SDK sessions as Sigil generations and maps Claude tool hooks to Sigil tool spans.
+`agento11y-claude-agent-sdk` records Claude Agent SDK sessions as agento11y generations and maps Claude tool hooks to agento11y tool spans.
 
 ## Installation
 
@@ -76,12 +76,12 @@ resume/checkpoint flows, or multiple queries in one client session.
 
 ## Guards
 
-Sigil guards run through Claude Agent SDK hooks:
+Agent Observability guards run through Claude Agent SDK hooks:
 
-- `UserPromptSubmit` evaluates the submitted prompt before Claude proceeds. A Sigil deny returns `continue_=False`, stopping the run.
-- `PreToolUse` evaluates tool requests before execution. A Sigil deny maps to Claude's `permissionDecision="deny"`.
+- `UserPromptSubmit` evaluates the submitted prompt before Claude proceeds. A guard deny returns `continue_=False`, stopping the run.
+- `PreToolUse` evaluates tool requests before execution. A guard deny maps to Claude's `permissionDecision="deny"`.
 
-Enable guards on the Sigil client:
+Enable guards on the agento11y client:
 
 ```python
 from agento11y import Client, ClientConfig, HooksConfig
@@ -95,7 +95,7 @@ client = Client(ClientConfig(hooks=HooksConfig(enabled=True)))
 
 Conversation ID precedence:
 
-1. Explicit `conversation_id` passed to the Sigil handler or `agento11y_query`
+1. Explicit `conversation_id` passed to the agento11y handler or `agento11y_query`
 2. `ClaudeAgentOptions.session_id`
 3. `ClaudeAgentOptions.resume`
 4. unique fallback `agento11y:framework:claude-agent-sdk:<run_id>`
@@ -125,7 +125,7 @@ Metadata includes:
 
 ## Claude Native OpenTelemetry
 
-This package records Sigil generations and tool spans through the Sigil Python SDK. The Claude Agent SDK can also make the Claude Code CLI export its native OpenTelemetry spans, metrics, and logs directly to your OTLP collector. Configure those variables in the parent process before calling `agento11y_query`; the Python Claude Agent SDK merges `options.env` on top of the inherited environment.
+This package records agento11y generations and tool spans through the agento11y Python SDK. The Claude Agent SDK can also make the Claude Code CLI export its native OpenTelemetry spans, metrics, and logs directly to your OTLP collector. Configure those variables in the parent process before calling `agento11y_query`; the Python Claude Agent SDK merges `options.env` on top of the inherited environment.
 
 For Grafana Cloud, the important Claude variables are:
 
@@ -163,5 +163,5 @@ uv run --python "$PYTHON_BIN" \
 
 - If generations are fragmented, pass a stable `conversation_id`.
 - If no Claude native traces appear, verify `CLAUDE_CODE_ENABLE_TELEMETRY=1`, an OTLP exporter is selected, and the endpoint/header values are visible to the Python process.
-- If guards do not run, make sure the Sigil client was created with `ClientConfig(hooks=HooksConfig(enabled=True))`.
+- If guards do not run, make sure the agento11y client was created with `ClientConfig(hooks=HooksConfig(enabled=True))`.
 - Always call `client.shutdown()` during teardown.

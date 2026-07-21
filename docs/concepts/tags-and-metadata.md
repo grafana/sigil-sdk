@@ -6,7 +6,7 @@ Each SDK README links here for the language-specific config fields.
 
 ## The three mechanisms
 
-| Mechanism | Set where | Cardinality | Generation export (Sigil UI) | OTel spans (traces) | OTel metrics |
+| Mechanism | Set where | Cardinality | Generation export (Agent Observability UI) | OTel spans (traces) | OTel metrics |
 | --- | --- | --- | --- | --- | --- |
 | **Client tags** (`AGENTO11Y_TAGS` / config `tags`) | Once, on the client | Keep low | Yes, merged into every generation | Yes, as `agento11y.tag.<key>` | Yes, as `agento11y.tag.<key>` |
 | **Per-generation `tags`** | Per `startGeneration` call | Any | Yes | No | No |

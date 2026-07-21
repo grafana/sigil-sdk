@@ -1,6 +1,6 @@
 # OpenAI Agents Handler (`@grafana/agento11y/openai-agents`)
 
-Use `Agento11yOpenAIAgentsHandler` to map OpenAI Agents lifecycle callbacks to Sigil generations.
+Use `Agento11yOpenAIAgentsHandler` to map OpenAI Agents lifecycle callbacks to agento11y generations.
 
 ## Install
 
@@ -27,7 +27,7 @@ const agento11yHooks = withAgento11yOpenAIAgentsHooks(runner, client, {
 agento11yHooks.detach();
 ```
 
-`withAgento11yOpenAIAgentsHooks(...)` attaches Sigil listeners directly to OpenAI Agents `RunHooks`/`AgentHooks` emitters (`Runner` or `Agent`).
+`withAgento11yOpenAIAgentsHooks(...)` attaches agento11y listeners directly to OpenAI Agents `RunHooks`/`AgentHooks` emitters (`Runner` or `Agent`).
 
 ## Streaming snippet
 

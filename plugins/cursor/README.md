@@ -1,4 +1,4 @@
-# Sigil for Cursor
+# Agent Observability for Cursor
 
 Sends Cursor agent generations to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/): prompts, replies, tool calls, and token usage.
 
@@ -34,9 +34,9 @@ Run this once from a terminal:
 agento11y cursor install
 ```
 
-It registers `agento11y cursor hook` for the Cursor events Sigil captures in `~/.cursor/hooks.json`, merging with any hooks other tools already added. Re-running is safe: it updates Sigil's entry in place instead of adding a duplicate. On first run it also prompts for credentials (the same prompt as `agento11y login`).
+It registers `agento11y cursor hook` for the Cursor events agento11y captures in `~/.cursor/hooks.json`, merging with any hooks other tools already added. Re-running is safe: it updates agento11y's entry in place instead of adding a duplicate. On first run it also prompts for credentials (the same prompt as `agento11y login`).
 
-To undo the wiring later, run `agento11y cursor uninstall` — it removes only Sigil's entries and leaves other tools' hooks alone.
+To undo the wiring later, run `agento11y cursor uninstall` — it removes only agento11y's entries and leaves other tools' hooks alone.
 
 <details>
 <summary>Alternative: register the plugin inside Cursor</summary>
@@ -74,7 +74,7 @@ You need values from three Grafana Cloud pages:
 Create or update `~/.config/agento11y/config.env` (if you already have the old `~/.config/sigil/config.env`, edit that one instead):
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
@@ -104,7 +104,7 @@ tail -f ~/.local/state/agento11y/logs/agento11y.log
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
+| `AGENTO11Y_ENDPOINT` | — | Agent Observability API URL. Find it at `/plugins/grafana-sigil-app`. |
 | `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
 | `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
 | `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
@@ -113,7 +113,7 @@ tail -f ~/.local/state/agento11y/logs/agento11y.log
 | `AGENTO11Y_TAGS` | — | `key=value,key=value` tags on every generation and as `agento11y.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). Built-ins (`git.branch`, `cwd`, `subagent`) win on generation-export tag collision. |
 | `AGENTO11Y_USER_ID` | from Cursor | Override the user id. |
 | `AGENTO11Y_DEBUG` | `false` | Log to `~/.local/state/agento11y/logs/agento11y.log`. |
-| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Cursor `preToolUse` hook is evaluated against Sigil: tool calls denied by guard rules are blocked, and Transform rules rewrite the tool arguments before execution. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Cursor `preToolUse` hook is evaluated against Agent Observability: tool calls denied by guard rules are blocked, and Transform rules rewrite the tool arguments before execution. |
 | `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
 | `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
 | `AGENTO11Y_BIN` | auto | Override the binary path if you installed `agento11y` (or the legacy `sigil`) somewhere unusual. |

@@ -1,6 +1,6 @@
 # LlamaIndex Handler (`@grafana/agento11y/llamaindex`)
 
-Use `Agento11yLlamaIndexHandler` to map LlamaIndex workflow/agent callback lifecycles to Sigil generations.
+Use `Agento11yLlamaIndexHandler` to map LlamaIndex workflow/agent callback lifecycles to agento11y generations.
 
 ## Install
 
@@ -25,7 +25,7 @@ const config = withAgento11yLlamaIndexCallbacks({ callbackManager }, client, {
 Settings.callbackManager = config.callbackManager;
 ```
 
-`withAgento11yLlamaIndexCallbacks(...)` registers Sigil listeners through LlamaIndex's callback-manager API and returns the configured `callbackManager`.
+`withAgento11yLlamaIndexCallbacks(...)` registers agento11y listeners through LlamaIndex's callback-manager API and returns the configured `callbackManager`.
 If you already own a manager instance, use `attachAgento11yLlamaIndexCallbacks(existingManager, client, options)`.
 
 ## Streaming snippet

@@ -1,4 +1,4 @@
-"""Sigil client bootstrap.
+"""agento11y client bootstrap.
 
 Builds an `agento11y.Client` that reuses the app's OTel providers, so the
 `gen_ai.*` spans and metrics it emits flow through the same pipeline as

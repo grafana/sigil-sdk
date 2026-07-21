@@ -1,6 +1,6 @@
 # Tool Calls vs Tool Executions
 
-Sigil distinguishes between two related but distinct concepts when instrumenting tool usage in AI agents. Understanding this distinction helps you choose the right instrumentation approach.
+Agent Observability distinguishes between two related but distinct concepts when instrumenting tool usage in AI agents. Understanding this distinction helps you choose the right instrumentation approach.
 
 ## Overview
 
@@ -25,7 +25,7 @@ Message output = new Message()
     ));
 ```
 
-In the Sigil UI:
+In the Agent Observability UI:
 - Shows as **"Call weather"** in the conversation view
 - Input/output content is visible because it's stored in the generation payload
 - **Not** listed in the Tools tab (it's embedded in the generation)
@@ -46,7 +46,7 @@ try (ToolExecutionRecorder rec = client.startToolExecution(
 }
 ```
 
-In the Sigil UI:
+In the Agent Observability UI:
 - Shows as **"Tool execute_tool weather"** in the flow view
 - Listed in the Tools tab with timing metrics
 - Attributes visible in span details
@@ -96,7 +96,7 @@ try (ToolExecutionRecorder rec = client.startToolExecution(
 }
 ```
 
-This allows Sigil to correlate the model's request with your execution timing.
+This allows Agent Observability to correlate the model's request with your execution timing.
 
 ## Capturing Arguments and Results
 

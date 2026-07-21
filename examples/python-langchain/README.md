@@ -1,6 +1,6 @@
-# Sigil + LangChain weather example
+# Agent Observability + LangChain weather example
 
-A deliberately small FastAPI service that demonstrates **two ways to instrument LLM calls with Sigil from the same app**:
+A deliberately small FastAPI service that demonstrates **two ways to instrument LLM calls with agento11y from the same app**:
 
 
 | Path                        | How it's instrumented                                        | Where to look                              |
@@ -9,15 +9,15 @@ A deliberately small FastAPI service that demonstrates **two ways to instrument 
 | Direct Anthropic classifier | `agento11y.start_generation(...)` + `rec.set_result(...)`        | `[app/classifier.py](./app/classifier.py)` |
 
 
-Both LLM calls run under the same `conversation_id`, so they land grouped together in the Sigil UI. That makes it easy to compare how each path shows up, and to see that framework callbacks and raw SDK recording produce the same canonical generation shape.
+Both LLM calls run under the same `conversation_id`, so they land grouped together in the Agent Observability UI. That makes it easy to compare how each path shows up, and to see that framework callbacks and raw SDK recording produce the same canonical generation shape.
 
 ## What the demo teaches
 
 1. **Setting up OpenTelemetry for a FastAPI app.** `[app/telemetry.py](./app/telemetry.py)` wires a `TracerProvider` and `MeterProvider` with OTLP gRPC exporters.
-2. **Creating a Sigil client.** `[app/agento11y_client.py](./app/agento11y_client.py)` builds an `agento11y.Client` that reuses those OTel providers, so `gen_ai.`* spans and metrics flow through the same pipeline as the rest of the app.
-3. **Instrumenting a LangChain agent.** One line in `[app/agent.py](./app/agent.py)` — `with_agento11y_langchain_callbacks(config, client=agento11y, ...)` — attaches the Sigil callback handler to the agent's config.
+2. **Creating an agento11y client.** `[app/agento11y_client.py](./app/agento11y_client.py)` builds an `agento11y.Client` that reuses those OTel providers, so `gen_ai.`* spans and metrics flow through the same pipeline as the rest of the app.
+3. **Instrumenting a LangChain agent.** One line in `[app/agent.py](./app/agent.py)` — `with_agento11y_langchain_callbacks(config, client=agento11y, ...)` — attaches the agento11y callback handler to the agent's config.
 4. **Instrumenting arbitrary LLM code.** `[app/classifier.py](./app/classifier.py)` shows the raw SDK pattern for any provider call, regardless of framework.
-5. **Grouping related generations.** Passing a common `conversation_id` ties both calls together in the Sigil UI.
+5. **Grouping related generations.** Passing a common `conversation_id` ties both calls together in the Agent Observability UI.
 
 ## Prerequisites
 
@@ -57,9 +57,9 @@ curl -s http://<app-host>:8000/chat \
 
 FastAPI also serves interactive docs at `http://<app-host>:8000/docs`.
 
-## What to look for in Sigil
+## What to look for in Agent Observability
 
-Open the Sigil UI. For each request you should see:
+Open the Agent Observability UI. For each request you should see:
 
 - A **conversation** identified by the `conv-…` id returned in the response.
 - Two generations under it:
@@ -72,9 +72,9 @@ Open the Sigil UI. For each request you should see:
 ```
 app/
   telemetry.py      # OTel TracerProvider / MeterProvider bootstrap
-  agento11y_client.py   # Sigil SDK client, wired to the OTel providers
+  agento11y_client.py   # agento11y SDK client, wired to the OTel providers
   agent.py          # LangChain agent + get_weather tool
-  classifier.py     # Direct Anthropic call, manually recorded to Sigil
+  classifier.py     # Direct Anthropic call, manually recorded to Agent Observability
   weather.py        # Stubbed April 2026 weather data
   main.py           # FastAPI app (POST /chat, GET /healthz)
 ```

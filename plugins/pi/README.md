@@ -68,7 +68,7 @@ Run `agento11y login` later to update saved credentials.
 Create or update `~/.config/agento11y/config.env` (if you already have the old `~/.config/sigil/config.env`, edit that one instead):
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
@@ -76,7 +76,7 @@ AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana
 
 </details>
 
-When `AGENTO11Y_AUTH_TENANT_ID` and `AGENTO11Y_AUTH_TOKEN` are set, the extension uses them for Sigil and OTLP auth. If the OpenTelemetry card shows a different Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
+When `AGENTO11Y_AUTH_TENANT_ID` and `AGENTO11Y_AUTH_TOKEN` are set, the extension uses them for Agent Observability and OTLP auth. If the OpenTelemetry card shows a different Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
 
 To include conversation text (with automatic secret redaction), add this to your `config.env`:
 
@@ -129,8 +129,8 @@ The same three variables are honored by the [Claude Code plugin](../claude-code/
 
 When guards are enabled, pi also applies [Transform guards](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/guides/guards/) — regex redaction rules you configure in Grafana — in two places:
 
-- **Preflight (message redaction).** Before each model call, the outgoing conversation is sent to Sigil; redacted text replaces the original, so the placeholder (e.g. `[REDACTED]`) reaches the model instead of the secret.
-- **Postflight (tool-argument redaction).** Before a tool runs, its arguments are sent to Sigil; if a Transform rule matches, the redacted arguments replace what the tool receives.
+- **Preflight (message redaction).** Before each model call, the outgoing conversation is sent to Agent Observability; redacted text replaces the original, so the placeholder (e.g. `[REDACTED]`) reaches the model instead of the secret.
+- **Postflight (tool-argument redaction).** Before a tool runs, its arguments are sent to Agent Observability; if a Transform rule matches, the redacted arguments replace what the tool receives.
 
 Limits:
 
@@ -144,17 +144,17 @@ Limits:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AGENTO11Y_ENDPOINT` | — | Sigil URL (find it at `/plugins/grafana-sigil-app`) |
-| `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. Combined with `AGENTO11Y_AUTH_TOKEN` becomes Basic auth for Sigil and OTLP. |
+| `AGENTO11Y_ENDPOINT` | — | Agent Observability API URL (find it at `/plugins/grafana-sigil-app`) |
+| `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. Combined with `AGENTO11Y_AUTH_TOKEN` becomes Basic auth for Agent Observability and OTLP. |
 | `AGENTO11Y_AUTH_TOKEN` | — | Cloud access policy token (`glc_…`). |
-| `AGENTO11Y_AGENT_NAME` | `pi` | Agent name reported to Sigil. |
+| `AGENTO11Y_AGENT_NAME` | `pi` | Agent name reported to Agent Observability. |
 | `AGENTO11Y_AGENT_VERSION` | — | Optional version string reported with the agent. |
 | `AGENTO11Y_CONTENT_CAPTURE_MODE` | `metadata_only` | One of `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans`. `default` is accepted as an alias for `metadata_only`. |
 | `AGENTO11Y_DEBUG` | `false` | Write lifecycle events to `~/.local/state/agento11y/logs/agento11y.log` (honors `XDG_STATE_HOME`). Never written to the terminal, to avoid corrupting pi's TUI. |
 | `AGENTO11Y_REDACT_INPUT_MESSAGES` | `true` | Redact known secret patterns in user input messages before export. |
 | `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP HTTP endpoint. Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 | `AGENTO11Y_OTEL_AUTH_TOKEN` | `AGENTO11Y_AUTH_TOKEN` | Override the OTLP password. |
-| `AGENTO11Y_GUARDS_ENABLED` | `false` | Evaluate `tool_call` requests against Sigil policy. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Evaluate `tool_call` requests against Agent Observability policy. |
 | `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout for guard requests, in milliseconds. |
 | `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | Allow tools through when the guard call fails. Set `false` for strict mode. |
 

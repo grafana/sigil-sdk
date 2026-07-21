@@ -45,7 +45,7 @@ var agento11yConfig = new Agento11yClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
@@ -55,7 +55,7 @@ var agento11yConfig = new Agento11yClientConfig
     },
     Api = new ApiConfig
     {
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
     },
 };
 var agento11y = new Agento11yClient(agento11yConfig);
@@ -244,4 +244,4 @@ var agento11yOptions = new OpenAIAgento11yOptions
 
 ## Delegate Overloads
 
-All wrappers also provide delegate overloads so you can inject custom retry/transport/test-double behavior while keeping Sigil recording intact.
+All wrappers also provide delegate overloads so you can inject custom retry/transport/test-double behavior while keeping agento11y recording intact.

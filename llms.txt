@@ -1,6 +1,6 @@
 # Grafana AI observability: LLM agent instructions
 
-You are a coding agent. The user wants help with [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/), powered by the open-source Sigil SDKs and plugins in [grafana/agento11y](https://github.com/grafana/agento11y).
+You are a coding agent. The user wants help with [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/), powered by the open-source agento11y SDKs and plugins in [grafana/agento11y](https://github.com/grafana/agento11y).
 
 There are two distinct things this file covers. Pick the path that matches the request before doing anything else.
 
@@ -17,13 +17,13 @@ If you cannot tell, ask one clarifying question and stop.
 
 ## Credentials (both paths)
 
-All four values (API URL, Instance ID, Sigil API token, and OTLP endpoint) live on the Connection tab of the AI Observability plugin in the user's stack:
+All four values (API URL, Instance ID, API token, and OTLP endpoint) live on the Connection tab of the AI Observability plugin in the user's stack:
 
 ```
 https://<your-stack>.grafana.net/plugins/grafana-sigil-app
 ```
 
-Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `AGENTO11Y_AUTH_TOKEN` (Sigil ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
+Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `AGENTO11Y_AUTH_TOKEN` (Agent Observability ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
 
 The Connection page also has a *Set `OTEL_EXPORTER_OTLP_ENDPOINT` for traces and metrics* link that routes to the [OpenTelemetry stack tile](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/#recommended-opentelemetry-setup-via-grafana-cloud-integrations), the recommended OTel setup for Grafana Cloud. The tile emits `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_EXPORTER_OTLP_HEADERS` ready to copy.
 
@@ -101,7 +101,7 @@ You are acting as a coding agent inside the user's repository. Your goal is to a
 
 ## Environment
 
-The Sigil SDK reads these `AGENTO11Y_*` env vars automatically. Set them before the SDK starts:
+The agento11y SDK reads these `AGENTO11Y_*` env vars automatically. Set them before the SDK starts:
 
 ```
 AGENTO11Y_ENDPOINT=<your-agento11y-api-url>
@@ -140,7 +140,7 @@ Capture modes do not strip `tags`/`metadata`/`user_id`; do not put secrets there
 ## Mission
 
 1. Find AI generation and tool/agent execution paths in the user's code.
-2. Add Sigil instrumentation using the local language SDK where possible.
+2. Add agento11y instrumentation using the local language SDK where possible.
 3. Preserve behavior and keep diffs small.
 4. Add or update tests for changed instrumentation behavior.
 5. Explain what was instrumented and why.
@@ -157,23 +157,23 @@ Return:
   - test plan
   - any risk or compatibility concern
 
-## Sigil architecture and ingest model (must follow)
+## Agent Observability architecture and ingest model (must follow)
 
-- Sigil uses generation-first ingest:
+- Agent Observability uses generation-first ingest:
   - gRPC: `agento11y.v1.GenerationIngestService.ExportGenerations`
   - HTTP parity: `POST /api/v1/generations:export`
-- Traces/metrics go through OTel collector/Alloy or direct OTLP, **not** through Sigil ingest.
+- Traces/metrics go through OTel collector/Alloy or direct OTLP, **not** through Agent Observability ingest.
 - Required generation modes:
   - non-stream: `SYNC`
   - stream: `STREAM`
 - Raw provider artifacts are default OFF and only enabled for explicit debug opt-in.
-- Set stable `agent_name` and `agent_version` on generations and framework handlers. `agent_version` is optional for generation ingest, but it is required for version-level Performance charts because Sigil joins Prometheus metrics by the SDK-emitted `gen_ai.agent.version` label.
+- Set stable `agent_name` and `agent_version` on generations and framework handlers. `agent_version` is optional for generation ingest, but it is required for version-level Performance charts because Agent Observability joins Prometheus metrics by the SDK-emitted `gen_ai.agent.version` label.
 
 ## OTel setup (required)
 
-The Sigil SDK internally emits OTel spans and metrics (`gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, `gen_ai.client.time_to_first_token`, `gen_ai.client.tool_calls_per_operation`). **Without a configured TracerProvider and MeterProvider these go to the default no-op and are silently lost.**
+The agento11y SDK internally emits OTel spans and metrics (`gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, `gen_ai.client.time_to_first_token`, `gen_ai.client.tool_calls_per_operation`). **Without a configured TracerProvider and MeterProvider these go to the default no-op and are silently lost.**
 
-The SDK does not create OTel providers; that is the application's responsibility. Always configure providers before creating the Sigil client, and shut them down after `agento11y.shutdown()`.
+The SDK does not create OTel providers; that is the application's responsibility. Always configure providers before creating the agento11y client, and shut them down after `agento11y.shutdown()`.
 
 Two delivery options. The OTel SDK exporters read `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` automatically.
 
@@ -303,7 +303,7 @@ On generation and tool spans, capture or preserve these when available:
 
 ## Workflow step instrumentation (agentic pipelines)
 
-Sigil has two separate ingest pipelines: **generations** (LLM calls) and **workflow steps** (agentic execution nodes).
+Agent Observability has two separate ingest pipelines: **generations** (LLM calls) and **workflow steps** (agentic execution nodes).
 
 ### When to use workflow steps
 
@@ -381,7 +381,7 @@ client.enqueue_workflow_step(step)
 
 For LangGraph, prefer the adapter instead of manually calling `enqueue_workflow_step`.
 The `Agento11yLangGraphHandler` automatically captures workflow steps when `capture_workflow_steps=True`.
-Always set `conversation_title` to a short human-readable label. It appears as the conversation name in the Sigil UI; without it, the title falls back to an opaque auto-generated ID.
+Always set `conversation_title` to a short human-readable label. It appears as the conversation name in the Agent Observability UI; without it, the title falls back to an opaque auto-generated ID.
 
 ```python
 from agento11y_langgraph import Agento11yLangGraphHandler
@@ -415,7 +415,7 @@ When instrumenting multi-agent pipelines where one agent's output feeds into ano
 
 - Set `parent_generation_ids` on the GenerationStart/seed with the generation ID(s) of the upstream agent(s) whose output this generation consumes.
 - This is a list: a generation can depend on multiple parents (fan-in).
-- Sigil uses these links to build a dependency DAG and propagate quality signals: if an upstream generation fails evaluation, all downstream dependents are flagged.
+- Agent Observability uses these links to build a dependency DAG and propagate quality signals: if an upstream generation fails evaluation, all downstream dependents are flagged.
 
 Example: an orchestrator spawns agents A, B, C where C depends on A and B:
 - A: `parent_generation_ids = []` (no parents)

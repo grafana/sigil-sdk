@@ -1,6 +1,6 @@
-"""Direct Anthropic call, instrumented with the raw Sigil SDK.
+"""Direct Anthropic call, instrumented with the raw agento11y SDK.
 
-Counterpoint to `agent.py`. When you're not using a framework Sigil
+Counterpoint to `agent.py`. When you're not using a framework agento11y
 has a callback for, the pattern is:
 
     with agento11y.start_generation(GenerationStart(...)) as rec:
@@ -9,7 +9,7 @@ has a callback for, the pattern is:
 
 The classifier decides whether the message is a weather question so the
 caller can skip the agent on OFF_TOPIC. Both calls share a
-`conversation_id` so they group together in the Sigil UI.
+`conversation_id` so they group together in the Agent Observability UI.
 """
 
 from __future__ import annotations

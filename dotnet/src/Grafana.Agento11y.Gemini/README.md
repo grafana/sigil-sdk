@@ -33,7 +33,7 @@ var agento11yConfig = new Agento11yClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
@@ -43,7 +43,7 @@ var agento11yConfig = new Agento11yClientConfig
     },
     Api = new ApiConfig
     {
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
     },
 };
 var agento11y = new Agento11yClient(agento11yConfig);
@@ -169,7 +169,7 @@ var response = await GeminiRecorder.GenerateContentAsync(
 ## Behavior notes
 
 - Wrapper sets generation mode automatically (`SYNC` or `STREAM`).
-- Candidate text, tool calls, and function responses map to normalized Sigil message parts.
+- Candidate text, tool calls, and function responses map to normalized agento11y message parts.
 - Stop reason and usage fields are normalized from Gemini responses.
 - Provider exceptions are captured as generation `CallError` and rethrown.
 - Call `Agento11yClient.ShutdownAsync(...)` during application shutdown to flush pending exports.

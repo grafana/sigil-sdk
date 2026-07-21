@@ -1,6 +1,6 @@
 # Google ADK Handler (`@grafana/agento11y/google-adk`)
 
-Use `Agento11yGoogleAdkHandler` to map Google ADK session/invocation callbacks to Sigil generations.
+Use `Agento11yGoogleAdkHandler` to map Google ADK session/invocation callbacks to agento11y generations.
 
 ## Install
 
@@ -30,7 +30,7 @@ const agento11yPlugin = createAgento11yGoogleAdkPlugin(client, { providerResolve
 const runnerConfig = { plugins: [agento11yPlugin] };
 ```
 
-`withAgento11yGoogleAdkPlugins(...)` appends Sigil instrumentation to ADK plugin config while preserving existing plugins.
+`withAgento11yGoogleAdkPlugins(...)` appends agento11y instrumentation to ADK plugin config while preserving existing plugins.
 The appended plugin implements the ADK callback surface (`beforeRunCallback`, `onEventCallback`, `afterRunCallback`, model/tool lifecycle callbacks).
 
 ## Streaming snippet

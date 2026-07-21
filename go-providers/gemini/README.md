@@ -1,7 +1,7 @@
-# Grafana Sigil Go Provider Helper: Gemini
+# Grafana Agent Observability Go Provider Helper: Gemini
 
 This module maps Google Gemini GenerateContent SDK request/response payloads into the
-typed Sigil `Generation` model.
+typed agento11y `Generation` model.
 
 ## Scope
 - One-liner wrappers:
@@ -91,7 +91,7 @@ Real end-to-end examples using the actual Gemini SDK (no fake provider calls) ar
 
 Run them with:
 ```bash
-SIGIL_RUN_LIVE_EXAMPLES=1 GOOGLE_API_KEY=... go test -run Example_withSigil -v
+SIGIL_RUN_LIVE_EXAMPLES=1 GOOGLE_API_KEY=... go test -run Example_withAgento11y -v
 ```
 
 ## Provider metadata mapping

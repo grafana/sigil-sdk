@@ -1,6 +1,6 @@
-"""LangChain agent instrumented via Sigil's callback handler.
+"""LangChain agent instrumented via the agento11y callback handler.
 
-The entire Sigil integration is one line: wrap the runnable config with
+The entire agento11y integration is one line: wrap the runnable config with
 `with_agento11y_langchain_callbacks(...)`. LLM calls, tool invocations, and
 chain spans are all recorded automatically — no manual `start_generation`
 needed. Compare with `classifier.py` for the raw-SDK pattern.
@@ -76,7 +76,7 @@ def run_agent(
     user_message: str,
     conversation_id: str,
 ) -> str:
-    """Invoke the agent with Sigil callbacks attached, return the final reply."""
+    """Invoke the agent with agento11y callbacks attached, return the final reply."""
     config = with_agento11y_langchain_callbacks(
         {"metadata": {"conversation_id": conversation_id}},
         client=agento11y,

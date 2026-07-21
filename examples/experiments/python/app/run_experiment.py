@@ -1,7 +1,7 @@
-"""Run a framework-free agent over a dataset as a Sigil experiment.
+"""Run a framework-free agent over a dataset as an Agent Observability experiment.
 
 This is the shape a CI job or benchmark harness takes when your agent is already
-instrumented normally and you want to publish experiment results to Sigil:
+instrumented normally and you want to publish experiment results to Agent Observability:
 
   1. Open an experiment with the Grafana Cloud ingestion API key.
   2. For each case, open a trial and run the agent.
@@ -133,7 +133,7 @@ def main() -> None:
     report = exp.report()
     print(f"\nExperiment '{exp.experiment_id}' finished: {exp.accepted_scores} score(s) accepted.")
     print(f"pass_rate={report.summary.pass_rate:.2f} mean_score={report.summary.final_score_avg:.2f}")
-    print(f"View in Sigil: {exp.url}")
+    print(f"View in Agent Observability: {exp.url}")
 
 
 if __name__ == "__main__":

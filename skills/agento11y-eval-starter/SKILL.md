@@ -1,9 +1,9 @@
 ---
 name: agento11y-eval-starter
-description: Use early in an AI-agent project — before ship, before real traffic — to decide which evaluations to set up and to scaffold a starter experiment. Reads the agent's own code (system prompt, tools, task), recommends specific evaluators with reasons that cite real lines, and writes a labeled draft test suite as a Sigil suite YAML. It also assesses how runnable the agent is: for an easily-invoked agent it generates a runner stub (run_experiment.py) with one hole to fill and can optionally run it (only with permission, only against the endpoint the developer configured); for agents that need a harness or a full runtime it points to the existing eval infra instead of emitting a runner that can't call the agent. It never creates tenant-level evaluators, rules, or guards.
+description: Use early in an AI-agent project — before ship, before real traffic — to decide which evaluations to set up and to scaffold a starter experiment. Reads the agent's own code (system prompt, tools, task), recommends specific evaluators with reasons that cite real lines, and writes a labeled draft test suite as an Agent Observability suite YAML. It also assesses how runnable the agent is: for an easily-invoked agent it generates a runner stub (run_experiment.py) with one hole to fill and can optionally run it (only with permission, only against the endpoint the developer configured); for agents that need a harness or a full runtime it points to the existing eval infra instead of emitting a runner that can't call the agent. It never creates tenant-level evaluators, rules, or guards.
 ---
 
-# Sigil eval starter
+# Agent Observability eval starter
 
 Help a developer who has an AI agent but no evaluation set up yet. The hard part isn't
 running an experiment — it's knowing **what to evaluate** and having **cases to test
@@ -30,7 +30,7 @@ agent has a clean function seam or needs a harness / full stack. For deeper run-
 
 ## Rules
 
-- Do not create, enable, or modify evaluators, rules, or guards in any Sigil tenant. No
+- Do not create, enable, or modify evaluators, rules, or guards in any Agent Observability tenant. No
   control-plane writes. (Running an offline experiment only publishes that run's scores — it
   does not create tenant-level evaluators/rules/guards — but only do it via Step 6.)
 - Do not rewrite the agent's prompt, optimize, or redeploy.
@@ -40,7 +40,7 @@ agent has a clean function seam or needs a harness / full stack. For deeper run-
 - Never mint, generate, or store credentials. The developer owns their Grafana Cloud
   ingestion token; read it from the environment or ask them to paste it — do not create one.
 - Never present the generated cases as validated. They are a draft to review and extend.
-- Sigil is a Grafana Cloud product. Do not hardcode or assume any endpoint (no `localhost`);
+- Agent Observability is a Grafana Cloud product. Do not hardcode or assume any endpoint (no `localhost`);
   the developer supplies their Cloud endpoint and token.
 - If a required input is missing (entrypoint, prompt, tools), ask the developer — don't guess.
 
@@ -75,7 +75,7 @@ scenario/ground-truth files in the repo. If a repo already has eval scenarios wi
 outputs, note them — they are better test cases than anything generated, and later steps
 should point to or reuse them.
 
-Separately, note the **agent's language**, because the Sigil experiments SDK exists only in
+Separately, note the **agent's language**, because the agento11y experiments SDK exists only in
 **Python and Go** (not JS/TS, Java, or .NET yet). This is independent of runnability — a TS
 agent can be trivially runnable yet have no experiments SDK in its language. If the agent is
 Python or Go, the runner is native. If it is any other language, say so plainly: the runner
@@ -108,7 +108,7 @@ that cites a file:line. Common mappings:
 | must always return something | `response_not_empty` | `deterministic` |
 
 Evaluator ids are yours to choose — pick clear, stable ids. Be concrete about what "defining"
-each one means, because it is not a Sigil control-plane action here: in the offline SDK flow
+each one means, because it is not an Agent Observability control-plane action here: in the offline SDK flow
 an evaluator is **code the developer writes in the runner** (Step 4). An `llm_judge` is a
 function that calls a model and returns a score; a `deterministic` one is a plain code check.
 `experiments.Evaluator(evaluator_id=..., kind=...)` is only the label attached to the score, not the
@@ -119,8 +119,8 @@ the suite from Step 3, before there is traffic. Do not recommend live/online eva
 agent with no traffic.
 
 Once the agent ships and has traffic, the same evaluation criteria can also be applied online
-— as Sigil Rules over ingested conversations, or as SDK guard hooks on the request path — but
-those are separate Sigil surfaces, configured elsewhere, and out of scope for this skill.
+— as Agent Observability rules over ingested conversations, or as SDK guard hooks on the request path — but
+those are separate Agent Observability surfaces, configured elsewhere, and out of scope for this skill.
 Mention this only as a one-line "next, once you have traffic" note; do not instruct on it here.
 
 ## Step 3 — Write the suite YAML
@@ -172,7 +172,7 @@ cases:
 
 ## Step 4 — Write the runner stub (branch on runnability)
 
-The suite YAML alone does not run anything. The Sigil SDK stores and aggregates scores, but
+The suite YAML alone does not run anything. The agento11y SDK stores and aggregates scores, but
 it does **not** run the agent or compute the evaluators — the developer writes both. Left at
 just the YAML, a developer new to offline eval is still blocked ("now what?"). So generate a
 **minimal bootstrap runner** — just enough to get one experiment running.
@@ -225,7 +225,7 @@ Keep the header verbatim, and be honest in it about what still needs doing:
 #!/usr/bin/env python3
 """STARTER RUNNER — generated by agento11y-eval-starter, review before use.
 
-Runs <agent> over evals/<agent>-starter.yaml as a Sigil experiment and publishes scores.
+Runs <agent> over evals/<agent>-starter.yaml as an Agent Observability experiment and publishes scores.
 
 You still need to: (1) fill run_agent(case) to call YOUR agent; (2) tune the sketched
 judge; (3) set real credentials — AGENTO11Y_ENDPOINT + AGENTO11Y_AUTH_TOKEN for your Grafana Cloud
@@ -269,7 +269,7 @@ def main() -> None:
     verifier = experiments.Evaluator(evaluator_id="<evaluator>", version="draft-0", kind="llm_judge")
     candidate = {
         "agent_name": "<agent>",
-        # Always send a declared agent_version. Without it Sigil auto-derives a version from
+        # Always send a declared agent_version. Without it Agent Observability auto-derives a version from
         # the system-prompt hash, so you can't reliably attribute scores to a version or
         # compare versions. Replace "v1" with your real version (git tag, prompt version,
         # semver...) — the "v1" fallback is a placeholder, not a version worth comparing.
@@ -303,7 +303,7 @@ different auth actor fails with `401: experiment is owned by another actor`.
 Output, in this order:
 
 1. The picked evaluators, each with its kind and its `why` (with file:line).
-   Add a one-line "once you have traffic, these criteria can also run online (Sigil Rules or
+   Add a one-line "once you have traffic, these criteria can also run online (Agent Observability rules or
    guard hooks) — separate surfaces, not set up here."
 2. The paths to the two written files (`evals/<agent>-starter.yaml` and
    `evals/run_experiment.py`), and a one-line reminder to review the edge/adversarial cases
@@ -314,7 +314,7 @@ Output, in this order:
    bootstraps the first run; for anything past that — binding an already-instrumented agent's
    real generations, auditable LLM-judge grading, cross-process verifiers, repeated-sampling
    metrics — the `agento11y-experiments` skill is the reference.
-4. One line confirming nothing was created in Sigil — recommendations and draft files only.
+4. One line confirming nothing was created in Agent Observability — recommendations and draft files only.
 
 ## Step 6 — Offer to run it (optional, only with permission)
 
@@ -339,7 +339,7 @@ If they accept:
    - `MODEL_NAME` is a live model (dead model ids fail with a 404 not_found).
    - A stable `AGENTO11Y_INGEST_ACTOR` so run and trials share one actor (else `401: owned by
      another actor`).
-   - A declared `AGENT_VERSION` (in the candidate). Without it Sigil auto-derives a version
+   - A declared `AGENT_VERSION` (in the candidate). Without it Agent Observability auto-derives a version
      from the system-prompt hash, and the developer can't attribute scores to a version or
      compare versions — which is the whole point of the agent's Quality view. Confirm a real
      value (git tag / prompt version / semver), don't leave it defaulted.

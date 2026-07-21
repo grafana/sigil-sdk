@@ -89,15 +89,15 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatalf("Sigil hook error: %v", err)
+		log.Fatalf("agento11y hook error: %v", err)
 	}
 	if err := agento11y.HookDeniedFromResponse(hookResponse); err != nil {
 		var denied *agento11y.HookDeniedError
 		if errors.As(err, &denied) {
-			log.Printf("Blocked by Sigil guard rule %s: %s", valueOrUnknown(denied.RuleID), denied.Reason)
+			log.Printf("Blocked by guard rule %s: %s", valueOrUnknown(denied.RuleID), denied.Reason)
 			return
 		}
-		log.Fatalf("Sigil hook denied: %v", err)
+		log.Fatalf("agento11y hook denied: %v", err)
 	}
 
 	if hookResponse.TransformedInput != nil {
@@ -107,9 +107,9 @@ func main() {
 		if hookResponse.TransformedInput.SystemPrompt != "" {
 			systemPrompt = hookResponse.TransformedInput.SystemPrompt
 		}
-		log.Println("Sigil hook allowed the call with transformed input.")
+		log.Println("agento11y hook allowed the call with transformed input.")
 	} else {
-		log.Println("Sigil hook allowed the call.")
+		log.Println("agento11y hook allowed the call.")
 	}
 
 	completion, err := openaiClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{

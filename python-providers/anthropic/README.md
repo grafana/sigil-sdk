@@ -1,6 +1,6 @@
-# Sigil Python Provider Helper: Anthropic
+# Agent Observability Python Provider Helper: Anthropic
 
-`agento11y-anthropic` provides strict Anthropic Messages wrappers and mappers for Sigil.
+`agento11y-anthropic` provides strict Anthropic Messages wrappers and mappers for agento11y.
 
 ## Embeddings support
 
@@ -70,7 +70,7 @@ Raw artifacts are default OFF and should only be enabled for diagnostics.
 
 ## Provider metadata mapping
 
-In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into agento11y metadata when present:
 
 - `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
 - `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`

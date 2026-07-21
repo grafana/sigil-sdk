@@ -1,10 +1,10 @@
 # Go Experiment Example
 
-Runs a tiny framework-free Go agent over a test suite as a Sigil experiment.
+Runs a tiny framework-free Go agent over a test suite as an Agent Observability experiment.
 
 The shape mirrors the Python v1 experiment examples:
 
-1. Build a Sigil client.
+1. Build an agento11y client.
 2. Define a `TestSuite` with `TestCase` entries.
 3. Open an `ExperimentRun`, run one `WithTrial` callback per test case, record scores, finalize the run, and print a link.
 
@@ -27,7 +27,7 @@ This example is designed for Grafana Cloud AI Observability.
 ```bash
 cd examples/experiments/go
 cp .env.example .env
-# Fill in the Grafana Cloud Sigil values in .env.
+# Fill in the Grafana Cloud Agent Observability values in .env.
 set -a && source .env && set +a
 GOWORK=off go run .
 ```

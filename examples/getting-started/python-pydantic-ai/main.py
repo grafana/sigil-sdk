@@ -89,7 +89,7 @@ with with_conversation_title("getting-started-python-pydantic-ai"):
     )
     print(f"Reply 2: {second.output}\n")
 
-# Shut down Sigil first so in-flight generations finish exporting before OTel stops.
+# Shut down agento11y first so in-flight generations finish exporting before OTel stops.
 agento11y.shutdown()
 tp.shutdown()
 mp.shutdown()

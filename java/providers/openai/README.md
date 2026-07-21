@@ -1,4 +1,4 @@
-# Grafana Sigil Java OpenAI Provider Helpers
+# Grafana Agent Observability Java OpenAI Provider Helpers
 
 This module provides strict wrappers around official OpenAI Java SDK request/response types for both:
 

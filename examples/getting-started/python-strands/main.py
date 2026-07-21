@@ -1,4 +1,4 @@
-"""Minimal Sigil Cloud example using Strands Agents."""
+"""Minimal Grafana Cloud example using Strands Agents."""
 
 from __future__ import annotations
 

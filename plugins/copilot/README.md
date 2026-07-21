@@ -1,4 +1,4 @@
-# Sigil for GitHub Copilot CLI
+# Agent Observability for GitHub Copilot CLI
 
 Forwards completed GitHub Copilot turns, hook-visible tool calls, error
 metadata, subagent lifecycle metadata, and optional prompt/tool content to
@@ -75,7 +75,7 @@ Run `agento11y login` later to update saved credentials.
 Create or update `~/.config/agento11y/config.env` (if you already have the old `~/.config/sigil/config.env`, edit that one instead):
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
@@ -157,7 +157,7 @@ Limits:
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
+| `AGENTO11Y_ENDPOINT` | — | Agent Observability API URL. Find it at `/plugins/grafana-sigil-app`. |
 | `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
 | `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
 | `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
@@ -166,7 +166,7 @@ Limits:
 | `AGENTO11Y_TAGS` | — | `key=value,key=value` tags on every generation and as `agento11y.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). |
 | `AGENTO11Y_USER_ID` | — | Override the user id. |
 | `AGENTO11Y_DEBUG` | `false` | Log to `~/.local/state/agento11y/logs/agento11y.log`. |
-| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Copilot `preToolUse` hook is evaluated against Sigil: tool calls denied by guard rules are blocked, and Transform rules redact tool arguments in `copilot-cli`. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Copilot `preToolUse` hook is evaluated against Agent Observability: tool calls denied by guard rules are blocked, and Transform rules redact tool arguments in `copilot-cli`. |
 | `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
 | `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
 | `AGENTO11Y_COPILOT_HOOK_SURFACE` | _(auto)_ | Override the detected host surface (`copilot-cli` or `vscode`). Normally inferred at runtime; set explicitly only when driving capture through a custom hooks config. |
@@ -177,7 +177,7 @@ If your OTLP **Instance ID** (on the OpenTelemetry card) differs from your AI Ob
 
 When the documented Copilot hook payloads provide it, the plugin exports:
 
-- session id as the Sigil conversation id
+- session id as the Agent Observability conversation id
 - a local synthetic turn id in metadata
 - user prompt text
 - assistant response text from the local Copilot transcript when available
@@ -219,7 +219,7 @@ field and the `AGENTO11Y_DEBUG` log line (`dispatch: event=… surface=…`).
 
 - The current documented Copilot hook payloads still do not carry final assistant response text, model, or usage directly. This plugin recovers those fields from the local Copilot CLI `events.jsonl` transcript on `agentStop`.
 - Current observed Copilot CLI transcripts expose assistant text, model, request ids, message ids, native turn ids, reasoning effort, and output token counts. They do not appear to expose input token counts, cache token counts, or reasoning token counts for completed turns, so usage and cost can still be partial.
-- Copilot does not document a stable native turn ID in these hook payloads. This plugin creates a local monotonic turn ID per session and hashes it into the Sigil generation id.
+- Copilot does not document a stable native turn ID in these hook payloads. This plugin creates a local monotonic turn ID per session and hashes it into the Agent Observability generation id.
 - Subagent hooks do not currently expose enough durable identity to synthesize separate child generations safely, so subagent activity is exported as parent-turn metadata only.
 - This package targets the local Copilot CLI and Copilot Chat in VS Code via the shared `~/.copilot/hooks/agento11y.json`. Copilot cloud agent uses repository-level `.github/hooks/*.json` instead, and GitHub documents cloud-agent outbound network access as restricted by the firewall by default.
 
@@ -228,11 +228,11 @@ field and the `AGENTO11Y_DEBUG` log line (`dispatch: event=… surface=…`).
 | Symptom | Try |
 |---|---|
 | Hooks file missing at `~/.copilot/hooks/agento11y.json` | Re-run `agento11y copilot -- <args>` (it writes the file before launching). For VS Code, also add `~/.copilot/hooks` to `chat.hookFilesLocations`. |
-| Turns appear twice in Sigil | A leftover `sigil-copilot` plugin is firing alongside the shared file. Remove it: `copilot plugin uninstall sigil-copilot` (newer `agento11y copilot` runs do this automatically). |
+| Turns appear twice in Agent Observability | A leftover `sigil-copilot` plugin is firing alongside the shared file. Remove it: `copilot plugin uninstall sigil-copilot` (newer `agento11y copilot` runs do this automatically). |
 | Command not found | Reinstall `agento11y` (see step 1). Check `agento11y --version` and that its install dir is on `PATH`. |
-| Hooks run but nothing appears in Sigil | Check `AGENTO11Y_ENDPOINT`, `AGENTO11Y_AUTH_TENANT_ID`, and `AGENTO11Y_AUTH_TOKEN`. Without all three, the plugin discards the completed fragment. |
+| Hooks run but nothing appears in Agent Observability | Check `AGENTO11Y_ENDPOINT`, `AGENTO11Y_AUTH_TENANT_ID`, and `AGENTO11Y_AUTH_TOKEN`. Without all three, the plugin discards the completed fragment. |
 | No latency/tool charts in AI Observability | Set `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` so the plugin can emit traces and metrics. |
 | Prompt or tool content is missing | Check `AGENTO11Y_CONTENT_CAPTURE_MODE`. The default is `metadata_only`. |
 | Assistant response text is missing | Check that `agentStop` included a readable `transcriptPath` and that the local `events.jsonl` transcript still exists under `~/.copilot/session-state/<session-id>/`. |
 | Model or output tokens are still missing | The local Copilot transcript for that turn did not include those fields. This plugin can only export the fields Copilot recorded locally. |
-| Cloud agent cannot reach Sigil | Expected unless your admin allows the Sigil endpoint through the cloud-agent firewall. This plugin is documented for Copilot CLI first. |
+| Cloud agent cannot reach Agent Observability | Expected unless your admin allows the agento11y endpoint through the cloud-agent firewall. This plugin is documented for Copilot CLI first. |

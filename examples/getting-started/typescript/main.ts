@@ -74,7 +74,7 @@ await agento11y.startGeneration(
     // identity instead of a high-cardinality tag.
     userId: "demo-user",
     // Per-generation tags and metadata are export-only: searchable on the
-    // generation in Sigil, never emitted on spans or metrics.
+    // generation in Agent Observability, never emitted on spans or metrics.
     tags: { feature: "summarize" },
     metadata: { promptVersion: "v2" },
   },

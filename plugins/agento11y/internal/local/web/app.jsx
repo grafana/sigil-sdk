@@ -1906,7 +1906,7 @@
                   These values apply to your Grafana Cloud sessions.
                 </div>
                 <SettingRow label="Endpoint" help={<>Grafana AI Observability ingest URL.</>}>
-                  <MonoInput value={form.endpoint} onChange={v => set({ endpoint: v })} placeholder="https://sigil-prod-….grafana.net" width={320}/>
+                  <MonoInput value={form.endpoint} onChange={v => set({ endpoint: v })} placeholder="https://agento11y-prod-….grafana.net" width={320}/>
                 </SettingRow>
                 <SettingRow label="Tenant ID" help={<>Your stack instance ID.</>}>
                   <MonoInput value={form.tenantId} onChange={v => set({ tenantId: v })} placeholder="123456" width={200}/>

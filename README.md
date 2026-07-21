@@ -1,7 +1,7 @@
-# Grafana AI observability SDK
+# Grafana Agent Observability SDK
 
 <p align="center">
-  <img src="./assets/readme/sigil-tri-shot.svg" alt="Grafana AI observability landing, analytics, and conversation explore views" width="100%" />
+  <img src="./assets/readme/agento11y-tri-shot.svg" alt="Grafana AI observability landing, analytics, and conversation explore views" width="100%" />
 </p>
 
 [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/) is a product from Grafana for teams running agents in production. This repo holds the open-source SDKs and the coding-agent plugins that send telemetry to it.
@@ -135,11 +135,11 @@ The reference app is a fuller FastAPI service with framework callbacks and manua
 
 ## Hooks and guards
 
-Application SDK hooks evaluate Sigil guard rules on your request path before a provider call. A guard can allow the request, deny it, or return transformed input such as redacted messages. See the Go, Python, and TypeScript SDK READMEs for manual hook evaluation, and the runnable [`examples/getting-started/go-hooks/`](examples/getting-started/go-hooks/), [`examples/getting-started/python-hooks/`](examples/getting-started/python-hooks/), and [`examples/getting-started/typescript-hooks/`](examples/getting-started/typescript-hooks/) examples for preflight guard setups.
+Application SDK hooks evaluate Agent Observability guard rules on your request path before a provider call. A guard can allow the request, deny it, or return transformed input such as redacted messages. See the Go, Python, and TypeScript SDK READMEs for manual hook evaluation, and the runnable [`examples/getting-started/go-hooks/`](examples/getting-started/go-hooks/), [`examples/getting-started/python-hooks/`](examples/getting-started/python-hooks/), and [`examples/getting-started/typescript-hooks/`](examples/getting-started/typescript-hooks/) examples for preflight guard setups.
 
 ## Content capture and privacy
 
-The SDKs default to `no_tool_content`: full generation messages ship to Sigil, but tool-execution arguments and results stay out of spans. The coding-agent plugins default to `metadata_only`. See [Content Capture Modes](docs/concepts/content-capture-modes.md) for the mode matrix, defaults per surface, and the generation, tool-execution, and embedding resolution rules.
+The SDKs default to `no_tool_content`: full generation messages ship to Agent Observability, but tool-execution arguments and results stay out of spans. The coding-agent plugins default to `metadata_only`. See [Content Capture Modes](docs/concepts/content-capture-modes.md) for the mode matrix, defaults per surface, and the generation, tool-execution, and embedding resolution rules.
 
 To attach custom key/values (team, project, env, request id, end-user id), see [Tags and Metadata](docs/concepts/tags-and-metadata.md). It covers which of client tags, per-generation tags, metadata, and `user_id` reach the generation export vs OTel spans vs metrics, and the cardinality rules for metric labels.
 
@@ -151,7 +151,7 @@ All four connection values (API URL, Instance ID, API token, and OTLP endpoint) 
 https://<your-stack>.grafana.net/plugins/grafana-sigil-app
 ```
 
-Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `AGENTO11Y_AUTH_TOKEN` (Sigil ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
+Follow *Create a token in Cloud Access Policies* on the Connection page and create one token scoped with `sigil:write`, `metrics:write`, `traces:write`, and `logs:write`. The same token then covers both `AGENTO11Y_AUTH_TOKEN` (Agent Observability ingest) and `OTEL_EXPORTER_OTLP_HEADERS` (OTel traces and metrics).
 
 See the [Grafana Cloud AI observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for the full setup flow.
 
@@ -161,8 +161,8 @@ Plugins can record sessions from Claude Code, Codex, Copilot CLI, Cursor, OpenCo
 
 ## Why Grafana AI observability
 
-- The SDK emits traces and metrics as standard OTLP, so they can use existing OTel pipelines. Conversations and generations go through Sigil ingest so Grafana can join them with traces, costs, and scores.
-- It uses OTel GenAI semantic conventions where they exist. Sigil-specific fields cover agent versions, generation IDs, and tool executions.
+- The SDK emits traces and metrics as standard OTLP, so they can use existing OTel pipelines. Conversations and generations go through Agent Observability ingest so Grafana can join them with traces, costs, and scores.
+- It uses OTel GenAI semantic conventions where they exist. agento11y-specific fields cover agent versions, generation IDs, and tool executions.
 - Prompt and tool changes create agent versions when the producer does not send a version string.
 - Evaluators can score live traffic, so teams can find regressions without reviewing every conversation manually.
 

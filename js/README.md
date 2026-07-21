@@ -1,6 +1,6 @@
-# Grafana Sigil TypeScript/JavaScript SDK
+# Grafana Agent Observability TypeScript/JavaScript SDK
 
-Sigil records normalized LLM generation and tool-execution telemetry using your OpenTelemetry tracer/meter setup.
+`@grafana/agento11y` records normalized LLM generation and tool-execution telemetry using your OpenTelemetry tracer/meter setup.
 
 ## Installation
 
@@ -40,7 +40,7 @@ import { Agento11yClient } from "@grafana/agento11y";
 const client = new Agento11yClient({
   generationExport: {
     protocol: "http",
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
       tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
@@ -48,7 +48,7 @@ const client = new Agento11yClient({
     },
   },
   api: {
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
   },
 });
 
@@ -192,7 +192,7 @@ const client = new Agento11yClient({
 
 ## Hooks and Guards
 
-Use hooks when you want Sigil guard rules to run before an LLM call. The SDK evaluates the hook on your request path; guard rules configured in Grafana Cloud decide whether to allow, deny, or transform the input.
+Use hooks when you want Agent Observability guard rules to run before an LLM call. The SDK evaluates the hook on your request path; guard rules configured in Grafana Cloud decide whether to allow, deny, or transform the input.
 
 Hooks are disabled by default. Enable them on the client and call `evaluateHook(...)` before the provider request:
 
@@ -231,7 +231,7 @@ If you use transformed input, pass the transformed messages/system prompt to the
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally pass `tracer` and `meter` directly to `Agento11yClient`.
 
-Quick OTEL setup pattern before creating the Sigil client:
+Quick OTEL setup pattern before creating the agento11y client:
 
 ```ts
 import { NodeSDK } from "@opentelemetry/sdk-node";
@@ -465,7 +465,7 @@ If explicit headers already contain `Authorization` or `X-Scope-OrgID`, explicit
 const client = new Agento11yClient({
   generationExport: {
     protocol: "http",
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
       tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
@@ -473,20 +473,20 @@ const client = new Agento11yClient({
     },
   },
   api: {
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
   },
 });
 ```
 
 ### Grafana Cloud auth (basic)
 
-For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for full setup steps; for this SDK endpoint, copy the **API URL** from **Observability → AI Observability → Configuration**. It looks like `https://sigil-prod-<region>.grafana.net`.
+For Grafana Cloud, use `basic` auth mode. The username is your Grafana Cloud instance/tenant ID and the password is your Grafana Cloud API key. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for full setup steps; for this SDK endpoint, copy the **API URL** from **Observability → AI Observability → Configuration**. It looks like `https://agento11y-prod-<region>.grafana.net`.
 
 ```ts
 const client = new Agento11yClient({
   generationExport: {
     protocol: "http",
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
     auth: {
       mode: "basic",
       tenantId: process.env.AGENTO11Y_AUTH_TENANT_ID,
@@ -517,7 +517,7 @@ const generationBearerToken = (process.env.MY_APP_SIGIL_TOKEN ?? "").trim();
 const client = new Agento11yClient({
   generationExport: {
     protocol: "http",
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
     auth:
       generationBearerToken.length > 0
         ? { mode: "bearer", bearerToken: generationBearerToken }
@@ -528,7 +528,7 @@ const client = new Agento11yClient({
           },
   },
   api: {
-    endpoint: "https://sigil-prod-<region>.grafana.net",
+    endpoint: "https://agento11y-prod-<region>.grafana.net",
   },
 });
 ```
@@ -536,7 +536,7 @@ const client = new Agento11yClient({
 Common topology:
 
 - Grafana Cloud: generation `basic` mode with instance ID and API key.
-- Self-hosted direct to Sigil: generation `tenant` mode.
+- Self-hosted direct to the ingest API: generation `tenant` mode.
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
@@ -556,4 +556,4 @@ const result = await client.submitConversationRating("conv-123", {
 console.log(result.rating.rating, result.summary.hasBadRating);
 ```
 
-`submitConversationRating` sends requests to `api.endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
+`submitConversationRating` sends requests to `api.endpoint`, which should be the Grafana Cloud Agent Observability API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
