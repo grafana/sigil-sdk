@@ -11,7 +11,7 @@ By default only metadata is sent (token counts, model, tool names). Set `AGENTO1
 **Quick install (Linux/macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 agento11y vibe
 ```
 

@@ -43,7 +43,7 @@ subprojects {
             pom {
                 name.set(project.name)
                 description.set("Grafana Agent Observability SDK for Java - ${project.name}")
-                url.set("https://github.com/grafana/agento11y-sdk")
+                url.set("https://github.com/grafana/agento11y")
                 inceptionYear.set("2025")
 
                 licenses {
@@ -63,9 +63,9 @@ subprojects {
                 }
 
                 scm {
-                    url.set("https://github.com/grafana/agento11y-sdk")
-                    connection.set("scm:git:git://github.com/grafana/agento11y-sdk.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/grafana/agento11y-sdk.git")
+                    url.set("https://github.com/grafana/agento11y")
+                    connection.set("scm:git:git://github.com/grafana/agento11y.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/grafana/agento11y.git")
                 }
             }
         }

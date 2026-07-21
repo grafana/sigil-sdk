@@ -48,7 +48,7 @@ const observabilityURL = "https://<your-stack>.grafana.net/a/grafana-sigil-app"
 // docsURL points at the plugins directory so users can discover every
 // agent adapter we ship (claude-code, codex, cursor, pi, …). Linked as a
 // supplemental “read more” after the next-step hint.
-const docsURL = "https://github.com/grafana/sigil-sdk/tree/main/plugins"
+const docsURL = "https://github.com/grafana/agento11y/tree/main/plugins"
 
 var (
 	bannerBox = lipgloss.NewStyle().

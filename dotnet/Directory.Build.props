@@ -18,12 +18,12 @@
     <PackageIcon>package-icon.png</PackageIcon>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://grafana.ai/</PackageProjectUrl>
-    <PackageReleaseNotes>https://github.com/grafana/sigil-sdk/releases</PackageReleaseNotes>
+    <PackageReleaseNotes>https://github.com/grafana/agento11y/releases</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageTags>Grafana;AI;Agento11y;AgentObservability</PackageTags>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/grafana/sigil-sdk</RepositoryUrl>
+    <RepositoryUrl>https://github.com/grafana/agento11y</RepositoryUrl>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <UseArtifactsOutput>true</UseArtifactsOutput>

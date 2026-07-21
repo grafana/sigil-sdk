@@ -21,7 +21,7 @@ import (
 const (
 	// marketplaceRepo is the source argument passed to
 	// `claude plugin marketplace add`.
-	marketplaceRepo = "grafana/sigil-sdk"
+	marketplaceRepo = "grafana/agento11y"
 	// marketplaceAlias is the marketplace name declared in
 	// .claude-plugin/marketplace.json.
 	marketplaceAlias = "grafana-sigil"

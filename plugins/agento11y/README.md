@@ -9,13 +9,13 @@ The command was renamed from `sigil`. Every install method also installs a `sigi
 **Quick install (Linux/macOS):**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | sh
 ```
 
-The script downloads the latest [release](https://github.com/grafana/sigil-sdk/releases) for your OS and architecture, verifies its SHA-256 checksum, and installs the binary to `~/.local/bin`. Re-run it to upgrade. Set `INSTALL_DIR` to change the directory and `VERSION` to pin a release:
+The script downloads the latest [release](https://github.com/grafana/agento11y/releases) for your OS and architecture, verifies its SHA-256 checksum, and installs the binary to `~/.local/bin`. Re-run it to upgrade. Set `INSTALL_DIR` to change the directory and `VERSION` to pin a release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
 ```
 
 **Homebrew (macOS):**
@@ -26,7 +26,7 @@ brew install grafana/grafana/agento11y
 
 Upgrade later with `brew upgrade grafana/grafana/agento11y`.
 
-**Prebuilt binary (Windows):** download the `windows_amd64` or `windows_arm64` zip from the [releases page](https://github.com/grafana/sigil-sdk/releases), extract `agento11y.exe`, and put it on your `PATH`.
+**Prebuilt binary (Windows):** download the `windows_amd64` or `windows_arm64` zip from the [releases page](https://github.com/grafana/agento11y/releases), extract `agento11y.exe`, and put it on your `PATH`.
 
 **Go install (any platform with Go 1.25+):**
 

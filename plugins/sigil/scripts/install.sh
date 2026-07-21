@@ -5,13 +5,13 @@
 # the sigil -> agento11y rename. This stub keeps the documented
 # one-liner working:
 #
-#   curl -fsSL https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/sigil/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/grafana/agento11y/main/plugins/sigil/scripts/install.sh | sh
 #
 # It downloads and runs the real installer from its new location.
 
 set -eu
 
-INSTALL_URL="https://raw.githubusercontent.com/grafana/sigil-sdk/main/plugins/agento11y/scripts/install.sh"
+INSTALL_URL="https://raw.githubusercontent.com/grafana/agento11y/main/plugins/agento11y/scripts/install.sh"
 
 echo "  This installer moved to ${INSTALL_URL}"
 echo "  Fetching and running it..."
