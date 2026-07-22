@@ -68,7 +68,7 @@ Run `agento11y login` later to update saved credentials.
 Create or update `~/.config/agento11y/config.env` (if you already have the old `~/.config/sigil/config.env`, edit that one instead):
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
@@ -76,7 +76,7 @@ AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana
 
 </details>
 
-When `AGENTO11Y_AUTH_TENANT_ID` and `AGENTO11Y_AUTH_TOKEN` are set, the plugin uses them for Sigil and OTLP auth. If the OpenTelemetry card shows a different Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
+When `AGENTO11Y_AUTH_TENANT_ID` and `AGENTO11Y_AUTH_TOKEN` are set, the plugin uses them for Agent Observability and OTLP auth. If the OpenTelemetry card shows a different Instance ID, set `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(otlp-id:glc_token)>`.
 
 To include conversation text, add this to your `config.env`:
 
@@ -117,16 +117,16 @@ Built-in tags win collisions with user tags, matching the claude-code and cursor
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. Empty value disables the plugin. |
+| `AGENTO11Y_ENDPOINT` | — | Agent Observability API URL. Find it at `/plugins/grafana-sigil-app`. Empty value disables the plugin. |
 | `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
 | `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
 | `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. Falls back to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 | `AGENTO11Y_OTEL_AUTH_TOKEN` | `AGENTO11Y_AUTH_TOKEN` | Override the OTLP password. |
 | `AGENTO11Y_CONTENT_CAPTURE_MODE` | `metadata_only` | One of `full`, `no_tool_content`, `metadata_only`, or `full_with_metadata_spans`. `default` is accepted as an alias for `metadata_only`. |
-| `AGENTO11Y_GUARDS_ENABLED` | `false` | Evaluate OpenCode tool calls against Sigil guards before execution. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Evaluate OpenCode tool calls against Agent Observability guards before execution. |
 | `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-evaluation guard timeout in milliseconds. |
 | `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | Allow tool calls if guard evaluation fails. Set to `false` to fail closed. |
-| `AGENTO11Y_AGENT_NAME` | `opencode` | Agent name reported to Sigil. The plugin appends `:<mode>` for OpenCode's UI mode, such as `build` or `plan`. |
+| `AGENTO11Y_AGENT_NAME` | `opencode` | Agent name reported to Agent Observability. The plugin appends `:<mode>` for OpenCode's UI mode, such as `build` or `plan`. |
 | `AGENTO11Y_AGENT_VERSION` | OpenCode version | Version string reported with the agent. |
 | `AGENTO11Y_DEBUG` | `false` | Log lifecycle events to stderr. |
 

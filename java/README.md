@@ -1,6 +1,6 @@
-# Grafana Sigil Java SDK (Core)
+# Grafana Agent Observability Java SDK (Core)
 
-If you already use OpenTelemetry, Sigil is a thin extension for AI observability.
+If you already use OpenTelemetry, agento11y is a thin extension for AI observability.
 
 The Java SDK records normalized generation payloads, correlates them with traces, and exports generations through transport-aware clients.
 
@@ -55,10 +55,10 @@ The snippet below configures the SDK explicitly. As an alternative, set `AGENTO1
 ```java
 Agento11yClient client = new Agento11yClient(new Agento11yClientConfig()
     .setApi(new ApiConfig()
-        .setEndpoint("https://sigil-prod-<region>.grafana.net"))
+        .setEndpoint("https://agento11y-prod-<region>.grafana.net"))
     .setGenerationExport(new GenerationExportConfig()
         .setProtocol(GenerationExportProtocol.HTTP)
-        .setEndpoint("https://sigil-prod-<region>.grafana.net")
+        .setEndpoint("https://agento11y-prod-<region>.grafana.net")
         .setAuth(new AuthConfig()
             .setMode(AuthMode.BASIC)
             .setTenantId(System.getenv("AGENTO11Y_AUTH_TENANT_ID"))
@@ -73,7 +73,7 @@ try {
             recorder.setResult(new GenerationResult()
                 .setOutput(java.util.List.of(
                     new Message().setRole(MessageRole.ASSISTANT)
-                        .setParts(java.util.List.of(MessagePart.text("Hello from Sigil"))))));
+                        .setParts(java.util.List.of(MessagePart.text("Hello from Agent Observability"))))));
             return null;
         }
     );
@@ -84,7 +84,7 @@ try {
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup. You can optionally inject `Tracer` and `Meter` via `Agento11yClientConfig`.
 
-Quick OTEL setup pattern before creating the Sigil client:
+Quick OTEL setup pattern before creating the agento11y client:
 
 ```java
 import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
@@ -112,7 +112,7 @@ try (ToolExecutionRecorder rec = client.startToolExecution(
 }
 ```
 
-Tool executions create OTel spans (`execute_tool <name>`) and appear in the Sigil Tools tab with timing metrics.
+Tool executions create OTel spans (`execute_tool <name>`) and appear in the Agent Observability Tools tab with timing metrics.
 
 For RAG retrieval or other preprocessing steps, use tool execution even though there's no corresponding LLM tool call:
 
@@ -315,7 +315,7 @@ SubmitConversationRatingResponse result = client.submitConversationRating(
 System.out.println(result.getRating().getRating() + " hasBad=" + result.getSummary().isHasBadRating());
 ```
 
-`submitConversationRating(...)` sends requests to `ApiConfig.endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
+`submitConversationRating(...)` sends requests to `ApiConfig.endpoint`, which should be the Grafana Cloud Agent Observability API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
 
 ## Lifecycle
 

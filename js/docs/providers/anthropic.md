@@ -1,6 +1,6 @@
-# Sigil JS Provider Helper: Anthropic
+# Agent Observability JS Provider Helper: Anthropic
 
-This helper maps strict Anthropic Messages payloads into Sigil `Generation` records.
+This helper maps strict Anthropic Messages payloads into agento11y `Generation` records.
 
 ## Embeddings support
 
@@ -62,7 +62,7 @@ try {
 
 ## Provider metadata mapping
 
-In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into agento11y metadata when present:
 
 - `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
 - `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`

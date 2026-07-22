@@ -1,7 +1,7 @@
 /**
  * Guarded AI Observability getting-started example — TypeScript + OpenAI.
  *
- * The SDK evaluates a Sigil preflight hook before the provider call. Guard rules
+ * The SDK evaluates an agento11y preflight hook before the provider call. Guard rules
  * configured in Grafana Cloud can allow the call, deny it, or return transformed
  * input such as redacted messages.
  */
@@ -113,7 +113,7 @@ const hookResponse = await agento11y.evaluateHook(hookRequest);
 
 if (hookResponse.action === "deny") {
   console.log(
-    `Blocked by Sigil guard rule ${hookResponse.ruleId ?? "<unknown>"}: ${hookResponse.reason ?? ""}`,
+    `Blocked by guard rule ${hookResponse.ruleId ?? "<unknown>"}: ${hookResponse.reason ?? ""}`,
   );
 } else {
   const transformed = hookResponse.transformedInput;
@@ -124,9 +124,9 @@ if (hookResponse.action === "deny") {
     if (transformed.systemPrompt) {
       systemPrompt = transformed.systemPrompt;
     }
-    console.log("Sigil hook allowed the call with transformed input.\n");
+    console.log("agento11y hook allowed the call with transformed input.\n");
   } else {
-    console.log("Sigil hook allowed the call.\n");
+    console.log("agento11y hook allowed the call.\n");
   }
 
   const completion = await openai.chat.completions.create({

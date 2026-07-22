@@ -1,13 +1,13 @@
 # Vercel AI SDK Hooks (`@grafana/agento11y/vercel-ai-sdk`)
 
-Use `createAgento11yVercelAiSdk(...)` to instrument Vercel AI SDK calls with Sigil generation export, spans, metrics, tool execution spans, and streaming TTFT.
+Use `createAgento11yVercelAiSdk(...)` to instrument Vercel AI SDK calls with agento11y generation export, spans, metrics, tool execution spans, and streaming TTFT.
 
 Supported AI SDK line:
 
 - `ai` v5 and v6 (`generateText`, `streamText`)
 - Baseline generation export uses `onStepFinish` (and `onError` for streams). This path is v5-compatible and records tool executions from step `toolResults`.
 - Step input capture uses `prepareStep` when available. The older `experimental_onStepStart` callback is still emitted for AI SDK versions that call it.
-- When `experimental_onToolCallStart` and `experimental_onToolCallFinish` are available, Sigil also captures richer tool timing correlation.
+- When `experimental_onToolCallStart` and `experimental_onToolCallFinish` are available, agento11y also captures richer tool timing correlation.
 - Experimental callbacks can change in patch releases. Keep `ai` pinned to a tested minor line in production.
 
 ## Install
@@ -37,11 +37,11 @@ const result = await generateText({
 });
 ```
 
-The model object stays untouched. Sigil only consumes hook callbacks.
+The model object stays untouched. agento11y only consumes hook callbacks.
 
 ## Preflight guards
 
-Set `enableHooks: true` when you want Sigil guard rules to evaluate each Vercel AI SDK model step before it reaches the provider:
+Set `enableHooks: true` when you want Agent Observability guard rules to evaluate each Vercel AI SDK model step before it reaches the provider:
 
 ```ts
 import { HookDeniedError, Agento11yClient } from '@grafana/agento11y';
@@ -78,7 +78,7 @@ try {
 }
 ```
 
-The adapter sends the step messages, model, agent name/version, and conversation preview to Sigil. If a guard returns `action: "deny"`, the adapter throws `HookDeniedError` and the provider call is aborted. If a guard returns `transformed_input.messages`, the adapter records the transformed input in the generation; when the AI SDK calls `prepareStep` and the transformed messages can be represented as AI SDK model messages, the adapter also returns those transformed messages to the provider. If a transform is requested but cannot be applied to the provider call, the adapter aborts rather than sending the original messages.
+The adapter sends the step messages, model, agent name/version, and conversation preview to Agent Observability. If a guard returns `action: "deny"`, the adapter throws `HookDeniedError` and the provider call is aborted. If a guard returns `transformed_input.messages`, the adapter records the transformed input in the generation; when the AI SDK calls `prepareStep` and the transformed messages can be represented as AI SDK model messages, the adapter also returns those transformed messages to the provider. If a transform is requested but cannot be applied to the provider call, the adapter aborts rather than sending the original messages.
 
 `enableHooks` overrides the client-level switch for this instrumentation. Leave it unset to use `client.config.hooks.enabled`, or set it to `false` to disable hook evaluation for calls made through this adapter. With `failOpen: true`, hook transport errors resolve to allow; set `failOpen: false` for strict paths that should fail closed.
 
@@ -158,7 +158,7 @@ const agento11y = createAgento11yVercelAiSdk(client, {
 
 - Missing usage numbers:
   - Provider may not return usage fields in AI SDK `onStepFinish`.
-  - Sigil handles missing usage safely and exports zeros only when usage payloads exist.
+  - agento11y handles missing usage safely and exports zeros only when usage payloads exist.
 - Missing TTFT:
   - TTFT is only emitted for `streamText` steps where text chunks are observed.
 - Tool span not appearing:

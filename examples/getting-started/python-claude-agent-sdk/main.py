@@ -1,4 +1,4 @@
-"""Minimal Sigil Cloud example using the Claude Agent SDK."""
+"""Minimal Grafana Cloud example using the Claude Agent SDK."""
 
 from __future__ import annotations
 

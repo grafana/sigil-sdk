@@ -1,6 +1,6 @@
-# Grafana Sigil Go Framework Helper: Google ADK
+# Grafana Agent Observability Go Framework Helper: Google ADK
 
-This module maps Google ADK callback/interceptor lifecycles to Sigil generation and tool recorder lifecycles.
+This module maps Google ADK callback/interceptor lifecycles to agento11y generation and tool recorder lifecycles.
 
 ## Scope
 

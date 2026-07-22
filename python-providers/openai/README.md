@@ -1,4 +1,4 @@
-# Sigil Python Provider Helper: OpenAI
+# Agent Observability Python Provider Helper: OpenAI
 
 `agento11y-openai` exposes strict OpenAI-shaped wrappers and mappers for both Chat Completions and Responses.
 

@@ -1,6 +1,6 @@
-# Sigil framework-free experiment example
+# Agent Observability framework-free experiment example
 
-A minimal, runnable set of Sigil **experiment** examples using the core
+A minimal, runnable set of Agent Observability **experiment** examples using the core
 `agento11y` only — **no framework adapter**.
 
 There are two entry points:
@@ -19,7 +19,7 @@ callback.
 | --- | --- | --- |
 | `experiments.experiment(...)` | Creates/finalizes the run with one ingestion API key | `app/run_experiment.py` |
 | `exp.trial(...)` | Creates a typed trial per test case | `app/run_experiment.py` |
-| `exp.client.record_generation(...)` | Publishes candidate and grader transcripts as Sigil generations | `app/run_experiment.py` |
+| `exp.client.record_generation(...)` | Publishes candidate and grader transcripts as agento11y generations | `app/run_experiment.py` |
 | `trial.bind_generation(...)` | Links the candidate transcript to the typed trial | `app/run_experiment.py` |
 | LLM judge | Publishes a grader transcript and emits the final score with grader IDs | `app/run_experiment.py` |
 | Tiny agent | Plain Anthropic calls for the candidate and grader | `app/agent.py` |
@@ -30,9 +30,9 @@ callback.
 1. `experiments.experiment(...)` calls `POST /api/v1/experiment-runs:upsert`.
 2. For each dataset item, `exp.trial(...)` creates a typed trial.
 3. The candidate agent runs through Anthropic and the example publishes that
-   request/response transcript as a Sigil generation.
+   request/response transcript as an agento11y generation.
 4. The grader runs through Anthropic and the example publishes the grader
-   prompt/response transcript as a second Sigil generation.
+   prompt/response transcript as a second agento11y generation.
 5. The final score links to the candidate generation plus the grader generation,
    then uploads small JSON/text artifacts for inspection.
 6. When the dataset is done the experiment finalizes (`completed`/`failed`) and
@@ -56,7 +56,7 @@ A/B testing is just two runs with different `AGENTO11Y_EXPERIMENT_ID`/`tags` ove
 uv sync
 
 # Grafana Cloud AI Observability ingest API URL.
-export AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+export AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 export AGENTO11Y_PROTOCOL=http
 export AGENTO11Y_AUTH_TENANT_ID=<your-stack-id>
 export AGENTO11Y_AUTH_TOKEN=<your-grafana-cloud-access-policy-token>
@@ -84,7 +84,7 @@ You should see output like:
 ```
 Experiment 'experiment-example-manual' finished: 3 score(s) accepted.
 pass_rate=1.00 mean_score=1.00
-View in Sigil: https://<your-stack>.grafana.net/a/grafana-sigil-app/offline-experiments/experiments/experiment-example-manual
+View in Agent Observability: https://<your-stack>.grafana.net/a/grafana-sigil-app/offline-experiments/experiments/experiment-example-manual
 ```
 
 > The deep link uses `AGENTO11Y_GRAFANA_URL`; keep it pointed at your Grafana stack

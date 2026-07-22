@@ -1,4 +1,4 @@
-# Sigil for Codex
+# Agent Observability for Codex
 
 Sends Codex turns to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/): model, tokens, tools, timing, and optionally the conversation content.
 
@@ -82,7 +82,7 @@ Run `agento11y login` later to update saved credentials.
 Create or update `~/.config/agento11y/config.env` (if you already have the old `~/.config/sigil/config.env`, edit that one instead):
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
@@ -111,7 +111,7 @@ tail -f ~/.local/state/agento11y/logs/agento11y.log
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
+| `AGENTO11Y_ENDPOINT` | — | Agent Observability API URL. Find it at `/plugins/grafana-sigil-app`. |
 | `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
 | `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
 | `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
@@ -120,7 +120,7 @@ tail -f ~/.local/state/agento11y/logs/agento11y.log
 | `AGENTO11Y_TAGS` | — | `key=value,key=value` tags on every generation and as `agento11y.tag.<key>` on OTel spans/metrics (e.g. `project=my-app`). |
 | `AGENTO11Y_USER_ID` | — | Override the user id. |
 | `AGENTO11Y_DEBUG` | `false` | Log to `~/.local/state/agento11y/logs/agento11y.log`. |
-| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable Codex `PreToolUse` guards against Sigil rules. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable Codex `PreToolUse` guards against Agent Observability rules. |
 | `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | Allow the tool call when the guard request fails (set `false` for fail-closed). |
 | `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call guard timeout. |
 | `AGENTO11Y_AUTO_UPDATE` | `true` | Refresh the `sigil-codex` plugin automatically. Set `false` to pin the installed version. |

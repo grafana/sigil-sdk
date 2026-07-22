@@ -1,7 +1,7 @@
 [project]
 name = "agento11y-experiment-example"
 version = "0.1.0"
-description = "Run a framework-free agent over a dataset as a Sigil experiment, grade outputs, and publish scores."
+description = "Run a framework-free agent over a dataset as an Agent Observability experiment, grade outputs, and publish scores."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

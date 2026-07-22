@@ -1,6 +1,6 @@
-# Grafana Sigil .NET SDKs
+# Grafana Agent Observability .NET SDKs
 
-Sigil extends OpenTelemetry-style instrumentation with normalized AI generation records.
+`Grafana.Agento11y` extends OpenTelemetry-style instrumentation with normalized AI generation records.
 
 ## Packages
 
@@ -45,7 +45,7 @@ var agento11y = new Agento11yClient(new Agento11yClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
@@ -58,7 +58,7 @@ var agento11y = new Agento11yClient(new Agento11yClientConfig
     },
     Api = new ApiConfig
     {
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
     },
 });
 
@@ -132,7 +132,7 @@ Generation export transport protocols:
 
 Use the built-in secrets sanitizer to redact high-confidence secret formats
 before generation data is exported. It uses the same gitleaks-derived pattern
-set as the other Sigil SDKs and replaces matches with
+set as the other agento11y SDKs and replaces matches with
 `[REDACTED:<category>]` placeholders.
 
 ```csharp
@@ -330,7 +330,7 @@ var result = await client.SubmitConversationRatingAsync(
 Console.WriteLine($"{result.Rating.Rating} hasBad={result.Summary.HasBadRating}");
 ```
 
-`SubmitConversationRatingAsync(...)` sends requests to `Agento11yClientConfig.Api.Endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
+`SubmitConversationRatingAsync(...)` sends requests to `Agento11yClientConfig.Api.Endpoint`, which should be the Grafana Cloud Agent Observability API URL from AI Observability configuration, and uses the same generation-export auth headers already configured on the SDK client.
 
 ## .NET best practices
 

@@ -1,6 +1,6 @@
-# Sigil JS Provider Helper: Gemini
+# Agent Observability JS Provider Helper: Gemini
 
-This helper maps strict Gemini `model/contents/config` payloads into Sigil `Generation` records.
+This helper maps strict Gemini `model/contents/config` payloads into agento11y `Generation` records.
 
 ## Scope
 

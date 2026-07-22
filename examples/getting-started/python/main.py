@@ -83,7 +83,7 @@ with agento11y.start_generation(
         # identity instead of a high-cardinality tag.
         user_id="demo-user",
         # Per-generation tags and metadata are export-only: searchable on the
-        # generation in Sigil, never emitted on spans or metrics.
+        # generation in Agent Observability, never emitted on spans or metrics.
         tags={"feature": "summarize"},
         metadata={"prompt_version": "v2"},
     )

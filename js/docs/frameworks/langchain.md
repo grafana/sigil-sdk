@@ -1,6 +1,6 @@
 # LangChain Handler (`@grafana/agento11y/langchain`)
 
-Use `Agento11yLangChainHandler` to map LangChain callback lifecycle events to Sigil generation records.
+Use `Agento11yLangChainHandler` to map LangChain callback lifecycle events to agento11y generation records.
 
 ## Install
 

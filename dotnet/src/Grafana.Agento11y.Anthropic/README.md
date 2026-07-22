@@ -27,7 +27,7 @@ var agento11yConfig = new Agento11yClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
@@ -37,7 +37,7 @@ var agento11yConfig = new Agento11yClientConfig
     },
     Api = new ApiConfig
     {
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
     },
 };
 var agento11y = new Agento11yClient(agento11yConfig);
@@ -129,13 +129,13 @@ var response = await AnthropicRecorder.MessageAsync(
 
 - Wrapper sets generation mode automatically (`SYNC` or `STREAM`).
 - `System` prompt is normalized into `Generation.SystemPrompt`.
-- Thinking blocks, tool-use blocks, and tool-result blocks map to typed Sigil parts.
+- Thinking blocks, tool-use blocks, and tool-result blocks map to typed agento11y parts.
 - Provider exceptions are captured as generation `CallError` and rethrown.
 - Call `Agento11yClient.ShutdownAsync(...)` during application shutdown to flush pending exports.
 
 ## Provider metadata mapping
 
-In addition to normalized usage fields, Anthropic server-tool counters are mapped into Sigil metadata when present:
+In addition to normalized usage fields, Anthropic server-tool counters are mapped into agento11y metadata when present:
 
 - `agento11y.gen_ai.usage.server_tool_use.web_search_requests`
 - `agento11y.gen_ai.usage.server_tool_use.web_fetch_requests`

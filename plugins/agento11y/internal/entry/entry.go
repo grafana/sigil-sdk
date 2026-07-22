@@ -303,8 +303,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) {
 
 // runLoginCommand handles `agento11y login`. The flow is interactive-only: any
 // args (including unknown flags) are rejected with exit 2. Non-interactive
-// callers should set SIGIL_* env vars or edit $XDG_CONFIG_HOME/agento11y/config.env
-// directly.
+// callers should set AGENTO11Y_* env vars (the legacy SIGIL_* names still work)
+// or edit $XDG_CONFIG_HOME/agento11y/config.env directly.
 func runLoginCommand(args []string, stderr io.Writer) {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -342,7 +342,7 @@ func runLoginCommand(args []string, stderr io.Writer) {
 		_, _ = fmt.Fprintln(stderr, "Aborted.")
 		return
 	case errors.Is(err, login.ErrNotInteractive):
-		_, _ = fmt.Fprintln(stderr, "agento11y login: cannot prompt because stdin is not a terminal. Run from an interactive shell, or set SIGIL_ENDPOINT, SIGIL_AUTH_TENANT_ID and SIGIL_AUTH_TOKEN in your environment.")
+		_, _ = fmt.Fprintln(stderr, "agento11y login: cannot prompt because stdin is not a terminal. Run from an interactive shell, or set AGENTO11Y_ENDPOINT, AGENTO11Y_AUTH_TENANT_ID and AGENTO11Y_AUTH_TOKEN in your environment (the legacy SIGIL_* names still work).")
 		exit(1)
 		return
 	default:

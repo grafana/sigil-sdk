@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: OpenAI Agents
+# Agent Observability Python Framework Module: OpenAI Agents
 
-`agento11y-openai-agents` provides callback handlers that map OpenAI Agents lifecycle events into Sigil generation recorder lifecycles.
+`agento11y-openai-agents` provides callback handlers that map OpenAI Agents lifecycle events into agento11y generation recorder lifecycles.
 
 ## Installation
 

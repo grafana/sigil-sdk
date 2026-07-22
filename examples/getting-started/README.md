@@ -8,10 +8,10 @@ Minimal, self-contained examples that make a real LLM call and record the genera
 | Language             | Directory                                    | LLM provider                   |
 | -------------------- | -------------------------------------------- | ------------------------------ |
 | Python               | `[python/](python/)`                         | OpenAI                         |
-| Python + Strands     | `[python-strands/](python-strands/)`         | OpenAI by default, Sigil Cloud |
-| Python + Claude Agent SDK | `[python-claude-agent-sdk/](python-claude-agent-sdk/)` | Claude Code CLI, Sigil Cloud |
+| Python + Strands     | `[python-strands/](python-strands/)`         | OpenAI by default, Grafana Cloud |
+| Python + Claude Agent SDK | `[python-claude-agent-sdk/](python-claude-agent-sdk/)` | Claude Code CLI, Grafana Cloud |
 | TypeScript           | `[typescript/](typescript/)`                 | OpenAI                         |
-| TypeScript + Strands | `[typescript-strands/](typescript-strands/)` | OpenAI by default, Sigil Cloud |
+| TypeScript + Strands | `[typescript-strands/](typescript-strands/)` | OpenAI by default, Grafana Cloud |
 | Go                   | `[go/](go/)`                                 | OpenAI                         |
 
 

@@ -1,4 +1,4 @@
-# Sigil for Claude Code
+# Agent Observability for Claude Code
 
 Sends every Claude Code turn to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/): model, tokens, tools, timing, and optionally the conversation content.
 
@@ -64,7 +64,7 @@ Run `agento11y login` later to update saved credentials.
 Create or update `~/.config/agento11y/config.env` (if you already have the old `~/.config/sigil/config.env`, edit that one instead):
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp
@@ -95,7 +95,7 @@ Common culprits: `agento11y --version` doesn't work (binary not on `PATH`), a mi
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTO11Y_ENDPOINT` | — | Sigil API URL. Find it at `/plugins/grafana-sigil-app`. |
+| `AGENTO11Y_ENDPOINT` | — | Agent Observability API URL. Find it at `/plugins/grafana-sigil-app`. |
 | `AGENTO11Y_AUTH_TENANT_ID` | — | Grafana Cloud instance ID. |
 | `AGENTO11Y_AUTH_TOKEN` | — | `glc_…` Cloud Access Policy Token. |
 | `AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP endpoint. Without it, the AI Observability latency and tool-call panels stay empty. |
@@ -106,7 +106,7 @@ Common culprits: `agento11y --version` doesn't work (binary not on `PATH`), a mi
 | `AGENTO11Y_USER_ID_SOURCE` | `email` | Which field to read from `~/.claude.json`: `email` or `accountUuid`. |
 | `AGENTO11Y_DEBUG` | `false` | Log to `~/.local/state/agento11y/logs/agento11y.log`. |
 | `AGENTO11Y_AUTO_UPDATE` | `true` | Refresh the `sigil-cc` plugin automatically. Set `false` to pin the installed version. |
-| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Claude Code `PreToolUse` hook calls Sigil's `/api/v1/hooks:evaluate` and blocks tool calls denied by guard rules. |
+| `AGENTO11Y_GUARDS_ENABLED` | `false` | Enable tool-call guards. When on, each Claude Code `PreToolUse` hook calls the Agent Observability `/api/v1/hooks:evaluate` API and blocks tool calls denied by guard rules. |
 | `AGENTO11Y_GUARDS_FAIL_OPEN` | `true` | When the guard call fails (timeout, network, 5xx), proceed with the tool call. Set `false` for strict mode. |
 | `AGENTO11Y_GUARDS_TIMEOUT_MS` | `1500` | Per-call timeout. Lower = less added latency on every tool call, higher = better tolerance for slow `llm_judge` evaluators. |
 

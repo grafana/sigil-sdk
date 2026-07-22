@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: LiteLLM
+# Agent Observability Python Framework Module: LiteLLM
 
-`agento11y-litellm` is a LiteLLM callback handler that exports generation telemetry to Sigil.
+`agento11y-litellm` is a LiteLLM callback handler that exports generation telemetry to Agent Observability.
 
 ## Installation
 
@@ -60,7 +60,7 @@ All options are keyword-only on `Agento11yLiteLLMLogger`:
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `client` | `agento11y.Client` | required | Sigil SDK client instance |
+| `client` | `agento11y.Client` | required | agento11y SDK client instance |
 | `capture_inputs` | `bool` | `True` | Record input messages |
 | `capture_outputs` | `bool` | `True` | Record output messages |
 | `agent_name` | `str` | `""` | Default agent name (see below for per-request) |
@@ -170,7 +170,7 @@ The callback file reads connection details from environment variables. Adjust th
   - `agento11y.framework.language=python`
 - LiteLLM `request_tags` are forwarded as `litellm.tag.<value>`.
 - Token usage includes detailed breakdowns (cached tokens, reasoning tokens) when the provider returns them.
-- Tool calls and tool results in messages are mapped to Sigil's tool call/result parts.
+- Tool calls and tool results in messages are mapped to agento11y tool call/result parts.
 - Reasoning/thinking text is captured as `THINKING` parts, ordered before the assistant text. It is read from `thinking_blocks` when present (including redacted blocks), otherwise from the flat `reasoning_content` string.
 
 Call `client.shutdown()` during teardown to flush buffered telemetry.

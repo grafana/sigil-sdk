@@ -1,23 +1,23 @@
-# Claude Code Prompt: Sigil Instrumentation
+# OpenCode Prompt: Agent Observability Instrumentation
 
 You are running in Opencode with repository files and shell access.
 
 - Prefer direct file edits over speculative refactors.
 - Before proposing broad changes, confirm impact scope with quick evidence.
 
-## Sigil Agent-First Instrumentation Brief
+## Agent Observability Agent-First Instrumentation Brief
 
-You are acting as a coding agent inside this repository. Your goal is to add or improve Grafana Sigil instrumentation with minimal, safe changes.
+You are acting as a coding agent inside this repository. Your goal is to add or improve Grafana Agent Observability instrumentation with minimal, safe changes.
 
 ## Mission
 
 1. Find AI generation and tool/agent execution paths.
-2. Add Sigil instrumentation using the local language SDK where possible.
+2. Add agento11y instrumentation using the local language SDK where possible.
 3. Preserve behavior and keep diffs small.
 4. Add or update tests for changed instrumentation behavior.
 5. Explain what was instrumented and why.
 
-Sigil is a Grafana Cloud-only product for user-facing setup. Do not suggest
+Agent Observability is a Grafana Cloud-only product for user-facing setup. Do not suggest
 non-Cloud or development-only endpoints in docs, examples, or generated
 instructions. Use the Grafana Cloud API URL from AI Observability configuration
 and Cloud `basic` auth.
@@ -34,28 +34,28 @@ Return:
   - test plan
   - any risk or compatibility concern
 
-## Sigil architecture and ingest model (must follow)
+## Agent Observability architecture and ingest model (must follow)
 
-- Sigil uses generation-first ingest:
+- Agent Observability uses generation-first ingest:
   - gRPC: `agento11y.v1.GenerationIngestService.ExportGenerations`
   - HTTP parity: `POST /api/v1/generations:export`
-- Traces/metrics go through OTEL collector/alloy, not through Sigil ingest.
+- Traces/metrics go through OTEL collector/alloy, not through Agent Observability ingest.
 - Required generation modes:
   - non-stream: `SYNC`
   - stream: `STREAM`
 - Raw provider artifacts are default OFF and only enabled for explicit debug opt-in.
 
-Authoritative references in this repo:
+Authoritative references in the [grafana/agento11y](https://github.com/grafana/agento11y) repo:
 
-- `ARCHITECTURE.md`
-- `docs/references/generation-ingest-contract.md`
-- `docs/references/semantic-conventions.md`
+- [`docs/concepts/content-capture-modes.md`](https://github.com/grafana/agento11y/blob/main/docs/concepts/content-capture-modes.md)
+- [`docs/concepts/tags-and-metadata.md`](https://github.com/grafana/agento11y/blob/main/docs/concepts/tags-and-metadata.md)
+- [`docs/concepts/tool-call-vs-tool-execution.md`](https://github.com/grafana/agento11y/blob/main/docs/concepts/tool-call-vs-tool-execution.md)
 
 ## OTel setup (required)
 
-The Sigil SDK internally emits OTel spans and metrics (`gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, `gen_ai.client.time_to_first_token`, `gen_ai.client.tool_calls_per_operation`). **Without a configured TracerProvider and MeterProvider these go to the default no-op and are silently lost.**
+The agento11y SDK internally emits OTel spans and metrics (`gen_ai.client.operation.duration`, `gen_ai.client.token.usage`, `gen_ai.client.time_to_first_token`, `gen_ai.client.tool_calls_per_operation`). **Without a configured TracerProvider and MeterProvider these go to the default no-op and are silently lost.**
 
-The SDK does NOT create OTel providers — that is the application's responsibility. Always ensure the app configures providers BEFORE creating the Sigil client, and shuts them down AFTER `sigil.shutdown()`.
+The SDK does NOT create OTel providers — that is the application's responsibility. Always ensure the app configures providers BEFORE creating the agento11y client, and shuts them down AFTER `agento11y.shutdown()`.
 
 Traces and metrics can be sent to Grafana Cloud in two ways. Always use env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`) so the app doesn't hardcode assumptions.
 
@@ -179,7 +179,7 @@ When instrumenting multi-agent pipelines where one agent's output feeds into ano
 
 - Set `parent_generation_ids` on the GenerationStart/seed with the generation ID(s) of the upstream agent(s) whose output this generation consumes.
 - This is a list: a generation can depend on multiple parents (fan-in).
-- Sigil uses these links to build a dependency DAG and propagate quality signals: if an upstream generation fails evaluation, all downstream dependents are flagged.
+- Agent Observability uses these links to build a dependency DAG and propagate quality signals: if an upstream generation fails evaluation, all downstream dependents are flagged.
 
 Example: an orchestrator spawns agents A, B, C where C depends on A and B:
 - A: parent_generation_ids = [] (no parents)
@@ -190,45 +190,44 @@ Example: an orchestrator spawns agents A, B, C where C depends on A and B:
 
 Prefer these existing SDKs and wrappers before inventing custom plumbing:
 
-- Go core SDK: `sdks/go` (see `sdks/go/README.md`)
+- Go core SDK: `go/` (see `go/README.md`)
   - `StartGeneration`, `StartStreamingGeneration`, `StartToolExecution`, `StartEmbedding`
-- JS/TS SDK: `sdks/js` (see `sdks/js/README.md`)
+- JS/TS SDK: `js/` (see `js/README.md`)
   - `startGeneration`, `startStreamingGeneration`, `startToolExecution`, `startEmbedding`
-- Python SDK: `sdks/python` (see `sdks/python/README.md`)
+- Python SDK: `python/` (see `python/README.md`)
   - `start_generation`, `start_streaming_generation`, `start_tool_execution`, `start_embedding`
-- Java SDK: `sdks/java` (see `sdks/java/README.md`)
+- Java SDK: `java/` (see `java/README.md`)
   - `startGeneration`, `startStreamingGeneration`, `withGeneration`, `withToolExecution`
-- .NET SDK: `sdks/dotnet` (see `sdks/dotnet/README.md`)
+- .NET SDK: `dotnet/` (see `dotnet/README.md`)
   - `StartGeneration`, `StartStreamingGeneration`, `StartToolExecution`, `StartEmbedding`
 
 Provider wrappers and framework adapters already exist; reuse them where possible:
 
-- Go providers: `sdks/go-providers/openai`, `sdks/go-providers/anthropic`, `sdks/go-providers/gemini`
-- Python providers: `sdks/python-providers/*`
-- Java providers: `sdks/java/providers/*`
-- .NET providers: `sdks/dotnet/src/Grafana.Sigil.*`
+- Go providers: `go-providers/openai`, `go-providers/anthropic`, `go-providers/gemini`
+- Python providers: `python-providers/*`
+- Java providers: `java/providers/*`
+- .NET providers: `dotnet/src/Grafana.Agento11y.*`
 - Framework adapters:
-  - Python: `sdks/python-frameworks/*`
-  - Go Google ADK: `sdks/go-frameworks/google-adk`
-  - Java Google ADK: `sdks/java/frameworks/google-adk`
-  - JS subpath adapters documented in `sdks/js/README.md`
+  - Python: `python-frameworks/*`
+  - Go Google ADK: `go-frameworks/google-adk`
+  - Java Google ADK: `java/frameworks/google-adk`
+  - JS subpath adapters documented in `js/README.md`
 
 ## Useful repo examples to copy patterns from
 
 - Go explicit generation flow:
-  - `sdks/go/agento11y/example_test.go`
-  - `sdks/go/cmd/devex-emitter/main.go`
+  - `go/agento11y/example_test.go`
 - Go provider wrapper examples:
-  - `sdks/go-providers/openai/sdk_example_test.go`
-  - `sdks/go-providers/anthropic/sdk_example_test.go`
-  - `sdks/go-providers/gemini/sdk_example_test.go`
+  - `go-providers/openai/sdk_example_test.go`
+  - `go-providers/anthropic/sdk_example_test.go`
+  - `go-providers/gemini/sdk_example_test.go`
 - .NET end-to-end emitter:
-  - `sdks/dotnet/examples/Grafana.Sigil.DevExEmitter/Program.cs`
+  - `dotnet/examples/Grafana.Agento11y.DevExEmitter/Program.cs`
 - JS transport and framework behavior:
-  - `sdks/js/test/client.transport.test.mjs`
-  - `sdks/js/test/frameworks.vercel-ai-sdk.test.mjs`
+  - `js/test/client.transport.test.mjs`
+  - `js/test/frameworks.vercel-ai-sdk.test.mjs`
 - Python framework integration tests:
-  - `sdks/python-frameworks/*/tests/*.py`
+  - `python-frameworks/*/tests/*.py`
 
 ## Implementation rules
 
@@ -244,7 +243,7 @@ Provider wrappers and framework adapters already exist; reuse them where possibl
   - `stop_reason` / `finish_reason`
   - Full token usage including `cache_read_input_tokens`, `cache_write_input_tokens`, and `reasoning_tokens` when the provider returns them
 - Always check `rec.err()` / `Err()` after the generation recorder closes — SDK validation or enqueue errors are otherwise silent.
-- Use `tags` on `GenerationStart` for filtering in the Sigil UI (e.g. pipeline name, layer, agent role).
+- Use `tags` on `GenerationStart` for filtering in the Agent Observability UI (e.g. pipeline name, layer, agent role).
 
 ## Validation checklist
 

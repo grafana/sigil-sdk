@@ -2,7 +2,7 @@
 
 `POST /chat` runs the classifier first, then the agent (unless the
 message is off-topic). Both calls share a `conversation_id` so they
-group together in Sigil.
+group together in Agent Observability.
 """
 
 from __future__ import annotations

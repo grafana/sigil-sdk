@@ -1,6 +1,6 @@
-# Sigil Python Provider Helper: Gemini
+# Agent Observability Python Provider Helper: Gemini
 
-`agento11y-gemini` provides strict Gemini Models wrappers and mappers for Sigil.
+`agento11y-gemini` provides strict Gemini Models wrappers and mappers for agento11y.
 
 ## Installation
 

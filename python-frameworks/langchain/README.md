@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: LangChain
+# Agent Observability Python Framework Module: LangChain
 
-`agento11y-langchain` provides callback handlers that map LangChain lifecycle events into Sigil generation recorder lifecycles.
+`agento11y-langchain` provides callback handlers that map LangChain lifecycle events into agento11y generation recorder lifecycles.
 
 ## Installation
 

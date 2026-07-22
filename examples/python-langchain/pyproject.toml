@@ -1,7 +1,7 @@
 [project]
 name = "agento11y-langchain-weather-example"
 version = "0.1.0"
-description = "Minimal FastAPI + LangChain weather agent instrumented with Sigil and OpenTelemetry."
+description = "Minimal FastAPI + LangChain weather agent instrumented with agento11y and OpenTelemetry."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

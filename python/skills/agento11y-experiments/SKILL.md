@@ -1,13 +1,13 @@
 ---
 name: agento11y-experiments
 description: >-
-  Run any Python LLM agent as a Sigil experiment using the public
+  Run any Python LLM agent as an Agent Observability experiment using the public
   agento11y.experiments package: define a test suite, run an existing agent
   through typed trials, bind or record generation I/O, grade outputs, and
-  publish scores to Grafana Cloud Sigil with one ingestion API key.
+  publish scores to Grafana Cloud Agent Observability with one ingestion API key.
 ---
 
-# Sigil experiments
+# Agent Observability experiments
 
 Use this skill when adding framework-free offline evaluation to a Python project.
 The public SDK surface is `agento11y.experiments`; do not use removed v0 runner
@@ -21,7 +21,7 @@ LLM judges, cross-process verifiers, pass@k/pass^k).
 
 The normal setup cost for an already instrumented agent should be small:
 
-1. Import `agento11y.experiments` as `sigil`.
+1. Import `experiments` from `agento11y`.
 2. Define a `TestSuite` with `TestCase`s.
 3. Wrap the existing agent call in `with exp.trial(case) as trial:`.
 4. Bind the generation/conversation ids your normal instrumentation already
@@ -37,7 +37,7 @@ pip install "agento11y>=0.9.0"
 Required environment:
 
 ```bash
-export AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+export AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 export AGENTO11Y_AUTH_TOKEN=<grafana-cloud-ingestion-api-key>
 
 # Optional when the endpoint requires tenant-scoped basic auth.
@@ -54,26 +54,26 @@ Experimental OTel eval spans/events are disabled by default. Opt in only when
 asked:
 
 ```python
-with agento11y.experiment("nightly", use_experimental_otel=True) as exp:
+with experiments.experiment("nightly", use_experimental_otel=True) as exp:
     ...
 ```
 
 ## Recommended Pattern
 
 ```python
-from agento11y import experiments as sigil
+from agento11y import experiments
 
-suite = agento11y.TestSuite(
+suite = experiments.TestSuite(
     suite_id="smoke",
     name="Smoke",
     version="2026-06-29",
     test_cases=[
-        agento11y.TestCase(test_case_id="capital-fr", input="Capital of France?", expected="Paris"),
+        experiments.TestCase(test_case_id="capital-fr", input="Capital of France?", expected="Paris"),
     ],
 )
-verifier = agento11y.Evaluator(evaluator_id="exact_match", version="2026-06-29", kind="deterministic")
+verifier = experiments.Evaluator(evaluator_id="exact_match", version="2026-06-29", kind="deterministic")
 
-with agento11y.experiment(
+with experiments.experiment(
     "PR experiment",
     experiment_id=f"pr-{git_sha}",
     suite=suite,
@@ -131,7 +131,7 @@ trial.rubric_score(
     verdict["score"],
     passed=verdict["score"] >= 0.7,
     explanation=verdict["reason"],
-    evaluator=agento11y.Evaluator(evaluator_id="judge.correctness", version="2026-06-29", kind="llm_judge"),
+    evaluator=experiments.Evaluator(evaluator_id="judge.correctness", version="2026-06-29", kind="llm_judge"),
 )
 ```
 
@@ -147,17 +147,17 @@ env = ref.to_env()
 In the verifier:
 
 ```python
-from agento11y import experiments as sigil
+from agento11y import experiments
 
-client = agento11y.Client(
+client = experiments.Client(
     endpoint=os.environ["AGENTO11Y_ENDPOINT"],
     tenant_id=os.environ.get("AGENTO11Y_AUTH_TENANT_ID", ""),
     ingest_token=os.environ["AGENTO11Y_AUTH_TOKEN"],
 )
-ref = agento11y.TrialRef.from_env()
+ref = experiments.TrialRef.from_env()
 if ref is None:
-    raise RuntimeError("missing Sigil trial environment")
-trial = agento11y.Trial.from_ref(client, ref)
+    raise RuntimeError("missing experiment trial environment")
+trial = experiments.Trial.from_ref(client, ref)
 trial.final_score(0.9, passed=True)
 trial.flush()
 ```

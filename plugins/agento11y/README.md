@@ -45,7 +45,7 @@ All hosts read the same config file at `~/.config/agento11y/config.env`. If you 
 To preconfigure without the prompt, create the file:
 
 ```dotenv
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=<instance-id>
 AGENTO11Y_AUTH_TOKEN=glc_...
 AGENTO11Y_OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-<region>.grafana.net/otlp

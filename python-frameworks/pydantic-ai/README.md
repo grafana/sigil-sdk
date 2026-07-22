@@ -1,6 +1,6 @@
 # Grafana AI Observability Python Framework Module: Pydantic AI
 
-`agento11y-pydantic-ai` provides an `AbstractCapability` implementation that maps Pydantic AI lifecycle hooks into Sigil generation recorder lifecycles.
+`agento11y-pydantic-ai` provides an `AbstractCapability` implementation that maps Pydantic AI lifecycle hooks into agento11y generation recorder lifecycles.
 
 ## Installation
 

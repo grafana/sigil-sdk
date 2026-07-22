@@ -1,6 +1,6 @@
-# Grafana Sigil Go SDK
+# Grafana Agent Observability Go SDK
 
-The Sigil Go SDK records LLM generations and tool calls for [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/). It emits OpenTelemetry spans and metrics through your existing OTel setup and sends normalized generation payloads through Sigil's ingest channel.
+The agento11y Go SDK records LLM generations and tool calls for [Grafana AI observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/). It emits OpenTelemetry spans and metrics through your existing OTel setup and sends normalized generation payloads through the Agent Observability ingest channel.
 
 ## Install
 
@@ -114,7 +114,7 @@ cfg := agento11y.DefaultConfig()
 
 // Generation export to Grafana Cloud.
 cfg.GenerationExport.Protocol = agento11y.GenerationExportProtocolHTTP
-cfg.GenerationExport.Endpoint = "https://sigil-prod-<region>.grafana.net"
+cfg.GenerationExport.Endpoint = "https://agento11y-prod-<region>.grafana.net"
 cfg.GenerationExport.Auth = agento11y.AuthConfig{
 	Mode:          agento11y.ExportAuthModeBasic,
 	TenantID:      os.Getenv("AGENTO11Y_AUTH_TENANT_ID"),
@@ -130,8 +130,8 @@ cfg.GenerationExport.GRPCMaxSendMessageBytes = 16 << 20
 cfg.GenerationExport.GRPCMaxReceiveMessageBytes = 16 << 20
 cfg.GenerationExport.PayloadMaxBytes = 16 << 20
 
-// Sigil API base used by helpers like SubmitConversationRating.
-cfg.API.Endpoint = "https://sigil-prod-<region>.grafana.net"
+// Agent Observability API base used by helpers like SubmitConversationRating.
+cfg.API.Endpoint = "https://agento11y-prod-<region>.grafana.net"
 
 client := agento11y.NewClient(cfg)
 defer func() {
@@ -141,7 +141,7 @@ defer func() {
 
 Configure OTEL exporters (traces/metrics) in your application OTEL SDK setup.
 
-Quick OTEL setup pattern before creating the Sigil client:
+Quick OTEL setup pattern before creating the agento11y client:
 
 ```go
 tp := sdktrace.NewTracerProvider()
@@ -208,7 +208,7 @@ cfg.GenerationExport.Auth = agento11y.AuthConfig{
 
 ## Hooks and Guards
 
-Use hooks when you want Sigil guard rules to run before an LLM call. The SDK evaluates the hook on your request path; guard rules configured in Grafana Cloud decide whether to allow, deny, or transform the input.
+Use hooks when you want Agent Observability guard rules to run before an LLM call. The SDK evaluates the hook on your request path; guard rules configured in Grafana Cloud decide whether to allow, deny, or transform the input.
 
 Hooks are disabled by default. Enable them on the client and call `EvaluateHook(...)` before the provider request:
 
@@ -267,7 +267,7 @@ if genToken != "" {
 Common topology:
 
 - Grafana Cloud: generation `basic` mode with instance ID and API key.
-- Self-hosted direct to Sigil: generation `tenant` mode.
+- Self-hosted direct to the ingest API: generation `tenant` mode.
 - Traces/metrics via OTEL Collector/Alloy: configure exporters in your app OTEL SDK setup.
 - Enterprise proxy: generation `bearer` mode to proxy; proxy authenticates and forwards tenant header upstream.
 
@@ -402,7 +402,7 @@ if err != nil {
 fmt.Printf("rating=%s has_bad=%v\n", rating.Rating.Rating, rating.Summary.HasBadRating)
 ```
 
-`SubmitConversationRating` sends requests to `cfg.API.Endpoint`, which should be the Grafana Cloud Sigil API URL from AI Observability configuration, and uses the same generation-export auth headers that your client config already resolves.
+`SubmitConversationRating` sends requests to `cfg.API.Endpoint`, which should be the Grafana Cloud Agent Observability API URL from AI Observability configuration, and uses the same generation-export auth headers that your client config already resolves.
 
 ## Lifecycle requirement
 

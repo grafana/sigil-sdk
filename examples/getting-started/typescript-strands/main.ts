@@ -1,5 +1,5 @@
 /**
- * Minimal Sigil Cloud example using Strands Agents TypeScript.
+ * Minimal Grafana Cloud example using Strands Agents TypeScript.
  */
 
 import 'dotenv/config';

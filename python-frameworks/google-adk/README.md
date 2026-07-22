@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: Google ADK
+# Agent Observability Python Framework Module: Google ADK
 
-`agento11y-google-adk` provides callback handlers that map Google ADK invocation/session events into Sigil generation recorder lifecycles.
+`agento11y-google-adk` provides callback handlers that map Google ADK invocation/session events into agento11y generation recorder lifecycles.
 
 ## Installation
 

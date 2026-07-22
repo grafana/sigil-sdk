@@ -1,4 +1,4 @@
-# Sigil plugins for coding agents
+# Agent Observability plugins for coding agents
 
 Send conversations from your coding agent to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/) — model, tokens, tool calls, timing, and optionally the conversation content.
 

@@ -18,7 +18,7 @@ var client = new Agento11yClient(new Agento11yClientConfig
     GenerationExport = new GenerationExportConfig
     {
         Protocol = GenerationExportProtocol.Http,
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
         Auth = new AuthConfig
         {
             Mode = ExportAuthMode.Basic,
@@ -34,14 +34,14 @@ var client = new Agento11yClient(new Agento11yClientConfig
     },
     Api = new ApiConfig
     {
-        Endpoint = "https://sigil-prod-<region>.grafana.net",
+        Endpoint = "https://agento11y-prod-<region>.grafana.net",
     },
 });
 ```
 
 Configure OTEL exporters (traces/metrics) separately in your application's OTEL setup.
 
-Quick OTEL setup pattern before creating the Sigil client:
+Quick OTEL setup pattern before creating the agento11y client:
 
 ```csharp
 using OpenTelemetry.Metrics;

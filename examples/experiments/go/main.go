@@ -71,7 +71,7 @@ func main() {
 	if report, err := run.Report(ctx); err == nil {
 		log.Printf("pass_rate=%.2f final_score_avg=%.2f", report.Summary.PassRate, report.Summary.FinalScoreAvg)
 	}
-	log.Printf("View in Sigil: %s", run.URL())
+	log.Printf("View in Agent Observability: %s", run.URL())
 }
 
 func runTestCase(ctx context.Context, client *agento11y.Client, exp *agento11y.ExperimentRun, testCase agento11y.TestCase, evaluator agento11y.Evaluator) (err error) {

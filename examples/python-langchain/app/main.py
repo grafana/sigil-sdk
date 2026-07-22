@@ -1,6 +1,6 @@
 """FastAPI entry point.
 
-Bootstraps OpenTelemetry and the Sigil client on startup, exposes them
+Bootstraps OpenTelemetry and the agento11y client on startup, exposes them
 on `app.state` for handlers, and mounts the routes from `handlers.py`.
 """
 
@@ -40,11 +40,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # Shut down Sigil first so in-flight generations finish exporting
+        # Shut down agento11y first so in-flight generations finish exporting
         # before OTel tears down the gRPC channels underneath.
         agento11y.shutdown()
         otel.shutdown()
 
 
-app = FastAPI(title="Sigil + LangChain weather example", lifespan=lifespan)
+app = FastAPI(title="Agent Observability + LangChain weather example", lifespan=lifespan)
 app.include_router(router)

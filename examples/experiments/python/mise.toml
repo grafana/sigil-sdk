@@ -7,5 +7,5 @@ description = "Install deps into the local venv"
 run = "uv sync"
 
 [tasks.experiment]
-description = "Run the framework-free dataset experiment against Sigil"
+description = "Run the framework-free dataset experiment against Agent Observability"
 run = "uv run python -m app.run_experiment"

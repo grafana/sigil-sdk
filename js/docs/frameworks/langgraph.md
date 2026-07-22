@@ -1,6 +1,6 @@
 # LangGraph Handler (`@grafana/agento11y/langgraph`)
 
-Use `Agento11yLangGraphHandler` to map LangGraph callback lifecycle events to Sigil generation records.
+Use `Agento11yLangGraphHandler` to map LangGraph callback lifecycle events to agento11y generation records.
 
 ## Install
 

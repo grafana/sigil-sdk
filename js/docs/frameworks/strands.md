@@ -1,6 +1,6 @@
 # Strands Agents Hooks (`@grafana/agento11y/strands`)
 
-Use `withAgento11yStrandsHooks(...)` to instrument Strands Agents TypeScript agents with Sigil generation export, spans, metrics, tool execution spans, and streaming TTFT.
+Use `withAgento11yStrandsHooks(...)` to instrument Strands Agents TypeScript agents with agento11y generation export, spans, metrics, tool execution spans, and streaming TTFT.
 
 ## Install
 

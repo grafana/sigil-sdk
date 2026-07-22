@@ -1,6 +1,6 @@
 # Getting Started - TypeScript + Strands Agents
 
-Runs a Strands TypeScript agent and records model/tool activity to Sigil Cloud.
+Runs a Strands TypeScript agent and records model/tool activity to Grafana Cloud.
 
 ## Setup
 
@@ -10,12 +10,12 @@ npm install
 cp .env.example .env
 ```
 
-Configure Sigil, OpenTelemetry, and OpenAI from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find each value:
+Configure agento11y, OpenTelemetry, and OpenAI from your Grafana Cloud stack. See the [Grafana Cloud AI Observability getting started docs](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/get-started/grafana-cloud/) for where to find each value:
 
 ```bash
 AGENTO11Y_PROTOCOL=http
 AGENTO11Y_AUTH_MODE=basic
-AGENTO11Y_ENDPOINT=https://sigil-prod-<region>.grafana.net
+AGENTO11Y_ENDPOINT=https://agento11y-prod-<region>.grafana.net
 AGENTO11Y_AUTH_TENANT_ID=...
 AGENTO11Y_AUTH_TOKEN=...
 AGENTO11Y_CONVERSATION_ID=agento11y-strands-demo
@@ -37,4 +37,4 @@ The example configures OpenTelemetry tracing and metrics. Generations go to
 npm start
 ```
 
-When the agent response prints, followed by `Done`, open Sigil in your Grafana Cloud stack to inspect the recorded generation and tool execution.
+When the agent response prints, followed by `Done`, open Agent Observability in your Grafana Cloud stack to inspect the recorded generation and tool execution.

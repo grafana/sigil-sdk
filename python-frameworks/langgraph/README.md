@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: LangGraph
+# Agent Observability Python Framework Module: LangGraph
 
-`agento11y-langgraph` provides callback handlers that map LangGraph lifecycle events into Sigil generation recorder lifecycles.
+`agento11y-langgraph` provides callback handlers that map LangGraph lifecycle events into agento11y generation recorder lifecycles.
 
 ## Installation
 
@@ -81,13 +81,13 @@ client.shutdown()
 
 ## Workflow step capture
 
-Enable `capture_workflow_steps=True` to record each graph node as a Sigil workflow step.
+Enable `capture_workflow_steps=True` to record each graph node as a workflow step.
 This enables the **Workflow** tab in the conversation detail view, showing node execution order,
 duration, input/output state, and which LLM generations ran inside each node. The **Dependencies**
 tab remains available for the generation-level DAG built from `parent_generation_ids`.
 
 Always set `conversation_title` to a short human-readable label — it appears as the conversation
-name in the Sigil UI. Without it, the title falls back to an opaque auto-generated ID.
+name in the Agent Observability UI. Without it, the title falls back to an opaque auto-generated ID.
 
 ```python
 from agento11y import Client

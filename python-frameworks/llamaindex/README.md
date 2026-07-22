@@ -1,6 +1,6 @@
-# Sigil Python Framework Module: LlamaIndex
+# Agent Observability Python Framework Module: LlamaIndex
 
-`agento11y-llamaindex` provides callback handlers that map LlamaIndex workflow/agent events into Sigil generation recorder lifecycles.
+`agento11y-llamaindex` provides callback handlers that map LlamaIndex workflow/agent events into agento11y generation recorder lifecycles.
 
 ## Installation
 

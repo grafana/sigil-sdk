@@ -201,7 +201,7 @@ def main() -> None:
         report = exp.report()
     print(f"\nDashboard experiment '{experiment_id}' finished: {exp.accepted_scores} score(s) accepted.")
     print(f"pass_rate={report.summary.pass_rate:.2f} mean_score={report.summary.final_score_avg:.2f}")
-    print(f"View in Sigil: {exp.url}")
+    print(f"View in Agent Observability: {exp.url}")
 
 
 if __name__ == "__main__":

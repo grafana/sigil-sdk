@@ -1,4 +1,4 @@
-# Sigil JS SDK Docs
+# Agent Observability JS SDK Docs
 
 This directory contains public SDK usage docs for the TypeScript/JavaScript package.
 

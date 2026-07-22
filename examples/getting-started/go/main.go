@@ -91,7 +91,7 @@ func main() {
 		// end-user identity instead of a high-cardinality tag.
 		UserID: "demo-user",
 		// Per-generation tags and metadata are export-only: searchable on the
-		// generation in Sigil, never emitted on spans or metrics.
+		// generation in Agent Observability, never emitted on spans or metrics.
 		Tags:     map[string]string{"feature": "summarize"},
 		Metadata: map[string]any{"prompt_version": "v2"},
 	})

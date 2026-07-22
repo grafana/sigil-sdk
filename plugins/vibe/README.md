@@ -1,6 +1,6 @@
-# Sigil for Mistral Vibe
+# Agent Observability for Mistral Vibe
 
-[Mistral Vibe](https://github.com/mistralai/vibe) is sent to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/) by registering hooks in Mistral Vibe's `hooks.toml` that forward each turn to the `agento11y` binary. `post_agent_turn` exports one generation per turn; `before_tool` enforces Sigil guard policy (when enabled); `after_tool` records per-tool timing for tool spans.
+[Mistral Vibe](https://github.com/mistralai/vibe) is sent to [Grafana AI Observability](https://grafana.com/docs/grafana-cloud/machine-learning/ai-observability/) by registering hooks in Mistral Vibe's `hooks.toml` that forward each turn to the `agento11y` binary. `post_agent_turn` exports one generation per turn; `before_tool` enforces Agent Observability guard policy (when enabled); `after_tool` records per-tool timing for tool spans.
 
 > Status: **Experimental.** Mistral Vibe's hook contract is itself marked experimental and may change between releases; the launcher pins to the shape verified at build time.
 
@@ -76,4 +76,4 @@ Run one agent turn, then open **AI Observability → Conversations** in Grafana 
 
 ## Guards
 
-`before_tool` evaluates each tool call against Sigil guard policy. Guards are **off by default**; enable them with `AGENTO11Y_GUARDS_ENABLED=true` (tune with `AGENTO11Y_GUARDS_TIMEOUT_MS` and `AGENTO11Y_GUARDS_FAIL_OPEN`). When enabled, a policy can **deny** a tool call (Mistral Vibe blocks it and shows the reason to the model) or **rewrite** its arguments (e.g. redact a secret before the tool runs). With guards disabled, `before_tool` is a pass-through that writes nothing. Evaluation runs synchronously before the tool, so a policy should be fast or local; on timeout or transport error the call follows `AGENTO11Y_GUARDS_FAIL_OPEN` (open by default).
+`before_tool` evaluates each tool call against Agent Observability guard policy. Guards are **off by default**; enable them with `AGENTO11Y_GUARDS_ENABLED=true` (tune with `AGENTO11Y_GUARDS_TIMEOUT_MS` and `AGENTO11Y_GUARDS_FAIL_OPEN`). When enabled, a policy can **deny** a tool call (Mistral Vibe blocks it and shows the reason to the model) or **rewrite** its arguments (e.g. redact a secret before the tool runs). With guards disabled, `before_tool` is a pass-through that writes nothing. Evaluation runs synchronously before the tool, so a policy should be fast or local; on timeout or transport error the call follows `AGENTO11Y_GUARDS_FAIL_OPEN` (open by default).

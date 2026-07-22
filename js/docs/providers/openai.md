@@ -1,4 +1,4 @@
-# Sigil JS Provider Helper: OpenAI
+# Agent Observability JS Provider Helper: OpenAI
 
 This helper now mirrors official OpenAI SDK shapes for both Chat Completions and Responses.
 

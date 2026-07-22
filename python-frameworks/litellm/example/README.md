@@ -1,10 +1,10 @@
-# LiteLLM Proxy + Sigil Example
+# LiteLLM Proxy + Agent Observability Example
 
-Runs a LiteLLM proxy with the Sigil callback handler, exporting generations to Grafana Cloud.
+Runs a LiteLLM proxy with the agento11y callback handler, exporting generations to Grafana Cloud.
 
 ## Prerequisites
 
-- A Grafana Cloud stack with Sigil enabled
+- A Grafana Cloud stack with Agent Observability enabled
 - A Grafana Cloud API token (`glc_...`)
 - At least one LLM API key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
 
@@ -38,7 +38,7 @@ curlie POST http://<proxy-host>:4000/chat/completions \
   stream:=true
 ```
 
-## Verify in Sigil
+## Verify in Agent Observability
 
 Open `https://<your-stack>.grafana.net/a/grafana-sigil-app/conversations`. Generations appear with:
 

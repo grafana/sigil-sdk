@@ -1,6 +1,6 @@
 """Guarded AI Observability getting-started example - Python + OpenAI.
 
-The SDK evaluates a Sigil preflight hook before the provider call. Guard rules
+The SDK evaluates an agento11y preflight hook before the provider call. Guard rules
 configured in Grafana Cloud can allow the call, deny it, or return transformed
 input such as redacted messages.
 """
@@ -125,9 +125,9 @@ try:
             input_messages = transformed.messages
         if transformed.system_prompt:
             system_prompt = transformed.system_prompt
-        print("Sigil hook allowed the call with transformed input.\n")
+        print("agento11y hook allowed the call with transformed input.\n")
     else:
-        print("Sigil hook allowed the call.\n")
+        print("agento11y hook allowed the call.\n")
 
     completion = openai_client.chat.completions.create(
         model=model,
@@ -162,7 +162,7 @@ try:
             print("SDK error:", rec.err())
 
 except HookDeniedError as exc:
-    print(f"Blocked by Sigil guard rule {exc.rule_id or '<unknown>'}: {exc.reason}")
+    print(f"Blocked by guard rule {exc.rule_id or '<unknown>'}: {exc.reason}")
 
 else:
     print("Done - check the AI Observability plugin in your Grafana Cloud stack.")
