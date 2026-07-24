@@ -258,7 +258,7 @@ class Trial:
         exc: BaseException | None = None,
         exc_type: type[BaseException] | None = None,
     ) -> None:
-        """Flushes and terminalizes this trial exactly once."""
+        """Flushes and terminalizes this trial, retrying after failed terminalization."""
 
         if self._closed:
             return
@@ -278,7 +278,10 @@ class Trial:
         finally:
             try:
                 self._finalize_trial()
-            finally:
+            except BaseException:
+                self._end_span()
+                raise
+            else:
                 self._end_span()
                 self._closed = True
                 if self._experiment is not None:

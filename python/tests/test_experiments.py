@@ -428,6 +428,51 @@ def test_experiment_finalize_closes_open_trial() -> None:
     assert client.finalized == [("run-open", "completed", None)]
 
 
+def test_experiment_finalize_retries_trial_when_terminal_update_fails(monkeypatch) -> None:
+    client = FakeClient()
+    exp = Experiment(client, experiment_id="run-update-retry", auto_finalize=False)
+    trial = exp.trial("case-x")
+    trial.final_score(1.0, passed=True)
+    update_calls = 0
+    finalize_calls = 0
+    original_update_trial = client.update_trial
+    original_finalize = client.finalize
+
+    def fail_first_update(*args, **kwargs):
+        nonlocal update_calls
+        update_calls += 1
+        if update_calls == 1:
+            raise RuntimeError("trial update failed")
+        return original_update_trial(*args, **kwargs)
+
+    def fail_first_finalize(*args, **kwargs):
+        nonlocal finalize_calls
+        finalize_calls += 1
+        if finalize_calls == 1:
+            raise RuntimeError("cannot finalize with running trials")
+        return original_finalize(*args, **kwargs)
+
+    monkeypatch.setattr(client, "update_trial", fail_first_update)
+    monkeypatch.setattr(client, "finalize", fail_first_finalize)
+
+    with pytest.raises(RuntimeError, match="trial update failed"):
+        exp.finalize()
+
+    assert not trial._closed
+    assert trial.trial_id in exp._open_trials
+    assert not exp._finalized
+
+    exp.finalize()
+
+    assert trial._closed
+    assert trial.trial_id not in exp._open_trials
+    assert exp._finalized
+    assert update_calls == 2
+    assert finalize_calls == 2
+    assert len(client.scores) == 1
+    assert client.finalized == [("run-update-retry", "completed", None)]
+
+
 def test_experiment_finalize_closes_all_trials_and_marks_run_failed_on_close_error(
     monkeypatch,
 ) -> None:

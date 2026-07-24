@@ -351,6 +351,36 @@ def test_experiment_client_generation_uses_lightweight_transport_and_redacts() -
         server.server_close()
 
 
+def test_experiment_client_treats_duplicate_generation_as_success() -> None:
+    recorder = _Recorder()
+    recorder.push(
+        200,
+        {
+            "results": [
+                {
+                    "generation_id": "gen-1",
+                    "accepted": False,
+                    "error": "generation already exists",
+                }
+            ]
+        },
+    )
+    server = _serve(recorder)
+    try:
+        client = ExperimentClient(
+            f"http://127.0.0.1:{server.server_address[1]}",
+            ingest_token="token",
+        )
+
+        generation_id = client.record_generation("gen-1", output_text="done")
+
+        assert generation_id == "gen-1"
+        assert len(recorder.requests) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_experiment_client_can_explicitly_disable_redaction() -> None:
     recorder = _Recorder()
     recorder.push(200, {"results": [{"generation_id": "gen-1", "accepted": True}]})

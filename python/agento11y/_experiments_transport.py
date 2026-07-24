@@ -213,6 +213,9 @@ def export_generation_json(
     result = results[0] if isinstance(results[0], dict) else {}
     if not bool(result.get("accepted")):
         detail = _str(result.get("error")) or "rejected"
+        normalized_detail = detail.strip().lower()
+        if "generation already exists" in normalized_detail or "duplicate entry" in normalized_detail:
+            return
         raise ExperimentTransportError(f"agento11y generation export rejected: {detail}")
 
 
